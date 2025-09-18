@@ -59,76 +59,118 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
     }
 
     @Override
+    @SuppressWarnings("squid:S3516")
     public String validate(String value) throws UrlSecurityException {
         // Quick check for null/empty
         if (value == null || value.isEmpty()) {
             return value;
         }
 
-        // Check each character
-        for (int i = 0; i < value.length(); i++) {
+        validateCharacters(value);
+        return value;
+    }
+
+    /**
+     * Validates all characters in the input string.
+     * @param value The string to validate
+     * @throws UrlSecurityException if any character validation fails
+     */
+    private void validateCharacters(String value) throws UrlSecurityException {
+        int i = 0;
+        while (i < value.length()) {
             char ch = value.charAt(i);
 
             // Check for null byte FIRST (highest priority security check)
-            if (ch == '\0' && !allowNullBytes) {
-                throw UrlSecurityException.builder()
-                        .failureType(UrlSecurityFailureType.NULL_BYTE_INJECTION)
-                        .validationType(validationType)
-                        .originalInput(value)
-                        .detail("Null byte detected at position " + i)
-                        .build();
+            if (ch == '\0') {
+                handleNullByte(value, i);
             }
 
             // Handle percent encoding
             if (ch == '%' && allowPercentEncoding) {
-                // Must be followed by two hex digits
-                if (i + 2 >= value.length()) {
-                    throw UrlSecurityException.builder()
-                            .failureType(UrlSecurityFailureType.INVALID_ENCODING)
-                            .validationType(validationType)
-                            .originalInput(value)
-                            .detail("Incomplete percent encoding at position " + i)
-                            .build();
-                }
-
-                char hex1 = value.charAt(i + 1);
-                char hex2 = value.charAt(i + 2);
-                if (isNotHexDigit(hex1) || isNotHexDigit(hex2)) {
-                    throw UrlSecurityException.builder()
-                            .failureType(UrlSecurityFailureType.INVALID_ENCODING)
-                            .validationType(validationType)
-                            .originalInput(value)
-                            .detail("Invalid hex digits in percent encoding at position " + i)
-                            .build();
-                }
-
-                // Check for encoded null byte %00
-                if (hex1 == '0' && hex2 == '0' && !allowNullBytes) {
-                    throw UrlSecurityException.builder()
-                            .failureType(UrlSecurityFailureType.NULL_BYTE_INJECTION)
-                            .validationType(validationType)
-                            .originalInput(value)
-                            .detail("Encoded null byte (%00) detected at position " + i)
-                            .build();
-                }
-
-                i += 2; // Skip the two hex digits
+                validatePercentEncoding(value, i);
+                i += 3; // Skip the percent sign and two hex digits
                 continue;
             }
 
             // Check if character is allowed based on configuration and character sets
             if (!isCharacterAllowed(ch)) {
-                UrlSecurityFailureType failureType = getFailureTypeForCharacter(ch);
-                throw UrlSecurityException.builder()
-                        .failureType(failureType)
-                        .validationType(validationType)
-                        .originalInput(value)
-                        .detail("Invalid character '" + ch + "' (0x" + Integer.toHexString(ch).toUpperCase() + ") at position " + i)
-                        .build();
+                handleInvalidCharacter(value, ch, i);
             }
+            i++;
+        }
+    }
+
+    /**
+     * Handles null byte detection.
+     * @param value The original input string
+     * @param position The position of the null byte
+     * @throws UrlSecurityException if null bytes are not allowed
+     */
+    private void handleNullByte(String value, int position) throws UrlSecurityException {
+        if (!allowNullBytes) {
+            throw UrlSecurityException.builder()
+                    .failureType(UrlSecurityFailureType.NULL_BYTE_INJECTION)
+                    .validationType(validationType)
+                    .originalInput(value)
+                    .detail("Null byte detected at position " + position)
+                    .build();
+        }
+    }
+
+    /**
+     * Handles invalid character detection.
+     * @param value The original input string
+     * @param ch The invalid character
+     * @param position The position of the invalid character
+     * @throws UrlSecurityException for the invalid character
+     */
+    private void handleInvalidCharacter(String value, char ch, int position) throws UrlSecurityException {
+        UrlSecurityFailureType failureType = getFailureTypeForCharacter(ch);
+        throw UrlSecurityException.builder()
+                .failureType(failureType)
+                .validationType(validationType)
+                .originalInput(value)
+                .detail("Invalid character '" + ch + "' (0x" + Integer.toHexString(ch).toUpperCase() + ") at position " + position)
+                .build();
+    }
+
+    /**
+     * Validates percent encoding at the given position.
+     * @param value The string to validate
+     * @param position The position of the percent sign
+     * @throws UrlSecurityException if the percent encoding is invalid
+     */
+    private void validatePercentEncoding(String value, int position) throws UrlSecurityException {
+        // Must be followed by two hex digits
+        if (position + 2 >= value.length()) {
+            throw UrlSecurityException.builder()
+                    .failureType(UrlSecurityFailureType.INVALID_ENCODING)
+                    .validationType(validationType)
+                    .originalInput(value)
+                    .detail("Incomplete percent encoding at position " + position)
+                    .build();
         }
 
-        return value;
+        char hex1 = value.charAt(position + 1);
+        char hex2 = value.charAt(position + 2);
+        if (isNotHexDigit(hex1) || isNotHexDigit(hex2)) {
+            throw UrlSecurityException.builder()
+                    .failureType(UrlSecurityFailureType.INVALID_ENCODING)
+                    .validationType(validationType)
+                    .originalInput(value)
+                    .detail("Invalid hex digits in percent encoding at position " + position)
+                    .build();
+        }
+
+        // Check for encoded null byte %00
+        if (hex1 == '0' && hex2 == '0' && !allowNullBytes) {
+            throw UrlSecurityException.builder()
+                    .failureType(UrlSecurityFailureType.NULL_BYTE_INJECTION)
+                    .validationType(validationType)
+                    .originalInput(value)
+                    .detail("Encoded null byte (%00) detected at position " + position)
+                    .build();
+        }
     }
 
     private boolean isNotHexDigit(char ch) {
@@ -147,7 +189,7 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
         }
 
         // Control characters (1-31, excluding null which is handled above)
-        if (ch >= 1 && ch <= 31) {
+        if (ch <= 31) {
             // Always allow common whitespace characters that are in the base character set
             if (allowedChars.get(ch)) {
                 return true;
@@ -157,27 +199,22 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
         }
 
         // Characters 32-127 (basic ASCII) - check against the base character set
-        if (ch >= 32 && ch <= 127) {
+        if (ch <= 127) {
             return allowedChars.get(ch);
         }
 
         // Extended ASCII characters (128-255) - check configuration and base character set
-        if (ch >= 128 && ch <= 255) {
+        if (ch <= 255) {
             return allowHighBitCharacters || allowedChars.get(ch);
         }
 
         // Unicode characters above 255 - allow only if high-bit characters are allowed
         // and the validation type supports it (e.g., BODY content is more permissive than URL paths)
-        if (ch > 255) {
-            // Always reject combining characters (U+0300-U+036F) as they can cause normalization issues
-            if (ch >= 0x0300 && ch <= 0x036F) {
-                return false;
-            }
-            return allowHighBitCharacters && supportsUnicodeCharacters();
+        // Always reject combining characters (U+0300-U+036F) as they can cause normalization issues
+        if (ch >= 0x0300 && ch <= 0x036F) {
+            return false;
         }
-
-        // This should not be reached, but default to false for safety
-        return false;
+        return allowHighBitCharacters && supportsUnicodeCharacters();
     }
 
     /**
@@ -190,7 +227,7 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
         }
 
         // Control characters (1-31)
-        if (ch >= 1 && ch <= 31) {
+        if (ch <= 31) {
             // For headers, control characters are just invalid characters per RFC
             // For other contexts, they're specifically flagged as control characters for security
             if (validationType == ValidationType.HEADER_NAME || validationType == ValidationType.HEADER_VALUE) {
@@ -203,12 +240,7 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
             return UrlSecurityFailureType.CONTROL_CHARACTERS;
         }
 
-        // High-bit characters (128-255) and Unicode characters (> 255)
-        if (ch >= 128) {
-            return UrlSecurityFailureType.INVALID_CHARACTER;
-        }
-
-        // All other invalid characters
+        // All other invalid characters (including high-bit and Unicode)
         return UrlSecurityFailureType.INVALID_CHARACTER;
     }
 

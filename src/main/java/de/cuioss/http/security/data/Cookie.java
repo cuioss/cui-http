@@ -21,7 +21,6 @@ import org.jspecify.annotations.Nullable;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 /**
  * Immutable record representing an HTTP cookie with name, value, and attributes.
@@ -127,6 +126,7 @@ public record Cookie(@Nullable String name, @Nullable String value, @Nullable St
      *
      * @return true if the attributes contain "Secure"
      */
+    @SuppressWarnings("ConstantConditions")
     public boolean isSecure() {
         return hasAttributes() && attributes.toLowerCase().contains("secure");
     }
@@ -136,6 +136,7 @@ public record Cookie(@Nullable String name, @Nullable String value, @Nullable St
      *
      * @return true if the attributes contain "HttpOnly"
      */
+    @SuppressWarnings("ConstantConditions")
     public boolean isHttpOnly() {
         return hasAttributes() && attributes.toLowerCase().contains("httponly");
     }
@@ -146,7 +147,7 @@ public record Cookie(@Nullable String name, @Nullable String value, @Nullable St
      * @return The domain value wrapped in Optional, or empty if not specified
      */
     public Optional<String> getDomain() {
-        return Optional.ofNullable(extractAttributeValue("domain"));
+        return extractAttributeValue("domain");
     }
 
     /**
@@ -155,7 +156,7 @@ public record Cookie(@Nullable String name, @Nullable String value, @Nullable St
      * @return The path value wrapped in Optional, or empty if not specified
      */
     public Optional<String> getPath() {
-        return Optional.ofNullable(extractAttributeValue("path"));
+        return extractAttributeValue("path");
     }
 
     /**
@@ -164,7 +165,7 @@ public record Cookie(@Nullable String name, @Nullable String value, @Nullable St
      * @return The SameSite value (e.g., "Strict", "Lax", "None") wrapped in Optional, or empty if not specified
      */
     public Optional<String> getSameSite() {
-        return Optional.ofNullable(extractAttributeValue("samesite"));
+        return extractAttributeValue("samesite");
     }
 
     /**
@@ -173,7 +174,7 @@ public record Cookie(@Nullable String name, @Nullable String value, @Nullable St
      * @return The Max-Age value as a string wrapped in Optional, or empty if not specified
      */
     public Optional<String> getMaxAge() {
-        return Optional.ofNullable(extractAttributeValue("max-age"));
+        return extractAttributeValue("max-age");
     }
 
     /**
@@ -182,35 +183,11 @@ public record Cookie(@Nullable String name, @Nullable String value, @Nullable St
      * @param attributeName The name of the attribute (case-insensitive)
      * @return The attribute value or null if not found
      */
-    private @Nullable String extractAttributeValue(String attributeName) {
+    private Optional<String> extractAttributeValue(String attributeName) {
         if (!hasAttributes()) {
-            return null;
+            return Optional.empty();
         }
-
-        String lowerAttrs = attributes.toLowerCase();
-        String lowerAttrName = attributeName.toLowerCase();
-
-        // Look for "attributeName=" pattern
-        String searchPattern = lowerAttrName + "=";
-        int startIndex = lowerAttrs.indexOf(searchPattern);
-
-        if (startIndex == -1) {
-            return null;
-        }
-
-        // Find the start of the value
-        int valueStart = startIndex + searchPattern.length();
-        if (valueStart >= attributes.length()) {
-            return null;
-        }
-
-        // Find the end of the value (semicolon or end of string)
-        int valueEnd = attributes.indexOf(';', valueStart);
-        if (valueEnd == -1) {
-            valueEnd = attributes.length();
-        }
-
-        return attributes.substring(valueStart, valueEnd).trim();
+        return AttributeParser.extractAttributeValue(attributes, attributeName);
     }
 
     /**
@@ -218,11 +195,11 @@ public record Cookie(@Nullable String name, @Nullable String value, @Nullable St
      *
      * @return A list of attribute names (may be empty)
      */
+    @SuppressWarnings("ConstantConditions")
     public List<String> getAttributeNames() {
         if (!hasAttributes()) {
             return List.of();
         }
-
         return Arrays.stream(attributes.split(";"))
                 .map(String::trim)
                 .filter(attr -> !attr.isEmpty())
@@ -230,7 +207,7 @@ public record Cookie(@Nullable String name, @Nullable String value, @Nullable St
                     int equalIndex = attr.indexOf('=');
                     return equalIndex > 0 ? attr.substring(0, equalIndex).trim() : attr;
                 })
-                .collect(Collectors.toList());
+                .toList();
     }
 
     /**

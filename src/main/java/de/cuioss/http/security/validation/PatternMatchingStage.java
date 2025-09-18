@@ -123,13 +123,14 @@ ValidationType validationType) implements HttpSecurityValidator {
      * double-encoded, UTF-8 overlong, and mixed encoding attempts.
      */
     private static final Pattern ENCODED_TRAVERSAL_PATTERN = Pattern.compile(
-            "%2e%2e[%2f%5c/\\\\]|%2f%2e%2e|" +
-            "\\.%2e[%2f%5c/\\\\]|%2e\\.[%2f%5c/\\\\]|" +
-            "%252e%252e[%252f%255c]|" +
-            "%c0%ae%c0%ae[%c0%af%c1%9c/\\\\]|%c1%9c%c1%9c|%c1%8s|" +
-            "%c0%ae.*%c0%af|%c1%9c|" +
-            "%2e%2e[/\\\\]{2,}|[.]{2,}[%2f%5c]{1,}|" +
-            "[.]{2}%2f[.]{2}|[.]{2}/%2e%2e",
+            """
+            %2e%2e[%2f%5c/\\\\]|%2f%2e%2e|\
+            \\.%2e[%2f%5c/\\\\]|%2e\\.[%2f%5c/\\\\]|\
+            %252e%252e[%252f%255c]|\
+            %c0%ae%c0%ae[%c0%af%c1%9c/\\\\]|%c1%9c%c1%9c|%c1%8s|\
+            %c0%ae.*%c0%af|%c1%9c|\
+            %2e%2e[/\\\\]{2,}|[.]{2,}[%2f%5c]{1,}|\
+            [.]{2}%2f[.]{2}|[.]{2}/%2e%2e""",
             Pattern.CASE_INSENSITIVE
     );
 

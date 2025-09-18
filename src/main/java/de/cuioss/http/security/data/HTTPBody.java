@@ -263,28 +263,7 @@ public record HTTPBody(@Nullable String content, @Nullable String contentType, @
         if (!hasContentType()) {
             return Optional.empty();
         }
-
-        String lowerContentType = contentType.toLowerCase();
-        String charsetPrefix = "charset=";
-        int charsetIndex = lowerContentType.indexOf(charsetPrefix);
-
-        if (charsetIndex == -1) {
-            return Optional.empty();
-        }
-
-        int startIndex = charsetIndex + charsetPrefix.length();
-        if (startIndex >= contentType.length()) {
-            return Optional.empty();
-        }
-
-        // Find the end of charset value (semicolon or end of string)
-        int endIndex = contentType.indexOf(';', startIndex);
-        if (endIndex == -1) {
-            endIndex = contentType.length();
-        }
-
-        String charset = contentType.substring(startIndex, endIndex).trim();
-        return Optional.of(charset);
+        return AttributeParser.extractAttributeValue(contentType, "charset");
     }
 
     /**
