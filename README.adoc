@@ -66,7 +66,7 @@ project.name=cui java module template
 project.description=Template module for cuioss open source projects.
 
 # Used in pom.xml (property maven.jar.plugin.automatic.module.name)
-project.moduleName=de.cuioss.template
+project.moduleName=de.cuioss.http
 
 # Used in pom.xml (groupId, README.adoc (badges))
 project.groupId=de.cuioss
