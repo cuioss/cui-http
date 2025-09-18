@@ -27,36 +27,10 @@ It is meant to be used as copy-paste-template.
 ----
     <dependency>
         <groupId>de.cuioss</groupId>
-        <artifactId>cui-java-module-template</artifactId>
+        <artifactId>cui-http</artifactId>
     </dependency>
 ----
 
-== Customization
-
-
-
-* `README.adoc` -> the badges on top
-* `pom.xml`
-* `SECURITY.adoc`
-* `.github/project.yml`
-* `src/site/site.xml`
-* `src/site/asciidoc/about.adoc`
-
-=== Credentials
-
-Add the necessary credentials to the project: "Settings" -> "Secrets" -> "Actions", as there are: 
-
-* `GPG_PASSPHRASE` -> Code Signing
-* `GPG_PRIVATE_KEY` -> Code Signing
-* `OSS_SONATYPE_PASSWORD` -> Deploy to maven-central 
-* `OSS_SONATYPE_USERNAME` -> Deploy to maven-central
-* `PAGES_DEPLOY_TOKEN` -> Deploying the result of maven site to https://cuioss.github.io
-* `SONAR_TOKEN` -> Sonar-Cloud
-
-They are picked up in the predefined pipeline-configurations:
-
-* `.github/workflows/maven.yml`
-* `.github/workflows/maven-release.yml`
 
 Ensure that the actions are authorized correctly: Settings > Actions > General > Workflow permissions >  "Read and write permissions" must be selected *not* "Read repository contents permission"
 
