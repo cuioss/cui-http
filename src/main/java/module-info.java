@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 module de.cuioss.http {
-    exports de.cuioss.http;
 
     requires static lombok;
+    requires org.jspecify;
+    requires de.cuioss.java.tools;
+    requires java.net.http;
 }

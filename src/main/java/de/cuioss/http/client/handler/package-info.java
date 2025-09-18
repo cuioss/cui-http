@@ -13,17 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package de.cuioss.http;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
-import org.junit.jupiter.api.Test;
-
-class HelloTest {
-
-    @Test
-    void test() {
-        assertEquals("Hello cui", new Hello().hello("cui"));
-    }
-
-}
+/**
+ * Provides HTTP-related utilities and helpers, such as status family detection and secure SSL context providers.
+ * <p>
+ * See {@link de.cuioss.http.client.handler.HttpHandler}, {@link de.cuioss.http.client.handler.HttpStatusFamily},
+ * and {@link de.cuioss.http.client.handler.SecureSSLContextProvider} for details.
+ */
+package de.cuioss.http.client.handler;
