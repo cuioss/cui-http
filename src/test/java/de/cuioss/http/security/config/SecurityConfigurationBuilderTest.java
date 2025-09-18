@@ -83,12 +83,14 @@ class SecurityConfigurationBuilderTest {
 
     @Test
     void shouldValidatePathLengthPositive() {
+        var builder1 = SecurityConfiguration.builder();
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxPathLength(0));
+                builder1.maxPathLength(0));
         assertTrue(thrown.getMessage().contains("maxPathLength must be positive"));
 
+        var builder2 = SecurityConfiguration.builder();
         IllegalArgumentException thrown2 = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxPathLength(-1));
+                builder2.maxPathLength(-1));
         assertTrue(thrown2.getMessage().contains("maxPathLength must be positive"));
     }
 

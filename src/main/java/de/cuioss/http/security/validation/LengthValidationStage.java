@@ -225,14 +225,5 @@ ValidationType validationType) implements HttpSecurityValidator {
         };
     }
 
-    /**
-     * Returns a string representation of this length validation stage.
-     *
-     * @return String representation including validation type and configured limit
-     */
-    @Override
-    public String toString() {
-        return "LengthValidationStage{validationType=%s, maxLength=%d}".formatted(
-                validationType, getMaxLength());
-    }
+
 }

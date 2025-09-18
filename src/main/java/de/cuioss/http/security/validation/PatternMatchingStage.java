@@ -121,16 +121,29 @@ ValidationType validationType) implements HttpSecurityValidator {
      * Pre-compiled regex pattern for detecting encoded path traversal sequences.
      * Matches various URL-encoded representations of ../ and ..\ patterns including
      * double-encoded, UTF-8 overlong, and mixed encoding attempts.
+     * ReDoS-safe: Uses only atomic patterns without nested or consecutive quantifiers.
      */
-    private static final Pattern ENCODED_TRAVERSAL_PATTERN = Pattern.compile(
+    @SuppressWarnings({"text:S6389", "RegExpDuplicateCharacterInClass"}) private static final Pattern ENCODED_TRAVERSAL_PATTERN = Pattern.compile(
             """
-            %2e%2e[%2f%5c/\\\\]|%2f%2e%2e|\
+            %2e%2e[%2f%5c/\\\\]|\
             \\.%2e[%2f%5c/\\\\]|%2e\\.[%2f%5c/\\\\]|\
             %252e%252e[%252f%255c]|\
             %c0%ae%c0%ae[%c0%af%c1%9c/\\\\]|%c1%9c%c1%9c|%c1%8s|\
-            %c0%ae.*%c0%af|%c1%9c|\
-            %2e%2e[/\\\\]{2,}|[.]{2,}[%2f%5c]{1,}|\
-            [.]{2}%2f[.]{2}|[.]{2}/%2e%2e""",
+            %c0%ae%c0%ae%c0%af|%c0%ae%c0%af|%c1%9c|\
+            %2e%2e//|%2e%2e\\\\\\\\""",
+            Pattern.CASE_INSENSITIVE
+    );
+
+    /**
+     * Pre-compiled regex pattern for detecting multiple dots followed by path separators.
+     * ReDoS-safe: Uses specific atomic patterns without quantifiers that could cause backtracking.
+     */
+    @SuppressWarnings({"text:S6389", "RegExpDuplicateCharacterInClass"}) private static final Pattern DOT_SEPARATOR_PATTERN = Pattern.compile(
+            """
+            \\.\\.[/\\\\%2f%5c]|\
+            \\.\\.\\.[/\\\\%2f%5c]|\
+            \\.\\.\\.\\.\\.[/\\\\%2f%5c]|\
+            \\.\\.\\.\\.\\.\\.[/\\\\%2f%5c]""",
             Pattern.CASE_INSENSITIVE
     );
 
@@ -160,6 +173,7 @@ ValidationType validationType) implements HttpSecurityValidator {
      *                              </ul>
      */
     @Override
+    @SuppressWarnings("java:S3516")
     public String validate(String value) throws UrlSecurityException {
         if (value == null || value.isEmpty()) {
             return value;
@@ -189,6 +203,7 @@ ValidationType validationType) implements HttpSecurityValidator {
         }
 
         // Validation passed - return original value
+        // Note: Always returning input value is correct for validator contract
         return value;
     }
 
@@ -229,7 +244,8 @@ ValidationType validationType) implements HttpSecurityValidator {
 
         // Additional check: Look for any sequence of dots followed by path separators
         // This catches edge cases like multiple dots or mixed separators
-        if (originalValue.matches("(?i).*[.]{2,}[/\\\\%2f%5c]+.*")) {
+        // ReDoS-safe: Using contains() with a compiled pattern instead of matches() with .*
+        if (DOT_SEPARATOR_PATTERN.matcher(originalValue).find()) {
             throw UrlSecurityException.builder()
                     .failureType(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED)
                     .validationType(validationType)
@@ -317,14 +333,5 @@ ValidationType validationType) implements HttpSecurityValidator {
         };
     }
 
-    /**
-     * Returns a string representation of this pattern matching stage.
-     *
-     * @return String representation including validation type and key configuration settings
-     */
-    @Override
-    public String toString() {
-        return "PatternMatchingStage{validationType=%s, failOnSuspicious=%s, caseSensitive=%s}".formatted(
-                validationType, config.failOnSuspiciousPatterns(), config.caseSensitiveComparison());
-    }
+
 }

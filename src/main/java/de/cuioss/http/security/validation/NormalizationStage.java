@@ -363,14 +363,5 @@ ValidationType validationType) implements HttpSecurityValidator {
         };
     }
 
-    /**
-     * Returns a string representation of this normalization stage.
-     *
-     * @return String representation including validation type and key limits
-     */
-    @Override
-    public String toString() {
-        return "NormalizationStage{validationType=%s, maxSegments=%d, maxDepth=%d}".formatted(
-                validationType, MAX_PATH_SEGMENTS, MAX_DIRECTORY_DEPTH);
-    }
+
 }

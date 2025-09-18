@@ -38,64 +38,22 @@ class AttributeParserTest {
     @DisplayName("extractAttributeValue")
     class ExtractAttributeValue {
 
-        @Test
-        @DisplayName("Should extract simple attribute value")
-        void shouldExtractSimpleAttributeValue() {
-            String attributes = "name=value";
-            Optional<String> result = AttributeParser.extractAttributeValue(attributes, "name");
-
+        @ParameterizedTest
+        @CsvSource({
+                "'name=value', 'name', 'value'",
+                "'first=value1; second=value2', 'first', 'value1'",
+                "'first=value1; second=value2', 'second', 'value2'",
+                "'Domain=example.com; Path=/', 'domain', 'example.com'",
+                "'Domain=example.com; Path=/', 'DOMAIN', 'example.com'",
+                "'name=  value with spaces  ', 'name', 'value with spaces'",
+                "'first=value1; last=finalvalue', 'last', 'finalvalue'",
+                "'name=; other=value', 'name', ''"
+        })
+        @DisplayName("Should extract attribute values correctly")
+        void shouldExtractAttributeValues(String attributes, String attributeName, String expected) {
+            Optional<String> result = AttributeParser.extractAttributeValue(attributes, attributeName);
             assertTrue(result.isPresent());
-            assertEquals("value", result.get());
-        }
-
-        @Test
-        @DisplayName("Should extract attribute value from multiple attributes")
-        void shouldExtractFromMultipleAttributes() {
-            String attributes = "first=value1; second=value2; third=value3";
-
-            assertEquals("value1", AttributeParser.extractAttributeValue(attributes, "first").orElse(""));
-            assertEquals("value2", AttributeParser.extractAttributeValue(attributes, "second").orElse(""));
-            assertEquals("value3", AttributeParser.extractAttributeValue(attributes, "third").orElse(""));
-        }
-
-        @Test
-        @DisplayName("Should handle case-insensitive attribute names")
-        void shouldBeCaseInsensitive() {
-            String attributes = "Domain=example.com; Path=/; Secure";
-
-            assertEquals("example.com", AttributeParser.extractAttributeValue(attributes, "domain").orElse(""));
-            assertEquals("example.com", AttributeParser.extractAttributeValue(attributes, "DOMAIN").orElse(""));
-            assertEquals("example.com", AttributeParser.extractAttributeValue(attributes, "DoMaIn").orElse(""));
-        }
-
-        @Test
-        @DisplayName("Should trim whitespace from values")
-        void shouldTrimWhitespace() {
-            String attributes = "name=  value with spaces  ; other=value2";
-            Optional<String> result = AttributeParser.extractAttributeValue(attributes, "name");
-
-            assertTrue(result.isPresent());
-            assertEquals("value with spaces", result.get());
-        }
-
-        @Test
-        @DisplayName("Should handle attribute at end of string")
-        void shouldHandleAttributeAtEnd() {
-            String attributes = "first=value1; last=finalvalue";
-            Optional<String> result = AttributeParser.extractAttributeValue(attributes, "last");
-
-            assertTrue(result.isPresent());
-            assertEquals("finalvalue", result.get());
-        }
-
-        @Test
-        @DisplayName("Should handle attribute with empty value")
-        void shouldHandleEmptyValue() {
-            String attributes = "name=; other=value";
-            Optional<String> result = AttributeParser.extractAttributeValue(attributes, "name");
-
-            assertTrue(result.isPresent());
-            assertEquals("", result.get());
+            assertEquals(expected, result.get());
         }
 
         @Test
@@ -173,6 +131,7 @@ class AttributeParserTest {
 
         @Test
         @DisplayName("Should handle special characters in values")
+        @SuppressWarnings("java:S5976")
         void shouldHandleSpecialCharactersInValues() {
             String attributes = "url=https://example.com/path?query=1&other=2; name=value";
             Optional<String> result = AttributeParser.extractAttributeValue(attributes, "url");

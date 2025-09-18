@@ -70,32 +70,27 @@ public final class HttpHandler {
     /**
      * The URI to be used for HTTP requests.
      */
-    @Getter
-    private final URI uri;
+    @Getter private final URI uri;
 
     /**
      * The URL representation of the URI.
      */
-    @Getter
-    private final URL url;
+    @Getter private final URL url;
 
     /**
      * The SSL context to be used for HTTPS connections.
      */
-    @Getter
-    private final SSLContext sslContext;
+    @Getter private final SSLContext sslContext;
 
     /**
      * The connection timeout in seconds for HTTP requests.
      */
-    @Getter
-    private final int connectionTimeoutSeconds;
+    @Getter private final int connectionTimeoutSeconds;
 
     /**
      * The read timeout in seconds for HTTP requests.
      */
-    @Getter
-    private final int readTimeoutSeconds;
+    @Getter private final int readTimeoutSeconds;
 
 
     /**

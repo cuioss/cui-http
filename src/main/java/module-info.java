@@ -19,4 +19,5 @@ module de.cuioss.http {
     requires org.jspecify;
     requires de.cuioss.java.tools;
     requires java.net.http;
+    requires org.jetbrains.annotations;
 }

@@ -15,6 +15,7 @@
  */
 package de.cuioss.http.security.generators.url;
 
+import de.cuioss.http.security.config.SecurityDefaults;
 import de.cuioss.test.generator.Generators;
 import de.cuioss.test.generator.TypedGenerator;
 
@@ -31,8 +32,6 @@ public class ValidURLGenerator implements TypedGenerator<String> {
     private final TypedGenerator<Integer> pathTypeGen = Generators.integers(1, 7);
     private final TypedGenerator<Integer> sortTypeGen = Generators.integers(1, 2);
 
-    // TODO: Replace with UrlSecurityConfig.DEFAULT_MAX_PATH_LENGTH once available (Phase 3)
-    private static final int DEFAULT_MAX_PATH_LENGTH = 2048;
 
     private final TypedGenerator<Boolean> paramGen = Generators.booleans();
     private final TypedGenerator<Integer> pageGen = Generators.integers(1, 100);
@@ -54,9 +53,9 @@ public class ValidURLGenerator implements TypedGenerator<String> {
             }
         }
 
-        // Ensure within DEFAULT_MAX_PATH_LENGTH (2048)
-        if (path.length() > DEFAULT_MAX_PATH_LENGTH) {
-            path = path.substring(0, DEFAULT_MAX_PATH_LENGTH);
+        // Ensure within SecurityDefaults.MAX_PATH_LENGTH_DEFAULT (4096)
+        if (path.length() > SecurityDefaults.MAX_PATH_LENGTH_DEFAULT) {
+            path = path.substring(0, SecurityDefaults.MAX_PATH_LENGTH_DEFAULT);
         }
 
         return path;

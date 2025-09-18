@@ -39,7 +39,6 @@ class DecodingStageTest {
 
     private SecurityConfiguration defaultConfig;
     private SecurityConfiguration strictConfig;
-    private SecurityConfiguration lenientConfig;
     private DecodingStage pathDecoder;
     private DecodingStage parameterDecoder;
 
@@ -47,7 +46,6 @@ class DecodingStageTest {
     void setUp() {
         defaultConfig = SecurityConfiguration.defaults();
         strictConfig = SecurityConfiguration.strict();
-        lenientConfig = SecurityConfiguration.lenient();
 
         pathDecoder = new DecodingStage(defaultConfig, ValidationType.URL_PATH);
         parameterDecoder = new DecodingStage(defaultConfig, ValidationType.PARAMETER_VALUE);
@@ -201,16 +199,14 @@ class DecodingStageTest {
 
         // If the input changes during normalization, it should throw an exception
         // Note: This depends on the exact Unicode composition
-        if (!decomposed.equals(composed)) {
-            UrlSecurityException exception = assertThrows(UrlSecurityException.class,
-                    () -> unicodeDecoder.validate(decomposed));
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> unicodeDecoder.validate(decomposed));
 
-            assertEquals(UrlSecurityFailureType.UNICODE_NORMALIZATION_CHANGED, exception.getFailureType());
-            assertEquals(decomposed, exception.getOriginalInput());
-            assertEquals(Optional.of(composed), exception.getSanitizedInput());
-            assertTrue(exception.getDetail().isPresent());
-            assertTrue(exception.getDetail().get().contains("Unicode normalization changed"));
-        }
+        assertEquals(UrlSecurityFailureType.UNICODE_NORMALIZATION_CHANGED, exception.getFailureType());
+        assertEquals(decomposed, exception.getOriginalInput());
+        assertEquals(Optional.of(composed), exception.getSanitizedInput());
+        assertTrue(exception.getDetail().isPresent());
+        assertTrue(exception.getDetail().get().contains("Unicode normalization changed"));
     }
 
     @Test
@@ -255,6 +251,7 @@ class DecodingStageTest {
 
     @Test
     @DisplayName("Should be immutable and thread-safe")
+    @SuppressWarnings("java:S1612")
     void shouldBeImmutableAndThreadSafe() {
         // Verify immutability via Lombok @Value annotation (check class methods are present)
         // Lombok @Value generates equals, hashCode, toString, and makes fields final
@@ -289,6 +286,7 @@ class DecodingStageTest {
 
         // Wait for all threads
         for (Thread thread : threads) {
+
             assertDoesNotThrow(() -> thread.join());
         }
 
@@ -377,6 +375,7 @@ class DecodingStageTest {
 
     @Test
     @DisplayName("Should NOT decode HTML entities - application layer responsibility")
+    @SuppressWarnings("java:S5961")
     void shouldNotDecodeHtmlEntities() {
         // HTML entities should pass through unchanged - they are application-layer encodings
         assertEquals("&lt;/script&gt;", pathDecoder.validate("&lt;/script&gt;"));
@@ -401,6 +400,7 @@ class DecodingStageTest {
 
     @Test
     @DisplayName("Should NOT decode JavaScript escapes - application layer responsibility")
+    @SuppressWarnings("java:S5961")
     void shouldNotDecodeJavaScriptEscapes() {
         // JavaScript escapes should pass through unchanged - they are application-layer encodings
         assertEquals("\\x3c/script\\x3e", pathDecoder.validate("\\x3c/script\\x3e"));
@@ -530,8 +530,19 @@ class DecodingStageTest {
     @DisplayName("Should handle HTTP protocol-layer encoding scenarios correctly")
     @MethodSource("httpProtocolEncodingScenarios")
     void shouldHandleHttpProtocolEncodingScenarios(String input, String expected, String description) {
+        // Specifically test that only HTTP protocol-layer encoding is processed
+        // while application-layer encodings (HTML entities, JS escapes) pass through unchanged
         String result = pathDecoder.validate(input);
         assertEquals(expected, result, description);
+
+        // Additional validation: ensure the result contains expected patterns for application-layer encodings
+        if (description.contains("pass through")) {
+            // For pass-through scenarios, input and result should be identical (no decoding occurred)
+            assertEquals(input, result, "Application-layer encoding should pass through unchanged");
+        } else if (description.contains("URL encoded")) {
+            // For URL encoding scenarios, ensure actual decoding occurred
+            assertNotEquals(input, result, "URL encoding should be decoded at HTTP protocol layer");
+        }
     }
 
     @ParameterizedTest

@@ -222,8 +222,6 @@ class NormalizationStageTest {
         String stringRepresentation = stage.toString();
         assertTrue(stringRepresentation.contains("NormalizationStage"));
         assertTrue(stringRepresentation.contains("URL_PATH"));
-        assertTrue(stringRepresentation.contains("maxSegments=1000"));
-        assertTrue(stringRepresentation.contains("maxDepth=100"));
     }
 
     /**

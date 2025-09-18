@@ -43,6 +43,7 @@ import java.util.List;
  *
  * @since 2.5
  */
+@SuppressWarnings("text:S6389")
 public class IDNAttackDatabase implements AttackDatabase {
 
     // Homograph attacks - visually similar characters

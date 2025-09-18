@@ -241,7 +241,6 @@ class UrlSecurityFailureTypeTest {
     void shouldBeSerializable(UrlSecurityFailureType type) {
         // This would work in actual serialization
         assertNotNull(type.name());
-        assertNotNull(type.ordinal());
     }
 
     @Test

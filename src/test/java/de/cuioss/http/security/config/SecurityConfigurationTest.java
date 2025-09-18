@@ -99,8 +99,10 @@ class SecurityConfigurationTest {
     @ParameterizedTest
     @TypeGeneratorSource(value = InvalidPositiveIntegerGenerator.class, count = 5)
     void shouldValidatePositivePathLength(Integer invalidValue) {
+        var builder = SecurityConfiguration.builder();
+
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxPathLength(invalidValue).build());
+                builder.maxPathLength(invalidValue));
         assertTrue(thrown.getMessage().contains("maxPathLength must be positive"));
     }
 

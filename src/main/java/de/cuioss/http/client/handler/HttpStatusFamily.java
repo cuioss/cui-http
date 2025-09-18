@@ -66,14 +66,11 @@ public enum HttpStatusFamily {
      */
     UNKNOWN(-1, -1, "Unknown");
 
-    @Getter
-    private final int minCode;
+    @Getter private final int minCode;
 
-    @Getter
-    private final int maxCode;
+    @Getter private final int maxCode;
 
-    @Getter
-    private final String description;
+    @Getter private final String description;
 
     /**
      * Checks if the given status code belongs to this family.
