@@ -16,10 +16,7 @@ https://cuioss.github.io/cui-java-module-template/about.html[Generated Documenta
 
 == What is it?
 
-This is a template repository for creating java-modules for cui-open-source-projects. This incorporates all necessary java-structures, including `pom.xml`, sensible project-documentation, 
-an predefined github pipelines. 
-
-It is meant to be used as copy-paste-template.
+CUI-HTTP is a library that provides a collection of utilities and abstractions to facilitate HTTP communication in Java applications. It aims to simplify the process of making HTTP requests and handling responses, while also providing features for common HTTP-related tasks.
 
 === Maven Coordinates
 
@@ -31,48 +28,3 @@ It is meant to be used as copy-paste-template.
     </dependency>
 ----
 
-
-Ensure that the actions are authorized correctly: Settings > Actions > General > Workflow permissions >  "Read and write permissions" must be selected *not* "Read repository contents permission"
-
-Documentation on how to create a signing key can be found https://github.com/cuioss/cui-parent-pom/blob/master/doc/signing_key.adoc[Documentation at cui-parent-pom] 
-
-A sonar token can be derived from https://sonarcloud.io/account/security
-
-=== Further Steps
-
-* Verify that the customization was applied correctly to all files
-* If you're using manual customization:
-** `pom.xml`: Adjust `name` and `description` elements
-** Adjust `module-info` accordingly
-** `pom.xml`: Adjust property `maven.jar.plugin.automatic.module.name` according to your `module-info`
-* `src/site/asciidoc/about.adoc`: Adjust content
-* Review / Enable the elements under 'Security' Tab
-* Review / Add Collaborators
-* Add (link) the resulting maven-documentation: https://github.com/cuioss/cuioss.github.io/edit/main/README.md[github.io-documentation]
-
-=== Customization Properties
-
-The `customization.properties` file controls how the project is customized:
-
-[source,properties]
-----
-# Used in pom.xml (artifactId), README.adoc (badges), .github/project.yml (name, pages-reference) src/site/site.xml (links), SECURITY.md (links)
-project.key=cui-java-module-template
-
-# Used in pom.xml (<n> tag)
-project.name=cui java module template
-
-# Used in pom.xml (<description> tag)
-project.description=Template module for cuioss open source projects.
-
-# Used in pom.xml (property maven.jar.plugin.automatic.module.name)
-project.moduleName=de.cuioss.http
-
-# Used in pom.xml (groupId, README.adoc (badges))
-project.groupId=de.cuioss
-----
-
-The script automatically derives additional properties:
-* `project.scm.url` - SCM URL based on the project key
-* `project.pages.url` - GitHub Pages URL based on the project key
-* `project.sonar.id` - Sonar ID based on the project key 
