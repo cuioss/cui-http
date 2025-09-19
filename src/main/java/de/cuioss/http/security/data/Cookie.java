@@ -210,22 +210,10 @@ public record Cookie(@Nullable String name, @Nullable String value, @Nullable St
                 .toList();
     }
 
-    /**
-     * Returns the cookie name, or a default value if the name is null.
-     *
-     * @param defaultName The default name to return if name is null
-     * @return The cookie name or the default
-     */
     public String nameOrDefault(String defaultName) {
         return name != null ? name : defaultName;
     }
 
-    /**
-     * Returns the cookie value, or a default value if the value is null.
-     *
-     * @param defaultValue The default value to return if value is null
-     * @return The cookie value or the default
-     */
     public String valueOrDefault(String defaultValue) {
         return value != null ? value : defaultValue;
     }

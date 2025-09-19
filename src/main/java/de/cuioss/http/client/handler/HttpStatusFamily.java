@@ -19,19 +19,70 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Enum representing HTTP status code families as defined in RFC 7231.
- * <p>
- * The HTTP status codes are grouped into five classes:
+ * HTTP status code classification enum based on RFC 7231 status code families.
+ *
+ * <p>This enum provides a type-safe way to classify HTTP status codes into their standard
+ * families as defined by RFC 7231. It includes utility methods for checking status code
+ * categories and determining appropriate response handling strategies.</p>
+ *
+ * <h3>Design Principles</h3>
  * <ul>
- *   <li>1xx: Informational - Request received, continuing process</li>
- *   <li>2xx: Success - The action was successfully received, understood, and accepted</li>
- *   <li>3xx: Redirection - Further action needs to be taken in order to complete the request</li>
- *   <li>4xx: Client Error - The request contains bad syntax or cannot be fulfilled</li>
- *   <li>5xx: Server Error - The server failed to fulfill an apparently valid request</li>
+ *   <li><strong>RFC Compliance</strong> - Follows RFC 7231 HTTP status code definitions</li>
+ *   <li><strong>Type Safety</strong> - Enum-based classification prevents invalid categories</li>
+ *   <li><strong>Utility Methods</strong> - Convenient static methods for common checks</li>
+ *   <li><strong>Range Validation</strong> - Validates status codes against standard ranges</li>
  * </ul>
- * <p>
- * This enum provides methods to check if a status code belongs to a particular family
- * and to get the family for a given status code.
+ *
+ * <h3>Status Code Families</h3>
+ * <ul>
+ *   <li><strong>1xx Informational</strong> - Request received, continuing process (100-199)</li>
+ *   <li><strong>2xx Success</strong> - Action successfully received, understood, and accepted (200-299)</li>
+ *   <li><strong>3xx Redirection</strong> - Further action must be taken to complete request (300-399)</li>
+ *   <li><strong>4xx Client Error</strong> - Request contains bad syntax or cannot be fulfilled (400-499)</li>
+ *   <li><strong>5xx Server Error</strong> - Server failed to fulfill apparently valid request (500-599)</li>
+ *   <li><strong>Unknown</strong> - Status codes outside standard ranges or error conditions</li>
+ * </ul>
+ *
+ * <h3>Usage Examples</h3>
+ * <pre>
+ * // Classify status codes
+ * HttpStatusFamily family = HttpStatusFamily.fromStatusCode(200);
+ * assert family == HttpStatusFamily.SUCCESS;
+ *
+ * // Check for success
+ * if (HttpStatusFamily.isSuccess(response.statusCode())) {
+ *     // Handle successful response
+ * }
+ *
+ * // Check for errors
+ * if (HttpStatusFamily.isClientError(response.statusCode())) {
+ *     // Handle client error (4xx)
+ * } else if (HttpStatusFamily.isServerError(response.statusCode())) {
+ *     // Handle server error (5xx)
+ * }
+ *
+ * // Validate status code range
+ * if (HttpStatusFamily.isValid(statusCode)) {
+ *     // Process valid HTTP status code
+ * }
+ *
+ * // Family-specific checks
+ * HttpStatusFamily family = HttpStatusFamily.REDIRECTION;
+ * if (family.contains(302)) {
+ *     // Handle redirection logic
+ * }
+ * </pre>
+ *
+ * <h3>Common Status Codes by Family</h3>
+ * <ul>
+ *   <li><strong>2xx Success:</strong> 200 OK, 201 Created, 204 No Content</li>
+ *   <li><strong>3xx Redirection:</strong> 301 Moved Permanently, 302 Found, 304 Not Modified</li>
+ *   <li><strong>4xx Client Error:</strong> 400 Bad Request, 401 Unauthorized, 404 Not Found</li>
+ *   <li><strong>5xx Server Error:</strong> 500 Internal Server Error, 502 Bad Gateway, 503 Service Unavailable</li>
+ * </ul>
+ *
+ * @since 1.0
+ * @see HttpHandler
  */
 @RequiredArgsConstructor
 public enum HttpStatusFamily {
@@ -67,9 +118,7 @@ public enum HttpStatusFamily {
     UNKNOWN(-1, -1, "Unknown");
 
     @Getter private final int minCode;
-
     @Getter private final int maxCode;
-
     @Getter private final String description;
 
     /**

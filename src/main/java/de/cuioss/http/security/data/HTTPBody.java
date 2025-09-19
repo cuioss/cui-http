@@ -97,99 +97,42 @@ import java.util.Optional;
  */
 public record HTTPBody(@Nullable String content, @Nullable String contentType, @Nullable String encoding) {
 
-    /**
-     * Creates an HTTPBody with just content and content type, no encoding.
-     *
-     * @param content The body content
-     * @param contentType The content type
-     * @return An HTTPBody with no encoding
-     */
     public static HTTPBody of(String content, String contentType) {
         return new HTTPBody(content, contentType, "");
     }
 
-
-    /**
-     * Creates a simple text HTTPBody.
-     *
-     * @param content The text content
-     * @return An HTTPBody with text/plain content type and no encoding
-     */
     public static HTTPBody text(String content) {
         return new HTTPBody(content, "text/plain", "");
     }
 
-    /**
-     * Creates a JSON HTTPBody.
-     *
-     * @param jsonContent The JSON content
-     * @return An HTTPBody with application/json content type and no encoding
-     */
     public static HTTPBody json(String jsonContent) {
         return new HTTPBody(jsonContent, "application/json", "");
     }
 
-    /**
-     * Creates an HTML HTTPBody.
-     *
-     * @param htmlContent The HTML content
-     * @return An HTTPBody with text/html content type and no encoding
-     */
     public static HTTPBody html(String htmlContent) {
         return new HTTPBody(htmlContent, "text/html", "");
     }
 
-    /**
-     * Creates a form data HTTPBody.
-     *
-     * @param formContent The form-encoded content
-     * @return An HTTPBody with application/x-www-form-urlencoded content type and no encoding
-     */
     public static HTTPBody form(String formContent) {
         return new HTTPBody(formContent, "application/x-www-form-urlencoded", "");
     }
 
-    /**
-     * Checks if this body has non-null, non-empty content.
-     *
-     * @return true if the content is not null and not empty
-     */
     public boolean hasContent() {
         return content != null && !content.isEmpty();
     }
 
-    /**
-     * Checks if this body has a specified content type.
-     *
-     * @return true if the content type is not null and not empty
-     */
     public boolean hasContentType() {
         return contentType != null && !contentType.isEmpty();
     }
 
-    /**
-     * Checks if this body has a specified encoding.
-     *
-     * @return true if the encoding is not null and not empty
-     */
     public boolean hasEncoding() {
         return encoding != null && !encoding.isEmpty();
     }
 
-    /**
-     * Checks if the content is compressed (has encoding specified).
-     *
-     * @return true if encoding is specified, indicating compressed content
-     */
     public boolean isCompressed() {
         return hasEncoding();
     }
 
-    /**
-     * Checks if the content type indicates JSON content.
-     *
-     * @return true if the content type contains "json"
-     */
     public boolean isJson() {
         return hasContentType() && contentType.toLowerCase().contains("json");
     }

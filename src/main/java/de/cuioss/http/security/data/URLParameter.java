@@ -146,22 +146,10 @@ public record URLParameter(@Nullable String name, @Nullable String value) {
         return name + "=" + value;
     }
 
-    /**
-     * Returns a copy of this parameter with a new name.
-     *
-     * @param newName The new parameter name
-     * @return A new URLParameter with the specified name and the same value
-     */
     public URLParameter withName(String newName) {
         return new URLParameter(newName, value);
     }
 
-    /**
-     * Returns a copy of this parameter with a new value.
-     *
-     * @param newValue The new parameter value
-     * @return A new URLParameter with the same name and the specified value
-     */
     public URLParameter withValue(String newValue) {
         return new URLParameter(name, newValue);
     }

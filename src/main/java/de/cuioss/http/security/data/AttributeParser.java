@@ -18,13 +18,50 @@ package de.cuioss.http.security.data;
 import java.util.Optional;
 
 /**
- * Utility class for parsing attribute values from strings like HTTP headers and cookies.
+ * Utility class for parsing attribute values from HTTP headers and cookie strings.
  *
- * <p>This class provides a common implementation for extracting attribute values
- * from strings that follow the pattern "attributeName=value" where attributes
- * are separated by semicolons.</p>
+ * <p>This utility provides a common implementation for extracting attribute values
+ * from strings that follow the semicolon-separated pattern common in HTTP headers
+ * and cookie attributes (e.g., "name=value; attr1=val1; attr2=val2").</p>
+ *
+ * <h3>Design Principles</h3>
+ * <ul>
+ *   <li><strong>Case Insensitive</strong> - Attribute name matching is case-insensitive</li>
+ *   <li><strong>Robust Parsing</strong> - Handles edge cases like missing values and whitespace</li>
+ *   <li><strong>Stateless</strong> - All methods are static and thread-safe</li>
+ *   <li><strong>Utility Class</strong> - Cannot be instantiated</li>
+ * </ul>
+ *
+ * <h3>Supported Formats</h3>
+ * <ul>
+ *   <li>Cookie attributes: "sessionId=ABC123; Domain=example.com; Secure; HttpOnly"</li>
+ *   <li>Header parameters: "multipart/form-data; boundary=----WebKitFormBoundary"</li>
+ *   <li>Content-Type: "text/html; charset=UTF-8"</li>
+ * </ul>
+ *
+ * <h3>Usage Examples</h3>
+ * <pre>
+ * // Extract domain from cookie attributes
+ * String cookieAttrs = "Domain=example.com; Path=/; Secure; HttpOnly";
+ * Optional&lt;String&gt; domain = AttributeParser.extractAttributeValue(cookieAttrs, "Domain");
+ * // Returns: Optional.of("example.com")
+ *
+ * // Extract charset from content type
+ * String contentType = "text/html; charset=UTF-8; boundary=xyz";
+ * Optional&lt;String&gt; charset = AttributeParser.extractAttributeValue(contentType, "charset");
+ * // Returns: Optional.of("UTF-8")
+ *
+ * // Missing attribute
+ * Optional&lt;String&gt; missing = AttributeParser.extractAttributeValue(cookieAttrs, "MaxAge");
+ * // Returns: Optional.empty()
+ * </pre>
+ *
+ * <p><strong>Package-private:</strong> This class is intended for internal use within the
+ * data package for parsing HTTP-related attribute strings.</p>
  *
  * @since 1.0
+ * @see Cookie
+ * @see HTTPBody
  */
 final class AttributeParser {
 

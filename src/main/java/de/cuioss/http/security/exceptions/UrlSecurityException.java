@@ -76,20 +76,8 @@ public class UrlSecurityException extends RuntimeException {
      */
     private static final Pattern CONTROL_CHARS_PATTERN = Pattern.compile("[\\x00-\\x1F\\x7F]");
 
-    /**
-     * The type of security failure that occurred.
-     */
     @Getter private final UrlSecurityFailureType failureType;
-
-    /**
-     * The type of HTTP component that was being validated.
-     */
     @Getter private final ValidationType validationType;
-
-    /**
-     * The original input that caused the security violation.
-     *
-     */
     @Getter private final String originalInput;
     private final String sanitizedInput;
     private final String detail;

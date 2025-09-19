@@ -27,11 +27,82 @@ import org.jspecify.annotations.Nullable;
 import java.util.BitSet;
 
 /**
- * Validates characters according to RFC 3986 for URLs.
- * MUST be the second stage after length validation.
- * Rejects invalid characters BEFORE any decoding/processing.
- * Immutable and thread-safe.
- * Implemented by: Task V5
+ * Character validation stage that enforces RFC-compliant character sets for HTTP components.
+ *
+ * <p>This stage validates input characters against component-specific allowed character sets,
+ * ensuring compliance with HTTP specifications and preventing character-based security attacks.
+ * It performs comprehensive character validation including null byte detection, control character
+ * filtering, and percent-encoding validation.</p>
+ *
+ * <h3>Design Principles</h3>
+ * <ul>
+ *   <li><strong>RFC Compliance</strong> - Enforces RFC 3986 (URI) and RFC 7230 (HTTP) character rules</li>
+ *   <li><strong>Security First</strong> - Rejects dangerous characters before any processing</li>
+ *   <li><strong>Context Aware</strong> - Different character sets for different HTTP components</li>
+ *   <li><strong>Performance Optimized</strong> - Uses BitSet for O(1) character lookups</li>
+ *   <li><strong>Configurable</strong> - Allows fine-tuning of character validation rules</li>
+ * </ul>
+ *
+ * <h3>Character Validation Rules</h3>
+ * <ul>
+ *   <li><strong>URL Paths</strong> - RFC 3986 unreserved + path-specific characters</li>
+ *   <li><strong>Parameters</strong> - RFC 3986 query characters with percent-encoding support</li>
+ *   <li><strong>Headers</strong> - RFC 7230 visible ASCII minus delimiters</li>
+ *   <li><strong>Cookies</strong> - Restricted character set for cookie safety</li>
+ *   <li><strong>Bodies</strong> - Content-type specific character validation</li>
+ * </ul>
+ *
+ * <h3>Security Features</h3>
+ * <ul>
+ *   <li><strong>Null Byte Detection</strong> - Prevents null byte injection attacks</li>
+ *   <li><strong>Control Character Filtering</strong> - Blocks dangerous control characters</li>
+ *   <li><strong>Percent Encoding Validation</strong> - Validates hex digit sequences</li>
+ *   <li><strong>High-Bit Character Control</strong> - Configurable handling of non-ASCII characters</li>
+ * </ul>
+ *
+ * <h3>Usage Examples</h3>
+ * <pre>
+ * // Create character validation stage
+ * SecurityConfiguration config = SecurityConfiguration.defaults();
+ * CharacterValidationStage validator = new CharacterValidationStage(config, ValidationType.URL_PATH);
+ *
+ * // Validate URL path characters
+ * try {
+ *     validator.validate("/api/users/123"); // Valid path characters
+ *     validator.validate("/api/../etc/passwd"); // May contain invalid traversal patterns
+ * } catch (UrlSecurityException e) {
+ *     logger.warn("Invalid characters detected: {}", e.getFailureType());
+ * }
+ *
+ * // Validate parameter with percent encoding
+ * CharacterValidationStage paramValidator = new CharacterValidationStage(config, ValidationType.PARAMETER_VALUE);
+ * try {
+ *     paramValidator.validate("hello%20world"); // Valid percent-encoded space
+ *     paramValidator.validate("hello%00world"); // Null byte - will be rejected
+ * } catch (UrlSecurityException e) {
+ *     logger.warn("Character validation failed: {}", e.getDetail());
+ * }
+ * </pre>
+ *
+ * <h3>Configuration Options</h3>
+ * <ul>
+ *   <li><strong>allowNullBytes</strong> - Whether to permit null bytes (default: false)</li>
+ *   <li><strong>allowControlCharacters</strong> - Whether to permit control characters (default: false)</li>
+ *   <li><strong>allowHighBitCharacters</strong> - Whether to permit non-ASCII characters (default: false)</li>
+ * </ul>
+ *
+ * <h3>Performance Characteristics</h3>
+ * <ul>
+ *   <li>O(n) time complexity where n is input length</li>
+ *   <li>O(1) character lookup using BitSet</li>
+ *   <li>Early termination on first invalid character</li>
+ *   <li>Minimal memory allocation during validation</li>
+ * </ul>
+ *
+ * @see CharacterValidationConstants
+ * @see SecurityConfiguration
+ * @see ValidationType
+ * @since 1.0
  */
 @EqualsAndHashCode
 @ToString

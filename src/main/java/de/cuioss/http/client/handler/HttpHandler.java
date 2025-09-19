@@ -38,26 +38,80 @@ import java.time.Duration;
 import java.util.regex.Pattern;
 
 /**
- * A common wrapper around {@link HttpClient} that provides a builder for collecting
- * HTTP request attributes and methods for executing HTTP requests.
- * It provides a consistent way to configure and execute HTTP requests with proper
- * SSL context handling and timeout configuration.
- * <strong>Contract:</strong>
+ * Secure HTTP client wrapper providing simplified HTTP request execution with robust SSL handling.
+ *
+ * <p>This class provides a builder-based wrapper around Java's {@link HttpClient} that simplifies
+ * HTTP request configuration and execution while ensuring secure defaults for SSL/TLS connections.
+ * It handles common HTTP client setup patterns and provides consistent timeout and SSL management.</p>
+ *
+ * <h3>Design Principles</h3>
  * <ul>
- *   <li>The URI/URL must be valid and convertible to a URL. Invalid URIs will cause
- *       an {@link IllegalStateException} during build.</li>
- *   <li>For HTTPS connections, a valid {@link SSLContext} is required. If not explicitly
- *       provided, one will be automatically created during build.</li>
+ *   <li><strong>Security First</strong> - Automatic secure SSL context creation for HTTPS</li>
+ *   <li><strong>Builder Pattern</strong> - Fluent API for easy configuration</li>
+ *   <li><strong>Immutable</strong> - Thread-safe after construction</li>
+ *   <li><strong>Fail Fast</strong> - Validates configuration at build time</li>
  * </ul>
  *
- * Use the builder to create instances of this class:
+ * <h3>Security Features</h3>
+ * <ul>
+ *   <li><strong>Automatic SSL Context</strong> - Creates secure SSL contexts when not provided</li>
+ *   <li><strong>TLS Version Control</strong> - Uses {@link SecureSSLContextProvider} for modern TLS versions</li>
+ *   <li><strong>URL Validation</strong> - Validates URI format and convertibility at build time</li>
+ *   <li><strong>Timeout Protection</strong> - Configurable timeouts prevent resource exhaustion</li>
+ * </ul>
+ *
+ * <h3>Usage Examples</h3>
  * <pre>
+ * // Basic HTTPS request
  * HttpHandler handler = HttpHandler.builder()
- *     .uri("https://example.com/api")
+ *     .uri("https://api.example.com/users")
  *     .connectionTimeoutSeconds(5)
  *     .readTimeoutSeconds(10)
  *     .build();
+ *
+ * // Execute GET request
+ * HttpResponse&lt;String&gt; response = handler.executeGetRequest();
+ * if (response.statusCode() == 200) {
+ *     String body = response.body();
+ *     // Process response
+ * }
+ *
+ * // Custom SSL context
+ * SSLContext customSSL = mySecureSSLProvider.getSSLContext();
+ * HttpHandler secureHandler = HttpHandler.builder()
+ *     .uri("https://secure.example.com/api")
+ *     .sslContext(customSSL)
+ *     .build();
+ *
+ * // URI object
+ * URI apiEndpoint = URI.create("https://example.com/api/v1/data");
+ * HttpHandler uriHandler = HttpHandler.builder()
+ *     .uri(apiEndpoint)
+ *     .build();
  * </pre>
+ *
+ * <h3>Configuration Contract</h3>
+ * <ul>
+ *   <li><strong>URI Validation</strong> - URI must be valid and convertible to URL (checked at build time)</li>
+ *   <li><strong>HTTPS SSL Context</strong> - Automatically created if not provided for HTTPS URIs</li>
+ *   <li><strong>Timeout Defaults</strong> - Uses 10 seconds for both connection and read timeouts if not specified</li>
+ *   <li><strong>URL Scheme Detection</strong> - Automatically handles URLs with or without explicit schemes</li>
+ * </ul>
+ *
+ * <h3>Thread Safety</h3>
+ * <p>HttpHandler instances are immutable and thread-safe after construction. The underlying
+ * {@link HttpClient} is also thread-safe and can be used concurrently from multiple threads.</p>
+ *
+ * <h3>Error Handling</h3>
+ * <ul>
+ *   <li><strong>Build-time Validation</strong> - {@link IllegalStateException} for invalid URIs or configuration</li>
+ *   <li><strong>Runtime Exceptions</strong> - {@link IOException} for network errors, {@link InterruptedException} for thread interruption</li>
+ * </ul>
+ *
+ * @since 1.0
+ * @see HttpClient
+ * @see SecureSSLContextProvider
+ * @see HttpStatusFamily
  */
 @EqualsAndHashCode
 @ToString
@@ -76,37 +130,13 @@ public final class HttpHandler {
     public static final int DEFAULT_CONNECTION_TIMEOUT_SECONDS = 10;
     public static final int DEFAULT_READ_TIMEOUT_SECONDS = 10;
 
-    /**
-     * The URI to be used for HTTP requests.
-     */
     @Getter private final URI uri;
-
-    /**
-     * The URL representation of the URI.
-     */
     @Getter private final URL url;
-
-    /**
-     * The SSL context to be used for HTTPS connections.
-     */
     @Getter private final SSLContext sslContext;
-
-    /**
-     * The connection timeout in seconds for HTTP requests.
-     */
     @Getter private final int connectionTimeoutSeconds;
-
-    /**
-     * The read timeout in seconds for HTTP requests.
-     */
     @Getter private final int readTimeoutSeconds;
 
 
-    /**
-     * Returns a new builder for creating a {@link HttpHandler} instance.
-     *
-     * @return A new builder instance.
-     */
     public static HttpHandlerBuilder builder() {
         return new HttpHandlerBuilder();
     }
