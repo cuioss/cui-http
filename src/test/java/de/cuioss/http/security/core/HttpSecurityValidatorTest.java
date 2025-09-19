@@ -20,7 +20,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -41,6 +40,7 @@ class HttpSecurityValidatorTest {
     }
 
     @Test
+    @SuppressWarnings("ConstantConditions")
     void shouldSupportMethodReference() {
         // Verify it can be used with method references
         HttpSecurityValidator validator = String::toUpperCase;
@@ -105,8 +105,9 @@ class HttpSecurityValidatorTest {
     }
 
     @Test
+    @SuppressWarnings("ConstantConditions")
     void shouldSupportConditionalValidation() {
-        HttpSecurityValidator validator = input -> input.toUpperCase();
+        HttpSecurityValidator validator = String::toUpperCase;
         HttpSecurityValidator conditionalValidator = validator.when(input -> input.startsWith("test"));
 
         assertEquals("TESTVALUE", conditionalValidator.validate("testValue"), "Conditional validator should transform input when predicate matches");
@@ -170,12 +171,13 @@ class HttpSecurityValidatorTest {
     }
 
     @Test
+    @SuppressWarnings("ConstantConditions")
     void shouldSupportComplexComposition() {
         // Create a pipeline: trim -> lowercase -> reject if contains "bad"
         HttpSecurityValidator trimmer = String::trim;
         HttpSecurityValidator lowercaser = String::toLowerCase;
         HttpSecurityValidator badWordRejecter = input -> {
-            if (input.contains("bad")) {
+            if (input != null && input.contains("bad")) {
                 throw UrlSecurityException.builder()
                         .failureType(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED)
                         .validationType(ValidationType.URL_PATH)
@@ -195,8 +197,9 @@ class HttpSecurityValidatorTest {
     }
 
     @Test
+    @SuppressWarnings("ConstantConditions")
     void shouldSupportConditionalPipeline() {
-        HttpSecurityValidator processor = input -> input.toUpperCase();
+        HttpSecurityValidator processor = String::toUpperCase;
         HttpSecurityValidator conditionalProcessor = processor.when(input ->
                 input != null && input.startsWith("process:"));
 
@@ -211,8 +214,7 @@ class HttpSecurityValidatorTest {
 
         List<String> inputs = Arrays.asList(" hello ", " world ", null);
         List<String> outputs = inputs.stream()
-                .map(validator::validate)
-                .collect(Collectors.toList());
+                .map(validator::validate).toList();
 
         assertEquals(Arrays.asList("hello", "world", ""), outputs, "Validator should work correctly with streams processing multiple inputs");
     }
