@@ -49,7 +49,6 @@ public class PathTraversalGenerator implements TypedGenerator<String> {
         int attackType = attackTypeGenerator.next();
 
         String pattern = switch (attackType) {
-            case 0 -> generateBasicTraversal();
             case 1 -> generateEncodedTraversal();
             case 2 -> generateDoubleEncodedTraversal();
             case 3 -> generateUnicodeTraversal();
@@ -86,17 +85,12 @@ public class PathTraversalGenerator implements TypedGenerator<String> {
 
     private String generateSeparator() {
         int sepType = Generators.integers(0, 1).next();
-        return switch (sepType) {
-            case 0 -> "/";
-            case 1 -> "\\";
-            default -> "/";
-        };
+        return sepType == 1 ? "\\" : "/";
     }
 
     private String generateTargetFile() {
         int fileType = Generators.integers(0, 6).next();
         return switch (fileType) {
-            case 0 -> "etc/passwd";
             case 1 -> "windows/win.ini";
             case 2 -> "boot.ini";
             case 3 -> "etc/shadow";
@@ -114,7 +108,6 @@ public class PathTraversalGenerator implements TypedGenerator<String> {
             case 1 -> "exe";
             case 2 -> "png";
             case 3 -> "gif";
-            case 4 -> "txt";
             case 5 -> "php";
             case 6 -> "jsp";
             case 7 -> "asp";
@@ -125,7 +118,6 @@ public class PathTraversalGenerator implements TypedGenerator<String> {
     private String generatePrefix() {
         int prefixType = Generators.integers(0, 6).next();
         return switch (prefixType) {
-            case 0 -> "/api/users/";
             case 1 -> "/admin/";
             case 2 -> "/files/";
             case 3 -> "/uploads/";
@@ -139,7 +131,6 @@ public class PathTraversalGenerator implements TypedGenerator<String> {
     private String generateSuffix() {
         int suffixType = Generators.integers(0, 5).next();
         return switch (suffixType) {
-            case 0 -> "/sensitive.txt";
             case 1 -> "/config.xml";
             case 2 -> ".php";
             case 3 -> ".jsp";
@@ -208,10 +199,10 @@ public class PathTraversalGenerator implements TypedGenerator<String> {
             // Mix different encoding types randomly
             int encodingChoice = Generators.integers(0, 3).next();
             switch (encodingChoice) {
-                case 0 -> pattern.append("..").append(separator);
                 case 1 -> pattern.append("%2e%2e").append(separator);
                 case 2 -> pattern.append("\\u002e\\u002e").append(separator);
                 case 3 -> pattern.append("%2e%2e").append("/".equals(separator) ? "%2f" : "%5c");
+                default -> pattern.append("..").append(separator);
             }
         }
 
@@ -224,7 +215,6 @@ public class PathTraversalGenerator implements TypedGenerator<String> {
         // Add null byte in various positions
         int nullBytePosition = Generators.integers(0, 3).next();
         return switch (nullBytePosition) {
-            case 0 -> basePattern + "%00";
             case 1 -> basePattern + "%00." + generateFileExtension();
             case 2 -> basePattern.replace("..", "..%00");
             case 3 -> basePattern + generateTargetFile() + "%00." + generateFileExtension();
@@ -252,23 +242,20 @@ public class PathTraversalGenerator implements TypedGenerator<String> {
                     pattern.append("..").append("/").append("..").append("\\");
                 }
             }
-            case 2 -> {
+            case 2 ->
                 // Overlong encoding attempts
-                for (int i = 0; i < depth; i++) {
-                    pattern.append("%c0%ae%c0%ae%c0%af");
-                }
-            }
+                pattern.append("%c0%ae%c0%ae%c0%af".repeat(Math.max(0, depth)));
             case 3 -> {
                 // Path with full system paths
                 pattern.append(contextSelector.next() ? "/var/www/" : "C:\\inetpub\\wwwroot\\");
                 pattern.append(generateBasicTraversal());
             }
-            case 4 -> {
+            case 4 ->
                 // Unicode overlong sequences
-                for (int i = 0; i < depth; i++) {
-                    pattern.append("\\ufe0e\\ufe0e\\u2044");
-                }
-            }
+                pattern.append("\\ufe0e\\ufe0e\\u2044".repeat(Math.max(0, depth)));
+            default ->
+                // Fallback to basic traversal
+                pattern.append(generateBasicTraversal());
         }
 
         return pattern.toString();

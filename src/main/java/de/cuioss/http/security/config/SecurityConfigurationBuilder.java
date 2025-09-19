@@ -107,7 +107,7 @@ public class SecurityConfigurationBuilder {
     private boolean requireHttpOnlyCookies = false;
 
     // Body Security defaults
-    private long maxBodySize = 5 * 1024 * 1024; // 5MB
+    private long maxBodySize = 5L * 1024 * 1024; // 5MB
     private @Nullable Set<String> allowedContentTypes = null;
     private Set<String> blockedContentTypes = new HashSet<>();
 

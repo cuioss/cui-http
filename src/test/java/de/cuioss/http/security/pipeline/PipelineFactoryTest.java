@@ -236,8 +236,9 @@ class PipelineFactoryTest {
             assertFalse(sharedCounter.hasAnyEvents());
 
             String nullByteContent = "test content\u0000with null byte";
+            HttpSecurityValidator validator = pipelineSet.bodyPipeline();
             assertThrows(UrlSecurityException.class, () ->
-                    pipelineSet.bodyPipeline().validate(nullByteContent));
+                    validator.validate(nullByteContent));
             assertTrue(sharedCounter.hasAnyEvents());
         }
 
@@ -321,6 +322,7 @@ class PipelineFactoryTest {
         }
 
         @Test
+        @SuppressWarnings("java:S1612")
         void shouldHandleConcurrentFactoryCallsSafely() {
             int threadCount = 10;
             Thread[] threads = new Thread[threadCount];

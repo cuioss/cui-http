@@ -123,7 +123,7 @@ ValidationType validationType) implements HttpSecurityValidator {
      * double-encoded, UTF-8 overlong, and mixed encoding attempts.
      * ReDoS-safe: Uses only atomic patterns without nested or consecutive quantifiers.
      */
-    @SuppressWarnings({"text:S6389", "RegExpDuplicateCharacterInClass"}) private static final Pattern ENCODED_TRAVERSAL_PATTERN = Pattern.compile(
+    @SuppressWarnings({"java:S5869", "RegExpDuplicateCharacterInClass"}) private static final Pattern ENCODED_TRAVERSAL_PATTERN = Pattern.compile(
             """
             %2e%2e[%2f%5c/\\\\]|\
             \\.%2e[%2f%5c/\\\\]|%2e\\.[%2f%5c/\\\\]|\
@@ -138,7 +138,7 @@ ValidationType validationType) implements HttpSecurityValidator {
      * Pre-compiled regex pattern for detecting multiple dots followed by path separators.
      * ReDoS-safe: Uses specific atomic patterns without quantifiers that could cause backtracking.
      */
-    @SuppressWarnings({"text:S6389", "RegExpDuplicateCharacterInClass"}) private static final Pattern DOT_SEPARATOR_PATTERN = Pattern.compile(
+    @SuppressWarnings({"java:S5869", "RegExpDuplicateCharacterInClass"}) private static final Pattern DOT_SEPARATOR_PATTERN = Pattern.compile(
             """
             \\.\\.[/\\\\%2f%5c]|\
             \\.\\.\\.[/\\\\%2f%5c]|\
@@ -279,17 +279,16 @@ ValidationType validationType) implements HttpSecurityValidator {
     private void checkSuspiciousPathPatterns(String originalValue, String testValue) {
         for (String pattern : SecurityDefaults.SUSPICIOUS_PATH_PATTERNS) {
             String checkPattern = config.caseSensitiveComparison() ? pattern : pattern.toLowerCase();
-            if (testValue.contains(checkPattern)) {
-                if (config.failOnSuspiciousPatterns()) {
-                    throw UrlSecurityException.builder()
-                            .failureType(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED)
-                            .validationType(validationType)
-                            .originalInput(originalValue)
-                            .detail("Suspicious path pattern detected: " + pattern)
-                            .build();
-                }
-                // If not configured to fail, continue validation but could log here
+            if (testValue.contains(checkPattern) && config.failOnSuspiciousPatterns()) {
+                throw UrlSecurityException.builder()
+                        .failureType(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED)
+                        .validationType(validationType)
+                        .originalInput(originalValue)
+                        .detail("Suspicious path pattern detected: " + pattern)
+                        .build();
             }
+            // If not configured to fail, continue validation but could log here
+
         }
     }
 
@@ -303,17 +302,16 @@ ValidationType validationType) implements HttpSecurityValidator {
     private void checkSuspiciousParameterNames(String originalValue, String testValue) {
         for (String suspiciousName : SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES) {
             String checkName = config.caseSensitiveComparison() ? suspiciousName : suspiciousName.toLowerCase();
-            if (testValue.equals(checkName) || testValue.contains(checkName)) {
-                if (config.failOnSuspiciousPatterns()) {
-                    throw UrlSecurityException.builder()
-                            .failureType(UrlSecurityFailureType.SUSPICIOUS_PARAMETER_NAME)
-                            .validationType(validationType)
-                            .originalInput(originalValue)
-                            .detail("Suspicious parameter name detected: " + suspiciousName)
-                            .build();
-                }
-                // If not configured to fail, continue validation
+            if ((testValue.equals(checkName) || testValue.contains(checkName)) && config.failOnSuspiciousPatterns()) {
+                throw UrlSecurityException.builder()
+                        .failureType(UrlSecurityFailureType.SUSPICIOUS_PARAMETER_NAME)
+                        .validationType(validationType)
+                        .originalInput(originalValue)
+                        .detail("Suspicious parameter name detected: " + suspiciousName)
+                        .build();
             }
+            // If not configured to fail, continue validation
+
         }
     }
 
