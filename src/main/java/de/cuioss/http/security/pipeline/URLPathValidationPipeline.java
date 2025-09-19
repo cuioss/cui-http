@@ -74,7 +74,7 @@ public final class URLPathValidationPipeline implements HttpSecurityValidator {
 
     private final List<HttpSecurityValidator> stages;
     private final SecurityEventCounter eventCounter;
-    private final ValidationType validationType = ValidationType.URL_PATH;
+    private static final ValidationType validationType = ValidationType.URL_PATH;
 
     /**
      * Creates a new URL path validation pipeline with the specified configuration.

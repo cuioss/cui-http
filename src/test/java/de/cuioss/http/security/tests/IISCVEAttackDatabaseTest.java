@@ -78,19 +78,20 @@ class IISCVEAttackDatabaseTest {
         long initialEventCount = eventCounter.getTotalCount();
 
         // When: Attempting to validate the malicious IIS CVE pattern
+        String attackString = testCase.attackString();
         String attackRejectionMessage = "IIS CVE attack should be rejected: %s%nAttack Description: %s%nDetection Rationale: %s".formatted(
-                testCase.attackString(), testCase.attackDescription(), testCase.detectionRationale());
+                attackString, testCase.attackDescription(), testCase.detectionRationale());
         var exception = assertThrows(UrlSecurityException.class,
-                () -> pipeline.validate(testCase.attackString()),
+                () -> pipeline.validate(attackString),
                 attackRejectionMessage);
 
         // Then: The validation should fail with the expected security failure type
         String failureTypeMessage = "Expected failure type %s for IIS CVE attack: %s%nRationale: %s".formatted(
-                testCase.expectedFailureType(), testCase.attackString(), testCase.detectionRationale());
+                testCase.expectedFailureType(), attackString, testCase.detectionRationale());
         assertEquals(testCase.expectedFailureType(), exception.getFailureType(), failureTypeMessage);
 
         // And: Original malicious input should be preserved
-        assertEquals(testCase.attackString(), exception.getOriginalInput(),
+        assertEquals(attackString, exception.getOriginalInput(),
                 "Original IIS CVE attack string should be preserved in exception");
 
         // And: Security event should be recorded

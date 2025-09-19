@@ -65,6 +65,8 @@ import de.cuioss.test.generator.TypedGenerator;
  * @author Claude Code Generator
  * @since 1.0
  */
+@SuppressWarnings({"squid:S127", "java:S127", "UnnecessaryUnicodeEscape"})
+// Unicode escapes intentionally used for clarity in security testing
 public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<String> {
 
     // QI-6: Dynamic generation components - fully converted from fixedValues()
@@ -107,7 +109,7 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
             case 4 -> generateSystemTarget();
             case 5 -> generateSystemPath();
             case 6 -> generateCommand();
-            default -> generateTraversalPattern();
+            default -> throw new IllegalStateException("Unexpected value: " + basePatternTypeGen.next());
         };
     }
 
@@ -131,6 +133,7 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
                 case 6 -> result.append('\u001B'); // ESC (Escape)
                 case 7 -> result.append('\u001F'); // US (Unit Separator)
                 default -> {
+                    // Intentionally empty - all cases covered by modulo operation
                 } // All cases covered by modulo 8
             }
         }
@@ -155,6 +158,7 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
                 case 4 -> result.append('\u009C'); // ST (String Terminator)
                 case 5 -> result.append('\u009F'); // APC (Application Program Command)
                 default -> {
+                    // Intentionally empty - all cases covered by modulo operation
                 } // All cases covered by modulo 6
             }
         }
@@ -176,6 +180,7 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
                 case 2 -> result.append('\u00A0'); // Non-Breaking Space
                 case 3 -> result.append('\u1680'); // Ogham Space Mark
                 default -> {
+                    // Intentionally empty - all cases covered by modulo operation
                 } // All cases covered by modulo 4
             }
         }
@@ -203,6 +208,7 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
                 case 3 -> result.append('\u200F'); // Right-to-Left Mark
                 case 4 -> result.append('\u061C'); // Arabic Letter Mark
                 default -> {
+                    // Intentionally empty - all cases covered by modulo operation
                 } // All cases covered by modulo 5
             }
         }
@@ -227,6 +233,7 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
                 case 3 -> result.append('\uFEFF'); // Zero Width No-Break Space (BOM)
                 case 4 -> result.append('\u180E'); // Mongolian Vowel Separator
                 default -> {
+                    // Intentionally empty - all cases covered by modulo operation
                 } // All cases covered by modulo 5
             }
         }
@@ -236,6 +243,7 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
     /**
      * Inject Unicode variation selectors and combining marks.
      */
+    @SuppressWarnings("java:S127")
     private String injectVariationSelectors(String pattern) {
         StringBuilder result = new StringBuilder();
         for (int i = 0; i < pattern.length(); i++) {
@@ -248,6 +256,7 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
                 case 2 -> result.append('\u0300'); // Combining Grave Accent
                 case 3 -> result.append('\u036F'); // Combining Latin Small Letter X
                 default -> {
+                    // Intentionally empty - all cases covered by modulo operation
                 } // All cases covered by modulo 4
             }
         }
@@ -257,6 +266,7 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
     /**
      * Inject private use area characters that have undefined behavior.
      */
+    @SuppressWarnings("java:S127")
     private String injectPrivateUseCharacters(String pattern) {
         StringBuilder result = new StringBuilder();
         for (int i = 0; i < pattern.length(); i++) {
@@ -271,6 +281,7 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
                 case 4 -> result.append('\uE100'); // Private Use Area
                 case 5 -> result.append('\uF900'); // CJK Compatibility Ideographs
                 default -> {
+                    // Intentionally empty - all cases covered by modulo operation
                 } // All cases covered by modulo 6
             }
         }
@@ -298,6 +309,7 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
                     // Invalid surrogate pair (reversed)
                     result.append('\uDC00').append('\uD800');
                 default -> {
+                    // Intentionally empty - all cases covered by modulo operation
                 } // All cases covered by modulo 3
             }
         }
@@ -322,6 +334,7 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
                 case 5 -> result.append('\u000B'); // Vertical Tab
                 case 6 -> result.append('\u000C'); // Form Feed
                 default -> {
+                    // Intentionally empty - all cases covered by modulo operation
                 } // All cases covered by modulo 7
             }
         }
@@ -358,6 +371,7 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
     /**
      * Inject mixed sequences of different control character types.
      */
+    @SuppressWarnings("java:S127")
     private String injectMixedControlSequences(String pattern) {
         StringBuilder result = new StringBuilder();
 
@@ -381,6 +395,7 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
                 case 8 -> result.append('\uD800'); // Invalid Surrogate
                 case 9 -> result.append('\u0300'); // Combining Grave
                 default -> {
+                    // Intentionally empty - all cases covered by modulo operation
                 } // All cases covered by modulo 10
             }
         }
@@ -410,6 +425,7 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
                 case 6 -> result.append("%7F"); // Encoded DEL
                 case 7 -> result.append("%C2%80"); // UTF-8 encoded C1 control
                 default -> {
+                    // Intentionally empty - all cases covered by modulo operation
                 } // All cases covered by modulo 8
             }
         }

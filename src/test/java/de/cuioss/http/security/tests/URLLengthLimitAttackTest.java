@@ -82,12 +82,11 @@ class URLLengthLimitAttackTest {
 
     private URLPathValidationPipeline pipeline;
     private SecurityEventCounter eventCounter;
-    private SecurityConfiguration config;
 
     @BeforeEach
     void setUp() {
         // Configure with stricter path length limits to properly detect length limit attacks
-        config = SecurityConfiguration.builder()
+        SecurityConfiguration config = SecurityConfiguration.builder()
                 .maxPathLength(1024) // Further reduced to catch more length attacks
                 .maxParameterNameLength(64)   // Reduced from default 128
                 .maxParameterValueLength(256) // Further reduced from 512
@@ -128,7 +127,7 @@ class URLLengthLimitAttackTest {
                 fail("Expected path-based length attack to be rejected: " + lengthAttackPattern);
             }
             // Otherwise, this is expected (e.g., long hostname with short path)
-            assertTrue(lengthAttackPattern.length() > 0, "Pattern should not be empty: " + lengthAttackPattern);
+            assertFalse(lengthAttackPattern.isEmpty(), "Pattern should not be empty: " + lengthAttackPattern);
         } catch (UrlSecurityException exception) {
             // Then: If an exception is thrown, it should be length-related
             assertNotNull(exception, "Exception should not be null");
@@ -570,7 +569,7 @@ class URLLengthLimitAttackTest {
     private boolean isPathBasedLengthAttack(String pattern) {
         // Extract the path component from the URL
         String pathComponent;
-        if (pattern.startsWith("http://") || pattern.startsWith("https://")) {
+        if (pattern.startsWith("http://") || pattern.startsWith("https://")) { // NOSONAR - Testing HTTP patterns
             // Full URL - extract path after hostname
             int schemeEnd = pattern.indexOf("://") + 3;
             int pathStart = pattern.indexOf('/', schemeEnd);
@@ -592,7 +591,7 @@ class URLLengthLimitAttackTest {
             int queryStart = pattern.indexOf('?');
 
             int pathEnd = pattern.length();
-            if (fragmentStart != -1) pathEnd = Math.min(pathEnd, fragmentStart);
+            if (fragmentStart != -1) pathEnd = fragmentStart;
             if (queryStart != -1) pathEnd = Math.min(pathEnd, queryStart);
 
             pathComponent = pattern.substring(0, pathEnd);
@@ -640,11 +639,7 @@ class URLLengthLimitAttackTest {
      * @return generated path segments
      */
     private String generatePathSegments(String segment, int count) {
-        StringBuilder result = new StringBuilder();
-        for (int i = 0; i < count; i++) {
-            result.append(segment);
-        }
-        return result.toString();
+        return segment.repeat(count);
     }
 
     /**
@@ -658,7 +653,7 @@ class URLLengthLimitAttackTest {
         int segmentIndex = 0;
 
         // Generate until we exceed STRICT limit (1024) but stay reasonable
-        while (totalLength < 1100 && totalLength < 1300) {
+        while (totalLength < 1100) {
             String segment = segments[segmentIndex % segments.length];
             result.append(segment);
             totalLength += segment.length();
@@ -672,6 +667,7 @@ class URLLengthLimitAttackTest {
      * @param baseCount approximate number of segments
      * @return varied path segments testing just over STRICT limit
      */
+    @SuppressWarnings("SameParameterValue")
     private String generateVariedPathSegments(int baseCount) {
         StringBuilder result = new StringBuilder();
         String[] patterns = {"dir", "folder", "segment", "part"};
@@ -720,9 +716,8 @@ class URLLengthLimitAttackTest {
 
         // Fill remaining length with letters/numbers
         int remaining = length - prefix.length();
-        if (remaining > 0) {
-            result.append("_").append(Generators.letterStrings(remaining - 1, remaining - 1).next());
-        }
+        // Always add underscore and remaining letters since we're generating longer names
+        result.append("_").append(Generators.letterStrings(remaining - 1, remaining - 1).next());
 
         // Ensure exact length
         String generated = result.toString();
@@ -739,14 +734,11 @@ class URLLengthLimitAttackTest {
      * @return query string with multiple parameters testing various boundaries
      */
     private String generateMultipleParameterNames() {
-
         // Generate several parameters with different name lengths
-        String result = generateParameterName(30) + "=value1&" +  // Within STRICT
+        return generateParameterName(30) + "=value1&" +  // Within STRICT
                 generateParameterName(70) + "=value2&" +  // Exceeds STRICT
                 generateParameterName(140) + "=value3&" + // Exceeds DEFAULT
                 generateParameterName(25) + "=value4";   // Final param, within STRICT
-
-        return result;
     }
 
     /**
@@ -797,13 +789,10 @@ class URLLengthLimitAttackTest {
      * @return query string with multiple parameters exceeding limits
      */
     private String generateMultipleOverflowParameters() {
-
-        String result = "param1=" + generateParameterValue(1200) + "&" + // Exceeds STRICT
+        return "param1=" + generateParameterValue(1200) + "&" + // Exceeds STRICT
                 "param2=" + generateParameterValue(800) + "&" +  // Within STRICT
                 "param3=" + generateParameterValue(2500) + "&" + // Exceeds DEFAULT
                 "param4=" + generateParameterValue(600);              // Final param
-
-        return result;
     }
 
     /**
@@ -811,14 +800,11 @@ class URLLengthLimitAttackTest {
      * @return structured parameter string testing different limits
      */
     private String generateStructuredParameters() {
-
         // Mix of parameters at different lengths
-        String result = "small=" + generateParameterValue(100) + "&" +    // Within STRICT
+        return "small=" + generateParameterValue(100) + "&" +    // Within STRICT
                 "medium=" + generateParameterValue(1200) + "&" +  // Exceeds STRICT
                 "large=" + generateParameterValue(2100) + "&" +   // Exceeds DEFAULT
                 "final=" + generateParameterValue(300);                // Within STRICT
-
-        return result;
     }
 
     /**
@@ -866,6 +852,7 @@ class URLLengthLimitAttackTest {
      * @param targetEncodedLength target length after decoding
      * @return URL-encoded path
      */
+    @SuppressWarnings("SameParameterValue")
     private String generateEncodedPath(int targetEncodedLength) {
         StringBuilder result = new StringBuilder();
         String[] pathSegments = {"api", "data", "service", "endpoint", "resource", "handler"};
@@ -935,6 +922,7 @@ class URLLengthLimitAttackTest {
      * @param decodedLength target length after decoding
      * @return encoded fragment
      */
+    @SuppressWarnings("SameParameterValue")
     private String generateEncodedFragment(int decodedLength) {
         StringBuilder result = new StringBuilder();
 
@@ -985,13 +973,8 @@ class URLLengthLimitAttackTest {
      * @return traversal pattern testing path traversal detection
      */
     private String generateTraversalPattern() {
-        StringBuilder result = new StringBuilder();
-
         // Generate traversal patterns that test security but stay reasonable
-        for (int i = 0; i < 150; i++) { // ~450 chars - reasonable for testing
-            result.append("../");
-        }
-        return result.toString();
+        return "../".repeat(150); // ~450 chars - reasonable for testing
     }
 
     /**

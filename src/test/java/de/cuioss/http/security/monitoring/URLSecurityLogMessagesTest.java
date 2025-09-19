@@ -33,6 +33,7 @@ class URLSecurityLogMessagesTest {
 
     @Test
     @DisplayName("WARN messages should have correct identifiers and format")
+    @SuppressWarnings("java:S5961")
     void warnMessagesShouldHaveCorrectIdentifiers() {
         // Test PATH_TRAVERSAL_DETECTED
         LogRecord pathTraversalMsg = URLSecurityLogMessages.WARN.PATH_TRAVERSAL_DETECTED;

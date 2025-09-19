@@ -106,9 +106,6 @@ public class SecurityEventCounter {
      * @throws IllegalArgumentException if delta is negative
      */
     public long incrementBy(@NonNull UrlSecurityFailureType failureType, long delta) {
-        if (failureType == null) {
-            throw new NullPointerException("failureType must not be null");
-        }
         if (delta < 0) {
             throw new IllegalArgumentException("delta must be non-negative, got: " + delta);
         }
@@ -128,9 +125,6 @@ public class SecurityEventCounter {
      * @throws NullPointerException if failureType is null
      */
     public long getCount(@NonNull UrlSecurityFailureType failureType) {
-        if (failureType == null) {
-            throw new NullPointerException("failureType must not be null");
-        }
 
         return Optional.ofNullable(counters.get(failureType))
                 .map(AtomicLong::get)
@@ -211,9 +205,6 @@ public class SecurityEventCounter {
      * @throws NullPointerException if failureType is null
      */
     public void reset(@NonNull UrlSecurityFailureType failureType) {
-        if (failureType == null) {
-            throw new NullPointerException("failureType must not be null");
-        }
 
         AtomicLong counter = counters.get(failureType);
         if (counter != null) {

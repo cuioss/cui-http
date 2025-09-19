@@ -223,7 +223,7 @@ boolean logSecurityViolations
                 .maxCookieValueLength(1024)
                 .requireSecureCookies(true)
                 .requireHttpOnlyCookies(true)
-                .maxBodySize(1024 * 1024) // 1MB
+                .maxBodySize(1024L * 1024) // 1MB
                 .allowNullBytes(false)
                 .allowControlCharacters(false)
                 .allowHighBitCharacters(false)
@@ -256,7 +256,7 @@ boolean logSecurityViolations
                 .maxCookieValueLength(8192)
                 .requireSecureCookies(false)
                 .requireHttpOnlyCookies(false)
-                .maxBodySize(10 * 1024 * 1024) // 10MB
+                .maxBodySize(10L * 1024 * 1024) // 10MB
                 .allowNullBytes(false) // Still don't allow this
                 .allowControlCharacters(true)
                 .allowHighBitCharacters(true)
@@ -282,6 +282,7 @@ boolean logSecurityViolations
      * @param headerName The header name to check
      * @return true if the header is allowed, false if blocked
      */
+    @SuppressWarnings("DuplicatedCode")
     public boolean isHeaderAllowed(String headerName) {
         if (headerName == null) {
             return false;
@@ -313,6 +314,7 @@ boolean logSecurityViolations
      * @param contentType The content type to check
      * @return true if the content type is allowed, false if blocked
      */
+    @SuppressWarnings("DuplicatedCode")
     public boolean isContentTypeAllowed(String contentType) {
         if (contentType == null) {
             return false;

@@ -158,6 +158,7 @@ ValidationType validationType) implements HttpSecurityValidator {
         }
 
         // Save original for comparison and error reporting
+        @SuppressWarnings("UnnecessaryLocalVariable") // Used in exception handling below
         String original = value;
 
         // Normalize URI components (resolve . and .. in path segments)
@@ -202,8 +203,6 @@ ValidationType validationType) implements HttpSecurityValidator {
     private String normalizeUriComponent(String uriComponent) {
         // Check if this is a complete URI with protocol - don't normalize protocol portion
         if (URL_WITH_PROTOCOL_PATTERN.matcher(uriComponent).matches()) {
-            // This is a complete URI with protocol (like https://example.com)
-            // Don't normalize the protocol portion, return as-is
             return uriComponent;
         }
 
@@ -211,68 +210,101 @@ ValidationType validationType) implements HttpSecurityValidator {
         String[] segments = uriComponent.split("/", -1);
         List<String> outputSegments = new ArrayList<>();
         boolean isAbsolute = uriComponent.startsWith("/");
-        int totalSegments = 0;
 
-        // Prevent stack overflow with excessive segments
-        if (segments.length > MAX_PATH_SEGMENTS) {
+        // Validate segment count
+        validateSegmentCount(segments.length, uriComponent);
+
+        // Process each segment
+        for (String segment : segments) {
+            processPathSegment(segment, outputSegments, isAbsolute, uriComponent);
+        }
+
+        // Build and return normalized path
+        return buildNormalizedPath(outputSegments, isAbsolute, uriComponent);
+    }
+
+    /**
+     * Validates that the segment count does not exceed security limits.
+     *
+     * @param segmentCount Number of path segments
+     * @param originalInput Original input for error reporting
+     * @throws UrlSecurityException if segment count exceeds limits
+     */
+    private void validateSegmentCount(int segmentCount, String originalInput) {
+        if (segmentCount > MAX_PATH_SEGMENTS) {
             throw UrlSecurityException.builder()
                     .failureType(UrlSecurityFailureType.EXCESSIVE_NESTING)
                     .validationType(validationType)
-                    .originalInput(uriComponent)
-                    .detail("Path contains too many segments: " + segments.length + " (max: " + MAX_PATH_SEGMENTS + ")")
+                    .originalInput(originalInput)
+                    .detail("Path contains too many segments: " + segmentCount + " (max: " + MAX_PATH_SEGMENTS + ")")
                     .build();
         }
+    }
 
-        for (String segment : segments) {
-            totalSegments++;
-
-            // Additional recursion protection
-            if (totalSegments > MAX_PATH_SEGMENTS) {
-                throw UrlSecurityException.builder()
-                        .failureType(UrlSecurityFailureType.EXCESSIVE_NESTING)
-                        .validationType(validationType)
-                        .originalInput(uriComponent)
-                        .detail("Processing exceeded maximum segment count: " + MAX_PATH_SEGMENTS)
-                        .build();
+    /**
+     * Processes a single path segment according to RFC 3986 normalization rules.
+     *
+     * @param segment Path segment to process
+     * @param outputSegments Current output segments list
+     * @param isAbsolute Whether this is an absolute path
+     * @param originalInput Original input for error reporting
+     * @throws UrlSecurityException if depth limits are exceeded
+     */
+    private void processPathSegment(String segment, List<String> outputSegments, boolean isAbsolute, String originalInput) {
+        switch (segment) {
+            case "." -> {
+                // Current directory - skip (RFC 3986 Section 5.2.4)
             }
-
-            switch (segment) {
-                case "." -> {
-                    // Current directory - skip (RFC 3986 Section 5.2.4)
+            case ".." -> {
+                // Parent directory
+                if (!outputSegments.isEmpty() && !"..".equals(outputSegments.getLast())) {
+                    // Can resolve this .. by removing the previous segment
+                    outputSegments.removeLast();
+                } else if (!isAbsolute) {
+                    // For relative paths, keep .. if we can't resolve it
+                    outputSegments.add("..");
                 }
-                case ".." -> {
-                    // Parent directory
-                    if (!outputSegments.isEmpty() && !"..".equals(outputSegments.getLast())) {
-                        // Can resolve this .. by removing the previous segment
-                        outputSegments.removeLast();
-                    } else if (!isAbsolute) {
-                        // For relative paths, keep .. if we can't resolve it
-                        outputSegments.add("..");
-                    }
-                    // For absolute paths, .. at root is ignored
-                }
-                case "" -> {
-                    // Empty segment - only preserve for leading slash or trailing slash
-                    // Skip empty segments from double slashes in the middle
-                }
-                default -> {
-                    // Normal segment
-                    outputSegments.add(segment);
-
-                    // Check depth limit during processing
-                    if (outputSegments.size() > MAX_DIRECTORY_DEPTH) {
-                        throw UrlSecurityException.builder()
-                                .failureType(UrlSecurityFailureType.EXCESSIVE_NESTING)
-                                .validationType(validationType)
-                                .originalInput(uriComponent)
-                                .detail("Path depth " + outputSegments.size() + " exceeds maximum " + MAX_DIRECTORY_DEPTH)
-                                .build();
-                    }
-                }
+                // For absolute paths, .. at root is ignored
+            }
+            case "" -> {
+                // Empty segment - only preserve for leading slash or trailing slash
+                // Skip empty segments from double slashes in the middle
+            }
+            default -> {
+                // Normal segment
+                outputSegments.add(segment);
+                validateDirectoryDepth(outputSegments.size(), originalInput);
             }
         }
+    }
 
-        // Build result
+    /**
+     * Validates that directory depth does not exceed security limits.
+     *
+     * @param currentDepth Current directory depth
+     * @param originalInput Original input for error reporting
+     * @throws UrlSecurityException if depth exceeds limits
+     */
+    private void validateDirectoryDepth(int currentDepth, String originalInput) {
+        if (currentDepth > MAX_DIRECTORY_DEPTH) {
+            throw UrlSecurityException.builder()
+                    .failureType(UrlSecurityFailureType.EXCESSIVE_NESTING)
+                    .validationType(validationType)
+                    .originalInput(originalInput)
+                    .detail("Path depth " + currentDepth + " exceeds maximum " + MAX_DIRECTORY_DEPTH)
+                    .build();
+        }
+    }
+
+    /**
+     * Builds the normalized path string from processed segments.
+     *
+     * @param outputSegments Processed path segments
+     * @param isAbsolute Whether this is an absolute path
+     * @param originalInput Original input for trailing slash preservation
+     * @return Normalized path string
+     */
+    private String buildNormalizedPath(List<String> outputSegments, boolean isAbsolute, String originalInput) {
         StringBuilder result = new StringBuilder();
 
         // Add leading slash for absolute paths
@@ -289,10 +321,8 @@ ValidationType validationType) implements HttpSecurityValidator {
         }
 
         // Preserve trailing slash if present and we have content, or for root path
-        if (uriComponent.endsWith("/") && !result.toString().endsWith("/")) {
-            if (!outputSegments.isEmpty() || isAbsolute) {
-                result.append("/");
-            }
+        if (originalInput.endsWith("/") && !result.toString().endsWith("/") && (!outputSegments.isEmpty() || isAbsolute)) {
+            result.append("/");
         }
 
         return result.toString();
@@ -316,12 +346,12 @@ ValidationType validationType) implements HttpSecurityValidator {
         }
 
         // Check for .. at end of path (without leading ../)
-        if (path.endsWith("/..") && !"..".equals(path) && !path.startsWith("../")) {
+        if (path.endsWith("/..") && !path.startsWith("../")) {
             return true;
         }
 
         // Check for standalone .. that isn't at the beginning
-        if ("..".equals(path) && !path.startsWith("../")) {
+        if ("..".equals(path)) {
             return true;
         }
 

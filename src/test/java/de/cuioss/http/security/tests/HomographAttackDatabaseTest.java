@@ -81,19 +81,20 @@ class HomographAttackDatabaseTest {
         long initialEventCount = eventCounter.getTotalCount();
 
         // When: Attempting to validate the malicious homograph pattern
+        String attackString = testCase.attackString();
         String attackRejectionMessage = "Homograph attack should be rejected: %s%nAttack Description: %s%nDetection Rationale: %s".formatted(
-                testCase.attackString(), testCase.attackDescription(), testCase.detectionRationale());
+                attackString, testCase.attackDescription(), testCase.detectionRationale());
         var exception = assertThrows(UrlSecurityException.class,
-                () -> pipeline.validate(testCase.attackString()),
+                () -> pipeline.validate(attackString),
                 attackRejectionMessage);
 
         // Then: The validation should fail with the expected security failure type
         String failureTypeMessage = "Expected failure type %s for homograph attack: %s%nRationale: %s".formatted(
-                testCase.expectedFailureType(), testCase.attackString(), testCase.detectionRationale());
+                testCase.expectedFailureType(), attackString, testCase.detectionRationale());
         assertEquals(testCase.expectedFailureType(), exception.getFailureType(), failureTypeMessage);
 
         // And: Original malicious input should be preserved
-        assertEquals(testCase.attackString(), exception.getOriginalInput(),
+        assertEquals(attackString, exception.getOriginalInput(),
                 "Original homograph attack string should be preserved in exception");
 
         // And: Security event should be recorded
