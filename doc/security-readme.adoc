@@ -1,0 +1,376 @@
+= HTTP Security Validation Framework
+:toc: macro
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnumlevels: 1
+:source-highlighter: highlight.js
+
+[.discrete]
+== Status
+
+Comprehensive HTTP security validation framework for web applications providing protection against path traversal, injection attacks, malicious headers, and other common web application vulnerabilities.
+
+[.discrete]
+== What is it?
+
+This module provides a complete solution for validating HTTP components against security threats including path traversal, injection attacks, malicious headers, and other common web application vulnerabilities. The framework emphasizes security validation of HTTP components (paths, parameters, headers, bodies) with comprehensive attack pattern detection.
+
+toc::[]
+
+== Maven Coordinates
+
+[source, xml]
+----
+<dependency>
+    <groupId>de.cuioss</groupId>
+    <artifactId>cui-http</artifactId>
+</dependency>
+----
+
+== Core Concepts
+
+=== Security Validation Contract
+
+* **String in, String out, throws on violation** pattern
+* Fail-secure design with `UrlSecurityException` on violations
+* Thread-safe and composable validators
+* Functional interface design for lambda expressions
+
+=== Validation Pipelines
+
+* **Path-only validation**: `URLPathValidationPipeline` for directory traversal and CVE exploits
+* **Full URL validation**: `HTTPBodyValidationPipeline` for protocols, XSS, script injection
+* **Header validation**: `HTTPHeaderValidationPipeline` for header injection attacks
+* **Parameter validation**: `URLParameterValidationPipeline` for query parameter validation
+
+=== Validation Stages
+
+* **Decoding Stage**: URL percent-encoding and UTF-8 overlong detection
+* **Normalization Stage**: Unicode normalization for paths
+* **Character Validation**: Invalid character detection
+* **Length Validation**: Length limits enforcement
+* **Pattern Matching**: Attack pattern detection
+
+=== Configuration Management
+
+* Centralized security configuration system
+* Configurable validation thresholds and limits
+* Environment-specific security policies
+* Runtime configuration updates
+
+== Detailed Component Documentation
+
+=== Core Interface
+
+The link:../src/main/java/de/cuioss/http/security/core/HttpSecurityValidator.java[HttpSecurityValidator] interface defines the contract for validating HTTP components against security threats.
+
+==== Key Features
+
+* **Functional Interface**: Compatible with lambda expressions and method references
+* **Fail Secure**: Throws UrlSecurityException on any security violation
+* **Composable**: Multiple validators can be chained or combined
+* **Thread Safe**: Implementations are thread-safe for concurrent use
+
+=== Security Pipelines
+
+==== URLPathValidationPipeline
+
+The link:../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline] validates path components against directory traversal and server-specific vulnerabilities.
+
+**Use when:**
+* Attack patterns contain path components only (no protocol)
+* Testing directory traversal (`../../../etc/passwd`)
+* CVE exploits for specific servers (Apache, IIS, Nginx)
+
+==== HTTPBodyValidationPipeline
+
+The link:../src/main/java/de/cuioss/http/security/pipeline/HTTPBodyValidationPipeline.java[HTTPBodyValidationPipeline] validates full URLs with protocols against XSS and script injection attacks.
+
+**Use when:**
+* Attack patterns contain full URLs with protocols (`http://`, `https://`)
+* Testing XSS or script injection
+* Full URL parsing with domain validation needed
+
+==== HTTPHeaderValidationPipeline
+
+The link:../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] validates HTTP headers against injection attacks.
+
+**Use when:**
+* Validating HTTP header names and values
+* Preventing header injection attacks
+* CRLF injection prevention
+
+==== URLParameterValidationPipeline
+
+The link:../src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline] validates query parameters and form data.
+
+**Use when:**
+* Validating URL query parameters
+* Form data validation
+* Parameter injection prevention
+
+=== Validation Stages
+
+==== DecodingStage
+
+The link:../src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage] handles URL percent-encoding and detects UTF-8 overlong encoding attacks.
+
+==== NormalizationStage
+
+The link:../src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage] performs Unicode normalization to prevent unicode-based attacks.
+
+==== CharacterValidationStage
+
+The link:../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] detects invalid characters and suspicious patterns.
+
+==== LengthValidationStage
+
+The link:../src/main/java/de/cuioss/http/security/validation/LengthValidationStage.java[LengthValidationStage] enforces length limits to prevent buffer overflow attacks.
+
+==== PatternMatchingStage
+
+The link:../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] detects known attack patterns and malicious payloads.
+
+=== Configuration System
+
+The link:../src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration] provides centralized configuration management for all security validation components.
+
+=== Data Models
+
+* link:../src/main/java/de/cuioss/http/security/data/URLParameter.java[URLParameter]: URL parameter representation
+* link:../src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie]: HTTP cookie data model
+* link:../src/main/java/de/cuioss/http/security/data/HTTPBody.java[HTTPBody]: HTTP request body representation
+
+=== Exception Handling
+
+The link:../src/main/java/de/cuioss/http/security/exceptions/UrlSecurityException.java[UrlSecurityException] provides detailed failure context with specific failure types and validation context.
+
+== Usage Examples
+
+=== Basic Path Validation
+
+[source,java]
+----
+import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
+import de.cuioss.http.security.exceptions.UrlSecurityException;
+
+// Create path validation pipeline
+URLPathValidationPipeline pathValidator = URLPathValidationPipeline.builder()
+    .enablePathTraversalDetection()
+    .enableEncodingValidation()
+    .build();
+
+try {
+    String validatedPath = pathValidator.validate("/api/users/123");
+    // Path is safe to use
+    processValidPath(validatedPath);
+} catch (UrlSecurityException e) {
+    log.warn("Security violation detected: {}", e.getMessage());
+    // Handle security violation
+}
+----
+
+=== Full URL Validation with XSS Protection
+
+[source,java]
+----
+import de.cuioss.http.security.pipeline.HTTPBodyValidationPipeline;
+
+// Create HTTP body validation pipeline
+HTTPBodyValidationPipeline bodyValidator = HTTPBodyValidationPipeline.builder()
+    .enableXssDetection()
+    .enableScriptInjectionDetection()
+    .enableProtocolValidation()
+    .build();
+
+try {
+    String validatedUrl = bodyValidator.validate("https://api.example.com/search?q=user+input");
+    // URL is safe to use
+    processValidUrl(validatedUrl);
+} catch (UrlSecurityException e) {
+    log.error("XSS or injection attempt detected: {}", e.getFailureType());
+    // Handle security violation
+}
+----
+
+=== Header Validation
+
+[source,java]
+----
+import de.cuioss.http.security.pipeline.HTTPHeaderValidationPipeline;
+
+HTTPHeaderValidationPipeline headerValidator = HTTPHeaderValidationPipeline.builder()
+    .enableHeaderInjectionDetection()
+    .enableCrlfDetection()
+    .build();
+
+// Validate header name and value
+try {
+    String validatedHeaderName = headerValidator.validate("Content-Type");
+    String validatedHeaderValue = headerValidator.validate("application/json");
+
+    // Headers are safe to use
+    httpRequest.setHeader(validatedHeaderName, validatedHeaderValue);
+} catch (UrlSecurityException e) {
+    log.warn("Header injection attempt: {}", e.getMessage());
+}
+----
+
+=== Parameter Validation
+
+[source,java]
+----
+import de.cuioss.http.security.pipeline.URLParameterValidationPipeline;
+import de.cuioss.http.security.data.URLParameter;
+
+URLParameterValidationPipeline paramValidator = URLParameterValidationPipeline.builder()
+    .enableParameterInjectionDetection()
+    .enableEncodingValidation()
+    .build();
+
+URLParameter param = URLParameter.builder()
+    .name("search")
+    .value("user query")
+    .build();
+
+try {
+    URLParameter validatedParam = paramValidator.validate(param);
+    // Parameter is safe to use
+    processValidParameter(validatedParam);
+} catch (UrlSecurityException e) {
+    log.warn("Parameter injection attempt: {}", e.getFailureType());
+}
+----
+
+=== Pipeline Factory Usage
+
+[source,java]
+----
+import de.cuioss.http.security.pipeline.PipelineFactory;
+import de.cuioss.http.security.core.ValidationType;
+
+// Auto-select appropriate pipeline based on input type
+HttpSecurityValidator validator = PipelineFactory.createValidator(ValidationType.URL_PATH);
+
+try {
+    String validatedInput = validator.validate(userInput);
+    // Input validated using appropriate pipeline
+} catch (UrlSecurityException e) {
+    // Handle security violation with specific failure type
+    handleSecurityViolation(e.getFailureType(), e.getValidationType());
+}
+----
+
+=== Composition and Chaining
+
+[source,java]
+----
+// Compose multiple validators
+HttpSecurityValidator compositeValidator = input -> {
+    String step1 = pathValidator.validate(input);
+    String step2 = lengthValidator.validate(step1);
+    return characterValidator.validate(step2);
+};
+
+// Or use functional composition
+HttpSecurityValidator chainedValidator = pathValidator
+    .andThen(lengthValidator::validate)
+    .andThen(characterValidator::validate);
+----
+
+== Configuration
+
+=== Security Configuration
+
+[source,java]
+----
+import de.cuioss.http.security.config.SecurityConfiguration;
+
+SecurityConfiguration config = SecurityConfiguration.builder()
+    .maxPathLength(2048)
+    .maxParameterLength(1024)
+    .maxHeaderLength(8192)
+    .enableUnicodeNormalization(true)
+    .enableStrictValidation(true)
+    .build();
+
+// Use configuration with pipelines
+URLPathValidationPipeline pipeline = URLPathValidationPipeline.builder()
+    .securityConfiguration(config)
+    .build();
+----
+
+=== Environment-Specific Configuration
+
+[source,properties]
+----
+# Security validation configuration
+cui.security.validation.max-path-length=2048
+cui.security.validation.max-parameter-length=1024
+cui.security.validation.enable-unicode-normalization=true
+cui.security.validation.strict-mode=true
+
+# Attack pattern detection
+cui.security.patterns.enable-path-traversal=true
+cui.security.patterns.enable-xss-detection=true
+cui.security.patterns.enable-injection-detection=true
+----
+
+== Best Practices
+
+=== Security Guidelines
+
+* **Choose appropriate pipeline**: Use URLPathValidationPipeline for paths, HTTPBodyValidationPipeline for full URLs
+* **Enable comprehensive validation**: Include encoding, normalization, and pattern matching stages
+* **Handle exceptions properly**: Log security violations for monitoring and analysis
+* **Configure appropriate limits**: Set reasonable length limits based on application needs
+* **Use fail-secure design**: Default to rejection when in doubt
+
+=== Performance Considerations
+
+* **Pipeline reuse**: Create pipelines once and reuse for multiple validations
+* **Lazy initialization**: Initialize validation stages only when needed
+* **Caching**: Cache compiled patterns and configurations
+* **Early termination**: Stop validation on first security violation detected
+
+=== Integration Patterns
+
+* **Web Framework Integration**: Integrate with servlet filters or Spring interceptors
+* **API Gateway Usage**: Use in API gateways for request validation
+* **Input Sanitization**: Validate all user inputs before processing
+* **Logging and Monitoring**: Log all security violations for threat analysis
+
+== Technical Details
+
+=== Thread Safety
+
+* **All pipelines**: Thread-safe after construction, can be used concurrently
+* **Configuration objects**: Immutable after creation, safe for shared use
+* **Validation stages**: Stateless design ensures thread safety
+
+=== Performance Characteristics
+
+* **O(n) validation time**: Linear time complexity for most validation operations
+* **Low memory overhead**: Minimal object creation during validation
+* **Pattern compilation**: Regex patterns compiled once and cached
+* **Unicode normalization**: Efficient NFC normalization for security
+
+=== Attack Detection Coverage
+
+* **Path Traversal**: `../`, `..\\`, percent-encoded variants
+* **Double Encoding**: Multiple levels of URL encoding
+* **UTF-8 Overlong**: Malformed UTF-8 sequences
+* **Unicode Attacks**: Homograph attacks, normalization bypass
+* **Protocol Injection**: `javascript:`, `data:`, `vbscript:` protocols
+* **Header Injection**: CRLF injection, header splitting
+* **XSS Patterns**: Script tags, event handlers, data URIs
+
+== Related Documentation
+
+* link:../doc/http-security/README.adoc[Complete HTTP Security Documentation Suite]
+* link:../doc/http-security/specification/specification.adoc[HTTP Security Architecture Specification]
+* link:../doc/http-security/specification/testing.adoc[Security Testing Framework]
+* link:../doc/http-security/analysis/owasp-best-practices.adoc[OWASP Security Best Practices]
+* link:../doc/http-security/analysis/cve-analysis.adoc[CVE Analysis and Breach Studies]
+* link:https://owasp.org/www-community/attacks/Path_Traversal[OWASP Path Traversal Guide]
+* link:https://cwe.mitre.org/data/definitions/22.html[CWE-22: Path Traversal]

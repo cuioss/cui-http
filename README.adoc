@@ -1,30 +1,320 @@
-= cui-http
+= CUI-HTTP
+:toc: macro
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnumlevels: 1
+:source-highlighter: highlight.js
 
+[.discrete]
 == Status
 
 image:https://github.com/cuioss/cui-http/actions/workflows/maven.yml/badge.svg[Java CI with Maven,link=https://github.com/cuioss/cui-http/actions/workflows/maven.yml]
 image:http://img.shields.io/:license-apache-blue.svg[License,link=http://www.apache.org/licenses/LICENSE-2.0.html]
 image:https://img.shields.io/maven-central/v/de.cuioss/cui-http.svg?label=Maven%20Central["Maven Central", link="https://central.sonatype.com/artifact/de.cuioss/cui-http"]
 
-https://sonarcloud.io/summary/new_code?id=cuioss_cui-http[image:https://sonarcloud.io/api/project_badges/measure?project=cuioss_cui-http&metric=alert_status[Quality
-Gate Status]]
+https://sonarcloud.io/summary/new_code?id=cuioss_cui-http[image:https://sonarcloud.io/api/project_badges/measure?project=cuioss_cui-http&metric=alert_status[Quality Gate Status]]
 image:https://sonarcloud.io/api/project_badges/measure?project=cuioss_cui-http&metric=ncloc[Lines of Code,link=https://sonarcloud.io/summary/new_code?id=cuioss_cui-http]
 image:https://sonarcloud.io/api/project_badges/measure?project=cuioss_cui-http&metric=coverage[Coverage,link=https://sonarcloud.io/summary/new_code?id=cuioss_cui-http]
 
-
 https://cuioss.github.io/cui-java-module-template/about.html[Generated Documentation on github-pages]
 
+[.discrete]
 == What is it?
 
-CUI-HTTP is a library that provides a collection of utilities and abstractions to facilitate HTTP communication in Java applications. It aims to simplify the process of making HTTP requests and handling responses, while also providing features for common HTTP-related tasks.
+CUI-HTTP is a security-focused HTTP utilities library providing secure validation pipelines, SSL/TLS context management, and HTTP client handlers. The library emphasizes security validation of HTTP components (paths, parameters, headers, bodies) with comprehensive attack pattern detection, offering enterprise-grade security solutions for Java applications.
 
-=== Maven Coordinates
+toc::[]
 
-[source,xml]
+== Maven Coordinates
+
+[source, xml]
 ----
-    <dependency>
-        <groupId>de.cuioss</groupId>
-        <artifactId>cui-http</artifactId>
-    </dependency>
+<dependency>
+    <groupId>de.cuioss</groupId>
+    <artifactId>cui-http</artifactId>
+</dependency>
 ----
 
+For security testing utilities:
+
+[source, xml]
+----
+<dependency>
+    <groupId>de.cuioss</groupId>
+    <artifactId>cui-http</artifactId>
+    <classifier>generators</classifier>
+    <scope>test</scope>
+</dependency>
+----
+
+== Core Concepts
+
+=== HTTP Security Validation
+
+* **Comprehensive validation pipelines** for paths, parameters, headers, and bodies
+* **Attack pattern detection** including path traversal, XSS, injection attacks
+* **CVE-based testing** with real-world vulnerability patterns
+* **Fail-secure design** with detailed exception context
+
+=== HTTP Client Management
+
+* **Builder-pattern HTTP clients** with enterprise security defaults
+* **SSL/TLS context management** with TLS 1.2+ enforcement
+* **HTTP status classification** following RFC 7231 standards
+* **Thread-safe operation** for concurrent environments
+
+=== Security Testing Framework
+
+* **Attack databases** with curated real-world attack patterns
+* **Test data generators** for comprehensive security validation
+* **CVE exploitation patterns** from Apache, IIS, Nginx vulnerabilities
+* **OWASP compliance testing** with Top 10 attack vectors
+
+== Detailed Component Documentation
+
+=== HTTP Security Validation Framework
+
+The link:doc/security-readme.adoc[HTTP Security Validation Framework] provides comprehensive protection against web application vulnerabilities.
+
+==== Validation Pipelines
+
+* **link:src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]**: Path-only attacks, directory traversal, CVE exploits
+* **link:src/main/java/de/cuioss/http/security/pipeline/HTTPBodyValidationPipeline.java[HTTPBodyValidationPipeline]**: Full URLs with protocols, XSS, script injection
+* **link:src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline]**: Header injection attacks
+* **link:src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline]**: Query parameter validation
+
+==== Validation Stages
+
+* **link:src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage]**: URL percent-encoding, UTF-8 overlong detection
+* **link:src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]**: Unicode normalization for paths
+* **link:src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage]**: Invalid character detection
+* **link:src/main/java/de/cuioss/http/security/validation/LengthValidationStage.java[LengthValidationStage]**: Length limits enforcement
+* **link:src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage]**: Attack pattern detection
+
+=== HTTP Client Handlers
+
+The link:doc/client-handlers-readme.adoc[HTTP Client Handlers] provide secure HTTP communication utilities with enterprise security defaults.
+
+==== Key Components
+
+* **link:src/main/java/de/cuioss/http/client/handler/HttpHandler.java[HttpHandler]**: Builder-based HTTP client with secure SSL defaults
+* **link:src/main/java/de/cuioss/http/client/handler/SecureSSLContextProvider.java[SecureSSLContextProvider]**: TLS 1.2+ SSL context provider
+* **link:src/main/java/de/cuioss/http/client/handler/HttpStatusFamily.java[HttpStatusFamily]**: RFC 7231 compliant HTTP status code categorization
+
+=== Security Testing Framework
+
+The link:doc/test-generators-readme.adoc[Security Testing Framework] provides comprehensive testing utilities for security validation.
+
+==== Attack Databases
+
+* **link:src/test/java/de/cuioss/http/security/database/ApacheCVEAttackDatabase.java[ApacheCVEAttackDatabase]**: Apache HTTP Server and Tomcat CVE exploits
+* **link:src/test/java/de/cuioss/http/security/database/IISCVEAttackDatabase.java[IISCVEAttackDatabase]**: Microsoft IIS and Windows-specific vulnerabilities
+* **link:src/test/java/de/cuioss/http/security/database/OWASPTop10AttackDatabase.java[OWASPTop10AttackDatabase]**: OWASP Top 10 2021 attack vectors
+* **link:src/test/java/de/cuioss/http/security/database/ModSecurityCRSAttackDatabase.java[ModSecurityCRSAttackDatabase]**: ModSecurity Core Rule Set patterns
+
+==== Test Data Generators
+
+* **link:src/test/java/de/cuioss/http/security/generators/SupportedValidationTypeGenerator.java[SupportedValidationTypeGenerator]**: Validation type generation
+* **Body, Cookie, Header, URL Generators**: Comprehensive test data generation utilities
+* **Encoding and Injection Generators**: Specialized attack pattern generation
+
+== Usage Examples
+
+=== Basic Security Validation
+
+[source,java]
+----
+import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
+import de.cuioss.http.security.exceptions.UrlSecurityException;
+
+// Create secure path validation pipeline
+URLPathValidationPipeline pathValidator = URLPathValidationPipeline.builder()
+    .enablePathTraversalDetection()
+    .enableEncodingValidation()
+    .build();
+
+try {
+    String validatedPath = pathValidator.validate("/api/users/123");
+    // Path is safe to use
+    processValidPath(validatedPath);
+} catch (UrlSecurityException e) {
+    log.warn("Security violation detected: {}", e.getMessage());
+    // Handle security violation appropriately
+}
+----
+
+=== Secure HTTP Client
+
+[source,java]
+----
+import de.cuioss.http.client.handler.HttpHandler;
+import de.cuioss.http.client.handler.HttpStatusFamily;
+
+// Create secure HTTPS client with auto-generated SSL context
+HttpHandler handler = HttpHandler.builder()
+    .uri("https://api.example.com/data")
+    .connectionTimeoutSeconds(10)
+    .readTimeoutSeconds(30)
+    .build();
+
+try {
+    HttpResponse<String> response = handler.executeGetRequest();
+
+    if (HttpStatusFamily.isSuccess(response.statusCode())) {
+        String data = response.body();
+        processSuccessfulResponse(data);
+    } else {
+        handleErrorResponse(response);
+    }
+} catch (IOException e) {
+    log.error("Network error during HTTP request", e);
+}
+----
+
+=== Security Testing with Attack Databases
+
+[source,java]
+----
+import de.cuioss.http.security.database.ApacheCVEAttackDatabase;
+import de.cuioss.http.security.database.AttackTestCase;
+
+@ParameterizedTest
+@ArgumentsSource(ApacheCVEAttackDatabase.ArgumentsProvider.class)
+void shouldRejectApacheCVEAttacks(AttackTestCase testCase) {
+    var exception = assertThrows(UrlSecurityException.class,
+        () -> pipeline.validate(testCase.attackString()));
+
+    assertEquals(testCase.expectedFailureType(), exception.getFailureType(),
+        String.format("Expected %s for attack: %s\nRationale: %s",
+            testCase.expectedFailureType(),
+            testCase.attackString(),
+            testCase.detectionRationale()));
+}
+----
+
+== Configuration
+
+=== Security Validation Configuration
+
+[source,java]
+----
+import de.cuioss.http.security.config.SecurityConfiguration;
+
+SecurityConfiguration config = SecurityConfiguration.builder()
+    .maxPathLength(2048)
+    .maxParameterLength(1024)
+    .maxHeaderLength(8192)
+    .enableUnicodeNormalization(true)
+    .enableStrictValidation(true)
+    .build();
+----
+
+=== HTTP Client Configuration
+
+[source,java]
+----
+HttpHandler handler = HttpHandler.builder()
+    .uri("https://api.example.com/endpoint")
+    .connectionTimeoutSeconds(10)
+    .readTimeoutSeconds(30)
+    .build();
+----
+
+=== Build Configuration
+
+[source,bash]
+----
+# Build and install locally
+./mvnw clean install
+
+# Run tests
+./mvnw test
+
+# Run pre-commit checks (MANDATORY before commits)
+./mvnw -Ppre-commit clean verify
+
+# Generate coverage report
+./mvnw -Pcoverage clean verify
+----
+
+== Best Practices
+
+=== Security Guidelines
+
+* **Choose appropriate pipeline**: Use URLPathValidationPipeline for paths, HTTPBodyValidationPipeline for full URLs
+* **Enable comprehensive validation**: Include encoding, normalization, and pattern matching stages
+* **Handle exceptions properly**: Log security violations for monitoring and analysis
+* **Use fail-secure design**: Default to rejection when in doubt
+
+=== Performance Considerations
+
+* **Pipeline reuse**: Create pipelines once and reuse for multiple validations
+* **HTTP client reuse**: HttpHandler instances are thread-safe for concurrent use
+* **Set reasonable timeouts**: Balance responsiveness with reliability
+* **Consider connection pooling**: For high-frequency API calls
+
+=== Testing Architecture
+
+* **Use attack databases**: Test against known CVE patterns and OWASP vectors
+* **Combine testing approaches**: Use both databases for known attacks and generators for dynamic testing
+* **Verify failure types**: Always check expected vs actual failure types in security tests
+* **Include educational context**: Use attack descriptions for security awareness
+
+== Technical Details
+
+=== Thread Safety
+
+* **All components**: Thread-safe after construction, designed for concurrent use
+* **Security validators**: Stateless design ensures thread safety
+* **HTTP handlers**: Safe for concurrent request execution
+* **Configuration objects**: Immutable after creation
+
+=== Performance Characteristics
+
+* **O(n) validation time**: Linear time complexity for most validation operations
+* **Low memory overhead**: Minimal object creation during normal operation
+* **Pattern compilation**: Regex patterns compiled once and cached
+* **SSL context reuse**: Efficient SSL/TLS context management
+
+=== Security Coverage
+
+* **Path Traversal**: `../`, `..\\`, percent-encoded variants, double encoding
+* **Protocol Injection**: `javascript:`, `data:`, `vbscript:` protocols
+* **Header Injection**: CRLF injection, header splitting attacks
+* **XSS Patterns**: Script tags, event handlers, data URIs
+* **CVE Exploits**: Real-world vulnerability patterns from Apache, IIS, Nginx
+
+=== Dependencies
+
+* **Java 21+**: Requires modern Java runtime
+* **cui-java-tools**: Core utilities and logging framework
+* **JSpecify**: Null-safety annotations
+* **Lombok**: Code generation for builders and data classes
+* **JUnit 5**: Testing framework (test scope only)
+
+== Related Documentation
+
+=== Component Documentation
+
+* link:doc/client-handlers-readme.adoc[HTTP Client Handlers] - Secure HTTP communication utilities
+* link:doc/security-readme.adoc[HTTP Security Validation Framework] - Comprehensive security validation
+* link:doc/test-generators-readme.adoc[Security Testing Framework] - Attack databases and test generators
+
+=== Specification Documentation
+
+* link:doc/http-security/README.adoc[HTTP Security Validation Overview] - Complete security documentation suite
+* link:doc/http-security/specification/specification.adoc[HTTP Security Architecture Specification]
+* link:doc/http-security/specification/testing.adoc[Security Testing Framework Specification]
+* link:doc/http-security/specification/pipeline-architecture-standards.adoc[Pipeline Architecture Standards]
+
+=== Analysis Documentation
+
+* link:doc/http-security/analysis/owasp-best-practices.adoc[OWASP Security Best Practices]
+* link:doc/http-security/analysis/cve-analysis.adoc[CVE Analysis and Breach Studies]
+
+=== Standards and External Resources
+
+* link:https://owasp.org/www-community/attacks/Path_Traversal[OWASP Path Traversal Guide]
+* link:https://cwe.mitre.org/data/definitions/22.html[CWE-22: Path Traversal]
+* link:https://tools.ietf.org/html/rfc7231[RFC 7231 - HTTP/1.1 Semantics and Content]
+* link:https://tools.ietf.org/html/rfc3986[RFC 3986 - URI Generic Syntax]
