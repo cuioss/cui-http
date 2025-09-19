@@ -230,13 +230,13 @@ public final class SecurityDefaults {
     // ========== BODY SECURITY CONSTANTS ==========
 
     /** Maximum body size for strict security configurations (1MB) */
-    public static final long MAX_BODY_SIZE_STRICT = 1024 * 1024;
+    public static final long MAX_BODY_SIZE_STRICT = 1024L * 1024;
 
     /** Maximum body size for default security configurations (5MB) */
-    public static final long MAX_BODY_SIZE_DEFAULT = 5 * 1024 * 1024;
+    public static final long MAX_BODY_SIZE_DEFAULT = 5L * 1024 * 1024;
 
     /** Maximum body size for lenient security configurations (10MB) */
-    public static final long MAX_BODY_SIZE_LENIENT = 10 * 1024 * 1024;
+    public static final long MAX_BODY_SIZE_LENIENT = 10L * 1024 * 1024;
 
     /** Content types that are generally safe for most applications */
     public static final Set<String> SAFE_CONTENT_TYPES = Set.of(

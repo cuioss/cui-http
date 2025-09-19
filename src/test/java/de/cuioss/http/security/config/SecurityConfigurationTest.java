@@ -98,11 +98,12 @@ class SecurityConfigurationTest {
 
     @ParameterizedTest
     @TypeGeneratorSource(value = InvalidPositiveIntegerGenerator.class, count = 5)
+    @SuppressWarnings("java:S5778")
     void shouldValidatePositivePathLength(Integer invalidValue) {
         var builder = SecurityConfiguration.builder();
 
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                builder.maxPathLength(invalidValue));
+            builder.maxPathLength(invalidValue));
         assertTrue(thrown.getMessage().contains("maxPathLength must be positive"));
     }
 
@@ -130,9 +131,10 @@ class SecurityConfigurationTest {
 
     @ParameterizedTest
     @TypeGeneratorSource(value = NegativeIntegerGenerator.class, count = 5)
+    @SuppressWarnings("java:S5778")
     void shouldValidateNonNegativeParameterCount(Integer negativeValue) {
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxParameterCount(negativeValue).build());
+            SecurityConfiguration.builder().maxParameterCount(negativeValue).build());
         assertTrue(thrown.getMessage().contains("maxParameterCount must be non-negative"));
     }
 
@@ -152,75 +154,85 @@ class SecurityConfigurationTest {
 
     @ParameterizedTest
     @TypeGeneratorSource(value = InvalidPositiveIntegerGenerator.class, count = 3)
+    @SuppressWarnings("java:S5778")
     void shouldValidatePositiveParameterNameLength(Integer invalidValue) {
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxParameterNameLength(invalidValue).build());
+            SecurityConfiguration.builder().maxParameterNameLength(invalidValue).build());
         assertTrue(thrown.getMessage().contains("maxParameterNameLength must be positive"));
     }
 
     @ParameterizedTest
     @TypeGeneratorSource(value = InvalidPositiveIntegerGenerator.class, count = 3)
+    @SuppressWarnings("java:S5778")
     void shouldValidatePositiveParameterValueLength(Integer invalidValue) {
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxParameterValueLength(invalidValue).build());
+            SecurityConfiguration.builder().maxParameterValueLength(invalidValue).build());
         assertTrue(thrown.getMessage().contains("maxParameterValueLength must be positive"));
     }
 
     @Test
     void shouldAllowZeroHeaderCount() {
-        SecurityConfiguration.builder().maxHeaderCount(0).build(); // Should work
+        SecurityConfiguration config = SecurityConfiguration.builder().maxHeaderCount(0).build();
+        assertEquals(0, config.maxHeaderCount());
     }
 
     @ParameterizedTest
     @TypeGeneratorSource(value = NegativeIntegerGenerator.class, count = 3)
+    @SuppressWarnings("java:S5778")
     void shouldValidateNonNegativeHeaderCount(Integer negativeValue) {
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxHeaderCount(negativeValue).build());
+            SecurityConfiguration.builder().maxHeaderCount(negativeValue).build());
         assertTrue(thrown.getMessage().contains("maxHeaderCount must be non-negative"));
     }
 
     @ParameterizedTest
     @TypeGeneratorSource(value = InvalidPositiveIntegerGenerator.class, count = 3)
+    @SuppressWarnings("java:S5778")
     void shouldValidatePositiveHeaderNameLength(Integer invalidValue) {
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxHeaderNameLength(invalidValue).build());
+            SecurityConfiguration.builder().maxHeaderNameLength(invalidValue).build());
         assertTrue(thrown.getMessage().contains("maxHeaderNameLength must be positive"));
     }
 
     @ParameterizedTest
     @TypeGeneratorSource(value = InvalidPositiveIntegerGenerator.class, count = 3)
+    @SuppressWarnings("java:S5778")
     void shouldValidatePositiveHeaderValueLength(Integer invalidValue) {
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxHeaderValueLength(invalidValue).build());
+            SecurityConfiguration.builder().maxHeaderValueLength(invalidValue).build());
         assertTrue(thrown.getMessage().contains("maxHeaderValueLength must be positive"));
     }
 
     @Test
     void shouldAllowZeroCookieCount() {
-        SecurityConfiguration.builder().maxCookieCount(0).build(); // Should work
+        SecurityConfiguration config = SecurityConfiguration.builder().maxCookieCount(0).build();
+        assertEquals(0, config.maxCookieCount());
     }
 
     @ParameterizedTest
     @TypeGeneratorSource(value = NegativeIntegerGenerator.class, count = 3)
+    @SuppressWarnings("java:S5778")
     void shouldValidateNonNegativeCookieCount(Integer negativeValue) {
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxCookieCount(negativeValue).build());
+            SecurityConfiguration.builder().maxCookieCount(negativeValue).build());
         assertTrue(thrown.getMessage().contains("maxCookieCount must be non-negative"));
     }
 
     @ParameterizedTest
     @TypeGeneratorSource(value = InvalidPositiveIntegerGenerator.class, count = 3)
+    @SuppressWarnings("java:S5778")
     void shouldValidatePositiveCookieNameLength(Integer invalidValue) {
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxCookieNameLength(invalidValue).build());
+            SecurityConfiguration.builder().maxCookieNameLength(invalidValue).build());
         assertTrue(thrown.getMessage().contains("maxCookieNameLength must be positive"));
     }
 
     @ParameterizedTest
     @TypeGeneratorSource(value = InvalidPositiveIntegerGenerator.class, count = 3)
+    @SuppressWarnings("java:S5778")
     void shouldValidatePositiveCookieValueLength(Integer invalidValue) {
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxCookieValueLength(invalidValue).build());
+            SecurityConfiguration.builder().maxCookieValueLength(invalidValue).build());
         assertTrue(thrown.getMessage().contains("maxCookieValueLength must be positive"));
     }
 
@@ -234,9 +246,10 @@ class SecurityConfigurationTest {
 
     @ParameterizedTest
     @TypeGeneratorSource(value = NegativeIntegerGenerator.class, count = 3)
+    @SuppressWarnings("java:S5778")
     void shouldValidateNonNegativeBodySize(Integer negativeValue) {
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxBodySize(negativeValue).build());
+            SecurityConfiguration.builder().maxBodySize(negativeValue).build());
         assertTrue(thrown.getMessage().contains("maxBodySize must be non-negative"));
     }
 
@@ -474,9 +487,9 @@ class SecurityConfigurationTest {
                 .blockedContentTypes(Set.of())
                 .build();
 
-        assertTrue(config.allowedHeaderNames().isEmpty());
+        assertTrue(config.allowedHeaderNames() != null && config.allowedHeaderNames().isEmpty());
         assertTrue(config.blockedHeaderNames().isEmpty());
-        assertTrue(config.allowedContentTypes().isEmpty());
+        assertTrue(config.allowedContentTypes() != null && config.allowedContentTypes().isEmpty());
         assertTrue(config.blockedContentTypes().isEmpty());
     }
 
@@ -504,12 +517,13 @@ class SecurityConfigurationTest {
     }
 
     @Test
+    @SuppressWarnings("java:S5778")
     void shouldPreserveImmutabilityOfReturnedSets() {
         SecurityConfiguration config = SecurityConfiguration.builder()
                 .blockedHeaderNames(Set.of("X-Test"))
                 .build();
 
         assertThrows(UnsupportedOperationException.class, () ->
-                config.blockedHeaderNames().add("X-Modified"));
+            config.blockedHeaderNames().add("X-Modified"));
     }
 }

@@ -74,7 +74,7 @@ public final class URLParameterValidationPipeline implements HttpSecurityValidat
 
     private final List<HttpSecurityValidator> stages;
     private final SecurityEventCounter eventCounter;
-    private final static ValidationType validationType = ValidationType.PARAMETER_VALUE;
+    private static final ValidationType validationType = ValidationType.PARAMETER_VALUE;
 
     /**
      * Creates a new URL parameter validation pipeline with the specified configuration.

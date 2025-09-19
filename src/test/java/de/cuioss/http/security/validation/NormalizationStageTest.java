@@ -282,7 +282,6 @@ class NormalizationStageTest {
                 () -> stage.validate(maliciousInput));
 
         assertEquals(maliciousInput, exception.getOriginalInput());
-        assertNotNull(exception.getSanitizedInput());
-        assertNotEquals(maliciousInput, exception.getSanitizedInput());
+        assertTrue(exception.getSanitizedInput().isPresent(), "Sanitized input should be present in exception");
     }
 }
