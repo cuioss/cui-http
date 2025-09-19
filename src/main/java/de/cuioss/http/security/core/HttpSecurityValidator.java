@@ -157,7 +157,7 @@ public interface HttpSecurityValidator {
      * <p>This is useful for conditional validation based on input characteristics:</p>
      * <pre>
      * // Only validate non-empty strings
-     * HttpSecurityValidator conditionalValidator = validator.when(s -> s != null && !s.isEmpty());
+     * HttpSecurityValidator conditionalValidator = validator.when(s -> s != null &amp;&amp; !s.isEmpty());
      *
      * // Only validate strings that look like URLs
      * HttpSecurityValidator urlValidator = validator.when(s -> s.startsWith("http"));

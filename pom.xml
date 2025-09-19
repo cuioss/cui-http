@@ -48,6 +48,10 @@
             <artifactId>jspecify</artifactId>
         </dependency>
         <dependency>
+            <groupId>de.cuioss</groupId>
+            <artifactId>cui-core-ui-model</artifactId>
+        </dependency>
+        <dependency>
             <groupId>de.cuioss.test</groupId>
             <artifactId>cui-test-generator</artifactId>
             <scope>test</scope>
@@ -58,10 +62,23 @@
             <artifactId>junit-jupiter-api</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jetbrains</groupId>
-            <artifactId>annotations</artifactId>
-            <version>26.0.2</version>
-            <scope>compile</scope>
+            <groupId>de.cuioss.test</groupId>
+            <artifactId>cui-test-mockwebserver-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>de.cuioss.test</groupId>
+            <artifactId>cui-test-value-objects</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>de.cuioss.test</groupId>
+            <artifactId>cui-test-juli-logger</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
         </dependency>
     </dependencies>
     <build>

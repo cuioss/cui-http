@@ -54,7 +54,7 @@ import java.util.BitSet;
  *
  * // Validate string characters
  * String input = "/api/users";
- * for (int i = 0; i < input.length(); i++) {
+ * for (int i = 0; i &lt; input.length(); i++) {
  *     char c = input.charAt(i);
  *     if (!pathChars.get(c)) {
  *         throw new IllegalArgumentException("Invalid character: " + c);
@@ -100,13 +100,13 @@ public final class CharacterValidationConstants {
 
     /**
      * RFC 3986 path characters including unreserved + path-specific characters.
-     * <p>Includes all unreserved characters plus: / @ : ! $ & ' ( ) * + , ; =</p>
+     * <p>Includes all unreserved characters plus: / @ : ! $ &amp; ' ( ) * + , ; =</p>
      */
     public static final BitSet RFC3986_PATH_CHARS;
 
     /**
      * RFC 3986 query characters including unreserved + query-specific characters.
-     * <p>Includes all unreserved characters plus: ? & = ! $ ' ( ) * + , ;</p>
+     * <p>Includes all unreserved characters plus: ? &amp; = ! $ ' ( ) * + , ;</p>
      */
     public static final BitSet RFC3986_QUERY_CHARS;
 

@@ -46,7 +46,7 @@ import java.util.Optional;
  *
  * // Form data
  * HTTPBody formBody = new HTTPBody(
- *     "username=admin&password=secret",
+ *     "username=admin&amp;password=secret",
  *     "application/x-www-form-urlencoded",
  *     ""
  * );

@@ -110,10 +110,10 @@ import java.util.function.Predicate;
  * @since 1.0
  */
 public record LengthValidationStage(
-        /** Security configuration controlling validation behavior. */
-        SecurityConfiguration config,
-        /** Type of validation being performed (URL_PATH, PARAMETER_NAME, etc.). */
-        ValidationType validationType) implements HttpSecurityValidator {
+/** Security configuration controlling validation behavior. */
+SecurityConfiguration config,
+/** Type of validation being performed (URL_PATH, PARAMETER_NAME, etc.). */
+ValidationType validationType) implements HttpSecurityValidator {
 
     /**
      * Validates input length against component-specific limits.

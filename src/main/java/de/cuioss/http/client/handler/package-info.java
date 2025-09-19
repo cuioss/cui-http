@@ -64,7 +64,7 @@
  *
  * <h3>Cross-References</h3>
  * <ul>
- *   <li>{@link de.cuioss.http.security} - HTTP security validation components</li>
+ *   <li>de.cuioss.http.security - HTTP security validation components</li>
  *   <li>{@link javax.net.ssl.SSLContext} - Java SSL context API</li>
  *   <li>{@link java.net.http.HttpClient} - Java HTTP client API</li>
  * </ul>
