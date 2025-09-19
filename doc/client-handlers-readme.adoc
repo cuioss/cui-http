@@ -1,19 +1,7 @@
 = HTTP Client Handlers
 :toc: macro
-:toclevels: 3
+:toclevels: 2
 :toc-title: Table of Contents
-:sectnumlevels: 1
-:source-highlighter: highlight.js
-
-[.discrete]
-== Status
-
-Secure HTTP client utilities and SSL/TLS context management for enterprise applications.
-
-[.discrete]
-== What is it?
-
-This module provides comprehensive HTTP client handling utilities with security-first design, offering simplified request execution, SSL/TLS context management, and HTTP status code classification. All components are designed for enterprise use with proper error handling, security defaults, and thread-safe operation.
 
 toc::[]
 
@@ -27,231 +15,48 @@ toc::[]
 </dependency>
 ----
 
-== Core Concepts
+== Overview
 
-=== HTTP Client Builder Pattern
+HTTP client utilities providing simplified HTTP request execution, SSL/TLS context management, and HTTP status classification.
 
-* Builder-based HTTP client creation with secure SSL defaults
-* Automatic SSL/TLS context generation for HTTPS connections
-* Configurable timeouts for connection and read operations
-* Thread-safe operation for concurrent use
+== Components
 
-=== SSL/TLS Security Management
+=== link:../src/main/java/de/cuioss/http/client/handler/HttpHandler.java[HttpHandler]
 
-* TLS 1.2+ SSL context provider with enterprise security defaults
-* Automatic certificate chain validation
-* Configurable security protocols and cipher suites
-* Enterprise-grade SSL context creation
+Builder-based HTTP client wrapper with automatic SSL context creation for HTTPS.
 
-=== HTTP Status Code Classification
+* Uses `@Builder` pattern for configuration
+* Auto-creates secure SSL context via SecureSSLContextProvider when not provided
+* Configurable connection and read timeouts (default: 10 seconds)
+* Thread-safe after construction
 
-* RFC 7231 compliant HTTP status code categorization
-* Type-safe status family classification
-* Simplified response handling with semantic methods
-* Complete coverage of standard HTTP status codes
+=== link:../src/main/java/de/cuioss/http/client/handler/SecureSSLContextProvider.java[SecureSSLContextProvider]
 
-== Detailed Component Documentation
+Utility for creating TLS 1.2+ SSL contexts.
 
-=== HttpHandler
+=== link:../src/main/java/de/cuioss/http/client/handler/HttpStatusFamily.java[HttpStatusFamily]
 
-The link:../src/main/java/de/cuioss/http/client/handler/HttpHandler.java[HttpHandler] class provides a builder-pattern HTTP client with enterprise security defaults.
+Enum for RFC 7231 HTTP status code classification with static helper methods.
 
-==== Key Features
-
-* **Secure by Default**: Automatic SSL context creation with TLS 1.2+
-* **Builder Pattern**: Fluent API for configuration
-* **Timeout Management**: Configurable connection and read timeouts
-* **Thread Safety**: Safe for concurrent use across multiple threads
-* **Exception Handling**: Proper IOException and InterruptedException handling
-
-==== Configuration Options
-
-* URI endpoint configuration
-* Connection timeout (seconds)
-* Read timeout (seconds)
-* Custom SSL context (optional)
-* HTTP method selection
-
-=== SecureSSLContextProvider
-
-The link:../src/main/java/de/cuioss/http/client/handler/SecureSSLContextProvider.java[SecureSSLContextProvider] creates enterprise-grade SSL contexts for secure HTTP connections.
-
-==== Security Features
-
-* **TLS 1.2+ Only**: Enforces modern TLS versions
-* **Strong Cipher Suites**: Uses enterprise-approved cipher configurations
-* **Certificate Validation**: Full certificate chain validation
-* **Protocol Security**: Disables insecure SSL/TLS protocols
-
-=== HttpStatusFamily
-
-The link:../src/main/java/de/cuioss/http/client/handler/HttpStatusFamily.java[HttpStatusFamily] enum provides RFC 7231 compliant HTTP status code classification.
-
-==== Status Categories
-
-* **1xx Informational**: `isInformational(int statusCode)`
-* **2xx Success**: `isSuccess(int statusCode)`
-* **3xx Redirection**: `isRedirection(int statusCode)`
-* **4xx Client Error**: `isClientError(int statusCode)`
-* **5xx Server Error**: `isServerError(int statusCode)`
-
-== Usage Examples
-
-=== Basic HTTPS Client
+== Usage Example
 
 [source,java]
 ----
-// Create secure HTTPS client with auto-generated SSL context
 HttpHandler handler = HttpHandler.builder()
     .uri("https://api.example.com/data")
     .connectionTimeoutSeconds(10)
     .readTimeoutSeconds(30)
     .build();
 
-try {
-    HttpResponse<String> response = handler.executeGetRequest();
-
-    if (HttpStatusFamily.isSuccess(response.statusCode())) {
-        String data = response.body();
-        processSuccessfulResponse(data);
-    } else if (HttpStatusFamily.isClientError(response.statusCode())) {
-        handleClientError(response);
-    } else if (HttpStatusFamily.isServerError(response.statusCode())) {
-        handleServerError(response);
-    }
-} catch (IOException e) {
-    log.error("Network error during HTTP request", e);
-} catch (InterruptedException e) {
-    Thread.currentThread().interrupt();
-    log.warn("HTTP request interrupted");
-}
-----
-
-=== Custom SSL Context Configuration
-
-[source,java]
-----
-// Create custom SSL context for specific security requirements
-SSLContext customSslContext = SecureSSLContextProvider.createSecureContext();
-
-HttpHandler handler = HttpHandler.builder()
-    .uri("https://secure-api.example.com/endpoint")
-    .sslContext(customSslContext)
-    .connectionTimeoutSeconds(15)
-    .readTimeoutSeconds(60)
-    .build();
-
-HttpResponse<String> response = handler.executePostRequest("{\"data\": \"value\"}");
-----
-
-=== Response Status Handling
-
-[source,java]
-----
 HttpResponse<String> response = handler.executeGetRequest();
 
-// Type-safe status code handling
-switch (HttpStatusFamily.fromStatusCode(response.statusCode())) {
-    case INFORMATIONAL -> log.info("Informational response received");
-    case SUCCESS -> processSuccessResponse(response);
-    case REDIRECTION -> handleRedirection(response);
-    case CLIENT_ERROR -> handleClientError(response);
-    case SERVER_ERROR -> handleServerError(response);
-}
-
-// Or use static methods for specific checks
 if (HttpStatusFamily.isSuccess(response.statusCode())) {
-    // Handle successful response
-} else if (response.statusCode() == 401) {
-    // Handle unauthorized
-} else if (response.statusCode() == 404) {
-    // Handle not found
+    processData(response.body());
 }
 ----
 
-== Configuration
-
-=== Connection Timeouts
-
-[source,java]
-----
-HttpHandler handler = HttpHandler.builder()
-    .uri("https://api.example.com/endpoint")
-    .connectionTimeoutSeconds(10)  // Connection establishment timeout
-    .readTimeoutSeconds(30)        // Response read timeout
-    .build();
-----
-
-=== SSL Context Configuration
-
-[source,java]
-----
-// Use default secure SSL context (recommended)
-HttpHandler defaultHandler = HttpHandler.builder()
-    .uri("https://api.example.com")
-    .build(); // Auto-creates secure SSL context
-
-// Use custom SSL context for specific requirements
-SSLContext customContext = SecureSSLContextProvider.createSecureContext();
-HttpHandler customHandler = HttpHandler.builder()
-    .uri("https://api.example.com")
-    .sslContext(customContext)
-    .build();
-----
-
-== Best Practices
-
-=== Security Guidelines
-
-* **Always use HTTPS**: HTTP connections should only be used for testing
-* **Set appropriate timeouts**: Prevent resource exhaustion with reasonable timeout values
-* **Handle interruption**: Always restore thread interruption status
-* **Use secure SSL defaults**: Let SecureSSLContextProvider handle SSL context creation
-* **Validate responses**: Always check HTTP status codes before processing response bodies
-
-=== Performance Considerations
-
-* **Reuse HttpHandler instances**: Thread-safe for concurrent requests
-* **Set reasonable timeouts**: Balance responsiveness with reliability
-* **Handle exceptions properly**: Distinguish between network errors and interruption
-* **Consider connection pooling**: For high-frequency API calls
-
-=== Error Handling Patterns
-
-* **IOException**: Network connectivity issues, DNS resolution failures
-* **InterruptedException**: Thread interruption during request execution
-* **HTTP Status Errors**: Use HttpStatusFamily for proper classification
-* **SSL Errors**: Logged automatically by SecureSSLContextProvider
-
-== Technical Details
-
-=== Thread Safety
-
-* **HttpHandler**: Thread-safe after construction, can be used concurrently
-* **SecureSSLContextProvider**: Stateless utility class, thread-safe
-* **HttpStatusFamily**: Enum constants, inherently thread-safe
-
-=== Memory Characteristics
-
-* **Low Memory Footprint**: Minimal object creation during normal operation
-* **No Resource Leaks**: Proper cleanup of HTTP connections
-* **SSL Context Caching**: Reuse SSL contexts when possible
-
-=== Performance Characteristics
-
-* **Fast SSL Context Creation**: Optimized for enterprise environments
-* **Efficient HTTP Handling**: Minimal overhead over standard Java HTTP client
-* **Status Code Classification**: O(1) lookup performance
-
-=== Dependencies
-
-* **Java 21+**: Requires modern Java runtime
-* **Standard Library Only**: No external dependencies beyond JDK
-* **SSL/TLS Support**: Built-in Java cryptography providers
 
 == Related Documentation
 
 * link:../doc/http-security/README.adoc[HTTP Security Validation Framework]
-* link:https://docs.oracle.com/en/java/javase/21/docs/api/java.net.http/java/net/http/HttpClient.html[Java HttpClient Documentation]
-* link:https://docs.oracle.com/en/java/javase/21/docs/api/java.base/javax/net/ssl/SSLContext.html[Java SSLContext Documentation]
-* link:https://tools.ietf.org/html/rfc7231[RFC 7231 - HTTP/1.1 Semantics and Content]
+* link:https://tools.ietf.org/html/rfc7231[RFC 7231 - HTTP/1.1 Semantics]

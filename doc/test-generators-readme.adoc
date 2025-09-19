@@ -1,19 +1,7 @@
 = HTTP Security Test Generators
 :toc: macro
-:toclevels: 3
+:toclevels: 2
 :toc-title: Table of Contents
-:sectnumlevels: 1
-:source-highlighter: highlight.js
-
-[.discrete]
-== Status
-
-Comprehensive HTTP security testing framework providing attack databases and test data generators for security validation testing. This artifact contains curated attack patterns and dynamic test case generation utilities.
-
-[.discrete]
-== What is it?
-
-This module provides a complete security testing framework consisting of two main components: **Attack Databases** with predefined real-world attack patterns, and **Test Data Generators** for dynamic security test case creation. The framework enables comprehensive security validation testing with both known attack vectors and algorithmically generated test cases.
 
 toc::[]
 
@@ -29,233 +17,81 @@ toc::[]
 </dependency>
 ----
 
-== Core Concepts
+== Overview
 
-=== Attack Database Architecture
+Test artifact containing attack databases with curated real-world attack patterns and test data generators for security validation testing.
 
-* **Structured Attack Collections**: Organized databases of real-world attack patterns
-* **CVE-Based Testing**: Actual exploit patterns from documented vulnerabilities
-* **Educational Documentation**: Each attack includes comprehensive security education
-* **Expected Failure Types**: Specific `UrlSecurityFailureType` expectations for validation
+== Attack Databases
 
-=== Test Data Generation
+All databases implement `AttackDatabase` interface and provide `AttackTestCase` records with:
+- Attack string
+- Expected `UrlSecurityFailureType`
+- Attack description
+- Detection rationale
 
-* **Dynamic Generation**: Algorithmic creation of test data for comprehensive coverage
-* **Type-Safe Generators**: Strongly typed generators for different HTTP components
-* **Validation Type Support**: Generators for all supported validation scenarios
-* **Contract Testing**: Automated verification of generator behavior
+=== CVE-Based Databases
 
-=== Security Testing Categories
+* **ApacheCVEAttackDatabase** - Apache HTTP Server and Tomcat CVE exploits
+* **IISCVEAttackDatabase** - Microsoft IIS and Windows vulnerabilities
+* **NginxCVEAttackDatabase** - Nginx server CVE patterns
 
-* **CVE Exploitation**: Apache, IIS, Nginx server vulnerabilities
-* **Standards Compliance**: OWASP Top 10, ModSecurity CRS patterns
-* **Protocol Attacks**: HTTP protocol manipulation and injection
-* **Encoding Attacks**: Unicode, UTF-8, and percent-encoding vulnerabilities
+=== Standards-Based Databases
 
-== Detailed Component Documentation
+* **OWASPTop10AttackDatabase** - OWASP Top 10 2021 attack vectors
+* **ModSecurityCRSAttackDatabase** - ModSecurity Core Rule Set patterns
+* **OWASPZAPAttackDatabase** - OWASP ZAP scanner patterns
 
-=== Attack Database Framework
+=== Specialized Databases
 
-==== AttackTestCase
-
-The link:../src/test/java/de/cuioss/http/security/database/AttackTestCase.java[AttackTestCase] record serves as the foundation for all attack testing.
-
-**Components:**
-* **Attack String**: The actual malicious payload to be tested
-* **Expected Failure Type**: The specific `UrlSecurityFailureType` expected
-* **Attack Description**: Comprehensive explanation of attack mechanics and purpose
-* **Detection Rationale**: Detailed reasoning for expected failure type
-
-==== AttackDatabase Interface
-
-The link:../src/test/java/de/cuioss/http/security/database/AttackDatabase.java[AttackDatabase] interface defines the contract for attack pattern collections.
-
-**Features:**
-* **Curated Collections**: Focused sets of related attack patterns
-* **Public Constants**: Individual test cases accessible for targeted testing
-* **Complete Documentation**: CVE details and vulnerability context
-* **Educational Value**: Security knowledge embedded in test cases
-
-=== CVE-Based Attack Databases
-
-==== ApacheCVEAttackDatabase
-
-The link:../src/test/java/de/cuioss/http/security/database/ApacheCVEAttackDatabase.java[ApacheCVEAttackDatabase] contains Apache HTTP Server and Tomcat CVE exploits.
-
-**Coverage:**
-* Path traversal vulnerabilities (CVE-2021-41773, CVE-2021-42013)
-* Directory listing attacks
-* Configuration file access attempts
-* Module-specific vulnerabilities
-
-==== IISCVEAttackDatabase
-
-The link:../src/test/java/de/cuioss/http/security/database/IISCVEAttackDatabase.java[IISCVEAttackDatabase] contains Microsoft IIS and Windows-specific vulnerabilities.
-
-**Coverage:**
-* Windows path traversal patterns
-* IIS-specific directory attacks
-* ASP.NET vulnerability patterns
-* Windows file system bypasses
-
-==== NginxCVEAttackDatabase
-
-The link:../src/test/java/de/cuioss/http/security/database/NginxCVEAttackDatabase.java[NginxCVEAttackDatabase] contains Nginx server CVE attack patterns.
-
-**Coverage:**
-* Nginx configuration vulnerabilities
-* Alias traversal attacks
-* Location directive bypasses
-* Module-specific exploits
-
-=== Standards-Based Attack Databases
-
-==== OWASPTop10AttackDatabase
-
-The link:../src/test/java/de/cuioss/http/security/database/OWASPTop10AttackDatabase.java[OWASPTop10AttackDatabase] contains OWASP Top 10 2021 attack vectors.
-
-**Coverage:**
-* A01: Broken Access Control
-* A03: Injection vulnerabilities
-* A06: Vulnerable and Outdated Components
-* A10: Server-Side Request Forgery (SSRF)
-
-==== ModSecurityCRSAttackDatabase
-
-The link:../src/test/java/de/cuioss/http/security/database/ModSecurityCRSAttackDatabase.java[ModSecurityCRSAttackDatabase] contains ModSecurity Core Rule Set attack patterns.
-
-**Coverage:**
-* SQL injection patterns
-* XSS attack vectors
-* Command injection attempts
-* Protocol attack patterns
-
-=== Specialized Attack Databases
-
-==== HomographAttackDatabase
-
-The link:../src/test/java/de/cuioss/http/security/database/HomographAttackDatabase.java[HomographAttackDatabase] contains Unicode homograph attack patterns.
-
-**Coverage:**
-* Internationalized domain names (IDN) attacks
-* Unicode character confusion
-* Punycode manipulation
-* Visual similarity exploits
-
-==== IPv6AttackDatabase
-
-The link:../src/test/java/de/cuioss/http/security/database/IPv6AttackDatabase.java[IPv6AttackDatabase] contains IPv6-specific security attack patterns.
-
-**Coverage:**
-* IPv6 address manipulation
-* Dual-stack vulnerabilities
-* IPv6 header injection
-* Zone ID exploits
-
-==== ProtocolHandlerAttackDatabase
-
-The link:../src/test/java/de/cuioss/http/security/database/ProtocolHandlerAttackDatabase.java[ProtocolHandlerAttackDatabase] contains protocol manipulation attacks.
-
-**Coverage:**
-* Protocol injection (`javascript:`, `data:`, `vbscript:`)
-* URL scheme bypasses
-* Handler confusion attacks
-* Protocol upgrade attacks
+* **HomographAttackDatabase** - Unicode homograph attacks
+* **IPv6AttackDatabase** - IPv6-specific patterns
+* **ProtocolHandlerAttackDatabase** - Protocol manipulation attacks
+* **IDNAttackDatabase** - Internationalized Domain Name attacks
 
 === Legitimate Pattern Databases
 
-==== LegitimatePathPatternsDatabase
+* **LegitimatePathPatternsDatabase** - Valid patterns that should pass
+* **EdgeCaseValidURLsDatabase** - Edge case legitimate URLs
+* **LegitimateSpecialCharactersDatabase** - Valid special characters
 
-The link:../src/test/java/de/cuioss/http/security/database/LegitimatePathPatternsDatabase.java[LegitimatePathPatternsDatabase] contains valid path patterns that should pass validation.
+== Test Generators
 
-==== EdgeCaseValidURLsDatabase
+Located in `src/test/java/de/cuioss/http/security/generators/`:
 
-The link:../src/test/java/de/cuioss/http/security/database/EdgeCaseValidURLsDatabase.java[EdgeCaseValidURLsDatabase] contains edge case URLs that are legitimate but might trigger false positives.
+* **SupportedValidationTypeGenerator** - Generates ValidationTypes for PipelineFactory
+* **body/** - HTTP body generators
+* **cookie/** - Cookie structure generators
+* **encoding/** - Encoding pattern generators
+* **header/** - HTTP header generators
+* **injection/** - Injection attack generators
+* **url/** - URL component generators
 
-=== Test Data Generators
+== Usage
 
-==== SupportedValidationTypeGenerator
-
-The link:../src/test/java/de/cuioss/http/security/generators/SupportedValidationTypeGenerator.java[SupportedValidationTypeGenerator] generates validation types supported by the pipeline factory.
-
-**Generated Types:**
-* `URL_PATH` - URL path validation
-* `PARAMETER_VALUE` - Parameter value validation
-* `HEADER_NAME` - HTTP header name validation
-* `HEADER_VALUE` - HTTP header value validation
-* `BODY` - HTTP body validation
-
-==== Body Generators
-
-Located in `generators/body/` package:
-* **HTTPBodyGenerator**: Generates HTTP request bodies
-* **ContentTypeGenerator**: Generates valid content type headers
-* **JSONBodyGenerator**: Generates JSON payloads
-
-==== Cookie Generators
-
-Located in `generators/cookie/` package:
-* **CookieGenerator**: Generates HTTP cookie structures
-* **CookieAttributeGenerator**: Generates cookie attributes
-* **CookieValueGenerator**: Generates cookie values
-
-==== Encoding Generators
-
-Located in `generators/encoding/` package:
-* **EncodingPatternGenerator**: Generates encoding attack patterns
-* **UTF8Generator**: Generates UTF-8 encoding variations
-* **PercentEncodingGenerator**: Generates URL encoding patterns
-
-==== Header Generators
-
-Located in `generators/header/` package:
-* **HTTPHeaderGenerator**: Generates HTTP header pairs
-* **HeaderNameGenerator**: Generates valid header names
-* **HeaderValueGenerator**: Generates header values
-
-==== Injection Generators
-
-Located in `generators/injection/` package:
-* **InjectionPatternGenerator**: Generates injection attack patterns
-* **SQLInjectionGenerator**: Generates SQL injection attempts
-* **XSSPayloadGenerator**: Generates XSS attack payloads
-
-==== URL Generators
-
-Located in `generators/url/` package:
-* **URLPathGenerator**: Generates URL path components
-* **QueryParameterGenerator**: Generates query parameters
-* **ProtocolGenerator**: Generates URL protocols
-
-== Usage Examples
-
-=== Parameterized Testing with Attack Databases
+=== With JUnit 5 Parameterized Tests
 
 [source,java]
 ----
-import de.cuioss.http.security.database.ApacheCVEAttackDatabase;
-import de.cuioss.http.security.database.AttackTestCase;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ArgumentsSource;
-
 @ParameterizedTest
 @ArgumentsSource(ApacheCVEAttackDatabase.ArgumentsProvider.class)
-void shouldRejectApacheCVEAttacksWithCorrectFailureTypes(AttackTestCase testCase) {
-    // Arrange
-    URLPathValidationPipeline pipeline = URLPathValidationPipeline.builder()
-        .enablePathTraversalDetection()
-        .enableEncodingValidation()
-        .build();
-
-    // Act & Assert
+void shouldRejectAttacks(AttackTestCase testCase) {
     var exception = assertThrows(UrlSecurityException.class,
         () -> pipeline.validate(testCase.attackString()));
 
-    assertEquals(testCase.expectedFailureType(), exception.getFailureType(),
-        String.format("Expected %s for attack: %s\nRationale: %s",
-            testCase.expectedFailureType(),
-            testCase.attackString(),
-            testCase.detectionRationale()));
+    assertEquals(testCase.expectedFailureType(), exception.getFailureType());
+}
+----
+
+=== Direct Access to Test Cases
+
+[source,java]
+----
+import static de.cuioss.http.security.database.ApacheCVEAttackDatabase.*;
+
+@Test
+void shouldDetectCVE202141773() {
+    AttackTestCase testCase = CVE_2021_41773_PATH_TRAVERSAL_PASSWD;
+    // Use testCase.attackString(), testCase.expectedFailureType(), etc.
 }
 ----
 
@@ -263,224 +99,17 @@ void shouldRejectApacheCVEAttacksWithCorrectFailureTypes(AttackTestCase testCase
 
 [source,java]
 ----
-import de.cuioss.http.security.database.*;
-import java.util.stream.Stream;
-
-class ComprehensiveSecurityTest {
-
-    @ParameterizedTest
-    @MethodSource("getAllSecurityTestCases")
-    void shouldDetectAllKnownAttackPatterns(AttackTestCase testCase) {
-        URLPathValidationPipeline pipeline = URLPathValidationPipeline.builder()
-            .enableAllSecurityChecks()
-            .build();
-
-        var exception = assertThrows(UrlSecurityException.class,
-            () -> pipeline.validate(testCase.attackString()));
-
-        assertEquals(testCase.expectedFailureType(), exception.getFailureType());
-    }
-
-    static Stream<AttackTestCase> getAllSecurityTestCases() {
-        return Stream.of(
-                new ApacheCVEAttackDatabase(),
-                new IISCVEAttackDatabase(),
-                new OWASPTop10AttackDatabase(),
-                new ModSecurityCRSAttackDatabase()
-            )
-            .flatMap(db -> StreamSupport.stream(
-                db.getAttackTestCases().spliterator(), false));
-    }
-}
-----
-
-=== Specific CVE Testing
-
-[source,java]
-----
-import static de.cuioss.http.security.database.ApacheCVEAttackDatabase.*;
-
-@Test
-void shouldDetectCVE202141773PathTraversal() {
-    // Arrange
-    AttackTestCase testCase = CVE_2021_41773_PATH_TRAVERSAL_PASSWD;
-    URLPathValidationPipeline pipeline = URLPathValidationPipeline.builder()
-        .enablePathTraversalDetection()
-        .build();
-
-    // Act
-    var exception = assertThrows(UrlSecurityException.class,
-        () -> pipeline.validate(testCase.attackString()));
-
-    // Assert
-    assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
-        exception.getFailureType());
-    assertThat(exception.getMessage())
-        .contains("CVE-2021-41773")
-        .contains("path traversal");
-}
-----
-
-=== Generator-Based Property Testing
-
-[source,java]
-----
-import de.cuioss.http.security.generators.SupportedValidationTypeGenerator;
-import de.cuioss.test.generator.junit.EnableGeneratorController;
-
-@EnableGeneratorController
-class PropertyBasedSecurityTest {
-
-    @Generator
-    private SupportedValidationTypeGenerator validationTypeGenerator;
-
-    @RepeatedTest(100)
-    void shouldCreateValidatorsForAllSupportedTypes() {
-        // Arrange
-        ValidationType validationType = validationTypeGenerator.next();
-
-        // Act
-        HttpSecurityValidator validator = PipelineFactory
-            .createValidator(validationType);
-
-        // Assert
-        assertThat(validator).isNotNull();
-        // Additional validation logic
-    }
-}
-----
-
-=== Legitimate Pattern Testing
-
-[source,java]
-----
-import de.cuioss.http.security.database.LegitimatePathPatternsDatabase;
-
-@ParameterizedTest
-@ArgumentsSource(LegitimatePathPatternsDatabase.ArgumentsProvider.class)
-void shouldAcceptLegitimatePathPatterns(LegitimateTestCase testCase) {
-    URLPathValidationPipeline pipeline = URLPathValidationPipeline.builder()
-        .enableAllSecurityChecks()
-        .build();
-
-    // Should not throw exception for legitimate patterns
-    assertDoesNotThrow(() -> {
-        String validated = pipeline.validate(testCase.inputPattern());
-        assertThat(validated).isEqualTo(testCase.expectedOutput());
-    });
-}
-----
-
-=== Cross-Database Consistency Testing
-
-[source,java]
-----
-@Test
-void shouldHaveConsistentFailureTypesAcrossDatabases() {
-    List<AttackDatabase> databases = List.of(
+static Stream<AttackTestCase> getAllTestCases() {
+    return Stream.of(
         new ApacheCVEAttackDatabase(),
         new IISCVEAttackDatabase(),
         new OWASPTop10AttackDatabase()
-    );
-
-    for (AttackDatabase database : databases) {
-        for (AttackTestCase testCase : database.getAttackTestCases()) {
-            // Verify each test case has valid failure type and description
-            assertThat(testCase.expectedFailureType()).isNotNull();
-            assertThat(testCase.attackDescription()).isNotBlank();
-            assertThat(testCase.detectionRationale()).isNotBlank();
-            assertThat(testCase.attackString()).isNotBlank();
-        }
-    }
+    ).flatMap(db -> StreamSupport.stream(
+        db.getAttackTestCases().spliterator(), false));
 }
 ----
-
-== Configuration
-
-=== Test Artifact Dependency
-
-[source, xml]
-----
-<dependency>
-    <groupId>de.cuioss</groupId>
-    <artifactId>cui-http</artifactId>
-    <classifier>generators</classifier>
-    <scope>test</scope>
-</dependency>
-----
-
-=== Generator Configuration
-
-[source,java]
-----
-import de.cuioss.test.generator.junit.EnableGeneratorController;
-
-@EnableGeneratorController
-@TestMethodOrder(OrderAnnotation.class)
-class SecurityGeneratorTest {
-
-    @Generator
-    private SupportedValidationTypeGenerator validationTypes;
-
-    @Generator(max = 50) // Limit generation count
-    private URLPathGenerator pathGenerator;
-
-    // Test methods using generators
-}
-----
-
-== Best Practices
-
-=== Database Usage Guidelines
-
-* **Use specific CVE constants**: Access individual attack patterns for targeted testing
-* **Combine multiple databases**: Test against comprehensive attack coverage
-* **Verify failure types**: Always check expected vs actual failure types
-* **Include educational context**: Use attack descriptions for security awareness
-
-=== Generator Usage Guidelines
-
-* **Property-based testing**: Use generators for comprehensive input coverage
-* **Boundary testing**: Generate edge cases and boundary conditions
-* **Performance testing**: Generate large datasets for performance validation
-* **Regression testing**: Generate consistent test cases for regression detection
-
-=== Testing Architecture
-
-* **Separation of concerns**: Use databases for known attacks, generators for dynamic testing
-* **Comprehensive coverage**: Combine CVE testing with property-based testing
-* **Documentation value**: Include attack descriptions in test failure messages
-* **Maintainability**: Use ArgumentsProvider for clean parameterized tests
-
-== Technical Details
-
-=== Database Architecture
-
-* **Immutable Design**: All test cases are immutable records
-* **Thread Safety**: Safe for parallel test execution
-* **Memory Efficient**: Lazy initialization and caching
-* **Educational Integration**: Comprehensive documentation embedded
-
-=== Generator Framework
-
-* **Type Safety**: Strongly typed generators for all components
-* **Algorithmic Generation**: Dynamic test case creation
-* **Contract Compliance**: Automated generator contract verification
-* **Integration Testing**: Cross-generator compatibility testing
-
-=== Performance Characteristics
-
-* **Fast Database Access**: O(1) access to individual test cases
-* **Efficient Generation**: Optimized algorithms for test data creation
-* **Memory Management**: Controlled memory usage during test execution
-* **Parallel Execution**: Safe for concurrent test runs
 
 == Related Documentation
 
-* link:../doc/http-security/README.adoc[HTTP Security Validation Overview]
 * link:../doc/http-security/specification/testing.adoc[Security Testing Framework Specification]
-* link:../doc/http-security/analysis/cve-analysis.adoc[CVE Analysis and Breach Studies]
-* link:../doc/http-security/analysis/owasp-best-practices.adoc[OWASP Security Best Practices]
-* link:../doc/security-readme.adoc[HTTP Security Validation Framework]
-* link:https://github.com/cuioss/cui-test-generator[CUI Test Generator Framework]
-* link:https://owasp.org/www-project-modsecurity-core-rule-set/[ModSecurity Core Rule Set]
+* link:../doc/http-security/analysis/cve-analysis.adoc[CVE Analysis]
