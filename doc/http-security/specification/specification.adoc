@@ -6,13 +6,6 @@
 
 link:../README.adoc[← Back to Documentation Overview]
 
-[IMPORTANT]
-====
-This document describes HOW the URL Security Validation system architecture works.
-For WHAT tasks to implement, see link:plan.adoc[Implementation Plan].
-For HOW to test the system, see link:testing.adoc[Testing Framework].
-====
-
 == Executive Summary
 
 The URL Security Validation system provides comprehensive protection against path traversal attacks, encoding bypasses, and injection attempts through a layered, immutable, high-performance architecture in the `de.cuioss.tools.security.http` package.

@@ -501,9 +501,7 @@ public class HTTPStatusCodeGenerator implements TypedGenerator<Integer> {
 == Related Documentation
 
 * link:testing.adoc[Testing Framework] - Complete testing framework specification
-* link:plan.adoc#quality-assurance[Quality Assurance] - Generator quality standards and resolved issues
 * link:specification.adoc[Architecture Specification] - System architecture overview
-* link:plan.adoc[Implementation Plan] - Development roadmap and tasks
 
 == Generator Quality Issue References
 
@@ -511,5 +509,3 @@ public class HTTPStatusCodeGenerator implements TypedGenerator<Integer> {
 * **QI-17**: Hardcoded .repeat() anti-pattern elimination
 * **QI-4**: Generator contract violations and standardization
 * **QI-20**: Generator framework design violations
-
-All generator quality issues have been resolved through systematic optimization. See link:plan.adoc#quality-assurance[Quality Assurance] for resolution details.

@@ -52,7 +52,6 @@ Defines the security-specific requirements and controls:
 === Specifications
 
 * link:specification/specification.adoc[Architecture Specification]: Detailed system architecture and design
-* link:specification/plan.adoc[Implementation Plan]: Phased implementation approach
 * link:specification/testing.adoc[Testing Framework]: Comprehensive testing strategy
 
 === Analysis Documents
