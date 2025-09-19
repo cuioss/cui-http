@@ -71,7 +71,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Implements: Task T6 from HTTP verification specification
  *
  * @author Claude Code Generator
- * @since 2.5
+ * @since 1.0
  */
 @EnableGeneratorController
 @DisplayName("T6: Mixed Encoding Attack Tests")

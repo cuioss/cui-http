@@ -67,7 +67,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Implements: Task T1 from HTTP verification specification
  *
  * @author Claude Code Generator
- * @since 2.5
+ * @since 1.0
  */
 @EnableGeneratorController
 @DisplayName("T1: Basic Path Traversal Attack Tests")

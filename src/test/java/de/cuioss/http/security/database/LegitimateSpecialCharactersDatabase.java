@@ -34,7 +34,7 @@ import java.util.List;
  *   <li><strong>Business Identifiers</strong> - Common business naming patterns</li>
  * </ul>
  *
- * @since 2.5
+ * @since 1.0
  */
 public class LegitimateSpecialCharactersDatabase implements LegitimatePatternDatabase {
 
@@ -206,7 +206,7 @@ public class LegitimateSpecialCharactersDatabase implements LegitimatePatternDat
     /**
      * Modern JUnit 5 ArgumentsProvider for seamless parameterized testing.
      *
-     * @since 2.5
+     * @since 1.0
      */
     public static class ArgumentsProvider extends LegitimatePatternDatabase.ArgumentsProvider<LegitimateSpecialCharactersDatabase> {
         // Implementation inherited - uses reflection to create database instance

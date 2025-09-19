@@ -85,7 +85,7 @@ import java.util.stream.StreamSupport;
  *   <li><strong>Standard Databases</strong> - OWASP Top 10, common attack signatures</li>
  * </ul>
  *
- * @since 2.5
+ * @since 1.0
  */
 public interface AttackDatabase {
 
@@ -113,7 +113,7 @@ public interface AttackDatabase {
      * returned by {@link #getAttackTestCases()}.</p>
      *
      * @return A stream of AttackTestCase instances, never null
-     * @since 2.5
+     * @since 1.0
      */
     default Stream<AttackTestCase> streamTestCases() {
         return StreamSupport.stream(
@@ -151,7 +151,7 @@ public interface AttackDatabase {
      * </pre>
      *
      * @param <T> The specific attack database type
-     * @since 2.5
+     * @since 1.0
      */
     abstract class ArgumentsProvider<T extends AttackDatabase>
             implements org.junit.jupiter.params.provider.ArgumentsProvider {

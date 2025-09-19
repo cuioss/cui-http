@@ -39,7 +39,7 @@ import java.util.List;
  *   <li><strong>Authentication Bypass CVEs</strong>: CVE-2009-1535 (WebDAV)</li>
  * </ul>
  *
- * @since 2.5
+ * @since 1.0
  */
 public class IISCVEAttackDatabase implements AttackDatabase {
 
@@ -205,7 +205,7 @@ public class IISCVEAttackDatabase implements AttackDatabase {
      * }
      * </pre>
      *
-     * @since 2.5
+     * @since 1.0
      */
     public static class ArgumentsProvider extends AttackDatabase.ArgumentsProvider<IISCVEAttackDatabase> {
         // Implementation inherited - uses reflection to create database instance

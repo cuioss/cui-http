@@ -59,8 +59,10 @@ import de.cuioss.test.generator.TypedGenerator;
  * Implements: Generator for Task T8 from HTTP verification specification
  *
  * @author Claude Code Generator
- * @since 2.5
+ * @since 1.0
  */
+@SuppressWarnings({"UnnecessaryUnicodeEscape"})
+// Intentional Unicode escapes for security testing attack patterns
 public class UnicodeNormalizationAttackGenerator implements TypedGenerator<String> {
 
     // QI-6: Dynamic generation components
@@ -78,7 +80,6 @@ public class UnicodeNormalizationAttackGenerator implements TypedGenerator<Strin
 
         return switch (attackType) {
             case 1 -> createDecomposedNormalizationAttack(basePattern);
-            case 2 -> createComposedNormalizationAttack(basePattern);
             case 3 -> createCompatibilityNormalizationAttack(basePattern);
             case 4 -> createCombiningCharacterAttack(basePattern);
             case 5 -> createHomographAttack(basePattern);
@@ -103,16 +104,11 @@ public class UnicodeNormalizationAttackGenerator implements TypedGenerator<Strin
 
     private String generateTraversalPattern() {
         int depth = depthGen.next();
-        StringBuilder pattern = new StringBuilder();
-        for (int i = 0; i < depth; i++) {
-            pattern.append("../");
-        }
-        return pattern.toString();
+        return "../".repeat(depth);
     }
 
     private String generateScriptPattern() {
         String element = switch (scriptElementGen.next()) {
-            case 1 -> "script";
             case 2 -> "img";
             case 3 -> "iframe";
             case 4 -> "object";
@@ -123,7 +119,6 @@ public class UnicodeNormalizationAttackGenerator implements TypedGenerator<Strin
 
     private String generateProtocolPattern() {
         String protocol = switch (protocolGen.next()) {
-            case 1 -> "javascript";
             case 2 -> "data";
             case 3 -> "vbscript";
             case 4 -> "file";
@@ -135,7 +130,6 @@ public class UnicodeNormalizationAttackGenerator implements TypedGenerator<Strin
 
     private String generateFunctionPattern() {
         String func = switch (funcGen.next()) {
-            case 1 -> "eval";
             case 2 -> "alert";
             case 3 -> "confirm";
             case 4 -> "setTimeout";
@@ -147,11 +141,7 @@ public class UnicodeNormalizationAttackGenerator implements TypedGenerator<Strin
 
     private String generateBackslashTraversalPattern() {
         int depth = depthGen.next();
-        StringBuilder pattern = new StringBuilder();
-        for (int i = 0; i < depth; i++) {
-            pattern.append("..\\");
-        }
-        return pattern.toString();
+        return "..\\".repeat(depth);
     }
 
     /**
@@ -161,26 +151,21 @@ public class UnicodeNormalizationAttackGenerator implements TypedGenerator<Strin
         StringBuilder result = new StringBuilder();
         for (char c : pattern.toCharArray()) {
             switch (c) {
-                case '.' -> {
+                case '.' ->
                     // Use combining characters to create a decomposed dot
                     result.append('\u002E').append('\u0300'); // . + combining grave accent
-                }
-                case '/' -> {
+                case '/' ->
                     // Decomposed solidus with combining character
                     result.append('\u002F').append('\u0301'); // / + combining acute accent
-                }
-                case '<' -> {
+                case '<' ->
                     // Decomposed less-than with combining
                     result.append('\u003C').append('\u0302'); // < + combining circumflex
-                }
-                case '>' -> {
+                case '>' ->
                     // Decomposed greater-than with combining
                     result.append('\u003E').append('\u0303'); // > + combining tilde
-                }
-                case '=' -> {
+                case '=' ->
                     // Decomposed equals with combining
                     result.append('\u003D').append('\u0304'); // = + combining macron
-                }
                 default -> result.append(c);
             }
         }
@@ -243,6 +228,7 @@ public class UnicodeNormalizationAttackGenerator implements TypedGenerator<Strin
                 case 2 -> result.append('\u0302'); // Combining circumflex accent
                 case 3 -> result.append('\u0303'); // Combining tilde
                 case 4 -> result.append('\u0304'); // Combining macron
+                default -> result.append('\u0300'); // Default to combining grave accent
             }
         }
         return result.toString();
@@ -277,18 +263,15 @@ public class UnicodeNormalizationAttackGenerator implements TypedGenerator<Strin
         StringBuilder result = new StringBuilder();
         for (char c : pattern.toCharArray()) {
             switch (c) {
-                case '.' -> {
+                case '.' ->
                     // Use a character that might be interpreted as dot after normalization
                     result.append('\u2024'); // One dot leader
-                }
-                case '/' -> {
+                case '/' ->
                     // Use fraction slash which might normalize to regular slash
                     result.append('\u2044'); // Fraction slash
-                }
-                case '\\' -> {
+                case '\\' ->
                     // Use set minus which might be confused with backslash
                     result.append('\u2216'); // Set minus
-                }
                 default -> result.append(c);
             }
         }
@@ -351,6 +334,7 @@ public class UnicodeNormalizationAttackGenerator implements TypedGenerator<Strin
                 case 1 -> result.append('\u200C'); // Zero width non-joiner
                 case 2 -> result.append('\u200D'); // Zero width joiner
                 case 3 -> result.append('\uFEFF'); // Zero width no-break space
+                default -> result.append('\u200B'); // Default to zero width space
             }
         }
         return result.toString();

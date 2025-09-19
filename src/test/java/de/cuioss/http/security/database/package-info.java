@@ -204,7 +204,7 @@
  * </ul>
  *
  * @author CUI OpenSource Software Development Team
- * @since 2.5
+ * @since 1.0
  * @see de.cuioss.http.security.database.AttackDatabase
  * @see de.cuioss.http.security.database.AttackTestCase
  * @see de.cuioss.http.security.core.UrlSecurityFailureType

@@ -24,7 +24,7 @@ import java.util.Optional;
  * from strings that follow the pattern "attributeName=value" where attributes
  * are separated by semicolons.</p>
  *
- * @since 2.5
+ * @since 1.0
  */
 final class AttributeParser {
 

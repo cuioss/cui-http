@@ -34,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * supported validation types as documented in its implementation.</p>
  *
  * @author Claude Code Generator
- * @since 2.5
+ * @since 1.0
  */
 @EnableGeneratorController
 @DisplayName("SupportedValidationTypeGenerator Tests")

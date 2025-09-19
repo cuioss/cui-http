@@ -74,7 +74,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Implements: Task T19 from HTTP verification specification
  *
  * @author Claude Code Generator
- * @since 2.5
+ * @since 1.0
  */
 @EnableGeneratorController
 @DisplayName("T19: URL Length Limit Attack Tests")

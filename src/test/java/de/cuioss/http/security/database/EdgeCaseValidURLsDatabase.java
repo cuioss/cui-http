@@ -34,7 +34,7 @@ import java.util.List;
  *   <li><strong>Special Schemes</strong> - Non-HTTP URL patterns</li>
  * </ul>
  *
- * @since 2.5
+ * @since 1.0
  */
 public class EdgeCaseValidURLsDatabase implements LegitimatePatternDatabase {
 
@@ -207,7 +207,7 @@ public class EdgeCaseValidURLsDatabase implements LegitimatePatternDatabase {
     /**
      * Modern JUnit 5 ArgumentsProvider for seamless parameterized testing.
      *
-     * @since 2.5
+     * @since 1.0
      */
     public static class ArgumentsProvider extends LegitimatePatternDatabase.ArgumentsProvider<EdgeCaseValidURLsDatabase> {
         // Implementation inherited - uses reflection to create database instance

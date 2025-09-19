@@ -50,7 +50,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * </ul>
  *
  * @author Claude Code Generator
- * @since 2.5
+ * @since 1.0
  */
 @DisplayName("Legitimate Path Patterns Database Tests (T31)")
 class LegitimatePathPatternsDatabaseTest {

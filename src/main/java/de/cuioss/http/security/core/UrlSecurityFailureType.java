@@ -40,7 +40,7 @@ package de.cuioss.http.security.core;
  *
  * Implements: Task B1 from HTTP verification specification
  *
- * @since 2.5
+ * @since 1.0
  */
 public enum UrlSecurityFailureType {
 

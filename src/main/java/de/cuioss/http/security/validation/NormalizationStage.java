@@ -107,7 +107,7 @@ import java.util.regex.Pattern;
  * @see HttpSecurityValidator
  * @see SecurityConfiguration
  * @see ValidationType
- * @since 2.5
+ * @since 1.0
  */
 public record NormalizationStage(SecurityConfiguration config,
 ValidationType validationType) implements HttpSecurityValidator {

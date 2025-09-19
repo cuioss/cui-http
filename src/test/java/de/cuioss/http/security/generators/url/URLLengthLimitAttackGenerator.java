@@ -74,7 +74,7 @@ import java.util.List;
  * Implements: Task T19 from HTTP verification specification
  *
  * @author Claude Code Generator
- * @since 2.5
+ * @since 1.0
  */
 public class URLLengthLimitAttackGenerator implements TypedGenerator<String> {
 

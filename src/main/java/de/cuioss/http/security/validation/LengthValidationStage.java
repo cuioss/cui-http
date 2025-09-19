@@ -108,7 +108,7 @@ import java.util.function.Predicate;
  * @see HttpSecurityValidator
  * @see SecurityConfiguration
  * @see ValidationType
- * @since 2.5
+ * @since 1.0
  */
 public record LengthValidationStage(SecurityConfiguration config,
 ValidationType validationType) implements HttpSecurityValidator {

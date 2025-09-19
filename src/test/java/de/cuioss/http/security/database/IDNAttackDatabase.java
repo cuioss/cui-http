@@ -41,7 +41,7 @@ import java.util.List;
  *   <li><strong>Invisible Characters</strong> - Zero-width and control character insertion</li>
  * </ul>
  *
- * @since 2.5
+ * @since 1.0
  */
 @SuppressWarnings("text:S6389")
 public class IDNAttackDatabase implements AttackDatabase {
@@ -268,7 +268,7 @@ public class IDNAttackDatabase implements AttackDatabase {
      * }
      * </pre>
      *
-     * @since 2.5
+     * @since 1.0
      */
     public static class ArgumentsProvider extends AttackDatabase.ArgumentsProvider<IDNAttackDatabase> {
         // Implementation inherited - uses reflection to create database instance

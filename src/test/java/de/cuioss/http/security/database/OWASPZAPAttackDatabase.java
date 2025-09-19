@@ -46,7 +46,7 @@ import java.util.List;
  *   <li><strong>HTTP Splitting</strong>: Response splitting and smuggling attempts</li>
  * </ul>
  *
- * @since 2.5
+ * @since 1.0
  */
 public class OWASPZAPAttackDatabase implements AttackDatabase {
 
@@ -232,7 +232,7 @@ public class OWASPZAPAttackDatabase implements AttackDatabase {
      * }
      * </pre>
      *
-     * @since 2.5
+     * @since 1.0
      */
     public static class ArgumentsProvider extends AttackDatabase.ArgumentsProvider<OWASPZAPAttackDatabase> {
         // Implementation inherited - uses reflection to create database instance

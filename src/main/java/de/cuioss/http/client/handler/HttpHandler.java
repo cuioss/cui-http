@@ -34,6 +34,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.regex.Pattern;
 
 /**
  * A common wrapper around {@link HttpClient} that provides a builder for collecting
@@ -64,6 +65,13 @@ import java.time.Duration;
 public final class HttpHandler {
 
     private static final CuiLogger LOGGER = new CuiLogger(HttpHandler.class);
+
+    /**
+     * Pre-compiled pattern for detecting URLs with scheme.
+     * Matches RFC 3986 scheme format: scheme:remainder
+     */
+    private static final Pattern URL_SCHEME_PATTERN = Pattern.compile("^[a-zA-Z][a-zA-Z0-9+.-]*:.*");
+
     public static final int DEFAULT_CONNECTION_TIMEOUT_SECONDS = 10;
     public static final int DEFAULT_READ_TIMEOUT_SECONDS = 10;
 
@@ -403,7 +411,7 @@ public final class HttpHandler {
             if (!MoreStrings.isBlank(urlString)) {
                 // Check if the URL has a scheme, if not prepend https://
                 String urlToUse = urlString;
-                if (!urlToUse.matches("^[a-zA-Z][a-zA-Z0-9+.-]*:.*")) {
+                if (!URL_SCHEME_PATTERN.matcher(urlToUse).matches()) {
                     LOGGER.debug(() -> "URL missing scheme, prepending https:// to %s".formatted(urlString));
                     urlToUse = "https://" + urlToUse;
                 }

@@ -40,7 +40,7 @@
  *   <li>Optional return values use {@code Optional<T>} to indicate potential absence of values</li>
  * </ul>
  *
- * @since 2.5
+ * @since 1.0
  * @see de.cuioss.http.security.config.SecurityConfiguration
  * @see de.cuioss.http.security.core.HttpSecurityValidator
  */

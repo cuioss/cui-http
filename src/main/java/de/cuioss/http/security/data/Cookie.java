@@ -77,7 +77,7 @@ import java.util.Optional;
  * @param value The cookie value (e.g., session ID, authentication token)
  * @param attributes Cookie attributes string (e.g., "Domain=example.com; Secure; HttpOnly")
  *
- * @since 2.5
+ * @since 1.0
  * @see ValidationType#COOKIE_NAME
  * @see ValidationType#COOKIE_VALUE
  */

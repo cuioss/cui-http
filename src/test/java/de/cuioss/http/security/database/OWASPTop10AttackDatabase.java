@@ -43,7 +43,7 @@ import java.util.List;
  * security validation. This maintains proper separation of concerns between HTTP protocol security
  * and application logic security.</p>
  *
- * @since 2.5
+ * @since 1.0
  */
 public class OWASPTop10AttackDatabase implements AttackDatabase {
 
@@ -167,7 +167,7 @@ public class OWASPTop10AttackDatabase implements AttackDatabase {
      * }
      * </pre>
      *
-     * @since 2.5
+     * @since 1.0
      */
     public static class ArgumentsProvider extends AttackDatabase.ArgumentsProvider<OWASPTop10AttackDatabase> {
         // Implementation inherited - uses reflection to create database instance

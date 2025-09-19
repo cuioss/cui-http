@@ -51,7 +51,7 @@ import java.util.List;
  *   <li><strong>CWE-73</strong> - External Control of File Name or Path</li>
  * </ul>
  *
- * @since 2.5
+ * @since 1.0
  */
 public class ProtocolHandlerAttackDatabase implements AttackDatabase {
 
@@ -287,7 +287,7 @@ public class ProtocolHandlerAttackDatabase implements AttackDatabase {
      * }
      * </pre>
      *
-     * @since 2.5
+     * @since 1.0
      */
     public static class ArgumentsProvider extends AttackDatabase.ArgumentsProvider<ProtocolHandlerAttackDatabase> {
         // Implementation inherited - uses reflection to create database instance

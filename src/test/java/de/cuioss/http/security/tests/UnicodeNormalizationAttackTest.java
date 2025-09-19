@@ -71,7 +71,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Implements: Task T8 from HTTP verification specification
  *
  * @author Claude Code Generator
- * @since 2.5
+ * @since 1.0
  */
 @EnableGeneratorController
 @DisplayName("T8: Unicode Normalization Attack Tests")
@@ -298,13 +298,13 @@ class UnicodeNormalizationAttackTest {
                 String result = pipeline.validate(edgeCase);
                 // If validation passes, result should not be null
                 assertNotNull(result, "Validated result should not be null for: " +
-                        edgeCase.codePoints().mapToObj(cp -> "U+%04X".formatted(cp)).toList());
+                        edgeCase.codePoints().mapToObj("U+%04X"::formatted).toList());
 
             } catch (UrlSecurityException e) {
                 // Edge cases might be rejected for various reasons
                 assertTrue(eventCounter.getTotalCount() > initialEventCount,
                         "Security event should be recorded when rejecting: " +
-                                edgeCase.codePoints().mapToObj(cp -> "U+%04X".formatted(cp)).toList());
+                                edgeCase.codePoints().mapToObj("U+%04X"::formatted).toList());
 
                 assertNotNull(e.getFailureType(),
                         "Exception should have failure type for: " + edgeCase);
@@ -418,9 +418,6 @@ class UnicodeNormalizationAttackTest {
 
         for (String testCase : testCases) {
             String nfc = Normalizer.normalize(testCase, Normalizer.Form.NFC);
-            String nfd = Normalizer.normalize(testCase, Normalizer.Form.NFD);
-            String nfkc = Normalizer.normalize(testCase, Normalizer.Form.NFKC);
-            String nfkd = Normalizer.normalize(testCase, Normalizer.Form.NFKD);
 
             // Test that the validation system handles normalization consistently
             long initialEventCount = eventCounter.getTotalCount();
@@ -460,9 +457,6 @@ class UnicodeNormalizationAttackTest {
                 failureType == UrlSecurityFailureType.INVALID_CHARACTER ||
                 failureType == UrlSecurityFailureType.CONTROL_CHARACTERS ||
                 failureType == UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED ||
-                failureType == UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED ||
-                failureType == UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED ||
-                failureType == UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED ||
                 failureType == UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED ||
                 failureType == UrlSecurityFailureType.MALFORMED_INPUT ||
                 failureType == UrlSecurityFailureType.INVALID_STRUCTURE ||

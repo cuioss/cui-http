@@ -34,7 +34,7 @@ import java.util.List;
  *   <li><strong>Deep Nesting</strong> - Legitimately deep path hierarchies</li>
  * </ul>
  *
- * @since 2.5
+ * @since 1.0
  */
 public class LegitimatePathPatternsDatabase implements LegitimatePatternDatabase {
 
@@ -207,7 +207,7 @@ public class LegitimatePathPatternsDatabase implements LegitimatePatternDatabase
     /**
      * Modern JUnit 5 ArgumentsProvider for seamless parameterized testing.
      *
-     * @since 2.5
+     * @since 1.0
      */
     public static class ArgumentsProvider extends LegitimatePatternDatabase.ArgumentsProvider<LegitimatePathPatternsDatabase> {
         // Implementation inherited - uses reflection to create database instance

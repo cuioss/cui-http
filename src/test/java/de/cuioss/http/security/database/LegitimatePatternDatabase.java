@@ -43,7 +43,7 @@ import java.util.stream.StreamSupport;
  *   <li><strong>Documentation Focus</strong> - Clear rationale for acceptance</li>
  * </ul>
  *
- * @since 2.5
+ * @since 1.0
  */
 public interface LegitimatePatternDatabase {
 

@@ -41,7 +41,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>
  * Implements: Task T2 from HTTP verification specification
  *
- * @since 2.5
+ * @since 1.0
  */
 @EnableGeneratorController
 @DisplayName("T2: Encoded Path Traversal Attack Tests")

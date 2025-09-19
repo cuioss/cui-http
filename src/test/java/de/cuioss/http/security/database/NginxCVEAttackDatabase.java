@@ -39,7 +39,7 @@ import java.util.List;
  *   <li><strong>Module Attacks</strong>: FastCGI, proxy_pass, SSL/TLS, authentication modules</li>
  * </ul>
  *
- * @since 2.5
+ * @since 1.0
  */
 public class NginxCVEAttackDatabase implements AttackDatabase {
 
@@ -259,7 +259,7 @@ public class NginxCVEAttackDatabase implements AttackDatabase {
      * }
      * </pre>
      *
-     * @since 2.5
+     * @since 1.0
      */
     public static class ArgumentsProvider extends AttackDatabase.ArgumentsProvider<NginxCVEAttackDatabase> {
         // Implementation inherited - uses reflection to create database instance

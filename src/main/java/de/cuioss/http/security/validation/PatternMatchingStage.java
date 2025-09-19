@@ -112,7 +112,7 @@ import java.util.regex.Pattern;
  * @see SecurityConfiguration
  * @see SecurityDefaults
  * @see ValidationType
- * @since 2.5
+ * @since 1.0
  */
 public record PatternMatchingStage(SecurityConfiguration config,
 ValidationType validationType) implements HttpSecurityValidator {

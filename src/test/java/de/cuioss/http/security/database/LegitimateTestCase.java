@@ -35,7 +35,7 @@ package de.cuioss.http.security.database;
  * @param description Description of the legitimate use case this pattern represents
  * @param acceptanceRationale Explanation of why this pattern must be accepted
  *
- * @since 2.5
+ * @since 1.0
  */
 public record LegitimateTestCase(
 String legitimatePattern,

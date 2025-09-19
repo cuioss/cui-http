@@ -71,7 +71,7 @@ import java.util.function.Predicate;
  *
  * Implements: Task B3 from HTTP verification specification
  *
- * @since 2.5
+ * @since 1.0
  * @see UrlSecurityException
  * @see ValidationType
  */
@@ -119,7 +119,7 @@ public interface HttpSecurityValidator {
      * @param after The validator to apply after this validator. Must not be null.
      * @return A composite validator that applies both validators in sequence.
      * @throws NullPointerException if {@code after} is null
-     * @since 2.5
+     * @since 1.0
      */
     default HttpSecurityValidator andThen(HttpSecurityValidator after) {
         if (after == null) {
@@ -141,7 +141,7 @@ public interface HttpSecurityValidator {
      * @param before The validator to apply before this validator. Must not be null.
      * @return A composite validator that applies both validators in sequence.
      * @throws NullPointerException if {@code before} is null
-     * @since 2.5
+     * @since 1.0
      */
     default HttpSecurityValidator compose(HttpSecurityValidator before) {
         if (before == null) {
@@ -166,7 +166,7 @@ public interface HttpSecurityValidator {
      * @param predicate The condition under which to apply this validator. Must not be null.
      * @return A conditional validator that only applies this validator when the predicate is true.
      * @throws NullPointerException if {@code predicate} is null
-     * @since 2.5
+     * @since 1.0
      */
     default HttpSecurityValidator when(Predicate<String> predicate) {
         if (predicate == null) {
@@ -180,7 +180,7 @@ public interface HttpSecurityValidator {
      * This is useful as a no-op validator or as a starting point for composition.
      *
      * @return An identity validator that performs no validation
-     * @since 2.5
+     * @since 1.0
      */
     static HttpSecurityValidator identity() {
         return value -> value;
@@ -194,7 +194,7 @@ public interface HttpSecurityValidator {
      * @param validationType The validation type context
      * @return A validator that always throws UrlSecurityException
      * @throws NullPointerException if either parameter is null
-     * @since 2.5
+     * @since 1.0
      */
     static HttpSecurityValidator reject(UrlSecurityFailureType failureType, ValidationType validationType) {
         if (failureType == null) {

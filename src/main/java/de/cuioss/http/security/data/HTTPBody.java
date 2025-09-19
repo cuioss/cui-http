@@ -92,7 +92,7 @@ import java.util.Optional;
  * @param contentType The MIME content type (e.g., "application/json", "text/html")
  * @param encoding The content encoding (e.g., "gzip", "deflate", "" for none)
  *
- * @since 2.5
+ * @since 1.0
  * @see ValidationType#BODY
  */
 public record HTTPBody(@Nullable String content, @Nullable String contentType, @Nullable String encoding) {

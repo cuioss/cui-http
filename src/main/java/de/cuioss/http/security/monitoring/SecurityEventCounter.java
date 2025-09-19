@@ -70,7 +70,7 @@ import java.util.stream.Collectors;
  *
  * Implements: Task S1 from HTTP verification specification
  *
- * @since 2.5
+ * @since 1.0
  * @see UrlSecurityFailureType
  */
 public class SecurityEventCounter {

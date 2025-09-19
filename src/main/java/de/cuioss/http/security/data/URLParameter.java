@@ -64,7 +64,7 @@ import org.jspecify.annotations.Nullable;
  * @param name The parameter name (e.g., "userId", "page", "filter")
  * @param value The parameter value (e.g., "12345", "admin", "active")
  *
- * @since 2.5
+ * @since 1.0
  * @see ValidationType#PARAMETER_NAME
  * @see ValidationType#PARAMETER_VALUE
  */

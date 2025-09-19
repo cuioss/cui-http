@@ -49,7 +49,7 @@ import java.util.List;
  *   <li><strong>CWE-182</strong> - Collapse of Data into Unsafe Value</li>
  * </ul>
  *
- * @since 2.5
+ * @since 1.0
  */
 public class IPv6AttackDatabase implements AttackDatabase {
 
@@ -283,7 +283,7 @@ public class IPv6AttackDatabase implements AttackDatabase {
      * }
      * </pre>
      *
-     * @since 2.5
+     * @since 1.0
      */
     public static class ArgumentsProvider extends AttackDatabase.ArgumentsProvider<IPv6AttackDatabase> {
         // Implementation inherited - uses reflection to create database instance

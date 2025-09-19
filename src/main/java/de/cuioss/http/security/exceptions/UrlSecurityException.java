@@ -18,10 +18,12 @@ package de.cuioss.http.security.exceptions;
 import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.tools.base.Preconditions;
+import lombok.Getter;
 import org.jspecify.annotations.Nullable;
 
 import java.util.Objects;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 /**
  * Main exception for HTTP security validation failures.
@@ -64,13 +66,31 @@ import java.util.Optional;
  *
  * Implements: Task B2 from HTTP verification specification
  *
- * @since 2.5
+ * @since 1.0
  */
 public class UrlSecurityException extends RuntimeException {
 
-    private final UrlSecurityFailureType failureType;
-    private final ValidationType validationType;
-    private final String originalInput;
+    /**
+     * Pre-compiled pattern for removing control characters from log output.
+     * Matches control characters (0x00-0x1F) and DEL character (0x7F).
+     */
+    private static final Pattern CONTROL_CHARS_PATTERN = Pattern.compile("[\\x00-\\x1F\\x7F]");
+
+    /**
+     * The type of security failure that occurred.
+     */
+    @Getter private final UrlSecurityFailureType failureType;
+
+    /**
+     * The type of HTTP component that was being validated.
+     */
+    @Getter private final ValidationType validationType;
+
+    /**
+     * The original input that caused the security violation.
+     *
+     */
+    @Getter private final String originalInput;
     private final String sanitizedInput;
     private final String detail;
 
@@ -106,33 +126,6 @@ public class UrlSecurityException extends RuntimeException {
      */
     public static Builder builder() {
         return new Builder();
-    }
-
-    /**
-     * Gets the type of security failure that occurred.
-     *
-     * @return The failure type, never null
-     */
-    public UrlSecurityFailureType getFailureType() {
-        return failureType;
-    }
-
-    /**
-     * Gets the type of HTTP component that was being validated.
-     *
-     * @return The validation type, never null
-     */
-    public ValidationType getValidationType() {
-        return validationType;
-    }
-
-    /**
-     * Gets the original input that caused the security violation.
-     *
-     * @return The original input, never null
-     */
-    public String getOriginalInput() {
-        return originalInput;
     }
 
     /**
@@ -193,7 +186,7 @@ public class UrlSecurityException extends RuntimeException {
         }
 
         // Remove control characters and limit length
-        String safe = input.replaceAll("[\\r\\n\\t\\x00-\\x1F\\x7F]", "?");
+        String safe = CONTROL_CHARS_PATTERN.matcher(input).replaceAll("?");
 
         if (safe.length() > 200) {
             return safe.substring(0, 200) + "...";

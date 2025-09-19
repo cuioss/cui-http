@@ -44,7 +44,7 @@ import java.util.List;
  *   <li><strong>Session Fixation</strong>: Session manipulation attempts</li>
  * </ul>
  *
- * @since 2.5
+ * @since 1.0
  */
 public class ModSecurityCRSAttackDatabase implements AttackDatabase {
 
@@ -254,7 +254,7 @@ public class ModSecurityCRSAttackDatabase implements AttackDatabase {
      * }
      * </pre>
      *
-     * @since 2.5
+     * @since 1.0
      */
     public static class ArgumentsProvider extends AttackDatabase.ArgumentsProvider<ModSecurityCRSAttackDatabase> {
         // Implementation inherited - uses reflection to create database instance

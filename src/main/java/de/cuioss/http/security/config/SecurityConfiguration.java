@@ -97,7 +97,7 @@ import java.util.stream.Collectors;
  * @param failOnSuspiciousPatterns Whether to fail on detection of suspicious patterns
  * @param logSecurityViolations Whether to log security violations
  *
- * @since 2.5
+ * @since 1.0
  * @see SecurityConfigurationBuilder
  */
 public record SecurityConfiguration(

@@ -49,7 +49,7 @@ import java.util.List;
  *   <li><strong>CWE-178</strong> - Case sensitivity bypass through character substitution</li>
  * </ul>
  *
- * @since 2.5
+ * @since 1.0
  */
 public class HomographAttackDatabase implements AttackDatabase {
 
@@ -268,7 +268,7 @@ public class HomographAttackDatabase implements AttackDatabase {
      * }
      * </pre>
      *
-     * @since 2.5
+     * @since 1.0
      */
     public static class ArgumentsProvider extends AttackDatabase.ArgumentsProvider<HomographAttackDatabase> {
         // Implementation inherited - uses reflection to create database instance

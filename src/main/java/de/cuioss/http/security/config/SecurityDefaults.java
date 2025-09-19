@@ -64,7 +64,7 @@ import java.util.Set;
  *
  * Implements: Task C3 from HTTP verification specification
  *
- * @since 2.5
+ * @since 1.0
  * @see SecurityConfiguration
  * @see SecurityConfigurationBuilder
  */

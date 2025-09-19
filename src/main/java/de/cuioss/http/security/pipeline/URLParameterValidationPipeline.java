@@ -66,7 +66,7 @@ import java.util.Objects;
  *
  * Implements: Task P2 from HTTP verification specification
  *
- * @since 2.5
+ * @since 1.0
  */
 @EqualsAndHashCode
 @ToString

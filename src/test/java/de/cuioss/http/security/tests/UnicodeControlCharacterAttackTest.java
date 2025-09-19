@@ -70,7 +70,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Implements: Task T10 from HTTP verification specification
  *
  * @author Claude Code Generator
- * @since 2.5
+ * @since 1.0
  */
 @EnableGeneratorController
 @DisplayName("T10: Unicode Control Character Attack Tests")

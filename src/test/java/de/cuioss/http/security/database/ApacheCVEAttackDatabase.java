@@ -39,7 +39,7 @@ import java.util.List;
  *   <li><strong>Tomcat CVEs</strong>: CVE-2020-1938, CVE-2019-0199, CVE-2018-1336</li>
  * </ul>
  *
- * @since 2.5
+ * @since 1.0
  */
 public class ApacheCVEAttackDatabase implements AttackDatabase {
 
@@ -205,7 +205,7 @@ public class ApacheCVEAttackDatabase implements AttackDatabase {
      * }
      * </pre>
      *
-     * @since 2.5
+     * @since 1.0
      */
     public static class ArgumentsProvider extends AttackDatabase.ArgumentsProvider<ApacheCVEAttackDatabase> {
         // Implementation inherited - uses reflection to create database instance

@@ -44,7 +44,7 @@ import de.cuioss.test.generator.TypedGenerator;
  * Implements: Task G-Protocol from HTTP verification test generators
  *
  * @author Claude Code Generator
- * @since 2.5
+ * @since 1.0
  */
 public class ProtocolHandlerAttackGenerator implements TypedGenerator<String> {
 

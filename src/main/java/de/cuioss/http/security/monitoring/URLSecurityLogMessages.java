@@ -63,7 +63,7 @@ import de.cuioss.tools.logging.LogRecordModel;
  *
  * Implements: Task S2 from HTTP verification specification
  *
- * @since 2.5
+ * @since 1.0
  * @see LogRecord
  * @see LogRecordModel
  * @see SecurityEventCounter

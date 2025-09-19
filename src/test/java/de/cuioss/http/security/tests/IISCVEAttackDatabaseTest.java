@@ -49,7 +49,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * </ul>
  *
  * @author Claude Code Generator
- * @since 2.5
+ * @since 1.0
  */
 @DisplayName("IIS CVE Attack Database Tests")
 class IISCVEAttackDatabaseTest {

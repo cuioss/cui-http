@@ -49,7 +49,7 @@ import de.cuioss.http.security.core.UrlSecurityFailureType;
  * @param attackDescription Comprehensive explanation of what this attack attempts to accomplish and how it works
  * @param detectionRationale Detailed explanation of why the specific UrlSecurityFailureType is expected for this attack
  *
- * @since 2.5
+ * @since 1.0
  */
 public record AttackTestCase(
 String attackString,
