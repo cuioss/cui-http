@@ -15,8 +15,24 @@
  */
 /**
  * Provides HTTP-related utilities and helpers, such as status family detection and secure SSL context providers.
- * <p>
- * See {@link de.cuioss.http.client.handler.HttpHandler}, {@link de.cuioss.http.client.handler.HttpStatusFamily},
- * and {@link de.cuioss.http.client.handler.SecureSSLContextProvider} for details.
+ *
+ * <p>This package provides HTTP client handling utilities including:
+ * <ul>
+ *   <li>{@link de.cuioss.http.client.handler.HttpHandler} - Builder-based HTTP client configuration</li>
+ *   <li>{@link de.cuioss.http.client.handler.HttpStatusFamily} - HTTP status code categorization</li>
+ *   <li>{@link de.cuioss.http.client.handler.SecureSSLContextProvider} - Secure SSL/TLS context management</li>
+ * </ul>
+ *
+ * <h3>Package Nullability</h3>
+ * <p>This package follows strict nullability conventions using JSpecify annotations:</p>
+ * <ul>
+ *   <li>All parameters and return values are non-null by default</li>
+ *   <li>Nullable parameters and return values are explicitly annotated with {@code @Nullable}</li>
+ * </ul>
+ *
+ * @since 1.0
  */
+@NullMarked
 package de.cuioss.http.client.handler;
+
+import org.jspecify.annotations.NullMarked;

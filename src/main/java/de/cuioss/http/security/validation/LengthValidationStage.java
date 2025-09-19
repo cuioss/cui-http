@@ -20,6 +20,7 @@ import de.cuioss.http.security.core.HttpSecurityValidator;
 import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
+import org.jspecify.annotations.Nullable;
 
 import java.util.function.Predicate;
 
@@ -133,7 +134,7 @@ ValidationType validationType) implements HttpSecurityValidator {
      *                              </ul>
      */
     @Override
-    public String validate(String value) throws UrlSecurityException {
+    public String validate(@Nullable String value) throws UrlSecurityException {
         if (value == null) {
             return null;
         }

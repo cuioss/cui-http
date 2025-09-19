@@ -22,6 +22,7 @@ import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
+import org.jspecify.annotations.Nullable;
 
 import java.util.BitSet;
 
@@ -60,7 +61,7 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
 
     @Override
     @SuppressWarnings("squid:S3516")
-    public String validate(String value) throws UrlSecurityException {
+    public String validate(@Nullable String value) throws UrlSecurityException {
         // Quick check for null/empty
         if (value == null || value.isEmpty()) {
             return value;

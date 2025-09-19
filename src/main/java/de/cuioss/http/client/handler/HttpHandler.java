@@ -23,6 +23,7 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.ToString;
+import org.jspecify.annotations.Nullable;
 
 import javax.net.ssl.SSLContext;
 import java.io.IOException;
@@ -213,13 +214,13 @@ public final class HttpHandler {
      * Builder for creating {@link HttpHandler} instances.
      */
     public static class HttpHandlerBuilder {
-        private URI uri;
-        private URL url;
-        private String urlString;
-        private SSLContext sslContext;
-        private SecureSSLContextProvider secureSSLContextProvider;
-        private Integer connectionTimeoutSeconds;
-        private Integer readTimeoutSeconds;
+        private @Nullable URI uri;
+        private @Nullable URL url;
+        private @Nullable String urlString;
+        private @Nullable SSLContext sslContext;
+        private @Nullable SecureSSLContextProvider secureSSLContextProvider;
+        private @Nullable Integer connectionTimeoutSeconds;
+        private @Nullable Integer readTimeoutSeconds;
 
         /**
          * Sets the URI as a string.
@@ -298,7 +299,7 @@ public final class HttpHandler {
          * @param sslContext The SSL context to use.
          * @return This builder instance.
          */
-        public HttpHandlerBuilder sslContext(SSLContext sslContext) {
+        public HttpHandlerBuilder sslContext(@Nullable SSLContext sslContext) {
             this.sslContext = sslContext;
             return this;
         }
@@ -309,7 +310,7 @@ public final class HttpHandler {
          * @param secureSSLContextProvider The TLS versions configuration to use.
          * @return This builder instance.
          */
-        public HttpHandlerBuilder tlsVersions(SecureSSLContextProvider secureSSLContextProvider) {
+        public HttpHandlerBuilder tlsVersions(@Nullable SecureSSLContextProvider secureSSLContextProvider) {
             this.secureSSLContextProvider = secureSSLContextProvider;
             return this;
         }
