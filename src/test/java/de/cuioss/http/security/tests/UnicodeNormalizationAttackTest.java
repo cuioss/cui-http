@@ -73,6 +73,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author Claude Code Generator
  * @since 1.0
  */
+@SuppressWarnings({"UnnecessaryUnicodeEscape", "SpellCheckingInspection"})
 @EnableGeneratorController
 @DisplayName("T8: Unicode Normalization Attack Tests")
 class UnicodeNormalizationAttackTest {
@@ -120,7 +121,7 @@ class UnicodeNormalizationAttackTest {
 
         // Then: The validation should fail with appropriate security event
         assertNotNull(exception, "Exception should be thrown for Unicode normalization attack");
-        assertTrue(isUnicodeNormalizationSpecificFailure(exception.getFailureType(), unicodeAttackPattern),
+        assertTrue(isUnicodeNormalizationSpecificFailure(exception.getFailureType()),
                 "Failure type should be Unicode or security-related: " + exception.getFailureType() +
                         " for pattern: " + unicodeAttackPattern);
 
@@ -447,10 +448,9 @@ class UnicodeNormalizationAttackTest {
      * Replaces broad OR-assertion with comprehensive security validation.
      *
      * @param failureType The actual failure type from validation
-     * @param pattern The Unicode normalization pattern being tested
      * @return true if the failure type is expected for Unicode attack patterns
      */
-    private boolean isUnicodeNormalizationSpecificFailure(UrlSecurityFailureType failureType, String pattern) {
+    private boolean isUnicodeNormalizationSpecificFailure(UrlSecurityFailureType failureType) {
         // QI-9: Unicode normalization patterns can trigger multiple specific failure types
         // Accept all Unicode-relevant failure types for comprehensive security validation
         return failureType == UrlSecurityFailureType.UNICODE_NORMALIZATION_CHANGED ||

@@ -125,11 +125,13 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
                 case 0 -> result.append('\u0000'); // NULL
                 case 1 -> result.append('\u0001'); // SOH (Start of Heading)
                 case 2 -> result.append('\u0008'); // BS (Backspace)
-                case 3 -> result.append('\u0009'); // HT (Horizontal Tab)
+                case 3 -> result.append('\t'); // HT (Horizontal Tab)
                 case 4 -> result.append('\n'); // LF (Line Feed)
                 case 5 -> result.append('\r'); // CR (Carriage Return)
                 case 6 -> result.append('\u001B'); // ESC (Escape)
                 case 7 -> result.append('\u001F'); // US (Unit Separator)
+                default -> {
+                } // All cases covered by modulo 8
             }
         }
         return result.toString();
@@ -152,6 +154,8 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
                 case 3 -> result.append('\u0090'); // DCS (Device Control String)
                 case 4 -> result.append('\u009C'); // ST (String Terminator)
                 case 5 -> result.append('\u009F'); // APC (Application Program Command)
+                default -> {
+                } // All cases covered by modulo 6
             }
         }
         return result.toString();
@@ -171,6 +175,8 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
                 case 1 -> result.append('\u2029'); // Paragraph Separator
                 case 2 -> result.append('\u00A0'); // Non-Breaking Space
                 case 3 -> result.append('\u1680'); // Ogham Space Mark
+                default -> {
+                } // All cases covered by modulo 4
             }
         }
         return result.toString();
@@ -196,6 +202,8 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
                 case 2 -> result.append('\u200E'); // Left-to-Right Mark
                 case 3 -> result.append('\u200F'); // Right-to-Left Mark
                 case 4 -> result.append('\u061C'); // Arabic Letter Mark
+                default -> {
+                } // All cases covered by modulo 5
             }
         }
 
@@ -218,6 +226,8 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
                 case 2 -> result.append('\u200D'); // Zero Width Joiner
                 case 3 -> result.append('\uFEFF'); // Zero Width No-Break Space (BOM)
                 case 4 -> result.append('\u180E'); // Mongolian Vowel Separator
+                default -> {
+                } // All cases covered by modulo 5
             }
         }
         return result.toString();
@@ -237,6 +247,8 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
                 case 1 -> result.append('\uFE0F'); // Variation Selector-16
                 case 2 -> result.append('\u0300'); // Combining Grave Accent
                 case 3 -> result.append('\u036F'); // Combining Latin Small Letter X
+                default -> {
+                } // All cases covered by modulo 4
             }
         }
         return result.toString();
@@ -258,6 +270,8 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
                 case 3 -> result.append('\uF000'); // Private Use Area
                 case 4 -> result.append('\uE100'); // Private Use Area
                 case 5 -> result.append('\uF900'); // CJK Compatibility Ideographs
+                default -> {
+                } // All cases covered by modulo 6
             }
         }
         return result.toString();
@@ -274,18 +288,17 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
 
             // Inject invalid surrogate sequences
             switch (i % 3) {
-                case 0 -> {
+                case 0 ->
                     // Invalid high surrogate without low surrogate
                     result.append('\uD800');
-                }
-                case 1 -> {
+                case 1 ->
                     // Invalid low surrogate without high surrogate
                     result.append('\uDC00');
-                }
-                case 2 -> {
+                case 2 ->
                     // Invalid surrogate pair (reversed)
                     result.append('\uDC00').append('\uD800');
-                }
+                default -> {
+                } // All cases covered by modulo 3
             }
         }
         return result.toString();
@@ -308,6 +321,8 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
                 case 4 -> result.append('\u2029'); // Paragraph Separator
                 case 5 -> result.append('\u000B'); // Vertical Tab
                 case 6 -> result.append('\u000C'); // Form Feed
+                default -> {
+                } // All cases covered by modulo 7
             }
         }
         return result.toString();
@@ -365,6 +380,8 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
                 case 7 -> result.append('\u202C'); // Pop Directional
                 case 8 -> result.append('\uD800'); // Invalid Surrogate
                 case 9 -> result.append('\u0300'); // Combining Grave
+                default -> {
+                } // All cases covered by modulo 10
             }
         }
 
@@ -392,6 +409,8 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
                 case 5 -> result.append("%1B"); // Encoded ESC
                 case 6 -> result.append("%7F"); // Encoded DEL
                 case 7 -> result.append("%C2%80"); // UTF-8 encoded C1 control
+                default -> {
+                } // All cases covered by modulo 8
             }
         }
 
@@ -452,7 +471,6 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
     // QI-6: Dynamic generation helper methods
     private String generateTraversalPattern() {
         return switch (traversalSelector.next()) {
-            case 1 -> "../";
             case 2 -> "..\\";
             case 3 -> "../../";
             case 4 -> "../../../";
@@ -462,7 +480,6 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
 
     private String generateScriptTag() {
         return switch (scriptSelector.next()) {
-            case 1 -> "<script>";
             case 2 -> "<iframe>";
             case 3 -> "<img>";
             case 4 -> "<svg>";
@@ -472,7 +489,6 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
 
     private String generateProtocol() {
         return switch (protocolSelector.next()) {
-            case 1 -> "javascript:";
             case 2 -> "data:";
             case 3 -> "file:";
             case 4 -> "vbscript:";
@@ -482,7 +498,6 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
 
     private String generateSystemTarget() {
         return switch (systemSelector.next()) {
-            case 1 -> "admin";
             case 2 -> "root";
             case 3 -> "config";
             case 4 -> "system";
@@ -492,7 +507,6 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
 
     private String generateSystemPath() {
         return switch (pathSelector.next()) {
-            case 1 -> "/etc/passwd";
             case 2 -> "/windows/system32";
             case 3 -> "/proc/self";
             case 4 -> "/var/log";
@@ -502,7 +516,6 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
 
     private String generateCommand() {
         return switch (commandSelector.next()) {
-            case 1 -> "cmd.exe";
             case 2 -> "shell";
             case 3 -> "bash";
             case 4 -> "powershell";
