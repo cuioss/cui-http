@@ -78,14 +78,14 @@ class ModSecurityCRSAttackDatabaseTest {
         long initialEventCount = eventCounter.getTotalCount();
 
         // When: Attempting to validate the malicious pattern
-        String attackRejectionMessage = "CRS attack should be rejected: %s\nAttack Description: %s\nDetection Rationale: %s".formatted(
+        String attackRejectionMessage = "CRS attack should be rejected: %s%nAttack Description: %s%nDetection Rationale: %s".formatted(
                 testCase.attackString(), testCase.attackDescription(), testCase.detectionRationale());
         var exception = assertThrows(UrlSecurityException.class,
                 () -> pipeline.validate(testCase.attackString()),
                 attackRejectionMessage);
 
         // Then: The validation should fail with the expected security failure type
-        String failureTypeMessage = "Expected failure type %s for attack: %s\nRationale: %s".formatted(
+        String failureTypeMessage = "Expected failure type %s for attack: %s%nRationale: %s".formatted(
                 testCase.expectedFailureType(), testCase.attackString(), testCase.detectionRationale());
         assertEquals(testCase.expectedFailureType(), exception.getFailureType(), failureTypeMessage);
 

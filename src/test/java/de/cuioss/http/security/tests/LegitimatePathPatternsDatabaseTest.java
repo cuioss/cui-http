@@ -85,7 +85,7 @@ class LegitimatePathPatternsDatabaseTest {
         // When/Then: Validating the legitimate pattern should NOT throw an exception
         assertDoesNotThrow(
                 () -> pipeline.validate(testCase.legitimatePattern()),
-                "Legitimate pattern should be accepted: %s\nDescription: %s\nRationale: %s".formatted(
+                "Legitimate pattern should be accepted: %s%nDescription: %s%nRationale: %s".formatted(
                         testCase.legitimatePattern(),
                         testCase.description(),
                         testCase.acceptanceRationale())

@@ -85,7 +85,7 @@ class LegitimateSpecialCharactersDatabaseTest {
         // When/Then: Validating the pattern should NOT throw an exception
         assertDoesNotThrow(
                 () -> pipeline.validate(testCase.legitimatePattern()),
-                "Special character pattern should be accepted: %s\nDescription: %s\nRationale: %s".formatted(
+                "Special character pattern should be accepted: %s%nDescription: %s%nRationale: %s".formatted(
                         testCase.legitimatePattern(),
                         testCase.description(),
                         testCase.acceptanceRationale())

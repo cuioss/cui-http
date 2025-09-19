@@ -84,7 +84,7 @@ class EdgeCaseValidURLsDatabaseTest {
         // When/Then: Validating the edge case should NOT throw an exception
         assertDoesNotThrow(
                 () -> pipeline.validate(testCase.legitimatePattern()),
-                "Edge case URL should be accepted: %s\nDescription: %s\nRationale: %s".formatted(
+                "Edge case URL should be accepted: %s%nDescription: %s%nRationale: %s".formatted(
                         testCase.legitimatePattern(),
                         testCase.description(),
                         testCase.acceptanceRationale())

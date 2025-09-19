@@ -303,6 +303,7 @@ class HTTPBodyValidationPipelineTest {
         }
 
         @Test
+        @SuppressWarnings("java:S161")
         void shouldBeImmutableAndThreadSafe() {
             assertDoesNotThrow(() -> HTTPBodyValidationPipeline.class.getMethod("equals", Object.class));
             assertDoesNotThrow(() -> HTTPBodyValidationPipeline.class.getMethod("hashCode"));
