@@ -1,0 +1,115 @@
+== Test Framework Structure
+
+The test framework is organized in the following structure under `src/test/java/de/cuioss/http/security/`:
+
+=== Configuration Tests
+* link:../../../src/test/java/de/cuioss/http/security/config/SecurityConfigurationTest.java[SecurityConfigurationTest]
+* link:../../../src/test/java/de/cuioss/http/security/config/SecurityConfigurationBuilderTest.java[SecurityConfigurationBuilderTest]
+* link:../../../src/test/java/de/cuioss/http/security/config/SecurityDefaultsTest.java[SecurityDefaultsTest]
+
+=== Core Component Tests
+* link:../../../src/test/java/de/cuioss/http/security/core/HttpSecurityValidatorTest.java[HttpSecurityValidatorTest]
+* link:../../../src/test/java/de/cuioss/http/security/core/UrlSecurityFailureTypeTest.java[UrlSecurityFailureTypeTest]
+* link:../../../src/test/java/de/cuioss/http/security/core/ValidationTypeTest.java[ValidationTypeTest]
+
+=== Attack Pattern Databases
+* link:../../../src/test/java/de/cuioss/http/security/database/AttackDatabase.java[AttackDatabase] - Database interface
+* link:../../../src/test/java/de/cuioss/http/security/database/AttackTestCase.java[AttackTestCase] - Test case record
+* link:../../../src/test/java/de/cuioss/http/security/database/ApacheCVEAttackDatabase.java[ApacheCVEAttackDatabase] - Apache CVE patterns
+* link:../../../src/test/java/de/cuioss/http/security/database/HomographAttackDatabase.java[HomographAttackDatabase] - Unicode homograph attacks
+* link:../../../src/test/java/de/cuioss/http/security/database/IDNAttackDatabase.java[IDNAttackDatabase] - Internationalized domain attacks
+* link:../../../src/test/java/de/cuioss/http/security/database/IISCVEAttackDatabase.java[IISCVEAttackDatabase] - IIS CVE patterns
+* link:../../../src/test/java/de/cuioss/http/security/database/IPv6AttackDatabase.java[IPv6AttackDatabase] - IPv6 address exploits
+* link:../../../src/test/java/de/cuioss/http/security/database/NginxCVEAttackDatabase.java[NginxCVEAttackDatabase] - Nginx CVE patterns
+* link:../../../src/test/java/de/cuioss/http/security/database/OWASPTop10AttackDatabase.java[OWASPTop10AttackDatabase] - OWASP Top 10 patterns
+* link:../../../src/test/java/de/cuioss/http/security/database/ProtocolHandlerAttackDatabase.java[ProtocolHandlerAttackDatabase] - Protocol handler exploits
+
+=== Exception Handling Tests
+* link:../../../src/test/java/de/cuioss/http/security/exceptions/UrlSecurityExceptionTest.java[UrlSecurityExceptionTest]
+
+=== Test Data Generators
+
+==== Main Generator Classes
+* link:../../../src/test/java/de/cuioss/http/security/generators/AllGeneratorsIntegrationTest.java[AllGeneratorsIntegrationTest] - Generator integration tests
+* link:../../../src/test/java/de/cuioss/http/security/generators/SupportedValidationTypeGenerator.java[SupportedValidationTypeGenerator]
+
+==== HTTP Body Generators
+* link:../../../src/test/java/de/cuioss/http/security/generators/body/HTTPBodyGenerator.java[HTTPBodyGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/body/ValidHTTPBodyContentGenerator.java[ValidHTTPBodyContentGenerator]
+
+==== Cookie Generators
+* link:../../../src/test/java/de/cuioss/http/security/generators/cookie/AttackCookieGenerator.java[AttackCookieGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/cookie/ValidCookieGenerator.java[ValidCookieGenerator]
+
+==== Encoding Attack Generators
+* link:../../../src/test/java/de/cuioss/http/security/generators/encoding/BoundaryFuzzingGenerator.java[BoundaryFuzzingGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/encoding/DoubleEncodingAttackGenerator.java[DoubleEncodingAttackGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/encoding/EncodingCombinationGenerator.java[EncodingCombinationGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/encoding/PathTraversalGenerator.java[PathTraversalGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/encoding/UnicodeAttackGenerator.java[UnicodeAttackGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/encoding/UnicodeControlCharacterAttackGenerator.java[UnicodeControlCharacterAttackGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/encoding/UnicodeNormalizationAttackGenerator.java[UnicodeNormalizationAttackGenerator]
+
+==== HTTP Header Generators
+* link:../../../src/test/java/de/cuioss/http/security/generators/header/HttpHeaderInjectionAttackGenerator.java[HttpHeaderInjectionAttackGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/header/HTTPHeaderInjectionGenerator.java[HTTPHeaderInjectionGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/header/InvalidHTTPHeaderNameGenerator.java[InvalidHTTPHeaderNameGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/header/ValidHTTPHeaderNameGenerator.java[ValidHTTPHeaderNameGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/header/ValidHTTPHeaderValueGenerator.java[ValidHTTPHeaderValueGenerator]
+
+==== Protocol Injection Generators
+* link:../../../src/test/java/de/cuioss/http/security/generators/injection/HttpRequestSmugglingAttackGenerator.java[HttpRequestSmugglingAttackGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/injection/ProtocolHandlerAttackGenerator.java[ProtocolHandlerAttackGenerator]
+
+==== URL-Specific Generators
+* link:../../../src/test/java/de/cuioss/http/security/generators/url/AttackURLParameterGenerator.java[AttackURLParameterGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/url/InvalidURLGenerator.java[InvalidURLGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/url/NullByteInjectionParameterGenerator.java[NullByteInjectionParameterGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/url/NullByteURLGenerator.java[NullByteURLGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/url/PathTraversalParameterGenerator.java[PathTraversalParameterGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/url/PathTraversalURLGenerator.java[PathTraversalURLGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/url/URLLengthLimitAttackGenerator.java[URLLengthLimitAttackGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/url/URLParameterGenerator.java[URLParameterGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/url/ValidURLGenerator.java[ValidURLGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/url/ValidURLParameterGenerator.java[ValidURLParameterGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/url/ValidURLParameterStringGenerator.java[ValidURLParameterStringGenerator]
+* link:../../../src/test/java/de/cuioss/http/security/generators/url/ValidURLPathGenerator.java[ValidURLPathGenerator]
+
+=== Security Monitoring Tests
+* link:../../../src/test/java/de/cuioss/http/security/monitoring/SecurityEventCounterTest.java[SecurityEventCounterTest]
+
+=== Validation Pipeline Tests
+* link:../../../src/test/java/de/cuioss/http/security/pipeline/HTTPBodyValidationPipelineTest.java[HTTPBodyValidationPipelineTest]
+* link:../../../src/test/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipelineTest.java[HTTPHeaderValidationPipelineTest]
+* link:../../../src/test/java/de/cuioss/http/security/pipeline/PipelineFactoryTest.java[PipelineFactoryTest]
+* link:../../../src/test/java/de/cuioss/http/security/pipeline/URLParameterValidationPipelineTest.java[URLParameterValidationPipelineTest]
+* link:../../../src/test/java/de/cuioss/http/security/pipeline/URLPathValidationPipelineTest.java[URLPathValidationPipelineTest]
+
+=== Validation Stage Tests
+* link:../../../src/test/java/de/cuioss/http/security/validation/CharacterValidationStageTest.java[CharacterValidationStageTest]
+* link:../../../src/test/java/de/cuioss/http/security/validation/DecodingStageTest.java[DecodingStageTest]
+* link:../../../src/test/java/de/cuioss/http/security/validation/LengthValidationStageTest.java[LengthValidationStageTest]
+* link:../../../src/test/java/de/cuioss/http/security/validation/NormalizationStageTest.java[NormalizationStageTest]
+* link:../../../src/test/java/de/cuioss/http/security/validation/PatternMatchingStageTest.java[PatternMatchingStageTest]
+
+=== Attack Test Categories
+* link:../../../src/test/java/de/cuioss/http/security/tests/CVEAttackDatabaseIntegrationTest.java[CVEAttackDatabaseIntegrationTest]
+* link:../../../src/test/java/de/cuioss/http/security/tests/DoubleEncodingAttackTest.java[DoubleEncodingAttackTest]
+* link:../../../src/test/java/de/cuioss/http/security/tests/EncodedPathTraversalAttackTest.java[EncodedPathTraversalAttackTest]
+* link:../../../src/test/java/de/cuioss/http/security/tests/HomographAttackDatabaseTest.java[HomographAttackDatabaseTest]
+* link:../../../src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java[HttpHeaderInjectionAttackTest]
+* link:../../../src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest]
+* link:../../../src/test/java/de/cuioss/http/security/tests/IDNAttackDatabaseTest.java[IDNAttackDatabaseTest]
+* link:../../../src/test/java/de/cuioss/http/security/tests/IPv6AttackDatabaseTest.java[IPv6AttackDatabaseTest]
+* link:../../../src/test/java/de/cuioss/http/security/tests/LegitimateURLPatternTest.java[LegitimateURLPatternTest]
+* link:../../../src/test/java/de/cuioss/http/security/tests/MixedEncodingAttackTest.java[MixedEncodingAttackTest]
+* link:../../../src/test/java/de/cuioss/http/security/tests/NullByteInjectionAttackTest.java[NullByteInjectionAttackTest]
+* link:../../../src/test/java/de/cuioss/http/security/tests/OWASPTop10DatabaseTest.java[OWASPTop10DatabaseTest]
+* link:../../../src/test/java/de/cuioss/http/security/tests/PathSegmentAttackTest.java[PathSegmentAttackTest]
+* link:../../../src/test/java/de/cuioss/http/security/tests/ProtocolHandlerAttackTest.java[ProtocolHandlerAttackTest]
+* link:../../../src/test/java/de/cuioss/http/security/tests/RelativePathAttackTest.java[RelativePathAttackTest]
+* link:../../../src/test/java/de/cuioss/http/security/tests/SymbolicLinkAttackTest.java[SymbolicLinkAttackTest]
+* link:../../../src/test/java/de/cuioss/http/security/tests/UnicodeNormalizationAttackTest.java[UnicodeNormalizationAttackTest]
+* link:../../../src/test/java/de/cuioss/http/security/tests/URLEncodingAttackTest.java[URLEncodingAttackTest]
+* link:../../../src/test/java/de/cuioss/http/security/tests/UTFOverlongEncodingAttackTest.java[UTFOverlongEncodingAttackTest]
+* link:../../../src/test/java/de/cuioss/http/security/tests/WindowsReservedNamesAttackTest.java[WindowsReservedNamesAttackTest]

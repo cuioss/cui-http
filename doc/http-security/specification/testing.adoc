@@ -124,6 +124,8 @@ src/test/java/de/cuioss/http/security/
     └── PatternMatchingStageTest.java
 ----
 
+include::../../test-framework-structure.adoc[]
+
 == Test Data Generators
 
 The test framework uses a hierarchical generator architecture organized by attack type and validation context. All generators implement the `TypedGenerator<T>` interface from cui-test-generator.
@@ -679,7 +681,6 @@ Add to GitHub Actions or Jenkins:
     # Parse results and fail if performance regression detected
     python scripts/check-performance-regression.py benchmark-results.json
 ----
-----
 
 == Test Coverage Requirements
 
@@ -1189,5 +1190,5 @@ The test harness achieves success when:
 6. ✅ <1ms performance for ALL validations
 7. ✅ Zero false positives - valid URLs must pass
 8. ✅ Zero false negatives - all attacks must be detected
-8. ✅ CI/CD integration complete
-9. ✅ Comprehensive reporting available
+9. ✅ CI/CD integration complete
+10. ✅ Comprehensive reporting available
