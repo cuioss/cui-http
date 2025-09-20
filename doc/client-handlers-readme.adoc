@@ -114,7 +114,7 @@ Interface for HTTP retry strategies with built-in implementations.
 
 * `RetryStrategy.none()` - No retry
 * `RetryStrategy.exponentialBackoff()` - Exponential backoff with jitter
-* `RetryStrategy.fixedDelay(duration)` - Fixed delay between attempts
+* Custom strategies via ExponentialBackoffRetryStrategy builder
 * Configurable max attempts and delays
 
 ==== link:../src/main/java/de/cuioss/http/client/retry/ExponentialBackoffRetryStrategy.java[ExponentialBackoffRetryStrategy]
@@ -283,9 +283,6 @@ RetryStrategy customExponential = ExponentialBackoffRetryStrategy.builder()
     .maxDelayMillis(10000)
     .multiplier(1.5)
     .build();
-
-// Fixed delay
-RetryStrategy fixed = RetryStrategy.fixedDelay(Duration.ofSeconds(2));
 ----
 
 
