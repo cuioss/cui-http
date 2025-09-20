@@ -69,9 +69,10 @@ SecurityConfiguration config = SecurityConfiguration.builder()
     .allowPathTraversal(false)
     .build();
 
+SecurityEventCounter counter = new SecurityEventCounter();
 URLPathValidationPipeline pipeline = new URLPathValidationPipeline(
     config,
-    SecurityEventCounter.getInstance()
+    counter
 );
 
 // Validate input
@@ -86,7 +87,10 @@ try {
 [source,java]
 ----
 // Use PipelineFactory for type-based selection
-HttpSecurityValidator validator = PipelineFactory.createValidator(ValidationType.URL_PATH);
+SecurityConfiguration config = SecurityConfiguration.builder().build();
+SecurityEventCounter counter = new SecurityEventCounter();
+HttpSecurityValidator validator = PipelineFactory.createPipeline(
+    ValidationType.URL_PATH, config, counter);
 String validated = validator.validate(userInput);
 ----
 

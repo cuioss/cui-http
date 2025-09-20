@@ -5,7 +5,7 @@
 
 == Overview
 
-This documentation suite provides comprehensive analysis and design specifications for HTTP/URL path traversal security validation in cui-java-tools.
+This documentation suite provides comprehensive analysis and design specifications for HTTP/URL path traversal security validation in cui-http.
 
 
 == Document Index

@@ -19,7 +19,7 @@ link:../README.adoc[← Back to Documentation Overview]
 == Test Framework Structure
 
 ----
-src/test/java/de/cuioss/tools/security/http/
+src/test/java/de/cuioss/http/security/
 ├── config/                                  # Configuration tests
 │   ├── SecurityConfigurationTest.java
 │   ├── SecurityConfigurationBuilderTest.java
@@ -204,7 +204,7 @@ Each database provides structured test cases with expected failure types and com
 
 [source,java]
 ----
-package de.cuioss.tools.security.http.attacks;
+package de.cuioss.http.security.attacks;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -301,7 +301,7 @@ public class PathTraversalAttackTest {
 
 [source,java]
 ----
-package de.cuioss.tools.security.http.database;
+package de.cuioss.http.security.database;
 
 /**
  * Central repository of attack patterns.
@@ -374,7 +374,6 @@ public class AttackPatternDatabase {
 == Test Execution Strategy
 
 === Performance Benchmarking
-[[_performance_benchmarking]]
 
 ==== JMH Integration Setup
 
@@ -440,7 +439,7 @@ Add JMH dependency to `pom.xml`:
 
 [source,java]
 ----
-package de.cuioss.tools.security.http.attacks;
+package de.cuioss.http.security.attacks;
 
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.runner.Runner;
@@ -722,7 +721,7 @@ Add to GitHub Actions or Jenkins:
 
 [source,java]
 ----
-package de.cuioss.tools.security.http.testing;
+package de.cuioss.http.security.testing;
 
 import org.junit.jupiter.params.provider.ArgumentsSource;
 import java.lang.annotation.*;
@@ -813,7 +812,7 @@ public class GeneratorsArgumentsProvider implements ArgumentsProvider {
 
 [source,java]
 ----
-package de.cuioss.tools.security.http.validation;
+package de.cuioss.http.security.validation;
 
 /**
  * Tests to ensure ValidationType is properly propagated through the system.
@@ -880,7 +879,7 @@ public class ValidationTypeTest {
 
 [source,java]
 ----
-package de.cuioss.tools.security.http.attacks;
+package de.cuioss.http.security.attacks;
 
 import org.junit.jupiter.params.ParameterizedTest;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
