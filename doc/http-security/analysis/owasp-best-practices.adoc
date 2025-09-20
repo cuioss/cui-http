@@ -6,9 +6,9 @@
 
 link:../README.adoc[← Back to Documentation Index]
 
-== Executive Summary
+== Overview
 
-This document consolidates OWASP's comprehensive guidelines for preventing path traversal vulnerabilities, based on extensive research of the OWASP Web Security Testing Guide, Prevention Cheat Sheets, and real-world vulnerability analysis. Path traversal attacks accounted for 2.7% of vulnerabilities in open-source projects in 2024, with an 85% increase in closed-source projects, highlighting the critical importance of proper prevention techniques.
+OWASP guidelines for preventing path traversal vulnerabilities applied in the cui-http security validation framework.
 
 == Core Prevention Principles
 
@@ -56,56 +56,20 @@ When user input cannot be avoided, implement multiple layers of defense:
 
 === Input Validation Techniques
 
-==== Whitelist Validation (Preferred)
-[source,java]
-----
-// Define allowed files
-Set<String> allowedFiles = Set.of("report.pdf", "summary.doc", "data.csv");
-
-// Validate input
-if (!allowedFiles.contains(userInput)) {
-    throw new SecurityException("Invalid file requested");
-}
-----
-
 ==== Character Validation
-[source,java]
-----
-// Allow only alphanumeric and specific characters
-Pattern VALID_FILE_PATTERN = Pattern.compile("^[a-zA-Z0-9._-]+$");
+Implemented in: link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage]
 
-if (!VALID_FILE_PATTERN.matcher(userInput).matches()) {
-    throw new SecurityException("Invalid characters in filename");
-}
-----
+* Whitelist validation for allowed characters
+* Pattern matching against link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationConstants.java[CharacterValidationConstants]
 
 === Path Canonicalization and Validation
 
-==== Java Implementation Pattern
-[source,java]
-----
-public Path validatePath(String userInput, Path baseDirectory) 
-        throws SecurityException {
-    // Step 1: Resolve the path
-    Path resolvedPath = baseDirectory.resolve(userInput).normalize();
-    
-    // Step 2: Get canonical path
-    Path canonicalPath = resolvedPath.toRealPath();
-    
-    // Step 3: Verify containment
-    if (!canonicalPath.startsWith(baseDirectory.toRealPath())) {
-        throw new SecurityException("Path traversal detected");
-    }
-    
-    return canonicalPath;
-}
-----
+==== Normalization Implementation
+Implemented in: link:../../../src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]
 
-==== Platform-Specific Considerations
-
-* **Windows**: Handle both forward and backward slashes
-* **Unix/Linux**: Consider case sensitivity
-* **All Platforms**: Handle symbolic links appropriately
+* Path normalization and canonicalization
+* Unicode normalization (NFC, NFD, NFKC, NFKD)
+* Platform-specific path separator handling
 
 === Encoding and Decoding Handling
 
@@ -137,25 +101,13 @@ public Path validatePath(String userInput, Path baseDirectory)
 
 |===
 
-==== Comprehensive Decoding Implementation
-[source,java]
-----
-public String normalizeInput(String input) {
-    // Decode URL encoding
-    String decoded = URLDecoder.decode(input, StandardCharsets.UTF_8);
-    
-    // Normalize Unicode
-    decoded = Normalizer.normalize(decoded, Normalizer.Form.NFC);
-    
-    // Remove null bytes
-    decoded = decoded.replace("\0", "");
-    
-    // Normalize path separators
-    decoded = decoded.replace('\\', '/');
-    
-    return decoded;
-}
-----
+==== Decoding Implementation
+Implemented in: link:../../../src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage]
+
+* URL decoding with double-encoding detection
+* UTF-8 overlong encoding prevention
+* Null byte removal
+* Multiple encoding scheme handling
 
 == OWASP Testing Methodology
 
@@ -212,197 +164,56 @@ C:\inetpub\wwwroot\..\..\Windows\win.ini
 
 == Security Patterns and Architecture
 
-=== Secure File Access Pattern
+=== Secure Validation Patterns
 
-[source,java]
-----
-public class SecureFileAccess {
-    private final Path baseDirectory;
-    private final Set<String> allowedExtensions;
-    
-    public SecureFileAccess(Path baseDirectory) {
-        this.baseDirectory = baseDirectory.toAbsolutePath().normalize();
-        this.allowedExtensions = Set.of(".pdf", ".txt", ".doc");
-    }
-    
-    public byte[] readFile(String filename) throws IOException {
-        // 1. Validate filename format
-        if (!isValidFilename(filename)) {
-            throw new SecurityException("Invalid filename");
-        }
-        
-        // 2. Check extension
-        if (!hasAllowedExtension(filename)) {
-            throw new SecurityException("File type not allowed");
-        }
-        
-        // 3. Resolve and validate path
-        Path filePath = baseDirectory.resolve(filename).normalize();
-        Path realPath = filePath.toRealPath();
-        
-        if (!realPath.startsWith(baseDirectory)) {
-            throw new SecurityException("Path traversal attempted");
-        }
-        
-        // 4. Additional access control check
-        if (!Files.isReadable(realPath)) {
-            throw new SecurityException("File not accessible");
-        }
-        
-        // 5. Read with size limit
-        long fileSize = Files.size(realPath);
-        if (fileSize > MAX_FILE_SIZE) {
-            throw new SecurityException("File too large");
-        }
-        
-        return Files.readAllBytes(realPath);
-    }
-}
-----
+==== Path Validation Pipeline
+Implemented in: link:../../../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]
 
-=== Web Application Security Headers
+* Sequential validation stages
+* Pattern matching for known attacks
+* Configurable security levels via link:../../../src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration]
 
-==== Security Headers for Path Traversal Prevention
-[source,java]
-----
-public class SecurityHeaderFilter implements Filter {
-    
-    @Override
-    public void doFilter(ServletRequest request, ServletResponse response, 
-                        FilterChain chain) throws IOException, ServletException {
-        HttpServletResponse httpResponse = (HttpServletResponse) response;
-        
-        // Prevent directory listing
-        httpResponse.setHeader("X-Content-Type-Options", "nosniff");
-        
-        // Prevent clickjacking that might bypass path controls
-        httpResponse.setHeader("X-Frame-Options", "DENY");
-        
-        // Content Security Policy to limit resource loading
-        httpResponse.setHeader("Content-Security-Policy", 
-            "default-src 'self'; script-src 'self'; object-src 'none';");
-        
-        // Strict Transport Security
-        httpResponse.setHeader("Strict-Transport-Security", 
-            "max-age=31536000; includeSubDomains");
-        
-        chain.doFilter(request, response);
-    }
-}
-----
+=== HTTP Header Validation
 
-== Real-World Attack Patterns and Prevention
+Implemented in: link:../../../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline]
 
-=== URL Path Validation
+* Header injection prevention
+* CRLF attack detection
+* Header value validation against RFC 7230
 
-For web applications handling URL paths:
+== Real-World Attack Pattern Detection
 
-[source,java]
-----
-public class URLPathValidator {
-    
-    public boolean isValidURLPath(String urlPath) {
-        // Decode URL encoding
-        String decoded = URLDecoder.decode(urlPath, StandardCharsets.UTF_8);
-        
-        // Check for double encoding
-        String doubleDecoded = URLDecoder.decode(decoded, StandardCharsets.UTF_8);
-        if (!decoded.equals(doubleDecoded)) {
-            return false; // Double encoding detected
-        }
-        
-        // Check for traversal patterns
-        if (decoded.contains("..") || 
-            decoded.contains("./") || 
-            decoded.contains("/.") ||
-            decoded.contains("\\")) {
-            return false;
-        }
-        
-        // Additional checks for URL-specific patterns
-        // Protocol or drive letter
-        return !decoded.contains("%") && // Remaining encoding
-                !decoded.contains("~") &&  // User directory access
-                !decoded.contains(":");
-    }
-}
-----
+=== Pattern Matching Implementation
+Implemented in: link:../../../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage]
+
+* Path traversal pattern detection
+* CVE-based attack patterns
+* OWASP Top 10 attack vectors
+* Configurable pattern database
 
 == Monitoring and Detection
 
-=== Logging Strategy
+=== Security Event Monitoring
+Implemented in: link:../../../src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]
 
-[source,java]
-----
-public class PathTraversalMonitor {
-    private static final Logger logger = LoggerFactory.getLogger(PathTraversalMonitor.class);
-    private static final Logger securityLogger = LoggerFactory.getLogger("SECURITY");
-    
-    public void logSuspiciousAccess(String userId, String requestedPath, String clientIP) {
-        securityLogger.warn("Potential path traversal attempt - User: {}, Path: {}, IP: {}", 
-                           userId, requestedPath, clientIP);
-        
-        // Alert if multiple attempts
-        if (getRecentAttemptCount(userId) > THRESHOLD) {
-            securityLogger.error("Multiple path traversal attempts detected from user: {}", userId);
-            // Trigger security response
-            blockUser(userId);
-        }
-    }
-}
-----
+* Attack attempt counting by type
+* Failure type categorization
+* Metrics collection for security monitoring
 
-=== Detection Patterns
+=== Logging Implementation
+Implemented in: link:../../../src/main/java/de/cuioss/http/security/monitoring/URLSecurityLogMessages.java[URLSecurityLogMessages]
 
-Monitor for these indicators:
-* Multiple `../` sequences in requests
-* Encoded traversal patterns
-* Requests for known sensitive files (`/etc/passwd`, `web.config`)
-* Unusual file extensions or paths
-* Rapid successive requests with different paths
+* Structured security event logging
+* CuiLogger integration
+* Attack pattern logging
 
-== CVE Case Studies and Lessons
 
-=== CVE-2023-32235 (Ghost CMS)
+== Key Implementation Points
 
-**Attack Vector**: URL-encoded path traversal
-----
-/assets/built%2F..%2F..%2F/package.json
-----
-
-**Lesson**: Always decode before validation
-
-=== CVE-2023-50164 (Apache Struts)
-
-**Attack Vector**: File upload path manipulation
-**Impact**: Remote code execution via uploaded JSP shells
-
-**Lesson**: Validate upload destinations and content types
-
-=== CVE-2021-29425 (Apache Commons IO)
-
-**Attack Vector**: Malformed paths like `//../foo`
-**Impact**: Parent directory access
-
-**Lesson**: Edge cases in normalization logic
-
-== Implementation Checklist
-
-- [ ] Avoid user input in file operations where possible
-- [ ] Implement whitelist validation for allowed files
-- [ ] Use canonical path resolution
-- [ ] Validate path containment after resolution
-- [ ] Handle all encoding schemes (URL, Unicode, double)
-- [ ] Implement proper error handling without information disclosure
-- [ ] Validate HTTP request methods
-- [ ] Implement proper HTTP header validation
-- [ ] Log and monitor suspicious access patterns
-- [ ] Regular security testing with OWASP methodology
-- [ ] Keep libraries updated for security patches
-- [ ] Implement rate limiting for HTTP requests
-- [ ] Validate HTTP parameter values
-- [ ] Use secure defaults in frameworks
-- [ ] Document security assumptions and boundaries
+* Use link:../../../src/main/java/de/cuioss/http/security/pipeline/PipelineFactory.java[PipelineFactory] to select appropriate validation pipeline
+* Configure via link:../../../src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration] with sensible defaults
+* Monitor security events with link:../../../src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]
+* All validators implement link:../../../src/main/java/de/cuioss/http/security/core/HttpSecurityValidator.java[HttpSecurityValidator] interface
 
 == HTTP/URL Standards and Validation
 
@@ -426,138 +237,30 @@ Monitor for these indicators:
 
 ==== URL Query Parameter Validation
 
-URL query parameters require special attention as they are often used in path construction:
+Implemented in: link:../../../src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline]
 
-[source,java]
-----
-public class URLParameterValidator {
-    // RFC 7230 token characters for parameter names
-    private static final Pattern VALID_PARAM_NAME = 
-        Pattern.compile("^[a-zA-Z0-9!#$%&'*+\\-.^_`|~]+$");
-    
-    // RFC 3986 Section 3.4 - Query component allowed characters
-    private static final String QUERY_ALLOWED = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~:/?#[]@!$&'()*+,;=";
-    
-    public ValidationResult validateQueryParameter(String name, String value) {
-        // Validate parameter name
-        if (!isValidParameterName(name)) {
-            return ValidationResult.blocked("Invalid parameter name: " + name);
-        }
-        
-        // Decode parameter value
-        String decoded = URLDecoder.decode(value, StandardCharsets.UTF_8);
-        
-        // Check for path traversal patterns
-        if (containsPathTraversal(decoded)) {
-            return ValidationResult.blocked("Path traversal in parameter: " + name);
-        }
-        
-        // Check for null byte injection
-        if (decoded.contains("\0") || decoded.contains("%00")) {
-            return ValidationResult.blocked("Null byte in parameter: " + name);
-        }
-        
-        // Validate against maximum length (prevent buffer overflow)
-        if (decoded.length() > MAX_PARAM_LENGTH) {
-            return ValidationResult.blocked("Parameter too long: " + name);
-        }
-        
-        return ValidationResult.allowed();
-    }
-    
-}
-----
+* RFC 3986 compliant validation
+* Parameter name and value validation
+* Length limits enforcement
+* Null byte detection
 
-==== HTTP Body Parameter Validation
+Parameter data structure: link:../../../src/main/java/de/cuioss/http/security/data/URLParameter.java[URLParameter]
 
-HTTP POST body parameters (form-data, JSON, XML) require different validation approaches:
+==== HTTP Body Validation
 
-[source,java]
-----
-public class BodyParameterValidator {
-    
-    // Form-encoded body validation (application/x-www-form-urlencoded)
-    public ValidationResult validateFormParameter(String name, String value) {
-        // Similar to URL parameters but may contain more data
-        String decoded = URLDecoder.decode(value, StandardCharsets.UTF_8);
-        
-        // Check for path traversal
-        if (containsPathTraversal(decoded)) {
-            return ValidationResult.blocked("Path traversal in form parameter: " + name);
-        }
-        
-        // Validate against content-type specific rules
-        if (isFilePathParameter(name)) {
-            return validateFilePath(name, decoded);
-        }
-        
-        return ValidationResult.allowed();
-    }
-    
-    // JSON body validation
-    public ValidationResult validateJsonParameter(JsonNode node, String path) {
-        if (node.isTextual()) {
-            String value = node.asText();
-            
-            // Check for encoded path traversal
-            if (containsEncodedTraversal(value)) {
-                return ValidationResult.blocked("Encoded traversal in JSON: " + path);
-            }
-            
-            // Check for path traversal patterns
-            if (containsPathTraversal(value)) {
-                return ValidationResult.blocked("Path traversal in JSON: " + path);
-            }
-        }
-        
-        // Recursively validate nested objects
-        if (node.isObject()) {
-            Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
-            while (fields.hasNext()) {
-                Map.Entry<String, JsonNode> field = fields.next();
-                ValidationResult result = validateJsonParameter(
-                    field.getValue(), 
-                    path + "." + field.getKey()
-                );
-                if (result.isBlocked()) {
-                    return result;
-                }
-            }
-        }
-        
-        return ValidationResult.allowed();
-    }
-    
-    // Multipart form data validation (file uploads)
-    public ValidationResult validateMultipartParameter(Part part) throws IOException {
-        String filename = extractFilename(part);
-        
-        if (filename != null) {
-            // Validate filename for path traversal
-            if (containsPathTraversal(filename)) {
-                return ValidationResult.blocked("Path traversal in filename: " + filename);
-            }
-            
-            // Check for double extensions (bypass attempts)
-            if (hasDoubleExtension(filename)) {
-                return ValidationResult.blocked("Double extension detected: " + filename);
-            }
-        }
-        
-        // Validate content if it's text-based
-        if (isTextContent(part.getContentType())) {
-            try (InputStream is = part.getInputStream()) {
-                String content = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-                if (containsPathTraversal(content)) {
-                    return ValidationResult.blocked("Path traversal in file content");
-                }
-            }
-        }
-        
-        return ValidationResult.allowed();
-    }
-}
-----
+Implemented in: link:../../../src/main/java/de/cuioss/http/security/pipeline/HTTPBodyValidationPipeline.java[HTTPBodyValidationPipeline]
+
+* Full URL validation with protocols
+* XSS and script injection detection
+* JSON/XML content validation
+* File upload filename validation
+
+Body data structure: link:../../../src/main/java/de/cuioss/http/security/data/HTTPBody.java[HTTPBody]
+
+==== Cookie Validation
+
+Cookie data structure: link:../../../src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie]
+Attribute parsing: link:../../../src/main/java/de/cuioss/http/security/data/AttributeParser.java[AttributeParser]
 
 ==== Common Parameter Attack Patterns
 
