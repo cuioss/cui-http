@@ -17,7 +17,7 @@ These requirements are derived from:
 
 == OWASP Compliance Requirements
 
-=== [#SEC-1]
+[#SEC-1]
 === SEC-1: A03:2021 Injection Prevention
 
 * The system must prevent all forms of injection attacks through HTTP inputs
@@ -28,7 +28,7 @@ These requirements are derived from:
   ** Command injection via file paths
 * Reference: link:analysis/owasp-best-practices.adoc#_a032021_injection[OWASP A03:2021]
 
-=== [#SEC-2]
+[#SEC-2]
 === SEC-2: A04:2021 Insecure Design
 
 * The system must implement defense in depth
@@ -43,7 +43,7 @@ These requirements are derived from:
 
 == Path Traversal Security Requirements
 
-=== [#SEC-3]
+[#SEC-3]
 === SEC-3: Comprehensive Traversal Pattern Detection
 
 * The system must detect all known path traversal patterns
@@ -56,7 +56,7 @@ These requirements are derived from:
 * Must maintain pattern database for emerging threats
 * Reference: link:analysis/cve-analysis.adoc[CVE Analysis]
 
-=== [#SEC-4]
+[#SEC-4]
 === SEC-4: HTTP Protocol Encoding Attack Prevention
 
 * The system must prevent all HTTP protocol-layer encoding-based bypass attempts
@@ -70,7 +70,7 @@ These requirements are derived from:
 * Must validate at HTTP protocol decoding stage only
 * Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
 
-=== [#SEC-5]
+[#SEC-5]
 === SEC-5: Canonicalization Security
 
 * The system must safely canonicalize paths
@@ -85,7 +85,7 @@ These requirements are derived from:
 
 == Input Validation Security Requirements
 
-=== [#SEC-6]
+[#SEC-6]
 === SEC-6: Strict Input Validation
 
 * The system must enforce strict input validation rules
@@ -98,7 +98,7 @@ These requirements are derived from:
 * Must not attempt to "fix" invalid input
 * Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
 
-=== [#SEC-7]
+[#SEC-7]
 === SEC-7: Null Byte and Control Character Prevention
 
 * The system must block all null bytes and control characters
@@ -111,7 +111,7 @@ These requirements are derived from:
 * Must prevent log injection via control characters
 * Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
 
-=== [#SEC-8]
+[#SEC-8]
 === SEC-8: Unicode and Internationalization Security
 
 * The system must handle Unicode securely
@@ -127,7 +127,7 @@ These requirements are derived from:
 
 == Denial of Service Prevention Requirements
 
-=== [#SEC-9]
+[#SEC-9]
 === SEC-9: Resource Exhaustion Prevention
 
 * The system must prevent resource exhaustion attacks
@@ -139,7 +139,7 @@ These requirements are derived from:
 * Must fail fast when limits are exceeded
 * Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
 
-=== [#SEC-10]
+[#SEC-10]
 === SEC-10: Algorithmic Complexity Protection
 
 * The system must use algorithms with predictable complexity
@@ -153,7 +153,7 @@ These requirements are derived from:
 
 == Security Monitoring Requirements
 
-=== [#SEC-11]
+[#SEC-11]
 === SEC-11: Security Event Logging
 
 * The system must log all security events
@@ -166,7 +166,7 @@ These requirements are derived from:
 * Must support security information and event management (SIEM) integration
 * Reference: link:specification/specification.adoc#_security_event_tracking[Security Event Tracking]
 
-=== [#SEC-12]
+[#SEC-12]
 === SEC-12: Attack Pattern Recognition
 
 * The system must recognize attack patterns
@@ -181,7 +181,7 @@ These requirements are derived from:
 
 == Cryptographic and Encoding Requirements
 
-=== [#SEC-13]
+[#SEC-13]
 === SEC-13: Secure Encoding Handling
 
 * The system must handle encoding securely
@@ -193,7 +193,7 @@ These requirements are derived from:
 * Must not leak information through error messages
 * Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
 
-=== [#SEC-14]
+[#SEC-14]
 === SEC-14: Secure Defaults
 
 * The system must use secure defaults for all security settings
@@ -207,7 +207,7 @@ These requirements are derived from:
 
 == Compliance and Audit Requirements
 
-=== [#SEC-15]
+[#SEC-15]
 === SEC-15: Audit Trail Support
 
 * The system must support comprehensive audit trails
@@ -220,7 +220,7 @@ These requirements are derived from:
 * Must integrate with enterprise audit systems
 * Reference: link:specification/specification.adoc#_security_event_tracking[Security Event Tracking]
 
-=== [#SEC-16]
+[#SEC-16]
 === SEC-16: Security Testing Support
 
 * The system must support security testing
@@ -234,7 +234,7 @@ These requirements are derived from:
 
 == Third-Party Integration Security
 
-=== [#SEC-17]
+[#SEC-17]
 === SEC-17: API Security
 
 * The system must provide a secure API
@@ -248,7 +248,7 @@ These requirements are derived from:
 
 == Security Update Requirements
 
-=== [#SEC-18]
+[#SEC-18]
 === SEC-18: Attack Pattern Configuration
 
 * The system must support configurable attack patterns

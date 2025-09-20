@@ -56,6 +56,10 @@ The system is organized into the following packages:
 
 == Core Components
 
+_See Requirement link:../functional-requirements.adoc#HTTP-1[HTTP-1: Multi-Component Validation Support]_
+
+_See Requirement link:../functional-requirements.adoc#HTTP-3[HTTP-3: Fail-Fast Security Model]_
+
 === Status: IMPLEMENTED
 
 The following classes implement the core security validation components:
@@ -75,7 +79,18 @@ The following classes implement the core security validation components:
 
 For implementation details, see the JavaDoc of each class.
 
+The following tests verify the implementation:
+
+* link:../../../src/test/java/de/cuioss/http/security/core/HttpSecurityValidatorTest.java[HttpSecurityValidatorTest]
+* link:../../../src/test/java/de/cuioss/http/security/core/ValidationTypeTest.java[ValidationTypeTest]
+* link:../../../src/test/java/de/cuioss/http/security/core/UrlSecurityFailureTypeTest.java[UrlSecurityFailureTypeTest]
+* link:../../../src/test/java/de/cuioss/http/security/exceptions/UrlSecurityExceptionTest.java[UrlSecurityExceptionTest]
+
 == Configuration Architecture
+
+_See Requirement link:../functional-requirements.adoc#HTTP-13[HTTP-13: Configurable Security Rules]_
+
+_See Requirement link:../functional-requirements.adoc#HTTP-14[HTTP-14: Type-Specific Configuration]_
 
 === Status: IMPLEMENTED
 
@@ -93,7 +108,17 @@ The configuration system provides:
 4. **Secure Defaults**: OWASP and RFC-based default values
 For implementation details and configuration constants, see the JavaDoc of the configuration classes.
 
+The following tests verify the configuration implementation:
+
+* link:../../../src/test/java/de/cuioss/http/security/config/SecurityConfigurationTest.java[SecurityConfigurationTest]
+* link:../../../src/test/java/de/cuioss/http/security/config/SecurityConfigurationBuilderTest.java[SecurityConfigurationBuilderTest]
+* link:../../../src/test/java/de/cuioss/http/security/config/SecurityDefaultsTest.java[SecurityDefaultsTest]
+
 == Validation Stages
+
+_See Requirement link:../functional-requirements.adoc#HTTP-4[HTTP-4: Sequential Validation Pipeline]_
+
+_See Requirement link:../functional-requirements.adoc#HTTP-5[HTTP-5: Stage-Based Validation Architecture]_
 
 === Status: IMPLEMENTED
 
@@ -121,6 +146,12 @@ For implementation details, see the JavaDoc of each validation stage class.
 
 == Pipeline Architecture
 
+_See Requirement link:../functional-requirements.adoc#HTTP-4[HTTP-4: Sequential Validation Pipeline]_
+
+_See Requirement link:../functional-requirements.adoc#HTTP-7[HTTP-7: Directory Traversal Detection]_
+
+_See Requirement link:../security-requirements.adoc#SEC-3[SEC-3: Comprehensive Traversal Pattern Detection]_
+
 [NOTE]
 ====
 For detailed pipeline selection guidelines and architecture standards, see link:pipeline-architecture-standards.adoc[Pipeline Architecture Standards].
@@ -139,6 +170,10 @@ The following classes implement the validation pipeline system:
 Each pipeline is optimized for its specific HTTP component validation requirements.
 
 == Security Event Tracking
+
+_See Requirement link:../functional-requirements.adoc#HTTP-16[HTTP-16: Security Event Tracking]_
+
+_See Requirement link:../security-requirements.adoc#SEC-11[SEC-11: Security Event Logging]_
 
 === Status: IMPLEMENTED
 

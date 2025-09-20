@@ -98,6 +98,7 @@ These requirements are derived from:
 * Must maintain security even with symbolic links present
 * Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
 
+[#HTTP-9]
 === HTTP-9: Double Encoding Protection
 
 * The system must detect and block double-encoded input
