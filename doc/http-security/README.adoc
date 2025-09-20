@@ -27,9 +27,6 @@ HTTP/URL path traversal security architecture leveraging Java 21+ built-in types
 link:specification/pipeline-architecture-standards.adoc[Pipeline Architecture Standards]::
 Detailed standards for validation pipeline selection, configuration, and implementation patterns.
 
-link:specification/generator-contract.adoc[Generator Contract Specification]::
-Contract specifications for test data generators including implementation requirements and patterns.
-
 === Security Analysis
 
 link:analysis/owasp-best-practices.adoc[OWASP Best Practices]::

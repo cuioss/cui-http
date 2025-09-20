@@ -11,8 +11,6 @@ link:../README.adoc[← Back to Documentation Overview]
 
 Comprehensive testing framework for HTTP security validation with generator-based testing, attack databases, and performance validation.
 
-For detailed generator implementation requirements, see link:generator-contract.adoc[Generator Contract Specification].
-
 == Test Framework Structure
 
 ----
@@ -129,8 +127,6 @@ include::../../test-framework-structure.adoc[]
 
 * **Test Generators**: Dynamic test data generation using `TypedGenerator<T>` pattern
 * **Attack Databases**: Curated collections of CVE and OWASP attack patterns
-
-For generator implementation details, see link:generator-contract.adoc[Generator Contract Specification].
 
 For usage as a test dependency, see link:../../test-generators-readme.adoc[Test Generators README].
 
