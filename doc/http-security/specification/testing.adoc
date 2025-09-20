@@ -7,14 +7,11 @@
 link:../README.adoc[← Back to Documentation Overview]
 
 
-== Testing Philosophy
+== Overview
 
-. **Generator-Based Testing**: Dynamic test data generation using TypedGenerator pattern
-. **Deterministic Generation**: Using cui-tools Generator (not Random) for reproducibility
-. **Comprehensive Coverage**: 36 explicit test cases covering all attack categories
-. **Performance Validation**: Sub-millisecond requirement verification
-. **False Positive Prevention**: Ensuring legitimate URLs pass validation
-. **Mixed Responsibility Integration Testing**: Security framework tests intentionally validate both attack detection AND monitoring verification as architectural design - this provides comprehensive validation of security pipeline behavior rather than fragmented coverage
+Comprehensive testing framework for HTTP security validation with generator-based testing, attack databases, and performance validation.
+
+For detailed generator implementation requirements, see link:generator-contract.adoc[Generator Contract Specification].
 
 == Test Framework Structure
 
@@ -126,77 +123,16 @@ src/test/java/de/cuioss/http/security/
 
 include::../../test-framework-structure.adoc[]
 
-== Test Data Generators
+== Test Components
 
-The test framework uses a hierarchical generator architecture organized by attack type and validation context. All generators implement the `TypedGenerator<T>` interface from cui-test-generator.
+=== Generators and Databases
 
-[NOTE]
-====
-For complete generator contract requirements and implementation standards, see link:generator-contract.adoc[Generator Contract Specification].
-====
+* **Test Generators**: Dynamic test data generation using `TypedGenerator<T>` pattern
+* **Attack Databases**: Curated collections of CVE and OWASP attack patterns
 
-=== Generator Architecture
+For generator implementation details, see link:generator-contract.adoc[Generator Contract Specification].
 
-**Design Principle**: Generator/Database separation
-- **Generators**: Create dynamic, varied test data using algorithmic generation
-- **Databases**: Store curated collections of documented attack patterns (CVEs, OWASP)
-
-**Generator Naming Convention**:
-- `Valid*Generator`: Generates legitimate input that should pass validation
-- `Attack*Generator` / `Invalid*Generator`: Generates malicious/malformed input that should be rejected
-
-=== Generator Categories
-
-==== Encoding Attack Generators (`generators/encoding/`)
-- **`PathTraversalGenerator`**: Dynamic path traversal patterns with configurable depth
-- **`EncodingCombinationGenerator`**: Multi-level URL encoding combinations  
-- **`DoubleEncodingAttackGenerator`**: Double/triple encoding bypass attempts
-- **`UnicodeAttackGenerator`**: Unicode-based bypass patterns
-- **`UnicodeControlCharacterAttackGenerator`**: Control character injection
-- **`UnicodeNormalizationAttackGenerator`**: Normalization-based attacks
-- **`BoundaryFuzzingGenerator`**: Boundary condition and length-based attacks
-
-==== URL/Path Generators (`generators/url/`)
-- **`ValidURLGenerator`**: RFC-compliant URLs for positive testing
-- **`ValidURLPathGenerator`**: Valid path components
-- **`ValidURLParameterGenerator`**: Valid URL parameters
-- **`InvalidURLGenerator`**: Malformed URLs for negative testing
-- **`PathTraversalURLGenerator`**: Path traversal in URL context
-- **`NullByteURLGenerator`**: Null byte injection in URLs
-- **`URLLengthLimitAttackGenerator`**: Length-based DoS attacks
-
-==== HTTP Header Generators (`generators/header/`)
-- **`ValidHTTPHeaderNameGenerator`**: RFC-compliant header names
-- **`ValidHTTPHeaderValueGenerator`**: Valid header values
-- **`InvalidHTTPHeaderNameGenerator`**: Malformed header names
-- **`HttpHeaderInjectionAttackGenerator`**: CRLF injection attacks
-
-==== Cookie Generators (`generators/cookie/`)  
-- **`ValidCookieGenerator`**: RFC-compliant cookies
-- **`AttackCookieGenerator`**: Cookie-based attack patterns
-
-==== Protocol Injection Generators (`generators/injection/`)
-- **`HttpRequestSmugglingAttackGenerator`**: HTTP smuggling patterns
-- **`ProtocolHandlerAttackGenerator`**: Protocol handler exploits
-
-==== HTTP Body Generators (`generators/body/`)
-- **`ValidHTTPBodyContentGenerator`**: Valid body content
-- **`HTTPBodyGenerator`**: Various body formats and structures
-
-=== Attack Pattern Databases
-
-The framework includes curated databases of documented attack patterns organized by source:
-
-**CVE-Based Databases**:
-- `ApacheCVEAttackDatabase`: Apache HTTP Server vulnerabilities (CVE-2021-41773, CVE-2021-42013)
-- `NginxCVEAttackDatabase`: Nginx vulnerabilities (CVE-2013-4547, CVE-2017-7529)  
-- `IISCVEAttackDatabase`: Microsoft IIS vulnerabilities
-
-**Standards-Based Databases**:
-- `OWASPTop10AttackDatabase`: OWASP Top 10 attack patterns
-- `IPv6AttackDatabase`: IPv6 address parsing exploits
-- `IDNAttackDatabase`: Internationalized Domain Name attacks
-- `HomographAttackDatabase`: Unicode homograph attacks
+For usage as a test dependency, see link:../../test-generators-readme.adoc[Test Generators README].
 
 Each database provides structured test cases with expected failure types and comprehensive attack documentation.
 

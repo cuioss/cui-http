@@ -56,15 +56,11 @@ All databases implement `AttackDatabase` interface and provide `AttackTestCase` 
 
 == Test Generators
 
-Located in `src/test/java/de/cuioss/http/security/generators/`:
+The test artifact includes generators organized by category (body, cookie, encoding, header, injection, url).
 
-* **SupportedValidationTypeGenerator** - Generates ValidationTypes for PipelineFactory
-* **body/** - HTTP body generators
-* **cookie/** - Cookie structure generators
-* **encoding/** - Encoding pattern generators
-* **header/** - HTTP header generators
-* **injection/** - Injection attack generators
-* **url/** - URL component generators
+For complete generator architecture and categories, see link:http-security/specification/testing.adoc[Testing Framework].
+
+For generator implementation requirements, see link:http-security/specification/generator-contract.adoc[Generator Contract].
 
 == Usage
 
@@ -111,5 +107,7 @@ static Stream<AttackTestCase> getAllTestCases() {
 
 == Related Documentation
 
-* link:../doc/http-security/specification/testing.adoc[Security Testing Framework Specification]
-* link:../doc/http-security/analysis/cve-analysis.adoc[CVE Analysis]
+* link:http-security/specification/testing.adoc[Testing Framework] - Complete test framework structure
+* link:http-security/specification/generator-contract.adoc[Generator Contract] - Implementation requirements
+* link:test-framework-structure.adoc[Test Framework Structure] - Detailed file listing with links
+* link:http-security/analysis/cve-analysis.adoc[CVE Analysis] - Attack patterns and vulnerabilities

@@ -98,35 +98,7 @@ public String next() {
 }
 ----
 
-== Generator Framework Philosophy
-
-The testing framework follows a **Generator-Based Testing** approach with the following principles:
-
-=== Testing Philosophy
-
-. **Generator-Based Testing**: Dynamic test data generation using TypedGenerator pattern
-. **Deterministic Generation**: Using cui-tools Generator (not Random) for reproducibility
-. **Comprehensive Coverage**: All attack categories covered with explicit test cases
-. **Performance Validation**: Sub-millisecond requirement verification
-. **False Positive Prevention**: Ensuring legitimate inputs pass validation
-
-=== Framework Structure
-
-Generators are organized into categorical sub-packages based on their domain:
-
-* `cookie/` - Cookie-related generators and tests
-* `url/` - URL and parameter generators
-* `header/` - HTTP header generators
-* `body/` - HTTP body generators
-* `encoding/` - Encoding and path traversal generators
-* `injection/` - Injection attack generators
-
-=== Generator Categories by Purpose
-
-* **Valid Data Generators**: Generate legitimate inputs for false positive testing
-* **Attack Generators**: Generate malicious inputs for security validation
-* **Boundary Generators**: Generate edge cases and boundary conditions
-* **Performance Generators**: Generate inputs for performance testing
+== Generator Framework
 
 === TypedGenerator Pattern
 
@@ -500,7 +472,8 @@ public class HTTPStatusCodeGenerator implements TypedGenerator<Integer> {
 
 == Related Documentation
 
-* link:testing.adoc[Testing Framework] - Complete testing framework specification
+* link:testing.adoc[Testing Framework] - Test framework structure and organization
+* link:../../test-generators-readme.adoc[Test Generators README] - Usage guide for test artifact
 * link:specification.adoc[Architecture Specification] - System architecture overview
 
 == Generator Quality Issue References
