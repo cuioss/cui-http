@@ -85,7 +85,7 @@ SecurityConfiguration config = SecurityConfiguration.builder()
     .build();
 
 URLPathValidationPipeline pipeline = new URLPathValidationPipeline(
-    config, SecurityEventCounter.getInstance());
+    config, new SecurityEventCounter());
 
 String validated = pipeline.validate("/api/users/123");
 ----
@@ -109,8 +109,10 @@ String validated = pipeline.validate("/api/users/123");
 
 === Specifications
 * link:doc/http-security/README.adoc[HTTP Security Overview]
+* link:doc/http-security/Requirements.adoc[Requirements Documentation]
 * link:doc/http-security/specification/specification.adoc[Architecture Specification]
 * link:doc/http-security/specification/pipeline-architecture-standards.adoc[Pipeline Standards]
+* link:doc/http-security/specification/generator-contract.adoc[Generator Contract]
 * link:doc/http-security/specification/testing.adoc[Testing Framework]
 
 === Analysis
