@@ -16,9 +16,7 @@
 package de.cuioss.http.security.generators;
 
 import de.cuioss.http.security.data.Cookie;
-import de.cuioss.http.security.data.HTTPBody;
 import de.cuioss.http.security.data.URLParameter;
-import de.cuioss.http.security.generators.body.HTTPBodyGenerator;
 import de.cuioss.http.security.generators.cookie.AttackCookieGenerator;
 import de.cuioss.http.security.generators.cookie.ValidCookieGenerator;
 import de.cuioss.http.security.generators.encoding.BoundaryFuzzingGenerator;
@@ -54,7 +52,6 @@ class AllGeneratorsIntegrationTest {
     private final AttackURLParameterGenerator attackParameterGenerator = new AttackURLParameterGenerator();
     private final ValidCookieGenerator validCookieGenerator = new ValidCookieGenerator();
     private final AttackCookieGenerator attackCookieGenerator = new AttackCookieGenerator();
-    private final HTTPBodyGenerator bodyGenerator = new HTTPBodyGenerator();
 
     @Test
     void shouldHaveAllGeneratorsImplemented() {
@@ -69,7 +66,6 @@ class AllGeneratorsIntegrationTest {
         assertNotNull(attackParameterGenerator);
         assertNotNull(validCookieGenerator);
         assertNotNull(attackCookieGenerator);
-        assertNotNull(bodyGenerator);
     }
 
     @Test
@@ -84,7 +80,6 @@ class AllGeneratorsIntegrationTest {
         assertEquals(URLParameter.class, attackParameterGenerator.getType());
         assertEquals(Cookie.class, validCookieGenerator.getType());
         assertEquals(Cookie.class, attackCookieGenerator.getType());
-        assertEquals(HTTPBody.class, bodyGenerator.getType());
     }
 
     @Test
@@ -99,8 +94,7 @@ class AllGeneratorsIntegrationTest {
                 validParameterGenerator,
                 attackParameterGenerator,
                 validCookieGenerator,
-                attackCookieGenerator,
-                bodyGenerator
+                attackCookieGenerator
         );
 
         for (TypedGenerator<?> generator : generators) {
@@ -122,7 +116,6 @@ class AllGeneratorsIntegrationTest {
         Set<String> invalidUrls = new HashSet<>();
         Set<URLParameter> parameters = new HashSet<>();
         Set<Cookie> cookies = new HashSet<>();
-        Set<HTTPBody> bodies = new HashSet<>();
 
         for (int i = 0; i < 200; i++) {
             pathTraversals.add(pathTraversalGenerator.next());
@@ -135,7 +128,6 @@ class AllGeneratorsIntegrationTest {
             parameters.add(attackParameterGenerator.next());
             cookies.add(validCookieGenerator.next());
             cookies.add(attackCookieGenerator.next());
-            bodies.add(bodyGenerator.next());
         }
 
         // Each generator should produce reasonable variety
@@ -147,7 +139,6 @@ class AllGeneratorsIntegrationTest {
         assertTrue(invalidUrls.size() >= 10, "InvalidURLGenerator should produce variety, got: " + invalidUrls.size());
         assertTrue(parameters.size() >= 30, "URL Parameter generators should produce variety, got: " + parameters.size());
         assertTrue(cookies.size() >= 30, "Cookie generators should produce variety, got: " + cookies.size());
-        assertTrue(bodies.size() >= 30, "HTTPBodyGenerator should produce variety, got: " + bodies.size());
     }
 
     @Test
@@ -159,7 +150,6 @@ class AllGeneratorsIntegrationTest {
         Set<String> boundaryFuzzing = new HashSet<>();
         Set<URLParameter> parameters = new HashSet<>();
         Set<Cookie> cookies = new HashSet<>();
-        Set<HTTPBody> bodies = new HashSet<>();
 
         for (int i = 0; i < 200; i++) {
             pathTraversals.add(pathTraversalGenerator.next());
@@ -168,7 +158,6 @@ class AllGeneratorsIntegrationTest {
             boundaryFuzzing.add(boundaryGenerator.next());
             parameters.add(attackParameterGenerator.next()); // Use attack generator for attack pattern test
             cookies.add(attackCookieGenerator.next()); // Use attack generator for attack pattern test
-            bodies.add(bodyGenerator.next());
         }
 
         // Check for common attack patterns
@@ -181,8 +170,6 @@ class AllGeneratorsIntegrationTest {
                 p.value().contains("<script>") || p.value().contains("../") || p.value().contains("DROP"));
         boolean hasCookieAttack = cookies.stream().anyMatch(c ->
                 c.value().contains("<script>") || c.value().contains("../") || c.value().contains("DROP"));
-        boolean hasBodyAttack = bodies.stream().anyMatch(b ->
-                b.content().contains("<script>") || b.content().contains("../") || b.content().contains("DROP"));
 
         assertTrue(hasPathTraversal, "PathTraversalGenerator should generate path traversal patterns");
         assertTrue(hasEncoding, "EncodingCombinationGenerator should generate encoded patterns");
@@ -190,7 +177,6 @@ class AllGeneratorsIntegrationTest {
         assertTrue(hasBoundaryFuzz, "BoundaryFuzzingGenerator should generate boundary fuzzing patterns");
         assertTrue(hasParameterAttack, "Attack URL Parameter generator should generate attack patterns");
         assertTrue(hasCookieAttack, "Attack Cookie generator should generate attack patterns");
-        assertTrue(hasBodyAttack, "HTTPBodyGenerator should generate attack patterns");
     }
 
     @Test
@@ -199,13 +185,11 @@ class AllGeneratorsIntegrationTest {
         Set<String> validUrls = new HashSet<>();
         Set<URLParameter> parameters = new HashSet<>();
         Set<Cookie> cookies = new HashSet<>();
-        Set<HTTPBody> bodies = new HashSet<>();
 
         for (int i = 0; i < 200; i++) {
             validUrls.add(validUrlGenerator.next());
             parameters.add(validParameterGenerator.next()); // Use valid generator for legitimate value test
             cookies.add(validCookieGenerator.next()); // Use valid generator for legitimate value test
-            bodies.add(bodyGenerator.next());
         }
 
         // Check for legitimate patterns
@@ -214,13 +198,10 @@ class AllGeneratorsIntegrationTest {
                 "id".equals(p.name()) || "page".equals(p.name()) || "limit".equals(p.name()));
         boolean hasLegitimateCoookie = cookies.stream().anyMatch(c ->
                 "JSESSIONID".equals(c.name()) || "auth_token".equals(c.name()));
-        boolean hasLegitimateBody = bodies.stream().anyMatch(b ->
-                b.content().contains("Hello World") || b.content().contains("{\"user\""));
 
         assertTrue(hasValidPath, "ValidURLGenerator should generate valid paths");
         assertTrue(hasLegitimateParam, "Valid URL Parameter generator should generate legitimate parameters");
         assertTrue(hasLegitimateCoookie, "Valid Cookie generator should generate legitimate cookies");
-        assertTrue(hasLegitimateBody, "HTTPBodyGenerator should generate legitimate bodies");
     }
 
     @Test
@@ -247,7 +228,6 @@ class AllGeneratorsIntegrationTest {
                         attackParameterGenerator.next();
                         validCookieGenerator.next();
                         attackCookieGenerator.next();
-                        bodyGenerator.next();
                     }
                 })
         );
@@ -281,11 +261,6 @@ class AllGeneratorsIntegrationTest {
             assertNotNull(cookie.name(), "Cookie name should not be null");
             assertNotNull(cookie.value(), "Cookie value should not be null");
             assertNotNull(cookie.attributes(), "Cookie attributes should not be null");
-
-            HTTPBody body = bodyGenerator.next();
-            assertNotNull(body.content(), "HTTPBody content should not be null");
-            assertNotNull(body.contentType(), "HTTPBody contentType should not be null");
-            assertNotNull(body.encoding(), "HTTPBody encoding should not be null");
         }
     }
 
@@ -295,7 +270,6 @@ class AllGeneratorsIntegrationTest {
         Set<String> allStringOutputs = new HashSet<>();
         Set<URLParameter> allParams = new HashSet<>();
         Set<Cookie> allCookies = new HashSet<>();
-        Set<HTTPBody> allBodies = new HashSet<>();
 
         for (int i = 0; i < 300; i++) {
             allStringOutputs.add(pathTraversalGenerator.next());
@@ -308,7 +282,6 @@ class AllGeneratorsIntegrationTest {
             allParams.add(attackParameterGenerator.next());
             allCookies.add(validCookieGenerator.next());
             allCookies.add(attackCookieGenerator.next());
-            allBodies.add(bodyGenerator.next());
         }
 
         // Check for important edge cases
@@ -318,14 +291,12 @@ class AllGeneratorsIntegrationTest {
 
         boolean hasEmptyParamName = allParams.stream().anyMatch(p -> p.name().isEmpty());
         boolean hasEmptyCookieName = allCookies.stream().anyMatch(c -> c.name().isEmpty());
-        boolean hasEmptyBodyContent = allBodies.stream().anyMatch(b -> b.content().isEmpty());
 
         assertTrue(hasEmptyString, "Should generate empty strings for edge case testing");
         assertTrue(hasLongString, "Should generate long strings for buffer overflow testing");
         assertTrue(hasSpecialChars, "Should generate special characters for injection testing");
         assertTrue(hasEmptyParamName, "Should generate empty parameter names for edge case testing");
         assertTrue(hasEmptyCookieName, "Should generate empty cookie names for edge case testing");
-        assertTrue(hasEmptyBodyContent, "Should generate empty body content for edge case testing");
     }
 
     @Test
@@ -355,7 +326,6 @@ class AllGeneratorsIntegrationTest {
         Set<String> allStringGenerations = new HashSet<>();
         Set<URLParameter> allParameterGenerations = new HashSet<>();
         Set<Cookie> allCookieGenerations = new HashSet<>();
-        Set<HTTPBody> allBodyGenerations = new HashSet<>();
 
         for (int i = 0; i < totalGenerations; i++) {
             // String-based generators (G1-G6)
@@ -366,19 +336,17 @@ class AllGeneratorsIntegrationTest {
             allStringGenerations.add(validUrlGenerator.next());
             allStringGenerations.add(invalidUrlGenerator.next());
 
-            // Record-based generators (G7-G9)
+            // Record-based generators (G7-G8)
             allParameterGenerations.add(validParameterGenerator.next());
             allParameterGenerations.add(attackParameterGenerator.next());
             allCookieGenerations.add(validCookieGenerator.next());
             allCookieGenerations.add(attackCookieGenerator.next());
-            allBodyGenerations.add(bodyGenerator.next());
         }
 
         // Phase 1 completion criteria
         assertTrue(allStringGenerations.size() >= 200, "String generators should produce substantial variety");
         assertTrue(allParameterGenerations.size() >= 150, "Parameter generator should produce substantial variety");
         assertTrue(allCookieGenerations.size() >= 150, "Cookie generator should produce substantial variety");
-        assertTrue(allBodyGenerations.size() >= 150, "Body generator should produce substantial variety");
 
         // Verify security coverage
         boolean hasPathTraversalAttacks = allStringGenerations.stream().anyMatch(s -> s.contains("../"));
@@ -387,16 +355,14 @@ class AllGeneratorsIntegrationTest {
 
         boolean hasParameterXSS = allParameterGenerations.stream().anyMatch(p -> p.value().contains("<script>"));
         boolean hasCookieInjection = allCookieGenerations.stream().anyMatch(c -> c.value().contains("\r\n"));
-        boolean hasBodyXXE = allBodyGenerations.stream().anyMatch(b -> b.content().contains("<!ENTITY"));
 
         assertTrue(hasPathTraversalAttacks, "Should generate path traversal attacks");
         assertTrue(hasEncodingAttacks, "Should generate encoding attacks");
         assertTrue(hasUnicodeAttacks, "Should generate unicode attacks");
         assertTrue(hasParameterXSS, "Should generate parameter XSS attacks");
         assertTrue(hasCookieInjection, "Should generate cookie injection attacks");
-        assertTrue(hasBodyXXE, "Should generate XXE attacks");
 
-        // Phase 1 is now complete - all 10 tasks (G1-G10) implemented
-        assertTrue(true, "Phase 1: Test Infrastructure and Generators (10/10 complete)");
+        // Phase 1 is now complete - all 9 tasks (G1-G9) implemented
+        assertTrue(true, "Phase 1: Test Infrastructure and Generators (9/9 complete)");
     }
 }

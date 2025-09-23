@@ -164,7 +164,6 @@ The following classes implement the validation pipeline system:
 * link:../../../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline] - URL path validation
 * link:../../../src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline] - URL parameter validation
 * link:../../../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] - HTTP header validation
-* link:../../../src/main/java/de/cuioss/http/security/pipeline/HTTPBodyValidationPipeline.java[HTTPBodyValidationPipeline] - HTTP body validation
 * link:../../../src/main/java/de/cuioss/http/security/pipeline/PipelineFactory.java[PipelineFactory] - Factory for pipeline creation
 
 Each pipeline is optimized for its specific HTTP component validation requirements.
@@ -204,7 +203,6 @@ The following test suites verify the implementation meets this specification:
 * link:../../../src/test/java/de/cuioss/http/security/pipeline/URLPathValidationPipelineTest.java[URLPathValidationPipelineTest] - Path pipeline tests
 * link:../../../src/test/java/de/cuioss/http/security/pipeline/URLParameterValidationPipelineTest.java[URLParameterValidationPipelineTest] - Parameter pipeline tests
 * link:../../../src/test/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipelineTest.java[HTTPHeaderValidationPipelineTest] - Header pipeline tests
-* link:../../../src/test/java/de/cuioss/http/security/pipeline/HTTPBodyValidationPipelineTest.java[HTTPBodyValidationPipelineTest] - Body pipeline tests
 * link:../../../src/test/java/de/cuioss/http/security/pipeline/PipelineFactoryTest.java[PipelineFactoryTest] - Factory tests
 
 === Attack Database Tests
@@ -246,7 +244,6 @@ Each pipeline is configured with appropriate validation stages:
 * **URLPathValidationPipeline**: Optimized for path traversal and encoding attacks
 * **URLParameterValidationPipeline**: Focused on parameter injection and XSS
 * **HTTPHeaderValidationPipeline**: Prevents header injection and CRLF attacks
-* **HTTPBodyValidationPipeline**: Validates content-based attacks
 
 For usage examples, see the JavaDoc of link:../../../src/main/java/de/cuioss/http/security/pipeline/PipelineFactory.java[PipelineFactory].
 

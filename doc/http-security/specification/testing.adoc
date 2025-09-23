@@ -84,7 +84,6 @@ src/test/java/de/cuioss/http/security/
 │   └── SecurityEventCounterTest.java
 │
 ├── pipeline/                                # Validation pipeline tests
-│   ├── HTTPBodyValidationPipelineTest.java
 │   ├── HTTPHeaderValidationPipelineTest.java
 │   ├── PipelineFactoryTest.java
 │   ├── URLParameterValidationPipelineTest.java

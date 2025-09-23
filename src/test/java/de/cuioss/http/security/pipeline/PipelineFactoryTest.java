@@ -20,7 +20,6 @@ import de.cuioss.http.security.core.HttpSecurityValidator;
 import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.generators.SupportedValidationTypeGenerator;
-import de.cuioss.http.security.generators.body.ValidHTTPBodyContentGenerator;
 import de.cuioss.http.security.generators.header.ValidHTTPHeaderNameGenerator;
 import de.cuioss.http.security.generators.header.ValidHTTPHeaderValueGenerator;
 import de.cuioss.http.security.generators.url.PathTraversalURLGenerator;
@@ -91,15 +90,6 @@ class PipelineFactoryTest {
             assertEquals(validHeaderValue, result);
         }
 
-        @ParameterizedTest
-        @TypeGeneratorSource(value = ValidHTTPBodyContentGenerator.class, count = 5)
-        void shouldCreateBodyValidationPipeline(String validBodyContent) {
-            HttpSecurityValidator pipeline = PipelineFactory.createBodyPipeline(config, eventCounter);
-            assertInstanceOf(HTTPBodyValidationPipeline.class, pipeline);
-
-            String result = pipeline.validate(validBodyContent);
-            assertEquals(validBodyContent, result);
-        }
     }
 
     @Nested
@@ -116,7 +106,6 @@ class PipelineFactoryTest {
             assertThrows(NullPointerException.class,
                     () -> PipelineFactory.createHeaderValuePipeline(null, eventCounter));
             assertThrows(NullPointerException.class,
-                    () -> PipelineFactory.createBodyPipeline(null, eventCounter));
         }
 
         @Test
@@ -129,8 +118,6 @@ class PipelineFactoryTest {
                     () -> PipelineFactory.createHeaderNamePipeline(config, null));
             assertThrows(NullPointerException.class,
                     () -> PipelineFactory.createHeaderValuePipeline(config, null));
-            assertThrows(NullPointerException.class,
-                    () -> PipelineFactory.createBodyPipeline(config, null));
         }
 
         @Test
@@ -147,6 +134,11 @@ class PipelineFactoryTest {
             IllegalArgumentException cookieValueException = assertThrows(IllegalArgumentException.class,
                     () -> PipelineFactory.createPipeline(ValidationType.COOKIE_VALUE, config, eventCounter));
             assertTrue(cookieValueException.getMessage().contains("Cookie validation pipelines are not yet implemented"));
+
+            IllegalArgumentException bodyException = assertThrows(IllegalArgumentException.class,
+                    () -> PipelineFactory.createPipeline(ValidationType.BODY, config, eventCounter));
+            assertTrue(bodyException.getMessage().contains("BODY validation pipeline has been removed"));
+            assertTrue(bodyException.getMessage().contains("application layer"));
         }
 
         @Test
@@ -169,13 +161,10 @@ class PipelineFactoryTest {
             HttpSecurityValidator paramPipeline = PipelineFactory.createPipeline(ValidationType.PARAMETER_VALUE, config, eventCounter);
             HttpSecurityValidator headerNamePipeline = PipelineFactory.createPipeline(ValidationType.HEADER_NAME, config, eventCounter);
             HttpSecurityValidator headerValuePipeline = PipelineFactory.createPipeline(ValidationType.HEADER_VALUE, config, eventCounter);
-            HttpSecurityValidator bodyPipeline = PipelineFactory.createPipeline(ValidationType.BODY, config, eventCounter);
-
             assertInstanceOf(URLPathValidationPipeline.class, pathPipeline);
             assertInstanceOf(URLParameterValidationPipeline.class, paramPipeline);
             assertInstanceOf(HTTPHeaderValidationPipeline.class, headerNamePipeline);
             assertInstanceOf(HTTPHeaderValidationPipeline.class, headerValuePipeline);
-            assertInstanceOf(HTTPBodyValidationPipeline.class, bodyPipeline);
         }
 
         @ParameterizedTest
@@ -195,15 +184,6 @@ class PipelineFactoryTest {
             assertEquals(directPathPipeline.validate(validPath), genericPathPipeline.validate(validPath));
         }
 
-        @ParameterizedTest
-        @TypeGeneratorSource(value = ValidHTTPBodyContentGenerator.class, count = 3)
-        void shouldCreateEquivalentBodyPipelinesViaDifferentFactoryMethods(String validBodyContent) {
-            HttpSecurityValidator directBodyPipeline = PipelineFactory.createBodyPipeline(config, eventCounter);
-            HttpSecurityValidator genericBodyPipeline = PipelineFactory.createPipeline(ValidationType.BODY, config, eventCounter);
-
-            assertEquals(directBodyPipeline.getClass(), genericBodyPipeline.getClass());
-            assertEquals(directBodyPipeline.validate(validBodyContent), genericBodyPipeline.validate(validBodyContent));
-        }
     }
 
     @Nested
@@ -217,7 +197,6 @@ class PipelineFactoryTest {
             assertInstanceOf(URLParameterValidationPipeline.class, pipelineSet.urlParameterPipeline());
             assertInstanceOf(HTTPHeaderValidationPipeline.class, pipelineSet.headerNamePipeline());
             assertInstanceOf(HTTPHeaderValidationPipeline.class, pipelineSet.headerValuePipeline());
-            assertInstanceOf(HTTPBodyValidationPipeline.class, pipelineSet.bodyPipeline());
         }
 
         @Test
@@ -236,7 +215,7 @@ class PipelineFactoryTest {
             assertFalse(sharedCounter.hasAnyEvents());
 
             String nullByteContent = "test content\u0000with null byte";
-            HttpSecurityValidator validator = pipelineSet.bodyPipeline();
+            HttpSecurityValidator validator = pipelineSet.urlPathPipeline();
             assertThrows(UrlSecurityException.class, () ->
                     validator.validate(nullByteContent));
             assertTrue(sharedCounter.hasAnyEvents());
@@ -307,19 +286,6 @@ class PipelineFactoryTest {
             assertThrows(UrlSecurityException.class, () -> pipeline.validate(maliciousInput));
         }
 
-        @ParameterizedTest
-        @TypeGeneratorSource(value = ValidHTTPBodyContentGenerator.class, count = 3)
-        void shouldWorkWithDifferentSecurityConfigurations(String validContent) {
-            SecurityConfiguration strictConfig = SecurityConfiguration.strict();
-            SecurityConfiguration lenientConfig = SecurityConfiguration.lenient();
-
-            HttpSecurityValidator strictPipeline = PipelineFactory.createBodyPipeline(strictConfig, eventCounter);
-            HttpSecurityValidator lenientPipeline = PipelineFactory.createBodyPipeline(lenientConfig, eventCounter);
-
-            assertEquals(strictPipeline.getClass(), lenientPipeline.getClass());
-            assertEquals(validContent, strictPipeline.validate(validContent));
-            assertEquals(validContent, lenientPipeline.validate(validContent));
-        }
 
         @Test
         @SuppressWarnings("java:S1612")

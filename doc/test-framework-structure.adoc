@@ -97,7 +97,6 @@ The test framework is organized in the following structure under `src/test/java/
 
 === Validation Pipeline Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/pipeline/HTTPBodyValidationPipelineTest.java[HTTPBodyValidationPipelineTest]
 * link:../../../src/test/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipelineTest.java[HTTPHeaderValidationPipelineTest]
 * link:../../../src/test/java/de/cuioss/http/security/pipeline/PipelineFactoryTest.java[PipelineFactoryTest]
 * link:../../../src/test/java/de/cuioss/http/security/pipeline/URLParameterValidationPipelineTest.java[URLParameterValidationPipelineTest]

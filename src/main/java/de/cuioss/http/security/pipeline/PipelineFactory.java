@@ -43,7 +43,6 @@ import java.util.Objects;
  *   <li><strong>URL Path Validation</strong> - For URL path segments and components</li>
  *   <li><strong>URL Parameter Validation</strong> - For query parameter values</li>
  *   <li><strong>HTTP Header Validation</strong> - For header names and values</li>
- *   <li><strong>HTTP Body Validation</strong> - For request/response body content</li>
  * </ul>
  *
  * <h3>Usage Examples</h3>
@@ -56,7 +55,6 @@ import java.util.Objects;
  * HttpSecurityValidator paramValidator = PipelineFactory.createUrlParameterPipeline(config, counter);
  * HttpSecurityValidator headerNameValidator = PipelineFactory.createHeaderNamePipeline(config, counter);
  * HttpSecurityValidator headerValueValidator = PipelineFactory.createHeaderValuePipeline(config, counter);
- * HttpSecurityValidator bodyValidator = PipelineFactory.createBodyPipeline(config, counter);
  *
  * // Generic factory method based on validation type
  * HttpSecurityValidator validator = PipelineFactory.createPipeline(ValidationType.URL_PATH, config, counter);
@@ -176,28 +174,6 @@ public final class PipelineFactory {
         return new HTTPHeaderValidationPipeline(config, eventCounter, ValidationType.HEADER_VALUE);
     }
 
-    /**
-     * Creates an HTTP body content validation pipeline.
-     *
-     * <p>This pipeline validates HTTP request/response body content for HTTP-layer
-     * security threats including:</p>
-     * <ul>
-     *   <li>XSS attack patterns</li>
-     *   <li>Character encoding attacks</li>
-     *   <li>Body-based DoS attacks</li>
-     *   <li>Content structure violations</li>
-     *   <li>HTTP protocol attacks</li>
-     * </ul>
-     *
-     * @param config The security configuration to use
-     * @param eventCounter The event counter for tracking security violations
-     * @return A configured HTTP body validation pipeline
-     * @throws NullPointerException if config or eventCounter is null
-     */
-    public static HttpSecurityValidator createBodyPipeline(
-            SecurityConfiguration config, SecurityEventCounter eventCounter) {
-        return new HTTPBodyValidationPipeline(config, eventCounter);
-    }
 
     /**
      * Generic factory method that creates the appropriate validation pipeline
@@ -212,7 +188,6 @@ public final class PipelineFactory {
      *   <li><strong>PARAMETER_VALUE</strong> - Creates URLParameterValidationPipeline</li>
      *   <li><strong>HEADER_NAME</strong> - Creates HTTPHeaderValidationPipeline for names</li>
      *   <li><strong>HEADER_VALUE</strong> - Creates HTTPHeaderValidationPipeline for values</li>
-     *   <li><strong>BODY</strong> - Creates HTTPBodyValidationPipeline</li>
      * </ul>
      *
      * @param validationType The type of validation pipeline to create
@@ -234,13 +209,14 @@ public final class PipelineFactory {
             case PARAMETER_VALUE -> createUrlParameterPipeline(config, eventCounter);
             case HEADER_NAME -> createHeaderNamePipeline(config, eventCounter);
             case HEADER_VALUE -> createHeaderValuePipeline(config, eventCounter);
-            case BODY -> createBodyPipeline(config, eventCounter);
             case PARAMETER_NAME -> throw new IllegalArgumentException(
                     "PARAMETER_NAME validation is not supported. Use PARAMETER_VALUE for parameter validation.");
+            case BODY -> throw new IllegalArgumentException(
+                    "BODY validation pipeline has been removed. HTTP body content validation should be handled at application layer.");
             case COOKIE_NAME, COOKIE_VALUE -> throw new IllegalArgumentException(
                     """
                     Cookie validation pipelines are not yet implemented. \
-                    Supported types: URL_PATH, PARAMETER_VALUE, HEADER_NAME, HEADER_VALUE, BODY""");
+                    Supported types: URL_PATH, PARAMETER_VALUE, HEADER_NAME, HEADER_VALUE""");
         };
     }
 
@@ -264,8 +240,7 @@ public final class PipelineFactory {
                 createUrlPathPipeline(config, eventCounter),
                 createUrlParameterPipeline(config, eventCounter),
                 createHeaderNamePipeline(config, eventCounter),
-                createHeaderValuePipeline(config, eventCounter),
-                createBodyPipeline(config, eventCounter)
+                createHeaderValuePipeline(config, eventCounter)
         );
     }
 
@@ -279,21 +254,18 @@ public final class PipelineFactory {
      * @param urlParameterPipeline Pipeline for validating URL parameter values
      * @param headerNamePipeline Pipeline for validating HTTP header names
      * @param headerValuePipeline Pipeline for validating HTTP header values
-     * @param bodyPipeline Pipeline for validating HTTP body content
      */
     public record PipelineSet(
     HttpSecurityValidator urlPathPipeline,
     HttpSecurityValidator urlParameterPipeline,
     HttpSecurityValidator headerNamePipeline,
-    HttpSecurityValidator headerValuePipeline,
-    HttpSecurityValidator bodyPipeline
+    HttpSecurityValidator headerValuePipeline
     ) {
         public PipelineSet {
             Objects.requireNonNull(urlPathPipeline, "urlPathPipeline must not be null");
             Objects.requireNonNull(urlParameterPipeline, "urlParameterPipeline must not be null");
             Objects.requireNonNull(headerNamePipeline, "headerNamePipeline must not be null");
             Objects.requireNonNull(headerValuePipeline, "headerValuePipeline must not be null");
-            Objects.requireNonNull(bodyPipeline, "bodyPipeline must not be null");
         }
     }
 }

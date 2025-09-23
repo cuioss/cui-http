@@ -20,7 +20,7 @@ import de.cuioss.http.security.database.AttackTestCase;
 import de.cuioss.http.security.database.IDNAttackDatabase;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
-import de.cuioss.http.security.pipeline.HTTPBodyValidationPipeline;
+import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -53,7 +53,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("IDN Attack Database Tests")
 class IDNAttackDatabaseTest {
 
-    private HTTPBodyValidationPipeline pipeline;
+    private URLPathValidationPipeline pipeline;
     private SecurityEventCounter eventCounter;
 
     @BeforeEach
@@ -63,7 +63,7 @@ class IDNAttackDatabaseTest {
                 .failOnSuspiciousPatterns(true)  // Enable suspicious pattern detection
                 .build();
         eventCounter = new SecurityEventCounter();
-        pipeline = new HTTPBodyValidationPipeline(config, eventCounter);
+        pipeline = new URLPathValidationPipeline(config, eventCounter);
     }
 
     /**

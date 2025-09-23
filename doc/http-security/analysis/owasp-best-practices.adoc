@@ -248,10 +248,10 @@ Parameter data structure: link:../../../src/main/java/de/cuioss/http/security/da
 
 ==== HTTP Body Validation
 
-Implemented in: link:../../../src/main/java/de/cuioss/http/security/pipeline/HTTPBodyValidationPipeline.java[HTTPBodyValidationPipeline]
+Implemented in: URLPathValidationPipeline and URLParameterValidationPipeline
 
-* Full URL validation with protocols
-* XSS and script injection detection
+* Full URL validation with protocols (URLPathValidationPipeline)
+* Protocol pattern detection (URLParameterValidationPipeline)
 * JSON/XML content validation
 * File upload filename validation
 
