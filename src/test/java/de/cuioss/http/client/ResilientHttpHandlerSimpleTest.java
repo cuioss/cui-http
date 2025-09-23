@@ -63,7 +63,7 @@ class ResilientHttpHandlerSimpleTest {
                 HttpErrorCategory.NETWORK_ERROR,
                 new ResultDetail(
                         new DisplayName("Network error with cached fallback"),
-                        /*~~(TODO: Use specific not Exception)~~>*/new Exception("network timeout")));
+                                /*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*/new Exception("network timeout")));
 
         assertFalse(errorWithCache.isValid());
         assertEquals(ResultState.ERROR, errorWithCache.getState());
@@ -80,7 +80,7 @@ class ResilientHttpHandlerSimpleTest {
                 HttpErrorCategory.NETWORK_ERROR,
                 new ResultDetail(
                         new DisplayName("Network error with no cached content"),
-                        /*~~(TODO: Use specific not Exception)~~>*/new Exception("connection failed")));
+                                /*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*/new Exception("connection failed")));
 
         assertFalse(errorNoCache.isValid());
         assertEquals(ResultState.ERROR, errorNoCache.getState());
@@ -124,14 +124,14 @@ class ResilientHttpHandlerSimpleTest {
                 "", HttpErrorCategory.NETWORK_ERROR,
                 new ResultDetail(
                         new DisplayName("Retryable network error"),
-                        /*~~(TODO: Use specific not Exception)~~>*/new Exception("network timeout")));
+                                /*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*/new Exception("network timeout")));
         assertTrue(retryableError.isRetryable());
 
         HttpResultObject<String> nonRetryableError = HttpResultObject.error(
                 "", HttpErrorCategory.CLIENT_ERROR,
                 new ResultDetail(
                         new DisplayName("Non-retryable client error"),
-                        /*~~(TODO: Use specific not Exception)~~>*/new Exception("400 Bad Request")));
+                                /*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*/new Exception("400 Bad Request")));
         assertFalse(nonRetryableError.isRetryable());
     }
 }

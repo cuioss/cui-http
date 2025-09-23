@@ -51,8 +51,7 @@ class SupportedValidationTypeGeneratorContractTest {
                 ValidationType.URL_PATH,
                 ValidationType.PARAMETER_VALUE,
                 ValidationType.HEADER_NAME,
-                ValidationType.HEADER_VALUE,
-                ValidationType.BODY
+                ValidationType.HEADER_VALUE
         );
 
         assertTrue(supportedTypes.contains(generatedValue),
@@ -68,8 +67,7 @@ class SupportedValidationTypeGeneratorContractTest {
                 ValidationType.URL_PATH,
                 ValidationType.PARAMETER_VALUE,
                 ValidationType.HEADER_NAME,
-                ValidationType.HEADER_VALUE,
-                ValidationType.BODY
+                ValidationType.HEADER_VALUE
         );
 
         Set<ValidationType> generatedTypes = EnumSet.noneOf(ValidationType.class);
@@ -104,7 +102,6 @@ class SupportedValidationTypeGeneratorContractTest {
         int parameterValueCount = 0;
         int headerNameCount = 0;
         int headerValueCount = 0;
-        int bodyCount = 0;
 
         int total = 1000;
 
@@ -115,16 +112,14 @@ class SupportedValidationTypeGeneratorContractTest {
                 case PARAMETER_VALUE -> parameterValueCount++;
                 case HEADER_NAME -> headerNameCount++;
                 case HEADER_VALUE -> headerValueCount++;
-                case BODY -> bodyCount++;
                 default -> fail("Unexpected type: " + type);
             }
         }
 
-        // Check that no single type dominates (< 60%)
-        assertTrue(urlPathCount < 600, "URL_PATH appeared " + urlPathCount + " times (< 600 expected)");
-        assertTrue(parameterValueCount < 600, "PARAMETER_VALUE appeared " + parameterValueCount + " times (< 600 expected)");
-        assertTrue(headerNameCount < 600, "HEADER_NAME appeared " + headerNameCount + " times (< 600 expected)");
-        assertTrue(headerValueCount < 600, "HEADER_VALUE appeared " + headerValueCount + " times (< 600 expected)");
-        assertTrue(bodyCount < 600, "BODY appeared " + bodyCount + " times (< 600 expected)");
+        // Check that no single type dominates (< 75% for 4 types)
+        assertTrue(urlPathCount < 750, "URL_PATH appeared " + urlPathCount + " times (< 750 expected)");
+        assertTrue(parameterValueCount < 750, "PARAMETER_VALUE appeared " + parameterValueCount + " times (< 750 expected)");
+        assertTrue(headerNameCount < 750, "HEADER_NAME appeared " + headerNameCount + " times (< 750 expected)");
+        assertTrue(headerValueCount < 750, "HEADER_VALUE appeared " + headerValueCount + " times (< 750 expected)");
     }
 }

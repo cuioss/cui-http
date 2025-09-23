@@ -67,7 +67,7 @@ class HttpResultObjectTest {
         HttpErrorCategory errorCode = HttpErrorCategory.NETWORK_ERROR;
         ResultDetail detail = new ResultDetail(
                 new DisplayName("Connection timeout"),
-                /*~~(TODO: Use specific not Exception)~~>*/new Exception("timeout")
+                /*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*/new Exception("timeout")
         );
 
         // When
@@ -96,7 +96,7 @@ class HttpResultObjectTest {
         HttpErrorCategory errorCode = HttpErrorCategory.SERVER_ERROR;
         ResultDetail detail = new ResultDetail(
                 new DisplayName("All retry attempts failed"),
-                /*~~(TODO: Use specific not Exception)~~>*/new Exception("final error")
+                /*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*/new Exception("final error")
         );
 
         // When

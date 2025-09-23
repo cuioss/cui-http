@@ -105,7 +105,6 @@ class PipelineFactoryTest {
                     () -> PipelineFactory.createHeaderNamePipeline(null, eventCounter));
             assertThrows(NullPointerException.class,
                     () -> PipelineFactory.createHeaderValuePipeline(null, eventCounter));
-            assertThrows(NullPointerException.class,
         }
 
         @Test
@@ -226,15 +225,13 @@ class PipelineFactoryTest {
             HttpSecurityValidator validPipeline = PipelineFactory.createUrlPathPipeline(config, eventCounter);
 
             assertThrows(NullPointerException.class, () ->
-                    new PipelineFactory.PipelineSet(null, validPipeline, validPipeline, validPipeline, validPipeline));
+                    new PipelineFactory.PipelineSet(null, validPipeline, validPipeline, validPipeline));
             assertThrows(NullPointerException.class, () ->
-                    new PipelineFactory.PipelineSet(validPipeline, null, validPipeline, validPipeline, validPipeline));
+                    new PipelineFactory.PipelineSet(validPipeline, null, validPipeline, validPipeline));
             assertThrows(NullPointerException.class, () ->
-                    new PipelineFactory.PipelineSet(validPipeline, validPipeline, null, validPipeline, validPipeline));
+                    new PipelineFactory.PipelineSet(validPipeline, validPipeline, null, validPipeline));
             assertThrows(NullPointerException.class, () ->
-                    new PipelineFactory.PipelineSet(validPipeline, validPipeline, validPipeline, null, validPipeline));
-            assertThrows(NullPointerException.class, () ->
-                    new PipelineFactory.PipelineSet(validPipeline, validPipeline, validPipeline, validPipeline, null));
+                    new PipelineFactory.PipelineSet(validPipeline, validPipeline, validPipeline, null));
         }
 
         @Test

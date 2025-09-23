@@ -29,7 +29,7 @@ import de.cuioss.test.generator.TypedGenerator;
 public class SupportedValidationTypeGenerator implements TypedGenerator<ValidationType> {
 
     // QI-6: Dynamic generation components
-    private final TypedGenerator<Integer> typeSelector = Generators.integers(1, 5);
+    private final TypedGenerator<Integer> typeSelector = Generators.integers(1, 4);
 
     @Override
     public ValidationType next() {
@@ -38,7 +38,6 @@ public class SupportedValidationTypeGenerator implements TypedGenerator<Validati
             case 2 -> ValidationType.PARAMETER_VALUE;
             case 3 -> ValidationType.HEADER_NAME;
             case 4 -> ValidationType.HEADER_VALUE;
-            case 5 -> ValidationType.BODY;
             default -> ValidationType.URL_PATH;
         };
     }

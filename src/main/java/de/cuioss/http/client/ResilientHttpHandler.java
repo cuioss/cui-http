@@ -150,7 +150,7 @@ public class ResilientHttpHandler<T> {
                     ResultState.WARNING, // Using cached content but with error condition
                     new ResultDetail(
                             new DisplayName("HTTP request failed, using cached content from " + httpHandler.getUrl()),
-                            /*~~(TODO: Use specific not Exception)~~>*/new Exception("HTTP request failed")),
+                                    /*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*/new Exception("HTTP request failed")),
                     HttpErrorCategory.NETWORK_ERROR,
                     cachedResult.getETag().orElse(null),
                     cachedResult.getHttpStatus().orElse(null)
@@ -161,7 +161,7 @@ public class ResilientHttpHandler<T> {
                     HttpErrorCategory.NETWORK_ERROR,
                     new ResultDetail(
                             new DisplayName("HTTP request failed with no cached content available from " + httpHandler.getUrl()),
-                            /*~~(TODO: Use specific not Exception)~~>*/new Exception("No cached content available"))
+                                    /*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*/new Exception("No cached content available"))
             );
         }
     }
@@ -179,7 +179,7 @@ public class ResilientHttpHandler<T> {
                     HttpErrorCategory.NETWORK_ERROR,
                     new ResultDetail(
                             new DisplayName("304 Not Modified but no cached content available"),
-                            /*~~(TODO: Use specific not Exception)~~>*/new Exception("No cached result available"))
+                                    /*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*/new Exception("No cached result available"))
             );
         }
     }
@@ -240,7 +240,7 @@ public class ResilientHttpHandler<T> {
                             HttpErrorCategory.CLIENT_ERROR,
                             new ResultDetail(
                                     new DisplayName("Content conversion failed for %s".formatted(httpHandler.getUrl())),
-                                    /*~~(TODO: Use specific not Exception)~~>*/new Exception("Content conversion returned empty result"))
+                                            /*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*/new Exception("Content conversion returned empty result"))
                     );
                 }
             } else {
