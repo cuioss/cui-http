@@ -41,19 +41,19 @@ This document establishes the authoritative standards for selecting appropriate 
 
 === HTTPBodyValidationPipeline - Content-Focused Attacks
 
-**Purpose**: Validates HTTP request body content, full URLs, and script injection.
+**Purpose**: Validates HTTP request body content, full URLs, and protocol handler injection.
 
 **Use When**:
 
 * Attack patterns contain **full URLs with protocols** (`http://`, `https://`)
-* XSS and script injection attacks
+* Protocol handler and parameter injection attacks
 * Content-based validation (form data, JSON, etc.)
 * Full URL parsing required (including domain validation)
 
 **Current Implementations**:
 
 * ✅ `IDNAttackDatabaseTest` - Full URL homograph attacks with protocols
-* ✅ `XssInjectionAttackDatabaseTest` - Script injection in body content
+* ✅ `ProtocolHandlerAttackDatabaseTest` - Protocol injection in body content
 
 **Attack Pattern Examples**:
 
@@ -73,7 +73,7 @@ This document establishes the authoritative standards for selecting appropriate 
 
 === 2. Content Type Priority
 
-* **Script/HTML injection** → `HTTPBodyValidationPipeline`
+* **Protocol handler injection** → `HTTPBodyValidationPipeline`
 * **Path traversal/CVE exploits** → `URLPathValidationPipeline`
 
 === 3. Encoding Layer Separation (HTTP Protocol vs Application Layer)
@@ -131,7 +131,7 @@ SecurityConfiguration config = SecurityConfiguration.builder()
     .failOnSuspiciousPatterns(true)
     .build();
 
-// For standard XSS attacks:
+// For standard protocol handler attacks:
 SecurityConfiguration config = SecurityConfiguration.defaults();
 ----
 

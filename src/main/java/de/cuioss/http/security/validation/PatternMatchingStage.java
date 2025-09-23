@@ -35,7 +35,7 @@ import java.util.regex.Pattern;
  *
  * <ol>
  *   <li><strong>Path Traversal Patterns</strong> - Detects directory traversal attempts</li>
- *   <li><strong>Cross-Site Scripting Patterns</strong> - Identifies XSS attack patterns</li>
+ *   <li><strong>Suspicious Protocol Patterns</strong> - Identifies protocol violations</li>
  *   <li><strong>Suspicious Path Patterns</strong> - Detects access to sensitive system locations</li>
  *   <li><strong>Parameter Attack Patterns</strong> - Identifies malicious parameter usage</li>
  * </ol>
@@ -51,7 +51,7 @@ import java.util.regex.Pattern;
  * <h3>Security Validations</h3>
  * <ul>
  *   <li><strong>Path Traversal</strong> - ../,..\\, and encoded variants</li>
- *   <li><strong>XSS Attacks</strong> - Script tags, event handlers, and JS injection</li>
+ *   <li><strong>Protocol Violations</strong> - Suspicious URI schemes and protocol handlers</li>
  *   <li><strong>File Access</strong> - Attempts to access sensitive system files</li>
  *   <li><strong>Parameter Pollution</strong> - Suspicious parameter names and patterns</li>
  * </ul>

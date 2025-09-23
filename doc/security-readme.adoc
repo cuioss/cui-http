@@ -32,7 +32,7 @@ For path-only attacks, directory traversal, CVE exploits. Sequential validation 
 
 === xref:../src/main/java/de/cuioss/http/security/pipeline/HTTPBodyValidationPipeline.java[HTTPBodyValidationPipeline]
 
-For full URLs with protocols, XSS, script injection.
+For full URLs with protocols, protocol handler injection.
 
 === xref:../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline]
 

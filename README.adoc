@@ -52,7 +52,7 @@ Test artifact:
 xref:doc/security-readme.adoc[Security Validation Framework]:
 
 * Validation pipelines for paths, parameters, headers, bodies
-* Attack pattern detection (path traversal, XSS, injection)
+* Attack pattern detection (path traversal, parameter injection, protocol violations)
 * Configuration via `SecurityConfigurationBuilder`
 
 === HTTP Client Handlers

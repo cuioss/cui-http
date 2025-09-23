@@ -39,7 +39,7 @@ import java.util.Objects;
  *   <li><strong>Length Validation</strong> - Enforces maximum body size limits</li>
  *   <li><strong>Character Validation</strong> - Validates allowed character sets</li>
  *   <li><strong>Normalization</strong> - Content normalization and security checks</li>
- *   <li><strong>Pattern Matching</strong> - Detects injection attacks and malicious content</li>
+ *   <li><strong>Pattern Matching</strong> - Detects protocol violations and suspicious patterns</li>
  * </ol>
  *
  * <h3>Design Principles</h3>

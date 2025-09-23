@@ -130,8 +130,8 @@ public class HTTPBodyGenerator implements TypedGenerator<HTTPBody> {
     private String generateAttackContent() {
         int attackType = Generators.integers(0, 8).next();
         return switch (attackType) {
-            case 0 -> generateXSSAttack();
-            case 1 -> generateSQLInjection();
+            case 0 -> generateProtocolViolation();
+            case 1 -> generateParameterInjection();
             case 2 -> generatePathTraversal();
             case 3 -> generateJNDIAttack();
             case 4 -> generateControlCharAttack();
@@ -139,20 +139,20 @@ public class HTTPBodyGenerator implements TypedGenerator<HTTPBody> {
             case 6 -> generateXXEAttack();
             case 7 -> generateUnicodeAttack();
             case 8 -> generateLargePayload();
-            default -> generateXSSAttack();
+            default -> generateProtocolViolation();
         };
     }
 
-    private String generateXSSAttack() {
-        String scriptName = generateScriptName();
-        String payload = generateXSSPayload();
-        return "<script>" + scriptName + "('" + payload + "')</script>";
+    private String generateProtocolViolation() {
+        String protocol = generateSuspiciousProtocol();
+        String payload = generateProtocolPayload();
+        return protocol + ":" + payload;
     }
 
-    private String generateSQLInjection() {
-        String command = generateSQLCommand();
-        String table = generateTableName();
-        return "'; " + command + " " + table + "; --";
+    private String generateParameterInjection() {
+        String param = generateSuspiciousParameter();
+        String separator = generateParameterSeparator();
+        return param + separator + "injected_value";
     }
 
     private String generatePathTraversal() {
@@ -379,64 +379,49 @@ public class HTTPBodyGenerator implements TypedGenerator<HTTPBody> {
         return statuses[Generators.integers(0, statuses.length - 1).next()];
     }
 
-    private String generateScriptName() {
-        int scriptType = Generators.integers(0, 2).next();
-        return switch (scriptType) {
-            case 0 -> generateScriptType();
-            case 1 -> generateAsyncScriptType();
-            case 2 -> "func" + Generators.integers(1, 99).next();
-            default -> generateScriptType();
+    private String generateSuspiciousProtocol() {
+        int protocolType = Generators.integers(0, 4).next();
+        return switch (protocolType) {
+            case 0 -> "javascript";
+            case 1 -> "data";
+            case 2 -> "file";
+            case 3 -> "ftp";
+            case 4 -> "mailto";
+            default -> "javascript";
         };
     }
 
-    private String generateScriptType() {
-        return switch (scriptTypeSelector.next()) {
-            case 1 -> "alert";
-            case 2 -> "confirm";
-            case 3 -> "prompt";
-            default -> "alert";
+    private String generateProtocolPayload() {
+        int payloadType = Generators.integers(0, 3).next();
+        return switch (payloadType) {
+            case 0 -> "//malicious.host/path";
+            case 1 -> "alert('test')/../../etc/passwd";
+            case 2 -> "text/html,<payload>";
+            case 3 -> "../../../sensitive/file";
+            default -> "//malicious.host/path";
         };
     }
 
-    private String generateAsyncScriptType() {
+    private String generateSuspiciousParameter() {
+        return switch (Generators.integers(1, 4).next()) {
+            case 1 -> "redirect";
+            case 2 -> "callback";
+            case 3 -> "url";
+            case 4 -> "path";
+            default -> "redirect";
+        };
+    }
+
+    private String generateParameterSeparator() {
         return switch (Generators.integers(1, 3).next()) {
-            case 1 -> "eval";
-            case 2 -> "setTimeout";
-            case 3 -> "setInterval";
-            default -> "eval";
+            case 1 -> "=";
+            case 2 -> "%3D"; // URL encoded =
+            case 3 -> "&";
+            default -> "=";
         };
     }
 
-    private String generateXSSPayload() {
-        int xssType = Generators.integers(0, 3).next();
-        return switch (xssType) {
-            case 0 -> generateXSSCategory();
-            case 1 -> "document." + generateDocumentProperty();
-            case 2 -> String.valueOf(Generators.integers(1, 9999).next());
-            case 3 -> "'" + Generators.letterStrings(3, 8).next() + "'";
-            default -> generateXSSCategory();
-        };
-    }
-
-    private String generateXSSCategory() {
-        return switch (xssCategorySelector.next()) {
-            case 1 -> "XSS";
-            case 2 -> "1";
-            case 3 -> "cookie";
-            default -> "XSS";
-        };
-    }
-
-    private String generateDocumentProperty() {
-        return switch (Generators.integers(1, 3).next()) {
-            case 1 -> "cookie";
-            case 2 -> "domain";
-            case 3 -> "location";
-            default -> "cookie";
-        };
-    }
-
-    private String generateSQLCommand() {
+    private String generateHTTPParameterName() {
         String type = generateSQLType();
         return switch (type) {
             case "DROP" -> "DROP TABLE";
