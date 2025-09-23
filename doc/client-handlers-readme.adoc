@@ -1,7 +1,8 @@
 = HTTP Client Handlers
-:toc: macro
+:toc: left
 :toclevels: 2
 :toc-title: Table of Contents
+:source-highlighter: highlight.js
 
 toc::[]
 
@@ -23,7 +24,7 @@ HTTP client utilities providing simplified HTTP request execution, SSL/TLS conte
 
 === Core HTTP Handlers
 
-==== link:../src/main/java/de/cuioss/http/client/handler/HttpHandler.java[HttpHandler]
+==== xref:../src/main/java/de/cuioss/http/client/handler/HttpHandler.java[HttpHandler]
 
 Builder-based HTTP client wrapper with automatic SSL context creation for HTTPS.
 
@@ -32,7 +33,7 @@ Builder-based HTTP client wrapper with automatic SSL context creation for HTTPS.
 * Configurable connection and read timeouts (default: 10 seconds)
 * Thread-safe after construction
 
-==== link:../src/main/java/de/cuioss/http/client/ResilientHttpHandler.java[ResilientHttpHandler]
+==== xref:../src/main/java/de/cuioss/http/client/ResilientHttpHandler.java[ResilientHttpHandler]
 
 Advanced HTTP handler providing resilient loading with retry logic and ETag-based caching.
 
@@ -42,7 +43,7 @@ Advanced HTTP handler providing resilient loading with retry logic and ETag-base
 * Thread-safe with proper concurrency handling
 * Comprehensive error categorization and recovery
 
-==== link:../src/main/java/de/cuioss/http/client/HttpHandlerProvider.java[HttpHandlerProvider]
+==== xref:../src/main/java/de/cuioss/http/client/HttpHandlerProvider.java[HttpHandlerProvider]
 
 Interface for providing HTTP handlers with retry strategies.
 
@@ -52,19 +53,19 @@ Interface for providing HTTP handlers with retry strategies.
 
 === SSL/TLS Support
 
-==== link:../src/main/java/de/cuioss/http/client/handler/SecureSSLContextProvider.java[SecureSSLContextProvider]
+==== xref:../src/main/java/de/cuioss/http/client/handler/SecureSSLContextProvider.java[SecureSSLContextProvider]
 
 Utility for creating TLS 1.2+ SSL contexts.
 
 === HTTP Status Classification
 
-==== link:../src/main/java/de/cuioss/http/client/handler/HttpStatusFamily.java[HttpStatusFamily]
+==== xref:../src/main/java/de/cuioss/http/client/handler/HttpStatusFamily.java[HttpStatusFamily]
 
 Enum for RFC 7231 HTTP status code classification with static helper methods.
 
 === Content Conversion
 
-==== link:../src/main/java/de/cuioss/http/client/converter/HttpContentConverter.java[HttpContentConverter]
+==== xref:../src/main/java/de/cuioss/http/client/converter/HttpContentConverter.java[HttpContentConverter]
 
 Interface for converting HTTP response bodies to domain objects.
 
@@ -72,7 +73,7 @@ Interface for converting HTTP response bodies to domain objects.
 * Configurable body handlers
 * Empty value support for null/empty responses
 
-==== link:../src/main/java/de/cuioss/http/client/converter/StringContentConverter.java[StringContentConverter]
+==== xref:../src/main/java/de/cuioss/http/client/converter/StringContentConverter.java[StringContentConverter]
 
 Built-in content converter for String responses.
 
@@ -82,7 +83,7 @@ Built-in content converter for String responses.
 
 === Result Handling
 
-==== link:../src/main/java/de/cuioss/http/client/result/HttpResultObject.java[HttpResultObject]
+==== xref:../src/main/java/de/cuioss/http/client/result/HttpResultObject.java[HttpResultObject]
 
 HTTP-specific result pattern implementation with ETag support.
 
@@ -92,7 +93,7 @@ HTTP-specific result pattern implementation with ETag support.
 * Error categorization via HttpErrorCategory
 * Factory methods for common scenarios
 
-==== link:../src/main/java/de/cuioss/http/client/result/HttpErrorCategory.java[HttpErrorCategory]
+==== xref:../src/main/java/de/cuioss/http/client/result/HttpErrorCategory.java[HttpErrorCategory]
 
 Error categorization for HTTP operations.
 
@@ -102,13 +103,13 @@ Error categorization for HTTP operations.
 * `INVALID_CONTENT` - Content conversion failures
 * Retry eligibility determination
 
-==== link:../src/main/java/de/cuioss/http/client/result/HttpResultState.java[HttpResultState]
+==== xref:../src/main/java/de/cuioss/http/client/result/HttpResultState.java[HttpResultState]
 
 HTTP-specific result states extending CUI result framework.
 
 === Retry Strategies
 
-==== link:../src/main/java/de/cuioss/http/client/retry/RetryStrategy.java[RetryStrategy]
+==== xref:../src/main/java/de/cuioss/http/client/retry/RetryStrategy.java[RetryStrategy]
 
 Interface for HTTP retry strategies with built-in implementations.
 
@@ -117,7 +118,7 @@ Interface for HTTP retry strategies with built-in implementations.
 * Custom strategies via ExponentialBackoffRetryStrategy builder
 * Configurable max attempts and delays
 
-==== link:../src/main/java/de/cuioss/http/client/retry/ExponentialBackoffRetryStrategy.java[ExponentialBackoffRetryStrategy]
+==== xref:../src/main/java/de/cuioss/http/client/retry/ExponentialBackoffRetryStrategy.java[ExponentialBackoffRetryStrategy]
 
 Exponential backoff implementation with jitter.
 
@@ -125,7 +126,7 @@ Exponential backoff implementation with jitter.
 * Random jitter to prevent thundering herd
 * Maximum delay capped at 30 seconds
 
-==== link:../src/main/java/de/cuioss/http/client/retry/RetryContext.java[RetryContext]
+==== xref:../src/main/java/de/cuioss/http/client/retry/RetryContext.java[RetryContext]
 
 Context information passed to retry strategies.
 
@@ -133,7 +134,7 @@ Context information passed to retry strategies.
 * Provides last exception
 * HTTP response details when available
 
-==== link:../src/main/java/de/cuioss/http/client/retry/RetryMetrics.java[RetryMetrics]
+==== xref:../src/main/java/de/cuioss/http/client/retry/RetryMetrics.java[RetryMetrics]
 
 Metrics collection for retry operations.
 
@@ -144,11 +145,11 @@ Metrics collection for retry operations.
 
 === Loading Status
 
-==== link:../src/main/java/de/cuioss/http/client/LoadingStatusProvider.java[LoadingStatusProvider]
+==== xref:../src/main/java/de/cuioss/http/client/LoadingStatusProvider.java[LoadingStatusProvider]
 
 Interface for components providing loading status.
 
-==== link:../src/main/java/de/cuioss/http/client/LoaderStatus.java[LoaderStatus]
+==== xref:../src/main/java/de/cuioss/http/client/LoaderStatus.java[LoaderStatus]
 
 Enum representing loader states.
 
@@ -159,7 +160,7 @@ Enum representing loader states.
 
 === Logging
 
-==== link:../src/main/java/de/cuioss/http/client/HttpLogMessages.java[HttpLogMessages]
+==== xref:../src/main/java/de/cuioss/http/client/HttpLogMessages.java[HttpLogMessages]
 
 Centralized log messages for HTTP operations.
 
@@ -288,5 +289,5 @@ RetryStrategy customExponential = ExponentialBackoffRetryStrategy.builder()
 
 == Related Documentation
 
-* link:../doc/http-security/README.adoc[HTTP Security Validation Framework]
-* link:https://tools.ietf.org/html/rfc7231[RFC 7231 - HTTP/1.1 Semantics]
+* xref:../doc/http-security/README.adoc[HTTP Security Validation Framework]
+* xref:https://tools.ietf.org/html/rfc7231[RFC 7231 - HTTP/1.1 Semantics]

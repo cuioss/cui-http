@@ -1,7 +1,8 @@
 = CUI-HTTP
-:toc: macro
+:toc: left
 :toclevels: 2
 :toc-title: Table of Contents
+:source-highlighter: highlight.js
 
 [.discrete]
 == Status
@@ -48,21 +49,24 @@ Test artifact:
 
 === HTTP Security Validation
 
-link:doc/security-readme.adoc[Security Validation Framework]:
+xref:doc/security-readme.adoc[Security Validation Framework]:
+
 * Validation pipelines for paths, parameters, headers, bodies
 * Attack pattern detection (path traversal, XSS, injection)
 * Configuration via `SecurityConfigurationBuilder`
 
 === HTTP Client Handlers
 
-link:doc/client-handlers-readme.adoc[HTTP Client Handlers]:
+xref:doc/client-handlers-readme.adoc[HTTP Client Handlers]:
+
 * `HttpHandler` - Builder-based HTTP client with SSL defaults
 * `SecureSSLContextProvider` - TLS 1.2+ SSL context
 * `HttpStatusFamily` - RFC 7231 status classification
 
 === Security Testing
 
-link:doc/test-generators-readme.adoc[Test Generators]:
+xref:doc/test-generators-readme.adoc[Test Generators]:
+
 * Attack databases with CVE patterns and OWASP vectors
 * Test data generators for security validation
 * JUnit 5 integration with `ArgumentsProvider`
@@ -103,20 +107,23 @@ String validated = pipeline.validate("/api/users/123");
 == Documentation
 
 === Component Documentation
-* link:doc/client-handlers-readme.adoc[HTTP Client Handlers]
-* link:doc/security-readme.adoc[Security Validation Framework]
-* link:doc/test-generators-readme.adoc[Security Testing Framework]
+
+* xref:doc/client-handlers-readme.adoc[HTTP Client Handlers]
+* xref:doc/security-readme.adoc[Security Validation Framework]
+* xref:doc/test-generators-readme.adoc[Security Testing Framework]
 
 === Specifications
-* link:doc/http-security/README.adoc[HTTP Security Overview]
-* link:doc/http-security/Requirements.adoc[Requirements Documentation]
-* link:doc/http-security/specification/specification.adoc[Architecture Specification]
-* link:doc/http-security/specification/pipeline-architecture-standards.adoc[Pipeline Standards]
-* link:doc/http-security/specification/testing.adoc[Testing Framework]
+
+* xref:doc/http-security/README.adoc[HTTP Security Overview]
+* xref:doc/http-security/Requirements.adoc[Requirements Documentation]
+* xref:doc/http-security/specification/specification.adoc[Architecture Specification]
+* xref:doc/http-security/specification/pipeline-architecture-standards.adoc[Pipeline Standards]
+* xref:doc/http-security/specification/testing.adoc[Testing Framework]
 
 === Analysis
-* link:doc/http-security/analysis/owasp-best-practices.adoc[OWASP Best Practices]
-* link:doc/http-security/analysis/cve-analysis.adoc[CVE Analysis]
+
+* xref:doc/http-security/analysis/owasp-best-practices.adoc[OWASP Best Practices]
+* xref:doc/http-security/analysis/cve-analysis.adoc[CVE Analysis]
 
 == Dependencies
 

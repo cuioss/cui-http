@@ -12,42 +12,42 @@ This documentation suite provides comprehensive analysis and design specificatio
 
 === Requirements and Specifications
 
-link:Requirements.adoc[Requirements Overview]::
+xref:Requirements.adoc[Requirements Overview]::
 Master requirements document linking functional and security requirements with traceability matrix.
 
-link:functional-requirements.adoc[Functional Requirements]::
+xref:functional-requirements.adoc[Functional Requirements]::
 Complete functional requirements for HTTP security validation system with detailed acceptance criteria.
 
-link:security-requirements.adoc[Security Requirements]::
+xref:security-requirements.adoc[Security Requirements]::
 Security-specific requirements addressing OWASP Top 10, CVE patterns, and threat mitigation strategies.
 
-link:specification/specification.adoc[Architecture Specification]::
+xref:specification/specification.adoc[Architecture Specification]::
 HTTP/URL path traversal security architecture leveraging Java 21+ built-in types with performance optimization strategies.
 
-link:specification/pipeline-architecture-standards.adoc[Pipeline Architecture Standards]::
+xref:specification/pipeline-architecture-standards.adoc[Pipeline Architecture Standards]::
 Detailed standards for validation pipeline selection, configuration, and implementation patterns.
 
 === Security Analysis
 
-link:analysis/owasp-best-practices.adoc[OWASP Best Practices]::
+xref:analysis/owasp-best-practices.adoc[OWASP Best Practices]::
 Comprehensive guide to OWASP-recommended prevention strategies, validation techniques, and security patterns for path traversal prevention.
 
-link:analysis/cve-analysis.adoc[CVE Analysis and Breach Studies]::
+xref:analysis/cve-analysis.adoc[CVE Analysis and Breach Studies]::
 Detailed analysis of critical CVEs from 2019-2024 and real-world breach case studies demonstrating exploitation patterns and impacts.
 
 === Testing and Validation
 
-link:specification/testing.adoc[Testing Framework]::
+xref:specification/testing.adoc[Testing Framework]::
 Complete testing framework specification including CVE-based test vectors, encoding matrices, and automated security validation.
 
 == Quick Start
 
 For developers implementing path traversal security:
 
-1. Review link:analysis/owasp-best-practices.adoc#_core_prevention_principles[Core Prevention Principles]
-2. Understand link:analysis/cve-analysis.adoc#_attack_pattern_evolution[Attack Pattern Evolution]
-3. Implement using link:specification/specification.adoc#_system_architecture[System Architecture]
-4. Validate with link:specification/testing.adoc#_test_data_categories[Test Data Categories]
+1. Review xref:analysis/owasp-best-practices.adoc#_core_prevention_principles[Core Prevention Principles]
+2. Understand xref:analysis/cve-analysis.adoc#_attack_pattern_evolution[Attack Pattern Evolution]
+3. Implement using xref:specification/specification.adoc#_system_architecture[System Architecture]
+4. Validate with xref:specification/testing.adoc#_test_data_categories[Test Data Categories]
 
 == HTTP/URL Standards Reference
 
@@ -90,9 +90,10 @@ Primary attack vectors in HTTP/URL contexts:
 
 === Validation Pipeline
 
-```
+[source]
+----
 Input → Decode → Normalize → Validate → Verify → Output
-```
+----
 
 Each stage must handle:
 
@@ -118,13 +119,13 @@ When updating this documentation suite:
 
 === Standards
 
-* link:https://www.rfc-editor.org/rfc/rfc3986[RFC 3986 - URI Generic Syntax]
-* link:https://www.rfc-editor.org/rfc/rfc7230[RFC 7230 - HTTP/1.1 Message Syntax]
-* link:https://www.rfc-editor.org/rfc/rfc8941[RFC 8941 - Structured Field Values]
+* xref:https://www.rfc-editor.org/rfc/rfc3986[RFC 3986 - URI Generic Syntax]
+* xref:https://www.rfc-editor.org/rfc/rfc7230[RFC 7230 - HTTP/1.1 Message Syntax]
+* xref:https://www.rfc-editor.org/rfc/rfc8941[RFC 8941 - Structured Field Values]
 
 === Security Resources
 
-* link:https://owasp.org/www-community/attacks/Path_Traversal[OWASP Path Traversal]
-* link:https://cwe.mitre.org/data/definitions/22.html[CWE-22: Path Traversal]
-* link:https://portswigger.net/web-security/file-path-traversal[PortSwigger Web Security]
+* xref:https://owasp.org/www-community/attacks/Path_Traversal[OWASP Path Traversal]
+* xref:https://cwe.mitre.org/data/definitions/22.html[CWE-22: Path Traversal]
+* xref:https://portswigger.net/web-security/file-path-traversal[PortSwigger Web Security]
 

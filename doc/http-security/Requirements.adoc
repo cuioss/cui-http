@@ -20,7 +20,7 @@ The HTTP Security Validation system provides comprehensive validation and saniti
 
 == Requirements Organization
 
-=== link:functional-requirements.adoc[Functional Requirements]
+=== xref:functional-requirements.adoc[Functional Requirements]
 
 Defines the core functionality that the system must provide:
 
@@ -33,7 +33,7 @@ Defines the core functionality that the system must provide:
 * **Integration** (HTTP-17): System integration
 * **Performance** (HTTP-18 to HTTP-19): Performance and resource management
 
-=== link:security-requirements.adoc[Security Requirements]
+=== xref:security-requirements.adoc[Security Requirements]
 
 Defines the security-specific requirements and controls:
 
@@ -51,13 +51,13 @@ Defines the security-specific requirements and controls:
 
 === Specifications
 
-* link:specification/specification.adoc[Architecture Specification]: Detailed system architecture and design
-* link:specification/testing.adoc[Testing Framework]: Comprehensive testing strategy
+* xref:specification/specification.adoc[Architecture Specification]: Detailed system architecture and design
+* xref:specification/testing.adoc[Testing Framework]: Comprehensive testing strategy
 
 === Analysis Documents
 
-* link:analysis/owasp-best-practices.adoc[OWASP Best Practices]: Security patterns and guidelines
-* link:analysis/cve-analysis.adoc[CVE Analysis]: Vulnerability analysis and lessons learned
+* xref:analysis/owasp-best-practices.adoc[OWASP Best Practices]: Security patterns and guidelines
+* xref:analysis/cve-analysis.adoc[CVE Analysis]: Vulnerability analysis and lessons learned
 
 == Requirements Summary
 
@@ -93,8 +93,8 @@ All requirements maintain bidirectional traceability:
 
 1. **Forward Traceability**: Each requirement links to its implementation specification
 2. **Backward Traceability**: Specifications reference implementing requirements
-3. **Test Traceability**: Requirements link to test specifications in link:specification/testing.adoc[Testing Framework]
-4. **Security Traceability**: Security requirements trace to identified threats in link:analysis/cve-analysis.adoc[CVE Analysis]
+3. **Test Traceability**: Requirements link to test specifications in xref:specification/testing.adoc[Testing Framework]
+4. **Security Traceability**: Security requirements trace to identified threats in xref:analysis/cve-analysis.adoc[CVE Analysis]
 
 == Compliance Matrix
 

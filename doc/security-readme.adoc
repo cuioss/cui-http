@@ -1,7 +1,8 @@
 = HTTP Security Validation Framework
-:toc: macro
+:toc: left
 :toclevels: 2
 :toc-title: Table of Contents
+:source-highlighter: highlight.js
 
 toc::[]
 
@@ -21,37 +22,37 @@ Validation framework for HTTP components (paths, parameters, headers, bodies) wi
 
 === Core Interface
 
-link:../src/main/java/de/cuioss/http/security/core/HttpSecurityValidator.java[HttpSecurityValidator]: Functional interface following "String in, String out, throws on violation" pattern.
+xref:../src/main/java/de/cuioss/http/security/core/HttpSecurityValidator.java[HttpSecurityValidator]: Functional interface following "String in, String out, throws on violation" pattern.
 
 == Validation Pipelines
 
-=== link:../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]
+=== xref:../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]
 
 For path-only attacks, directory traversal, CVE exploits. Sequential validation through configured stages.
 
-=== link:../src/main/java/de/cuioss/http/security/pipeline/HTTPBodyValidationPipeline.java[HTTPBodyValidationPipeline]
+=== xref:../src/main/java/de/cuioss/http/security/pipeline/HTTPBodyValidationPipeline.java[HTTPBodyValidationPipeline]
 
 For full URLs with protocols, XSS, script injection.
 
-=== link:../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline]
+=== xref:../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline]
 
 For header injection, CRLF attacks.
 
-=== link:../src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline]
+=== xref:../src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline]
 
 For query parameters, form data validation.
 
 == Validation Stages
 
-* link:../src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage] - URL decoding, UTF-8 overlong detection
-* link:../src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage] - Unicode normalization
-* link:../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - Character validation
-* link:../src/main/java/de/cuioss/http/security/validation/LengthValidationStage.java[LengthValidationStage] - Length limits
-* link:../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Attack pattern detection
+* xref:../src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage] - URL decoding, UTF-8 overlong detection
+* xref:../src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage] - Unicode normalization
+* xref:../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - Character validation
+* xref:../src/main/java/de/cuioss/http/security/validation/LengthValidationStage.java[LengthValidationStage] - Length limits
+* xref:../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Attack pattern detection
 
 == Configuration
 
-link:../src/main/java/de/cuioss/http/security/config/SecurityConfigurationBuilder.java[SecurityConfigurationBuilder] provides configuration with sensible defaults:
+xref:../src/main/java/de/cuioss/http/security/config/SecurityConfigurationBuilder.java[SecurityConfigurationBuilder] provides configuration with sensible defaults:
 
 * Path length: 4096 characters
 * Parameter count: 100
@@ -97,10 +98,10 @@ String validated = validator.validate(userInput);
 
 == Pipeline Selection Rules
 
-See link:../doc/http-security/specification/pipeline-architecture-standards.adoc[Pipeline Architecture Standards] for detailed selection criteria.
+See xref:../doc/http-security/specification/pipeline-architecture-standards.adoc[Pipeline Architecture Standards] for detailed selection criteria.
 
 == Related Documentation
 
-* link:../doc/http-security/README.adoc[Complete HTTP Security Documentation]
-* link:../doc/http-security/specification/specification.adoc[Architecture Specification]
-* link:../doc/http-security/specification/testing.adoc[Testing Framework]
+* xref:../doc/http-security/README.adoc[Complete HTTP Security Documentation]
+* xref:../doc/http-security/specification/specification.adoc[Architecture Specification]
+* xref:../doc/http-security/specification/testing.adoc[Testing Framework]

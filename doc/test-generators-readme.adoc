@@ -1,9 +1,8 @@
 = HTTP Security Test Generators
-:toc: macro
+:toc: left
 :toclevels: 2
 :toc-title: Table of Contents
-
-toc::[]
+:source-highlighter: highlight.js
 
 == Maven Coordinates
 
@@ -24,6 +23,7 @@ Test artifact containing attack databases with curated real-world attack pattern
 == Attack Databases
 
 All databases implement `AttackDatabase` interface and provide `AttackTestCase` records with:
+
 - Attack string
 - Expected `UrlSecurityFailureType`
 - Attack description

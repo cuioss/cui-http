@@ -3,9 +3,9 @@
 :toclevels: 3
 :sectnums:
 :icons: font
+:source-highlighter: highlight.js
 
 link:../README.adoc[← Back to Documentation Overview]
-
 
 == Overview
 
