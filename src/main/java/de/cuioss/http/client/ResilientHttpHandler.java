@@ -149,8 +149,7 @@ public class ResilientHttpHandler<T> {
                     cachedResult.getResult(),
                     ResultState.WARNING, // Using cached content but with error condition
                     new ResultDetail(
-                            new DisplayName("HTTP request failed, using cached content from " + httpHandler.getUrl()),
-                                    /*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*/new Exception("HTTP request failed")),
+                            new DisplayName("HTTP request failed, using cached content from " + httpHandler.getUrl())),
                     HttpErrorCategory.NETWORK_ERROR,
                     cachedResult.getETag().orElse(null),
                     cachedResult.getHttpStatus().orElse(null)
@@ -160,8 +159,7 @@ public class ResilientHttpHandler<T> {
                     getEmptyFallback(), // Safe empty fallback
                     HttpErrorCategory.NETWORK_ERROR,
                     new ResultDetail(
-                            new DisplayName("HTTP request failed with no cached content available from " + httpHandler.getUrl()),
-                                    /*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*/new Exception("No cached content available"))
+                            new DisplayName("HTTP request failed with no cached content available from " + httpHandler.getUrl()))
             );
         }
     }
@@ -178,8 +176,7 @@ public class ResilientHttpHandler<T> {
                     getEmptyFallback(), // Safe empty fallback
                     HttpErrorCategory.NETWORK_ERROR,
                     new ResultDetail(
-                            new DisplayName("304 Not Modified but no cached content available"),
-                                    /*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*/new Exception("No cached result available"))
+                            new DisplayName("304 Not Modified but no cached content available"))
             );
         }
     }
@@ -239,8 +236,7 @@ public class ResilientHttpHandler<T> {
                             getEmptyFallback(), // Safe empty fallback
                             HttpErrorCategory.CLIENT_ERROR,
                             new ResultDetail(
-                                    new DisplayName("Content conversion failed for %s".formatted(httpHandler.getUrl())),
-                                            /*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*/new Exception("Content conversion returned empty result"))
+                                    new DisplayName("Content conversion failed for %s".formatted(httpHandler.getUrl())))
                     );
                 }
             } else {

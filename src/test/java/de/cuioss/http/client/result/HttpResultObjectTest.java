@@ -66,8 +66,7 @@ class HttpResultObjectTest {
         String staleContent = "stale content";
         HttpErrorCategory errorCode = HttpErrorCategory.NETWORK_ERROR;
         ResultDetail detail = new ResultDetail(
-                new DisplayName("Connection timeout"),
-                /*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*/new Exception("timeout")
+                new DisplayName("Connection timeout")
         );
 
         // When
@@ -95,8 +94,7 @@ class HttpResultObjectTest {
         String fallbackContent = "fallback content";
         HttpErrorCategory errorCode = HttpErrorCategory.SERVER_ERROR;
         ResultDetail detail = new ResultDetail(
-                new DisplayName("All retry attempts failed"),
-                /*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*//*~~(TODO: Use specific not Exception)~~>*/new Exception("final error")
+                new DisplayName("All retry attempts failed")
         );
 
         // When
