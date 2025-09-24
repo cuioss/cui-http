@@ -34,7 +34,7 @@ import de.cuioss.http.client.result.HttpResultObject;
  *
  * <h2>Usage Pattern</h2>
  * <pre>
- * RetryStrategy strategy = RetryStrategy.exponentialBackoff();
+ * RetryStrategy strategy = RetryStrategies.exponentialBackoff();
  * HttpResultObject&lt;String&gt; result = strategy.execute(operation, context);
  *
  * if (!result.isValid()) {
@@ -85,20 +85,4 @@ public interface RetryStrategy {
         };
     }
 
-    /**
-     * Creates exponential backoff retry strategy with sensible defaults.
-     * This is the recommended strategy for most HTTP operations requiring retry.
-     *
-     * Default configuration:
-     * - Maximum attempts: 5
-     * - Initial delay: 1 second
-     * - Backoff multiplier: 2.0
-     * - Maximum delay: 1 minute
-     * - Jitter factor: 0.1 (±10% randomization)
-     *
-     * @return a retry strategy with exponential backoff and jitter
-     */
-    static RetryStrategy exponentialBackoff() {
-        return ExponentialBackoffRetryStrategy.builder().build();
-    }
 }

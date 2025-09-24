@@ -19,6 +19,7 @@ import de.cuioss.http.client.converter.HttpContentConverter;
 import de.cuioss.http.client.converter.StringContentConverter;
 import de.cuioss.http.client.result.HttpErrorCategory;
 import de.cuioss.http.client.result.HttpResultObject;
+import de.cuioss.http.client.retry.RetryStrategies;
 import de.cuioss.http.client.retry.RetryStrategy;
 import de.cuioss.test.juli.LogAsserts;
 import de.cuioss.test.juli.TestLogLevel;
@@ -113,7 +114,7 @@ class ResilientHttpHandlerIntegrationTest {
             @NotNull
             @Override
             public RetryStrategy getRetryStrategy() {
-                return RetryStrategy.exponentialBackoff();
+                return RetryStrategies.exponentialBackoff();
             }
         };
 

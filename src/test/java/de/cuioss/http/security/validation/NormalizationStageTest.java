@@ -205,6 +205,7 @@ class NormalizationStageTest {
             "'/api/././users/././data', '/api/users/data'",
             "'/../../../still/valid', '/still/valid'"
     })
+    @SuppressWarnings("java:S4144")
     void validate_withComplexDotPatterns_handlesCorrectly(String input, String expected) {
         Optional<String> result = stage.validate(input);
         assertTrue(result.isPresent());
@@ -227,7 +228,7 @@ class NormalizationStageTest {
      */
     @Test
     void when_withCondition_appliesConditionally() {
-        var conditionalValidator = stage.when(input -> input != null && input.startsWith("/api"));
+        var conditionalValidator = stage.when(input -> input.startsWith("/api"));
 
         // Should normalize when condition is true
         Optional<String> result1 = conditionalValidator.validate("/api/./users");
@@ -295,6 +296,7 @@ class NormalizationStageTest {
             "'/.', '/'",
             "'/../', '/'"  // This goes above root but is normalized to root
     })
+    @SuppressWarnings("java:S4144")
     void validate_withRootPaths_handlesCorrectly(String input, String expected) {
         Optional<String> result = stage.validate(input);
         assertTrue(result.isPresent());

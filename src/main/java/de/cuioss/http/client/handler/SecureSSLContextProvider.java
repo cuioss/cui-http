@@ -17,6 +17,7 @@ package de.cuioss.http.client.handler;
 
 import de.cuioss.tools.collect.CollectionLiterals;
 import de.cuioss.tools.logging.CuiLogger;
+import org.jspecify.annotations.Nullable;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
@@ -125,7 +126,7 @@ public record SecureSSLContextProvider(String minimumTlsVersion) {
      * @param protocol the protocol to check
      * @return true if the protocol is a secure TLS version, false otherwise
      */
-    public boolean isSecureTlsVersion(String protocol) {
+    public boolean isSecureTlsVersion(@Nullable String protocol) {
         if (protocol == null) {
             return false;
         }
@@ -187,7 +188,7 @@ public record SecureSSLContextProvider(String minimumTlsVersion) {
      * @param sslContext the SSLContext to validate, may be null
      * @return a secure SSLContext, either the validated input or a newly created one
      */
-    public SSLContext getOrCreateSecureSSLContext(SSLContext sslContext) {
+    public SSLContext getOrCreateSecureSSLContext(@Nullable SSLContext sslContext) {
         try {
             if (sslContext != null) {
                 // Validate the provided SSL context

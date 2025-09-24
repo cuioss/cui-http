@@ -15,6 +15,7 @@
  */
 package de.cuioss.http.client;
 
+import de.cuioss.http.client.retry.RetryStrategies;
 import de.cuioss.http.client.retry.RetryStrategy;
 import de.cuioss.tools.net.http.HttpHandler;
 import lombok.Builder;
@@ -39,7 +40,7 @@ class HttpHandlerProviderTest {
     @Builder
     static class TestWellKnownConfig implements HttpHandlerProvider {
         @NonNull private final String wellKnownUrl;
-        @Builder.Default private final RetryStrategy retryStrategy = RetryStrategy.exponentialBackoff();
+        @Builder.Default private final RetryStrategy retryStrategy = RetryStrategies.exponentialBackoff();
 
         @Override
         public @NonNull HttpHandler getHttpHandler() {
@@ -65,7 +66,7 @@ class HttpHandlerProviderTest {
         private final String wellKnownUrl;
         private final String jwksUrl;
         private final String issuerIdentifier;
-        @Builder.Default private final RetryStrategy retryStrategy = RetryStrategy.exponentialBackoff();
+        @Builder.Default private final RetryStrategy retryStrategy = RetryStrategies.exponentialBackoff();
 
         @Override
         public @NonNull HttpHandler getHttpHandler() {
@@ -86,7 +87,7 @@ class HttpHandlerProviderTest {
     @Test
     void wellKnownConfig_shouldImplementHttpHandlerProvider() {
         // Given: A TestWellKnownConfig with RetryStrategy
-        RetryStrategy retryStrategy = RetryStrategy.exponentialBackoff();
+        RetryStrategy retryStrategy = RetryStrategies.exponentialBackoff();
 
         TestWellKnownConfig config = TestWellKnownConfig.builder()
                 .wellKnownUrl(TEST_URL)
@@ -131,7 +132,7 @@ class HttpHandlerProviderTest {
     @Test
     void httpJwksLoaderConfig_directMode_shouldImplementHttpHandlerProvider() {
         // Given: TestHttpJwksLoaderConfig in direct HTTP mode
-        RetryStrategy retryStrategy = RetryStrategy.exponentialBackoff();
+        RetryStrategy retryStrategy = RetryStrategies.exponentialBackoff();
 
         TestHttpJwksLoaderConfig config = TestHttpJwksLoaderConfig.builder()
                 .jwksUrl(TEST_URL.replace("/.well-known/openid_configuration", "/jwks"))
@@ -148,7 +149,7 @@ class HttpHandlerProviderTest {
     @Test
     void httpJwksLoaderConfig_wellKnownMode_shouldImplementHttpHandlerProvider() {
         // Given: TestHttpJwksLoaderConfig in well-known discovery mode
-        RetryStrategy retryStrategy = RetryStrategy.exponentialBackoff();
+        RetryStrategy retryStrategy = RetryStrategies.exponentialBackoff();
 
         TestHttpJwksLoaderConfig config = TestHttpJwksLoaderConfig.builder()
                 .wellKnownUrl(TEST_URL)

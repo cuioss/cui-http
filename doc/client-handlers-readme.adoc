@@ -114,7 +114,7 @@ HTTP-specific result states extending CUI result framework.
 Interface for HTTP retry strategies with built-in implementations.
 
 * `RetryStrategy.none()` - No retry
-* `RetryStrategy.exponentialBackoff()` - Exponential backoff with jitter
+* `RetryStrategies.exponentialBackoff()` - Exponential backoff with jitter
 * Custom strategies via ExponentialBackoffRetryStrategy builder
 * Configurable max attempts and delays
 
@@ -202,7 +202,7 @@ HttpHandlerProvider provider = new HttpHandlerProvider() {
 
     @Override
     public RetryStrategy getRetryStrategy() {
-        return RetryStrategy.exponentialBackoff();
+        return RetryStrategies.exponentialBackoff();
     }
 };
 
@@ -275,7 +275,7 @@ ResilientHttpHandler<User> userHandler = new ResilientHttpHandler<>(
 RetryStrategy noRetry = RetryStrategy.none();
 
 // Exponential backoff with defaults
-RetryStrategy exponential = RetryStrategy.exponentialBackoff();
+RetryStrategy exponential = RetryStrategies.exponentialBackoff();
 
 // Custom exponential backoff
 RetryStrategy customExponential = ExponentialBackoffRetryStrategy.builder()

@@ -16,6 +16,7 @@
 package de.cuioss.http.client;
 
 import de.cuioss.http.client.converter.StringContentConverter;
+import de.cuioss.http.client.retry.RetryStrategies;
 import de.cuioss.http.client.retry.RetryStrategy;
 import de.cuioss.tools.net.http.HttpHandler;
 import lombok.Builder;
@@ -64,7 +65,7 @@ class ResilientHttpHandlerProviderTest {
     @DisplayName("Should create ResilientHttpHandler with HttpHandlerProvider")
     void shouldCreateWithHttpHandlerProvider() {
         // Given: A TestHttpHandlerProvider that implements HttpHandlerProvider
-        RetryStrategy retryStrategy = RetryStrategy.exponentialBackoff();
+        RetryStrategy retryStrategy = RetryStrategies.exponentialBackoff();
         TestHttpHandlerProvider config = TestHttpHandlerProvider.builder()
                 .wellKnownUrl(TEST_URL)
                 .retryStrategy(retryStrategy)
