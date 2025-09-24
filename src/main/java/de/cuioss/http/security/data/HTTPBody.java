@@ -133,6 +133,7 @@ public record HTTPBody(@Nullable String content, @Nullable String contentType, @
         return hasEncoding();
     }
 
+    @SuppressWarnings("ConstantConditions")
     public boolean isJson() {
         return hasContentType() && contentType.toLowerCase().contains("json");
     }
@@ -142,6 +143,7 @@ public record HTTPBody(@Nullable String content, @Nullable String contentType, @
      *
      * @return true if the content type contains "xml"
      */
+    @SuppressWarnings("ConstantConditions")
     public boolean isXml() {
         return hasContentType() && contentType.toLowerCase().contains("xml");
     }
@@ -151,6 +153,7 @@ public record HTTPBody(@Nullable String content, @Nullable String contentType, @
      *
      * @return true if the content type contains "html"
      */
+    @SuppressWarnings("ConstantConditions")
     public boolean isHtml() {
         return hasContentType() && contentType.toLowerCase().contains("html");
     }
@@ -169,6 +172,7 @@ public record HTTPBody(@Nullable String content, @Nullable String contentType, @
      *
      * @return true if the content type is form-encoded
      */
+    @SuppressWarnings("ConstantConditions")
     public boolean isFormData() {
         return hasContentType() &&
                 (contentType.toLowerCase().contains("application/x-www-form-urlencoded") ||
@@ -180,6 +184,7 @@ public record HTTPBody(@Nullable String content, @Nullable String contentType, @
      *
      * @return true if the content type suggests binary data
      */
+    @SuppressWarnings("ConstantConditions")
     public boolean isBinary() {
         return hasContentType() &&
                 (contentType.toLowerCase().contains("application/octet-stream") ||

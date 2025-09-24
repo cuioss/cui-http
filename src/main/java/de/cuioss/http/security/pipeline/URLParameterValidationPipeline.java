@@ -22,6 +22,7 @@ import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.http.security.validation.*;
 import lombok.EqualsAndHashCode;
+import lombok.Getter;
 import lombok.ToString;
 import org.jspecify.annotations.Nullable;
 
@@ -71,6 +72,8 @@ import java.util.Optional;
  */
 @EqualsAndHashCode
 @ToString
+@Getter
+@SuppressWarnings("ClassCanBeRecord")
 public final class URLParameterValidationPipeline implements HttpSecurityValidator {
 
     private final List<HttpSecurityValidator> stages;
@@ -100,6 +103,7 @@ public final class URLParameterValidationPipeline implements HttpSecurityValidat
     }
 
     @Override
+    @SuppressWarnings("DuplicatedCode")
     public Optional<String> validate(@Nullable String value) throws UrlSecurityException {
         if (value == null) {
             return Optional.empty();
@@ -141,23 +145,5 @@ public final class URLParameterValidationPipeline implements HttpSecurityValidat
      */
     public ValidationType getValidationType() {
         return validationType;
-    }
-
-    /**
-     * Returns the list of validation stages in execution order.
-     *
-     * @return An immutable list of validation stages
-     */
-    public List<HttpSecurityValidator> getStages() {
-        return stages;
-    }
-
-    /**
-     * Returns the event counter used by this pipeline.
-     *
-     * @return The security event counter
-     */
-    public SecurityEventCounter getEventCounter() {
-        return eventCounter;
     }
 }

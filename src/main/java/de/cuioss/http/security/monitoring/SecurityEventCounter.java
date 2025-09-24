@@ -16,7 +16,6 @@
 package de.cuioss.http.security.monitoring;
 
 import de.cuioss.http.security.core.UrlSecurityFailureType;
-import org.jspecify.annotations.NonNull;
 
 import java.util.Map;
 import java.util.Optional;
@@ -87,7 +86,7 @@ public class SecurityEventCounter {
      * @return The new count value after incrementing
      * @throws NullPointerException if failureType is null
      */
-    public long increment(@NonNull UrlSecurityFailureType failureType) {
+    public long increment(UrlSecurityFailureType failureType) {
 
         return counters.computeIfAbsent(failureType, k -> new AtomicLong(0))
                 .incrementAndGet();
@@ -105,7 +104,7 @@ public class SecurityEventCounter {
      * @throws NullPointerException if failureType is null
      * @throws IllegalArgumentException if delta is negative
      */
-    public long incrementBy(@NonNull UrlSecurityFailureType failureType, long delta) {
+    public long incrementBy(UrlSecurityFailureType failureType, long delta) {
         if (delta < 0) {
             throw new IllegalArgumentException("delta must be non-negative, got: " + delta);
         }
@@ -124,7 +123,7 @@ public class SecurityEventCounter {
      * @return The current count for the failure type, or 0 if no events recorded
      * @throws NullPointerException if failureType is null
      */
-    public long getCount(@NonNull UrlSecurityFailureType failureType) {
+    public long getCount(UrlSecurityFailureType failureType) {
 
         return Optional.ofNullable(counters.get(failureType))
                 .map(AtomicLong::get)
@@ -182,7 +181,7 @@ public class SecurityEventCounter {
      * @return true if at least one event has been recorded for this failure type
      * @throws NullPointerException if failureType is null
      */
-    public boolean hasEvents(@NonNull UrlSecurityFailureType failureType) {
+    public boolean hasEvents(UrlSecurityFailureType failureType) {
         return getCount(failureType) > 0;
     }
 
@@ -204,7 +203,7 @@ public class SecurityEventCounter {
      * @param failureType The failure type to reset. Must not be null.
      * @throws NullPointerException if failureType is null
      */
-    public void reset(@NonNull UrlSecurityFailureType failureType) {
+    public void reset(UrlSecurityFailureType failureType) {
 
         AtomicLong counter = counters.get(failureType);
         if (counter != null) {

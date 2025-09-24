@@ -15,6 +15,8 @@
  */
 package de.cuioss.http.security.data;
 
+import org.jspecify.annotations.Nullable;
+
 import java.util.Optional;
 
 /**
@@ -76,11 +78,11 @@ final class AttributeParser {
      * common edge cases like missing values, trailing/leading whitespace, and attributes
      * at the end of the string.</p>
      *
-     * @param attributeString The string containing attributes (e.g., "name=value; other=value2")
+     * @param attributeString The string containing attributes (e.g., "name=value; other=value2"), may be null
      * @param attributeName The name of the attribute to extract (case-insensitive)
      * @return An Optional containing the attribute value if found, or empty otherwise
      */
-    static Optional<String> extractAttributeValue(String attributeString, String attributeName) {
+    static Optional<String> extractAttributeValue(@Nullable String attributeString, String attributeName) {
         if (attributeString == null || attributeString.isEmpty()) {
             return Optional.empty();
         }

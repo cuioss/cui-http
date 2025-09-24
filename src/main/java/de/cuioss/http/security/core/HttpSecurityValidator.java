@@ -123,14 +123,13 @@ public interface HttpSecurityValidator {
      * @throws NullPointerException if {@code after} is null
      * @since 1.0
      */
+    @SuppressWarnings({"ConstantConditions", "java:S2583"})
     default HttpSecurityValidator andThen(HttpSecurityValidator after) {
+        // Explicit null check despite @NullMarked for fail-fast behavior and clear error messages
         if (after == null) {
             throw new NullPointerException("after validator must not be null");
         }
-        return value -> {
-            Optional<String> result = this.validate(value);
-            return result.isPresent() ? after.validate(result.get()) : Optional.empty();
-        };
+        return value -> this.validate(value).flatMap(after::validate);
     }
 
     /**
@@ -148,14 +147,13 @@ public interface HttpSecurityValidator {
      * @throws NullPointerException if {@code before} is null
      * @since 1.0
      */
+    @SuppressWarnings({"ConstantConditions", "java:S2583"})
     default HttpSecurityValidator compose(HttpSecurityValidator before) {
+        // Explicit null check despite @NullMarked for fail-fast behavior and clear error messages
         if (before == null) {
             throw new NullPointerException("before validator must not be null");
         }
-        return value -> {
-            Optional<String> result = before.validate(value);
-            return result.isPresent() ? this.validate(result.get()) : Optional.empty();
-        };
+        return value -> before.validate(value).flatMap(this::validate);
     }
 
     /**
@@ -176,7 +174,9 @@ public interface HttpSecurityValidator {
      * @throws NullPointerException if {@code predicate} is null
      * @since 1.0
      */
+    @SuppressWarnings({"ConstantConditions", "java:S2583"})
     default HttpSecurityValidator when(Predicate<String> predicate) {
+        // Explicit null check despite @NullMarked for fail-fast behavior and clear error messages
         if (predicate == null) {
             throw new NullPointerException("predicate must not be null");
         }
@@ -209,7 +209,9 @@ public interface HttpSecurityValidator {
      * @throws NullPointerException if either parameter is null
      * @since 1.0
      */
+    @SuppressWarnings({"ConstantConditions", "java:S2583"})
     static HttpSecurityValidator reject(UrlSecurityFailureType failureType, ValidationType validationType) {
+        // Explicit null checks despite @NullMarked for fail-fast behavior and clear error messages
         if (failureType == null) {
             throw new NullPointerException("failureType must not be null");
         }
