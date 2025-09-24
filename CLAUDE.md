@@ -33,8 +33,7 @@ CUI-HTTP is a security-focused HTTP utilities library providing secure validatio
 ### Core Components
 
 1. **Security Validation Pipelines** (`de.cuioss.http.security.pipeline`)
-   - `URLPathValidationPipeline`: Path-only attacks, directory traversal, CVE exploits
-   - `HTTPBodyValidationPipeline`: Full URLs with protocols, XSS, script injection
+   - `URLPathValidationPipeline`: All URL validation (paths, full URLs, directory traversal, CVE exploits)
    - `HTTPHeaderValidationPipeline`: Header injection attacks
    - `URLParameterValidationPipeline`: Query parameter validation
 
@@ -52,15 +51,13 @@ CUI-HTTP is a security-focused HTTP utilities library providing secure validatio
 
 ### Pipeline Selection Rules
 
-**Use URLPathValidationPipeline when:**
-- Attack patterns contain path components only (no protocol)
-- Testing directory traversal (`../../../etc/passwd`)
+**Use URLPathValidationPipeline for:**
+- All URL validation (paths and full URLs)
+- Attack patterns with or without protocols
+- Directory traversal testing (`../../../etc/passwd`)
 - CVE exploits for specific servers (Apache, IIS, Nginx)
-
-**Use HTTPBodyValidationPipeline when:**
-- Attack patterns contain full URLs with protocols (`http://`, `https://`)
-- Testing XSS or script injection
-- Full URL parsing with domain validation needed
+- XSS or script injection in URLs
+- Full URL parsing with domain validation
 
 ## Testing Architecture
 

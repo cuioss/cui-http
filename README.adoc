@@ -81,7 +81,11 @@ HttpHandler handler = HttpHandler.builder()
     .connectionTimeoutSeconds(10)
     .build();
 
-HttpResponse<String> response = handler.executeGetRequest();
+HttpClient client = handler.createHttpClient();
+HttpRequest request = handler.requestBuilder()
+    .GET()
+    .build();
+HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
 // Security Validation
 SecurityConfiguration config = SecurityConfiguration.builder()
@@ -91,7 +95,7 @@ SecurityConfiguration config = SecurityConfiguration.builder()
 URLPathValidationPipeline pipeline = new URLPathValidationPipeline(
     config, new SecurityEventCounter());
 
-String validated = pipeline.validate("/api/users/123");
+String validated = pipeline.validate("/api/users/123").orElseThrow();
 ----
 
 == Build Commands

@@ -142,22 +142,24 @@ public class ResilientHttpHandler<T> {
 
     /**
      * Handles error results by returning cached content if available.
+     *
+     * @param category the error category to use for the result
      */
-    private HttpResultObject<T> handleErrorResult() {
+    private HttpResultObject<T> handleErrorResult(HttpErrorCategory category) {
         if (cachedResult != null && cachedResult.getResult() != null) {
             return new HttpResultObject<>(
                     cachedResult.getResult(),
                     ResultState.WARNING, // Using cached content but with error condition
                     new ResultDetail(
                             new DisplayName("HTTP request failed, using cached content from " + httpHandler.getUrl())),
-                    HttpErrorCategory.NETWORK_ERROR,
+                    category,
                     cachedResult.getETag().orElse(null),
                     cachedResult.getHttpStatus().orElse(null)
             );
         } else {
             return HttpResultObject.error(
                     getEmptyFallback(), // Safe empty fallback
-                    HttpErrorCategory.NETWORK_ERROR,
+                    category,
                     new ResultDetail(
                             new DisplayName("HTTP request failed with no cached content available from " + httpHandler.getUrl()))
             );
@@ -234,7 +236,7 @@ public class ResilientHttpHandler<T> {
                     LOGGER.warn(HttpLogMessages.WARN.CONTENT_CONVERSION_FAILED.format(httpHandler.getUrl()));
                     return HttpResultObject.error(
                             getEmptyFallback(), // Safe empty fallback
-                            HttpErrorCategory.CLIENT_ERROR,
+                            HttpErrorCategory.INVALID_CONTENT,
                             new ResultDetail(
                                     new DisplayName("Content conversion failed for %s".formatted(httpHandler.getUrl())))
                     );
@@ -245,23 +247,23 @@ public class ResilientHttpHandler<T> {
 
                 // For 4xx client errors, don't retry and return error with cache fallback if available
                 if (statusFamily == HttpStatusFamily.CLIENT_ERROR) {
-                    return handleErrorResult();
+                    return handleErrorResult(HttpErrorCategory.CLIENT_ERROR);
                 }
 
                 // For 5xx server errors, return error result with cache fallback if available
                 // RetryStrategy will handle retry logic, but if retries are exhausted we want cached content
-                return handleErrorResult();
+                return handleErrorResult(HttpErrorCategory.SERVER_ERROR);
             }
 
         } catch (IOException e) {
             LOGGER.warn(e, HttpLogMessages.WARN.HTTP_FETCH_FAILED.format(httpHandler.getUrl()));
             // Return error result for IOException - RetryStrategy will handle retry logic
-            return handleErrorResult();
+            return handleErrorResult(HttpErrorCategory.NETWORK_ERROR);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             LOGGER.warn(HttpLogMessages.WARN.HTTP_FETCH_INTERRUPTED.format(httpHandler.getUrl()));
             // InterruptedException should not be retried
-            return handleErrorResult();
+            return handleErrorResult(HttpErrorCategory.NETWORK_ERROR);
         }
     }
 

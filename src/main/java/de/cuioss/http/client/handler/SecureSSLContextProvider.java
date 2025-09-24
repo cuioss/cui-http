@@ -215,13 +215,8 @@ public record SecureSSLContextProvider(String minimumTlsVersion) {
                 return secureContext;
             }
         } catch (NoSuchAlgorithmException | KeyStoreException | KeyManagementException e) {
-            // If we can't create a secure context, use the provided context or try to get the default
-            try {
-                return sslContext != null ? sslContext : SSLContext.getDefault();
-            } catch (NoSuchAlgorithmException ex) {
-                // This should never happen, but just in case
-                throw new IllegalStateException("Failed to create SSL context", ex);
-            }
+            // If a secure context cannot be created, we must fail hard.
+            throw new IllegalStateException("Failed to create a secure SSL context", e);
         }
     }
 

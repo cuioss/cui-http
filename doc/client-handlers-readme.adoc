@@ -180,7 +180,11 @@ HttpHandler handler = HttpHandler.builder()
     .readTimeoutSeconds(30)
     .build();
 
-HttpResponse<String> response = handler.executeGetRequest();
+HttpClient client = handler.createHttpClient();
+HttpRequest request = handler.requestBuilder()
+    .GET()
+    .build();
+HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
 if (HttpStatusFamily.isSuccess(response.statusCode())) {
     processData(response.body());

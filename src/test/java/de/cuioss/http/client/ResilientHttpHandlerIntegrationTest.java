@@ -552,7 +552,7 @@ class ResilientHttpHandlerIntegrationTest {
         // Then result should be invalid
         assertFalse(result.isValid());
         assertTrue(result.getHttpErrorCategory().isPresent());
-        assertEquals(HttpErrorCategory.CLIENT_ERROR, result.getHttpErrorCategory().get());
+        assertEquals(HttpErrorCategory.INVALID_CONTENT, result.getHttpErrorCategory().get());
 
         // Verify CONTENT_CONVERSION_FAILED was logged
         LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN,

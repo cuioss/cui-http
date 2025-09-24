@@ -817,6 +817,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
 import de.cuioss.test.generator.junit.TypeGeneratorSource;
 import de.cuioss.test.generator.junit.CompositeTypeGeneratorSource;
+import de.cuioss.tools.logging.CuiLogger;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -824,7 +825,9 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 @EnableGeneratorController
 public class ComprehensiveSecurityTest {
-    
+
+    private static final CuiLogger logger = new CuiLogger(ComprehensiveSecurityTest.class);
+
     private final HttpSecurityValidator pathValidator = createPathValidator();
     private final HttpSecurityValidator paramValidator = createParameterValidator();
     private final HttpSecurityValidator headerValidator = createHeaderValidator();
@@ -846,7 +849,17 @@ public class ComprehensiveSecurityTest {
         ConfigStageProvider headerConfig = new HTTPHeaderValueConfig(baseConfig);
         return new UnifiedValidationPipeline(headerConfig, new SecurityEventCounter());
     }
-    
+
+    private boolean isValidPath(String path) {
+        // Helper method to validate if a path is considered valid
+        // This checks for common invalid patterns
+        return path != null &&
+               !path.isEmpty() &&
+               !path.contains("..") &&
+               !path.contains("\\") &&
+               !path.contains("\0");
+    }
+
     @ParameterizedTest(name = "Attack detection [{index}]: {0}")
     @CompositeTypeGeneratorSource(
         generatorClasses = {
@@ -1066,7 +1079,9 @@ public class HTTPDataValidationTest {
  * Combined attack tests using multiple generators.
  */
 public class CombinedAttackTest {
-    
+
+    private static final CuiLogger logger = new CuiLogger(CombinedAttackTest.class);
+
     private final HttpSecurityValidator validator = createValidator();
     
     @ParameterizedTest(name = "Combined attacks [{index}]: {1}")
