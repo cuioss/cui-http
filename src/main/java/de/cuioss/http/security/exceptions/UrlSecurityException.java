@@ -17,11 +17,11 @@ package de.cuioss.http.security.exceptions;
 
 import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.core.ValidationType;
-import de.cuioss.tools.base.Preconditions;
+import lombok.Builder;
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import org.jspecify.annotations.Nullable;
 
-import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
@@ -68,6 +68,7 @@ import java.util.regex.Pattern;
  *
  * @since 1.0
  */
+@EqualsAndHashCode(callSuper = true)
 public class UrlSecurityException extends RuntimeException {
 
     /**
@@ -79,8 +80,8 @@ public class UrlSecurityException extends RuntimeException {
     @Getter private final UrlSecurityFailureType failureType;
     @Getter private final ValidationType validationType;
     @Getter private final String originalInput;
-    private final String sanitizedInput;
-    private final String detail;
+    @Nullable private final String sanitizedInput;
+    @Nullable private final String detail;
 
     /**
      * Creates a new UrlSecurityException with the specified parameters.
@@ -93,6 +94,7 @@ public class UrlSecurityException extends RuntimeException {
      * @param detail Optional additional detail about the failure (may be null)
      * @param cause Optional underlying cause exception (may be null)
      */
+    @Builder
     private UrlSecurityException(UrlSecurityFailureType failureType,
             ValidationType validationType,
             String originalInput,
@@ -100,20 +102,11 @@ public class UrlSecurityException extends RuntimeException {
             @Nullable String detail,
             @Nullable Throwable cause) {
         super(buildMessage(failureType, validationType, originalInput, detail), cause);
-        this.failureType = Objects.requireNonNull(failureType, "failureType must not be null");
-        this.validationType = Objects.requireNonNull(validationType, "validationType must not be null");
-        this.originalInput = Objects.requireNonNull(originalInput, "originalInput must not be null");
+        this.failureType = failureType;
+        this.validationType = validationType;
+        this.originalInput = originalInput;
         this.sanitizedInput = sanitizedInput;
         this.detail = detail;
-    }
-
-    /**
-     * Creates a new builder for constructing UrlSecurityException instances.
-     *
-     * @return A new Builder instance
-     */
-    public static Builder builder() {
-        return new Builder();
     }
 
     /**
@@ -168,7 +161,7 @@ public class UrlSecurityException extends RuntimeException {
      * @param input The input to truncate
      * @return Safe truncated input
      */
-    private static String truncateForLogging(String input) {
+    private static String truncateForLogging(@Nullable String input) {
         if (input == null) {
             return "null";
         }
@@ -183,29 +176,6 @@ public class UrlSecurityException extends RuntimeException {
         return safe;
     }
 
-    @Override
-    public boolean equals(Object obj) {
-        if (this == obj) {
-            return true;
-        }
-        if (obj == null || getClass() != obj.getClass()) {
-            return false;
-        }
-
-        UrlSecurityException that = (UrlSecurityException) obj;
-        return Objects.equals(failureType, that.failureType) &&
-                Objects.equals(validationType, that.validationType) &&
-                Objects.equals(originalInput, that.originalInput) &&
-                Objects.equals(sanitizedInput, that.sanitizedInput) &&
-                Objects.equals(detail, that.detail) &&
-                Objects.equals(getCause(), that.getCause());
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(failureType, validationType, originalInput,
-                sanitizedInput, detail, getCause());
-    }
 
     @Override
     public String toString() {
@@ -219,102 +189,4 @@ public class UrlSecurityException extends RuntimeException {
                 '}';
     }
 
-    /**
-     * Builder for constructing UrlSecurityException instances with a fluent API.
-     * All required fields must be set before calling {@link #build()}.
-     */
-    public static class Builder {
-        private UrlSecurityFailureType failureType;
-        private ValidationType validationType;
-        private String originalInput;
-        private String sanitizedInput;
-        private String detail;
-        private Throwable cause;
-
-        private Builder() {
-            // Private constructor - use UrlSecurityException.builder()
-        }
-
-        /**
-         * Sets the failure type.
-         *
-         * @param failureType The type of security failure, must not be null
-         * @return This builder instance for method chaining
-         */
-        public Builder failureType(UrlSecurityFailureType failureType) {
-            this.failureType = failureType;
-            return this;
-        }
-
-        /**
-         * Sets the validation type.
-         *
-         * @param validationType The type of HTTP component being validated, must not be null
-         * @return This builder instance for method chaining
-         */
-        public Builder validationType(ValidationType validationType) {
-            this.validationType = validationType;
-            return this;
-        }
-
-        /**
-         * Sets the original input that caused the security violation.
-         *
-         * @param originalInput The original input, must not be null
-         * @return This builder instance for method chaining
-         */
-        public Builder originalInput(String originalInput) {
-            this.originalInput = originalInput;
-            return this;
-        }
-
-        /**
-         * Sets the sanitized input (optional).
-         *
-         * @param sanitizedInput The sanitized version of the input, may be null
-         * @return This builder instance for method chaining
-         */
-        public Builder sanitizedInput(@Nullable String sanitizedInput) {
-            this.sanitizedInput = sanitizedInput;
-            return this;
-        }
-
-        /**
-         * Sets additional detail about the failure (optional).
-         *
-         * @param detail Additional detail information, may be null
-         * @return This builder instance for method chaining
-         */
-        public Builder detail(@Nullable String detail) {
-            this.detail = detail;
-            return this;
-        }
-
-        /**
-         * Sets the underlying cause exception (optional).
-         *
-         * @param cause The underlying cause, may be null
-         * @return This builder instance for method chaining
-         */
-        public Builder cause(@Nullable Throwable cause) {
-            this.cause = cause;
-            return this;
-        }
-
-        /**
-         * Builds and returns a new UrlSecurityException instance.
-         * All required fields (failureType, validationType, originalInput) must be set.
-         *
-         * @return A new UrlSecurityException instance
-         * @throws IllegalArgumentException if any required field is not set
-         */
-        public UrlSecurityException build() {
-            Preconditions.checkArgument(failureType != null, "failureType must be set");
-            Preconditions.checkArgument(validationType != null, "validationType must be set");
-            Preconditions.checkArgument(originalInput != null, "originalInput must be set");
-
-            return new UrlSecurityException(failureType, validationType, originalInput,
-                    sanitizedInput, detail, cause);
-        }
-    }
 }

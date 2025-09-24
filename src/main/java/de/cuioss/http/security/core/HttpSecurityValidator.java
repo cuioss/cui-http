@@ -118,8 +118,8 @@ public interface HttpSecurityValidator {
      * <p>If either validator throws an exception, the composition stops and the exception
      * is propagated.</p>
      *
-     * @param after The validator to apply after this validator. Must not be null.
-     * @return A composite validator that applies both validators in sequence.
+     * @param after The validator to apply after this validator
+     * @return A composite validator that applies both validators in sequence
      * @throws NullPointerException if {@code after} is null
      * @since 1.0
      */
@@ -143,8 +143,8 @@ public interface HttpSecurityValidator {
      *   <li>Return the final result</li>
      * </ol>
      *
-     * @param before The validator to apply before this validator. Must not be null.
-     * @return A composite validator that applies both validators in sequence.
+     * @param before The validator to apply before this validator
+     * @return A composite validator that applies both validators in sequence
      * @throws NullPointerException if {@code before} is null
      * @since 1.0
      */
@@ -171,8 +171,8 @@ public interface HttpSecurityValidator {
      * HttpSecurityValidator urlValidator = validator.when(s -> s.startsWith("http"));
      * </pre>
      *
-     * @param predicate The condition under which to apply this validator. Must not be null.
-     * @return A conditional validator that only applies this validator when the predicate is true.
+     * @param predicate The condition under which to apply this validator
+     * @return A conditional validator that only applies this validator when the predicate is true
      * @throws NullPointerException if {@code predicate} is null
      * @since 1.0
      */

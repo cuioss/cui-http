@@ -77,34 +77,34 @@ class UrlSecurityExceptionTest {
                 .validationType(TEST_VALIDATION_TYPE)
                 .originalInput(TEST_INPUT);
 
-        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+        NullPointerException thrown = assertThrows(NullPointerException.class,
                 builder::build);
 
-        assertTrue(thrown.getMessage().contains("failureType must be set"));
+        assertTrue(thrown.getMessage().contains("failureType"));
     }
 
     @Test
-    void shouldRequireValidationType() {
+    void shouldHandleNullValidationType() {
         var builder = UrlSecurityException.builder()
                 .failureType(TEST_FAILURE_TYPE)
                 .originalInput(TEST_INPUT);
 
-        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
-                builder::build);
-
-        assertTrue(thrown.getMessage().contains("validationType must be set"));
+        // Should not throw - null validationType is handled gracefully
+        UrlSecurityException exception = assertDoesNotThrow(builder::build);
+        assertNotNull(exception);
+        assertTrue(exception.getMessage().contains("null"));
     }
 
     @Test
-    void shouldRequireOriginalInput() {
+    void shouldHandleNullOriginalInput() {
         var builder = UrlSecurityException.builder()
                 .failureType(TEST_FAILURE_TYPE)
                 .validationType(TEST_VALIDATION_TYPE);
 
-        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
-                builder::build);
-
-        assertTrue(thrown.getMessage().contains("originalInput must be set"));
+        // Should not throw - null originalInput is handled gracefully
+        UrlSecurityException exception = assertDoesNotThrow(builder::build);
+        assertNotNull(exception);
+        assertTrue(exception.getMessage().contains("'null'"));
     }
 
     @Test

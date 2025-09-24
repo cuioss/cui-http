@@ -184,12 +184,10 @@ boolean logSecurityViolations
         // Ensure sets are immutable and non-null
         allowedHeaderNames = allowedHeaderNames != null ?
                 Set.copyOf(allowedHeaderNames) : null;
-        blockedHeaderNames = blockedHeaderNames != null ?
-                Set.copyOf(blockedHeaderNames) : Set.of();
+        blockedHeaderNames = Set.copyOf(blockedHeaderNames);
         allowedContentTypes = allowedContentTypes != null ?
                 Set.copyOf(allowedContentTypes) : null;
-        blockedContentTypes = blockedContentTypes != null ?
-                Set.copyOf(blockedContentTypes) : Set.of();
+        blockedContentTypes = Set.copyOf(blockedContentTypes);
     }
 
     /**
@@ -279,11 +277,11 @@ boolean logSecurityViolations
     /**
      * Checks if the configuration allows a specific header name.
      *
-     * @param headerName The header name to check
-     * @return true if the header is allowed, false if blocked
+     * @param headerName The header name to check (null returns false)
+     * @return true if the header is allowed, false if blocked or null
      */
     @SuppressWarnings("DuplicatedCode")
-    public boolean isHeaderAllowed(String headerName) {
+    public boolean isHeaderAllowed(@Nullable String headerName) {
         if (headerName == null) {
             return false;
         }
@@ -311,11 +309,11 @@ boolean logSecurityViolations
     /**
      * Checks if the configuration allows a specific content type.
      *
-     * @param contentType The content type to check
-     * @return true if the content type is allowed, false if blocked
+     * @param contentType The content type to check (null returns false)
+     * @return true if the content type is allowed, false if blocked or null
      */
     @SuppressWarnings("DuplicatedCode")
-    public boolean isContentTypeAllowed(String contentType) {
+    public boolean isContentTypeAllowed(@Nullable String contentType) {
         if (contentType == null) {
             return false;
         }
