@@ -25,6 +25,7 @@ import org.jspecify.annotations.Nullable;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
+import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
@@ -140,7 +141,7 @@ ValidationType validationType) implements HttpSecurityValidator {
      * </ol>
      *
      * @param value The input string to validate and decode
-     * @return The validated and decoded string
+     * @return The validated and decoded string wrapped in Optional, or Optional.empty() if input was null
      * @throws UrlSecurityException if any security violations are detected:
      *                              <ul>
      *                                <li>DOUBLE_ENCODING - if double encoding patterns are found</li>
@@ -149,9 +150,9 @@ ValidationType validationType) implements HttpSecurityValidator {
      *                              </ul>
      */
     @Override
-    public String validate(@Nullable String value) throws UrlSecurityException {
+    public Optional<String> validate(@Nullable String value) throws UrlSecurityException {
         if (value == null) {
-            return null;
+            return Optional.empty();
         }
 
         // Step 1: Detect double encoding before decoding
@@ -204,7 +205,7 @@ ValidationType validationType) implements HttpSecurityValidator {
             decoded = normalized;
         }
 
-        return decoded;
+        return Optional.of(decoded);
     }
 
     /**
@@ -215,10 +216,10 @@ ValidationType validationType) implements HttpSecurityValidator {
     @Override
     public HttpSecurityValidator when(Predicate<String> condition) {
         return input -> {
-            if (condition.test(input)) {
-                return validate(input);
+            if (input == null || !condition.test(input)) {
+                return Optional.ofNullable(input);
             }
-            return input;
+            return validate(input);
         };
     }
 

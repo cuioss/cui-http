@@ -22,6 +22,7 @@ import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import org.jspecify.annotations.Nullable;
 
+import java.util.Optional;
 import java.util.function.Predicate;
 
 /**
@@ -110,9 +111,7 @@ import java.util.function.Predicate;
  * @since 1.0
  */
 public record LengthValidationStage(
-/** Security configuration controlling validation behavior. */
 SecurityConfiguration config,
-/** Type of validation being performed (URL_PATH, PARAMETER_NAME, etc.). */
 ValidationType validationType) implements HttpSecurityValidator {
 
     /**
@@ -127,7 +126,7 @@ ValidationType validationType) implements HttpSecurityValidator {
      * </ol>
      *
      * @param value The input string to validate for length limits
-     * @return The original input if validation passes
+     * @return The original input wrapped in Optional if validation passes, Optional.empty() if input was null
      * @throws UrlSecurityException if length limits are exceeded:
      *                              <ul>
      *                                <li>PATH_TOO_LONG - if URL path exceeds maximum length</li>
@@ -135,9 +134,9 @@ ValidationType validationType) implements HttpSecurityValidator {
      *                              </ul>
      */
     @Override
-    public String validate(@Nullable String value) throws UrlSecurityException {
+    public Optional<String> validate(@Nullable String value) throws UrlSecurityException {
         if (value == null) {
-            return null;
+            return Optional.empty();
         }
 
         // Get input length in characters
@@ -159,7 +158,7 @@ ValidationType validationType) implements HttpSecurityValidator {
         }
 
         // Validation passed - return original value
-        return value;
+        return Optional.of(value);
     }
 
     /**
@@ -220,10 +219,10 @@ ValidationType validationType) implements HttpSecurityValidator {
     @Override
     public HttpSecurityValidator when(Predicate<String> condition) {
         return input -> {
-            if (condition.test(input)) {
+            if (input != null && condition.test(input)) {
                 return validate(input);
             }
-            return input;
+            return Optional.ofNullable(input);
         };
     }
 

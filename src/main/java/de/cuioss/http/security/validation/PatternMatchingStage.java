@@ -23,6 +23,7 @@ import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import org.jspecify.annotations.Nullable;
 
+import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
@@ -165,7 +166,7 @@ ValidationType validationType) implements HttpSecurityValidator {
      * </ol>
      *
      * @param value The input string to validate against attack patterns
-     * @return The original input if validation passes
+     * @return The original input wrapped in Optional if validation passes, or Optional.empty() if input was null
      * @throws UrlSecurityException if malicious patterns are detected:
      *                              <ul>
      *                                <li>PATH_TRAVERSAL_DETECTED - if path traversal patterns found</li>
@@ -175,9 +176,12 @@ ValidationType validationType) implements HttpSecurityValidator {
      */
     @Override
     @SuppressWarnings("java:S3516")
-    public String validate(@Nullable String value) throws UrlSecurityException {
-        if (value == null || value.isEmpty()) {
-            return value;
+    public Optional<String> validate(@Nullable String value) throws UrlSecurityException {
+        if (value == null) {
+            return Optional.empty();
+        }
+        if (value.isEmpty()) {
+            return Optional.of(value);
         }
 
         // Prepare value for case-insensitive matching if needed
@@ -205,7 +209,7 @@ ValidationType validationType) implements HttpSecurityValidator {
 
         // Validation passed - return original value
         // Note: Always returning input value is correct for validator contract
-        return value;
+        return Optional.of(value);
     }
 
     /**
@@ -325,10 +329,10 @@ ValidationType validationType) implements HttpSecurityValidator {
     @Override
     public HttpSecurityValidator when(Predicate<String> condition) {
         return input -> {
-            if (condition.test(input)) {
-                return validate(input);
+            if (input == null || !condition.test(input)) {
+                return Optional.ofNullable(input);
             }
-            return input;
+            return validate(input);
         };
     }
 

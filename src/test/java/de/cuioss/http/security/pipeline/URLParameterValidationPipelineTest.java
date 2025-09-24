@@ -32,6 +32,8 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 
+import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 @EnableGeneratorController
@@ -77,20 +79,22 @@ class URLParameterValidationPipelineTest {
         @ParameterizedTest
         @TypeGeneratorSource(value = ValidURLParameterStringGenerator.class, count = 10)
         void shouldValidateValidParameters(String validParam) throws UrlSecurityException {
-            String result = pipeline.validate(validParam);
-            assertNotNull(result, "Valid parameter should not return null result");
+            Optional<String> result = pipeline.validate(validParam);
+            assertTrue(result.isPresent());
+            assertNotNull(result.get(), "Valid parameter should not return null result");
         }
 
         @Test
         void shouldHandleNullInput() throws UrlSecurityException {
-            String result = pipeline.validate(null);
-            assertNull(result, "Null input should return null result");
+            Optional<String> result = pipeline.validate(null);
+            assertEquals(Optional.empty(), result);
         }
 
         @Test
         void shouldHandleEmptyInput() throws UrlSecurityException {
-            String result = pipeline.validate("");
-            assertEquals("", result, "Empty input should return empty string result");
+            Optional<String> result = pipeline.validate("");
+            assertTrue(result.isPresent());
+            assertEquals("", result.get(), "Empty input should return empty string result");
         }
     }
 
@@ -100,8 +104,9 @@ class URLParameterValidationPipelineTest {
         @ParameterizedTest
         @TypeGeneratorSource(value = ValidURLParameterStringGenerator.class, count = 5)
         void shouldValidateParameterVariations(String param) throws UrlSecurityException {
-            String result = pipeline.validate(param);
-            assertNotNull(result, "Valid parameter variation should not return null result");
+            Optional<String> result = pipeline.validate(param);
+            assertTrue(result.isPresent());
+            assertNotNull(result.get(), "Valid parameter variation should not return null result");
         }
 
         @ParameterizedTest
@@ -170,8 +175,9 @@ class URLParameterValidationPipelineTest {
         @ParameterizedTest
         @TypeGeneratorSource(value = ValidURLParameterStringGenerator.class, count = 5)
         void shouldValidateParameterSpecificScenarios(String validParam) throws UrlSecurityException {
-            String result = pipeline.validate(validParam);
-            assertNotNull(result, "Valid parameter in specific scenarios should not return null result");
+            Optional<String> result = pipeline.validate(validParam);
+            assertTrue(result.isPresent());
+            assertNotNull(result.get(), "Valid parameter in specific scenarios should not return null result");
         }
 
         @ParameterizedTest

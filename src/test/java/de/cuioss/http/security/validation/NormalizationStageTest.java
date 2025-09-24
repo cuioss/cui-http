@@ -25,6 +25,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -46,12 +48,14 @@ class NormalizationStageTest {
 
     @Test
     void validate_withNullInput_returnsNull() {
-        assertNull(stage.validate(null));
+        assertEquals(Optional.empty(), stage.validate(null));
     }
 
     @Test
     void validate_withEmptyInput_returnsEmpty() {
-        assertEquals("", stage.validate(""));
+        Optional<String> result = stage.validate("");
+        assertTrue(result.isPresent());
+        assertEquals("", result.get());
     }
 
     /**
@@ -73,7 +77,9 @@ class NormalizationStageTest {
             "'path/../other/../final', 'final'"
     })
     void validate_withLegitimatePatterns_normalizesCorrectly(String input, String expected) {
-        assertEquals(expected, stage.validate(input));
+        Optional<String> result = stage.validate(input);
+        assertTrue(result.isPresent());
+        assertEquals(expected, result.get());
     }
 
     /**
@@ -81,21 +87,33 @@ class NormalizationStageTest {
      */
     @Test
     void validate_preservesLeadingSlash() {
-        assertEquals("/normalized", stage.validate("/./normalized"));
-        assertEquals("normalized", stage.validate("./normalized"));
+        Optional<String> result1 = stage.validate("/./normalized");
+        assertTrue(result1.isPresent());
+        assertEquals("/normalized", result1.get());
+        Optional<String> result2 = stage.validate("./normalized");
+        assertTrue(result2.isPresent());
+        assertEquals("normalized", result2.get());
     }
 
     @Test
     void validate_preservesTrailingSlash() {
-        assertEquals("/api/users/", stage.validate("/api/users/./"));
-        assertEquals("/api/users/", stage.validate("/api/./users/../users/"));
+        Optional<String> result1 = stage.validate("/api/users/./");
+        assertTrue(result1.isPresent());
+        assertEquals("/api/users/", result1.get());
+        Optional<String> result2 = stage.validate("/api/./users/../users/");
+        assertTrue(result2.isPresent());
+        assertEquals("/api/users/", result2.get());
     }
 
     @Test
     void validate_handlesMultipleConsecutiveSlashes() {
         // Empty segments from double slashes are normalized (RFC compliant)
-        assertEquals("/api/users", stage.validate("//api//users"));
-        assertEquals("/api/users/", stage.validate("/api//users/"));
+        Optional<String> result1 = stage.validate("//api//users");
+        assertTrue(result1.isPresent());
+        assertEquals("/api/users", result1.get());
+        Optional<String> result2 = stage.validate("/api//users/");
+        assertTrue(result2.isPresent());
+        assertEquals("/api/users/", result2.get());
     }
 
     /**
@@ -118,7 +136,9 @@ class NormalizationStageTest {
     @Test
     void validate_withAbsolutePathEscape_normalizesCorrectly() {
         // This should normalize to "/etc/passwd" (not throw) since it's a valid absolute path after normalization
-        String result = stage.validate("/api/../../../etc/passwd");
+        Optional<String> optionalResult = stage.validate("/api/../../../etc/passwd");
+        assertTrue(optionalResult.isPresent());
+        String result = optionalResult.get();
         assertEquals("/etc/passwd", result);
     }
 
@@ -186,7 +206,9 @@ class NormalizationStageTest {
             "'/../../../still/valid', '/still/valid'"
     })
     void validate_withComplexDotPatterns_handlesCorrectly(String input, String expected) {
-        assertEquals(expected, stage.validate(input));
+        Optional<String> result = stage.validate(input);
+        assertTrue(result.isPresent());
+        assertEquals(expected, result.get());
     }
 
     /**
@@ -208,10 +230,14 @@ class NormalizationStageTest {
         var conditionalValidator = stage.when(input -> input != null && input.startsWith("/api"));
 
         // Should normalize when condition is true
-        assertEquals("/api/users", conditionalValidator.validate("/api/./users"));
+        Optional<String> result1 = conditionalValidator.validate("/api/./users");
+        assertTrue(result1.isPresent());
+        assertEquals("/api/users", result1.get());
 
         // Should skip validation when condition is false
-        assertEquals("other/./path", conditionalValidator.validate("other/./path"));
+        Optional<String> result2 = conditionalValidator.validate("other/./path");
+        assertTrue(result2.isPresent());
+        assertEquals("other/./path", result2.get());
     }
 
     /**
@@ -249,12 +275,14 @@ class NormalizationStageTest {
         pathBuilder.append("/./final/../resource");
 
         String complexPath = pathBuilder.toString();
-        String result = stage.validate(complexPath);
+        Optional<String> result = stage.validate(complexPath);
 
         // Should normalize correctly
-        assertNotNull(result);
-        assertFalse(result.contains("./"));
-        assertFalse(result.contains("../"));
+        assertTrue(result.isPresent());
+        String resultString = result.get();
+        assertNotNull(resultString);
+        assertFalse(resultString.contains("./"));
+        assertFalse(resultString.contains("../"));
     }
 
     /**
@@ -268,7 +296,9 @@ class NormalizationStageTest {
             "'/../', '/'"  // This goes above root but is normalized to root
     })
     void validate_withRootPaths_handlesCorrectly(String input, String expected) {
-        assertEquals(expected, stage.validate(input));
+        Optional<String> result = stage.validate(input);
+        assertTrue(result.isPresent());
+        assertEquals(expected, result.get());
     }
 
     /**

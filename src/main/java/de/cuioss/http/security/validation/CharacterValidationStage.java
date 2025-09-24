@@ -25,6 +25,7 @@ import lombok.ToString;
 import org.jspecify.annotations.Nullable;
 
 import java.util.BitSet;
+import java.util.Optional;
 
 /**
  * Character validation stage that enforces RFC-compliant character sets for HTTP components.
@@ -132,14 +133,17 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
 
     @Override
     @SuppressWarnings("squid:S3516")
-    public String validate(@Nullable String value) throws UrlSecurityException {
+    public Optional<String> validate(@Nullable String value) throws UrlSecurityException {
         // Quick check for null/empty
-        if (value == null || value.isEmpty()) {
-            return value;
+        if (value == null) {
+            return Optional.empty();
+        }
+        if (value.isEmpty()) {
+            return Optional.of(value);
         }
 
         validateCharacters(value);
-        return value;
+        return Optional.of(value);
     }
 
     /**

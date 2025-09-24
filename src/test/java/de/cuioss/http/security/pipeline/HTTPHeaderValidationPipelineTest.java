@@ -31,6 +31,8 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 
+import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 @EnableGeneratorController
@@ -105,9 +107,10 @@ class HTTPHeaderValidationPipelineTest {
         void shouldAcceptValidHeaderNames(String validHeaderName) throws UrlSecurityException {
             HTTPHeaderValidationPipeline pipeline = new HTTPHeaderValidationPipeline(config, eventCounter, ValidationType.HEADER_NAME);
 
-            String result = pipeline.validate(validHeaderName);
-            assertNotNull(result);
-            assertEquals(validHeaderName, result);
+            Optional<String> result = pipeline.validate(validHeaderName);
+            assertTrue(result.isPresent());
+            assertNotNull(result.get());
+            assertEquals(validHeaderName, result.get());
         }
 
         @ParameterizedTest
@@ -115,25 +118,27 @@ class HTTPHeaderValidationPipelineTest {
         void shouldAcceptValidHeaderValues(String validHeaderValue) throws UrlSecurityException {
             HTTPHeaderValidationPipeline pipeline = new HTTPHeaderValidationPipeline(config, eventCounter, ValidationType.HEADER_VALUE);
 
-            String result = pipeline.validate(validHeaderValue);
-            assertNotNull(result);
-            assertEquals(validHeaderValue, result);
+            Optional<String> result = pipeline.validate(validHeaderValue);
+            assertTrue(result.isPresent());
+            assertNotNull(result.get());
+            assertEquals(validHeaderValue, result.get());
         }
 
         @Test
         void shouldHandleNullInput() throws UrlSecurityException {
             HTTPHeaderValidationPipeline pipeline = new HTTPHeaderValidationPipeline(config, eventCounter, ValidationType.HEADER_VALUE);
 
-            String result = pipeline.validate(null);
-            assertNull(result);
+            Optional<String> result = pipeline.validate(null);
+            assertEquals(Optional.empty(), result);
         }
 
         @Test
         void shouldHandleEmptyInput() throws UrlSecurityException {
             HTTPHeaderValidationPipeline pipeline = new HTTPHeaderValidationPipeline(config, eventCounter, ValidationType.HEADER_VALUE);
 
-            String result = pipeline.validate("");
-            assertEquals("", result);
+            Optional<String> result = pipeline.validate("");
+            assertTrue(result.isPresent());
+            assertEquals("", result.get());
         }
     }
 

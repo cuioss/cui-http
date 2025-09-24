@@ -136,9 +136,10 @@ class EncodedPathTraversalAttackTest {
         // Note: Some of these might still be blocked by security rules if they contain
         // patterns that could be dangerous even in legitimate contexts
         try {
-            String result = pipeline.validate(legitimatePattern);
-            // If validation passes, result should not be null/empty
-            assertNotNull(result, "Validated result should not be null for: " + legitimatePattern);
+            var result = pipeline.validate(legitimatePattern);
+            // If validation passes, result should be present
+            assertTrue(result.isPresent(), "Validated result should be present for: " + legitimatePattern);
+            assertNotNull(result.get(), "Validated result should not be null for: " + legitimatePattern);
         } catch (UrlSecurityException e) {
             // Some legitimate patterns might be blocked by strict security rules
             // This is acceptable for security-first approach
@@ -174,7 +175,8 @@ class EncodedPathTraversalAttackTest {
         // Some edge cases (long paths, special characters) may be legitimate
 
         try {
-            pipeline.validate(edgeCase);
+            var result = pipeline.validate(edgeCase);
+            assertTrue(result.isPresent(), "Edge case validation should return result if successful: " + edgeCase);
             // If validation succeeds, ensure the edge case doesn't contain obvious attack patterns
             boolean containsTraversal = edgeCase.contains("..") || edgeCase.contains("./") || edgeCase.contains("\\");
             boolean containsNullByte = edgeCase.contains("\0") || edgeCase.contains("%00");
@@ -204,7 +206,8 @@ class EncodedPathTraversalAttackTest {
             threads[i] = new Thread(() -> {
                 try {
                     String testPattern = "%2E%2E%2F" + threadIndex;
-                    pipeline.validate(testPattern);
+                    var result = pipeline.validate(testPattern);
+                    assertTrue(result.isPresent(), "Should not reach here - expected exception");
                     results[threadIndex] = false; // Should not reach here
                 } catch (UrlSecurityException e) {
                     results[threadIndex] = true; // Expected exception

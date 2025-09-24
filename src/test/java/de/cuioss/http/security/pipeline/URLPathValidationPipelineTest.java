@@ -32,6 +32,8 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 
+import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 @EnableGeneratorController
@@ -77,20 +79,22 @@ class URLPathValidationPipelineTest {
         @ParameterizedTest
         @TypeGeneratorSource(value = ValidURLPathGenerator.class, count = 10)
         void shouldValidateValidPaths(String validPath) throws UrlSecurityException {
-            String result = pipeline.validate(validPath);
-            assertNotNull(result);
+            Optional<String> result = pipeline.validate(validPath);
+            assertTrue(result.isPresent());
+            assertNotNull(result.get());
         }
 
         @Test
         void shouldHandleNullInput() throws UrlSecurityException {
-            String result = pipeline.validate(null);
-            assertNull(result);
+            Optional<String> result = pipeline.validate(null);
+            assertEquals(Optional.empty(), result);
         }
 
         @Test
         void shouldHandleEmptyInput() throws UrlSecurityException {
-            String result = pipeline.validate("");
-            assertEquals("", result);
+            Optional<String> result = pipeline.validate("");
+            assertTrue(result.isPresent());
+            assertEquals("", result.get());
         }
     }
 

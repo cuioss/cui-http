@@ -27,6 +27,7 @@ import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Sequential validation pipeline specifically for URL parameter components.
@@ -99,13 +100,21 @@ public final class URLParameterValidationPipeline implements HttpSecurityValidat
     }
 
     @Override
-    public String validate(@Nullable String value) throws UrlSecurityException {
+    public Optional<String> validate(@Nullable String value) throws UrlSecurityException {
+        if (value == null) {
+            return Optional.empty();
+        }
+
         String result = value;
 
         // Sequential execution with early termination
         for (HttpSecurityValidator stage : stages) {
             try {
-                result = stage.validate(result);
+                Optional<String> stageResult = stage.validate(result);
+                if (stageResult.isEmpty()) {
+                    return Optional.empty();
+                }
+                result = stageResult.get();
             } catch (UrlSecurityException e) {
                 // Track security event
                 eventCounter.increment(e.getFailureType());
@@ -122,7 +131,7 @@ public final class URLParameterValidationPipeline implements HttpSecurityValidat
             }
         }
 
-        return result;
+        return Optional.of(result);
     }
 
     /**

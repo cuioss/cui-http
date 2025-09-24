@@ -25,6 +25,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
+import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -43,9 +45,9 @@ class LengthValidationStageTest {
         LengthValidationStage stage = new LengthValidationStage(config, ValidationType.URL_PATH);
 
         String input = "/api/users/123";
-        String result = stage.validate(input);
-
-        assertEquals(input, result);
+        var result = stage.validate(input);
+        assertTrue(result.isPresent());
+        assertEquals(input, result.get());
     }
 
     @Test
@@ -53,7 +55,7 @@ class LengthValidationStageTest {
         SecurityConfiguration config = SecurityConfiguration.defaults();
         LengthValidationStage stage = new LengthValidationStage(config, ValidationType.URL_PATH);
 
-        assertNull(stage.validate(null));
+        assertEquals(Optional.empty(), stage.validate(null));
     }
 
     @Test
@@ -61,7 +63,9 @@ class LengthValidationStageTest {
         SecurityConfiguration config = SecurityConfiguration.defaults();
         LengthValidationStage stage = new LengthValidationStage(config, ValidationType.URL_PATH);
 
-        assertEquals("", stage.validate(""));
+        var result = stage.validate("");
+        assertTrue(result.isPresent());
+        assertEquals("", result.get());
     }
 
     @Test
@@ -72,9 +76,9 @@ class LengthValidationStageTest {
         LengthValidationStage stage = new LengthValidationStage(config, ValidationType.URL_PATH);
 
         String input = "1234567890"; // exactly 10 characters
-        String result = stage.validate(input);
-
-        assertEquals(input, result);
+        var result = stage.validate(input);
+        assertTrue(result.isPresent());
+        assertEquals(input, result.get());
     }
 
     // ========== URL Path Length Tests ==========
@@ -94,7 +98,8 @@ class LengthValidationStageTest {
         assertEquals(UrlSecurityFailureType.PATH_TOO_LONG, exception.getFailureType());
         assertEquals(ValidationType.URL_PATH, exception.getValidationType());
         assertEquals(longPath, exception.getOriginalInput());
-        assertTrue(exception.getDetail().orElse("").contains("URL path length 11 exceeds maximum 10"));
+        assertTrue(exception.getDetail().isPresent());
+        assertTrue(exception.getDetail().get().contains("URL path length 11 exceeds maximum 10"));
     }
 
     @Test
@@ -104,7 +109,9 @@ class LengthValidationStageTest {
 
         // Should pass with reasonable path length
         String reasonablePath = "/api/users/123/profile";
-        assertEquals(reasonablePath, stage.validate(reasonablePath));
+        var result = stage.validate(reasonablePath);
+        assertTrue(result.isPresent());
+        assertEquals(reasonablePath, result.get());
 
         // Should fail with path over default limit (4096)
         String extremelyLongPath = Generators.letterStrings(4100, 4150).next(); // Just over default limit
@@ -127,8 +134,10 @@ class LengthValidationStageTest {
 
         assertEquals(UrlSecurityFailureType.INPUT_TOO_LONG, exception.getFailureType());
         assertEquals(ValidationType.PARAMETER_NAME, exception.getValidationType());
-        assertTrue(exception.getDetail().orElse("").contains("Parameter name"));
-        assertTrue(exception.getDetail().orElse("").contains("exceeds maximum 20"));
+        assertTrue(exception.getDetail().isPresent());
+        String detail = exception.getDetail().get();
+        assertTrue(detail.contains("Parameter name"));
+        assertTrue(detail.contains("exceeds maximum 20"));
     }
 
     @Test
@@ -139,7 +148,9 @@ class LengthValidationStageTest {
         LengthValidationStage stage = new LengthValidationStage(config, ValidationType.PARAMETER_NAME);
 
         String validParamName = "userId"; // Well within limit
-        assertEquals(validParamName, stage.validate(validParamName));
+        var result = stage.validate(validParamName);
+        assertTrue(result.isPresent());
+        assertEquals(validParamName, result.get());
     }
 
     // ========== Parameter Value Length Tests ==========
@@ -180,7 +191,8 @@ class LengthValidationStageTest {
 
         assertEquals(UrlSecurityFailureType.INPUT_TOO_LONG, exception.getFailureType());
         assertEquals(ValidationType.HEADER_NAME, exception.getValidationType());
-        assertTrue(exception.getDetail().orElse("").contains("Header name"));
+        assertTrue(exception.getDetail().isPresent());
+        assertTrue(exception.getDetail().get().contains("Header name"));
     }
 
     @Test
@@ -191,7 +203,9 @@ class LengthValidationStageTest {
         LengthValidationStage stage = new LengthValidationStage(config, ValidationType.HEADER_NAME);
 
         String validHeaderName = "Authorization"; // Well within limit
-        assertEquals(validHeaderName, stage.validate(validHeaderName));
+        var result = stage.validate(validHeaderName);
+        assertTrue(result.isPresent());
+        assertEquals(validHeaderName, result.get());
     }
 
     // ========== Header Value Length Tests ==========
@@ -210,7 +224,8 @@ class LengthValidationStageTest {
 
         assertEquals(UrlSecurityFailureType.INPUT_TOO_LONG, exception.getFailureType());
         assertEquals(ValidationType.HEADER_VALUE, exception.getValidationType());
-        assertTrue(exception.getDetail().orElse("").contains("Header value"));
+        assertTrue(exception.getDetail().isPresent());
+        assertTrue(exception.getDetail().get().contains("Header value"));
     }
 
     // ========== Cookie Name Length Tests ==========
@@ -229,7 +244,8 @@ class LengthValidationStageTest {
 
         assertEquals(UrlSecurityFailureType.INPUT_TOO_LONG, exception.getFailureType());
         assertEquals(ValidationType.COOKIE_NAME, exception.getValidationType());
-        assertTrue(exception.getDetail().orElse("").contains("Cookie name"));
+        assertTrue(exception.getDetail().isPresent());
+        assertTrue(exception.getDetail().get().contains("Cookie name"));
     }
 
     @Test
@@ -240,7 +256,9 @@ class LengthValidationStageTest {
         LengthValidationStage stage = new LengthValidationStage(config, ValidationType.COOKIE_NAME);
 
         String validCookieName = "JSESSIONID"; // Well within limit
-        assertEquals(validCookieName, stage.validate(validCookieName));
+        var result = stage.validate(validCookieName);
+        assertTrue(result.isPresent());
+        assertEquals(validCookieName, result.get());
     }
 
     // ========== Cookie Value Length Tests ==========
@@ -259,7 +277,8 @@ class LengthValidationStageTest {
 
         assertEquals(UrlSecurityFailureType.INPUT_TOO_LONG, exception.getFailureType());
         assertEquals(ValidationType.COOKIE_VALUE, exception.getValidationType());
-        assertTrue(exception.getDetail().orElse("").contains("Cookie value"));
+        assertTrue(exception.getDetail().isPresent());
+        assertTrue(exception.getDetail().get().contains("Cookie value"));
     }
 
     // ========== Body Size Length Tests ==========
@@ -292,7 +311,9 @@ class LengthValidationStageTest {
         LengthValidationStage stage = new LengthValidationStage(config, ValidationType.BODY);
 
         String validBody = Generators.letterStrings(450, 500).next(); // Well within limit
-        assertEquals(validBody, stage.validate(validBody));
+        var result = stage.validate(validBody);
+        assertTrue(result.isPresent());
+        assertEquals(validBody, result.get());
     }
 
     @Test
@@ -304,7 +325,9 @@ class LengthValidationStageTest {
 
         // Should use Integer.MAX_VALUE as the effective limit for string length
         String reasonableBody = Generators.letterStrings(950, 1000).next();
-        assertEquals(reasonableBody, stage.validate(reasonableBody));
+        var result = stage.validate(reasonableBody);
+        assertTrue(result.isPresent());
+        assertEquals(reasonableBody, result.get());
     }
 
     // ========== All Validation Types Test ==========
@@ -327,8 +350,9 @@ class LengthValidationStageTest {
 
         // Test valid input for each type
         String validInput = "valid_input";
-        String result = stage.validate(validInput);
-        assertEquals(validInput, result);
+        var result = stage.validate(validInput);
+        assertTrue(result.isPresent());
+        assertEquals(validInput, result.get());
 
         // Test input that exceeds all limits
         String veryLongInput = Generators.letterStrings(1005, 1050).next(); // Exceeds all configured limits
@@ -354,10 +378,14 @@ class LengthValidationStageTest {
         LengthValidationStage stage = new LengthValidationStage(config, ValidationType.PARAMETER_NAME);
 
         // Empty string should pass
-        assertEquals("", stage.validate(""));
+        var emptyResult = stage.validate("");
+        assertTrue(emptyResult.isPresent());
+        assertEquals("", emptyResult.get());
 
         // Single character should pass
-        assertEquals("a", stage.validate("a"));
+        var singleResult = stage.validate("a");
+        assertTrue(singleResult.isPresent());
+        assertEquals("a", singleResult.get());
 
         // Multiple characters should fail
         assertThrows(UrlSecurityException.class, () -> stage.validate("ab"));
@@ -372,11 +400,15 @@ class LengthValidationStageTest {
 
         // Unicode characters like accented letters count as single characters
         String unicodeString = "café"; // 4 characters including é
-        assertEquals(unicodeString, stage.validate(unicodeString));
+        var unicodeResult = stage.validate(unicodeString);
+        assertTrue(unicodeResult.isPresent());
+        assertEquals(unicodeString, unicodeResult.get());
 
         // Note: Emojis may count as multiple characters in Java string length
         String basicString = "test"; // 4 characters, well within limit
-        assertEquals(basicString, stage.validate(basicString));
+        var basicResult = stage.validate(basicString);
+        assertTrue(basicResult.isPresent());
+        assertEquals(basicString, basicResult.get());
 
         // Exceeding limit with regular characters
         String longString = "12345678901"; // 11 characters, exceeds limit of 10
@@ -392,7 +424,9 @@ class LengthValidationStageTest {
 
         // Special characters should be counted normally
         String specialChars = "!@#$%^&*()"; // 10 characters, at limit
-        assertEquals(specialChars, stage.validate(specialChars));
+        var specialResult = stage.validate(specialChars);
+        assertTrue(specialResult.isPresent());
+        assertEquals(specialChars, specialResult.get());
 
         // Exceeding with special characters
         String tooManySpecialChars = "!@#$%^&*()~"; // 11 characters, exceeds limit
@@ -411,7 +445,9 @@ class LengthValidationStageTest {
         assertThrows(UrlSecurityException.class, () -> stage.validate(longPath));
 
         String validPath = Generators.letterStrings(450, 500).next(); // Within strict limit
-        assertEquals(validPath, stage.validate(validPath));
+        var validResult = stage.validate(validPath);
+        assertTrue(validResult.isPresent());
+        assertEquals(validPath, validResult.get());
     }
 
     @Test
@@ -421,7 +457,9 @@ class LengthValidationStageTest {
 
         // Should use lenient limits (maxPathLength = 8192 in lenient config)
         String longPath = Generators.letterStrings(7000, 7500).next(); // Within lenient limit
-        assertEquals(longPath, stage.validate(longPath));
+        var longResult = stage.validate(longPath);
+        assertTrue(longResult.isPresent());
+        assertEquals(longPath, longResult.get());
 
         String veryLongPath = Generators.letterStrings(8200, 8250).next(); // Just over lenient limit
         assertThrows(UrlSecurityException.class, () -> stage.validate(veryLongPath));
@@ -434,7 +472,9 @@ class LengthValidationStageTest {
 
         // Should use default limits (maxPathLength = 4096 in default config)
         String longPath = Generators.letterStrings(3500, 3800).next(); // Within default limit
-        assertEquals(longPath, stage.validate(longPath));
+        var defaultResult = stage.validate(longPath);
+        assertTrue(defaultResult.isPresent());
+        assertEquals(longPath, defaultResult.get());
 
         String veryLongPath = Generators.letterStrings(4100, 4150).next(); // Just over default limit
         assertThrows(UrlSecurityException.class, () -> stage.validate(veryLongPath));
@@ -453,7 +493,9 @@ class LengthValidationStageTest {
 
         // Should pass input that doesn't match condition without validation
         String longInputNoPrefix = "this_is_a_very_long_parameter_value"; // > 10 chars but no prefix
-        assertEquals(longInputNoPrefix, conditionalValidator.validate(longInputNoPrefix));
+        var noPrefixResult = conditionalValidator.validate(longInputNoPrefix);
+        assertTrue(noPrefixResult.isPresent());
+        assertEquals(longInputNoPrefix, noPrefixResult.get());
 
         // Should validate input that matches condition
         String longInputWithPrefix = "validate_this_long_value"; // > 10 chars with prefix
@@ -462,7 +504,9 @@ class LengthValidationStageTest {
 
         // Should pass valid input with condition
         String validInputWithPrefix = "validate_"; // Within limit with prefix (exactly 9 chars)
-        assertEquals(validInputWithPrefix, conditionalValidator.validate(validInputWithPrefix));
+        var validPrefixResult = conditionalValidator.validate(validInputWithPrefix);
+        assertTrue(validPrefixResult.isPresent());
+        assertEquals(validInputWithPrefix, validPrefixResult.get());
     }
 
     // ========== toString() Test ==========

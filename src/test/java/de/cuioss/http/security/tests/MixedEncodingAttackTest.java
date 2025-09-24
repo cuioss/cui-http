@@ -178,7 +178,8 @@ class MixedEncodingAttackTest {
 
         // When: Attempting to validate the legitimate path
         try {
-            String result = pipeline.validate(path);
+            var result = pipeline.validate(path);
+            assertTrue(result.isPresent(), "Path validation should return result if successful: " + path);
             // Then: Legitimate path should be validated
             assertNotNull(result, "Legitimate path should be validated: " + path);
 
@@ -212,7 +213,8 @@ class MixedEncodingAttackTest {
 
         // When: Validating the legitimate path
         try {
-            String result = pipeline.validate(validPath);
+            var result = pipeline.validate(validPath);
+            assertTrue(result.isPresent(), "Valid path should return validated result: " + validPath);
             // Then: Should return validated result
             assertNotNull(result, "Valid path should return validated result: " + validPath);
 

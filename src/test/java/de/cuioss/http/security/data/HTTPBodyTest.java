@@ -18,6 +18,8 @@ package de.cuioss.http.security.data;
 import de.cuioss.test.generator.Generators;
 import org.junit.jupiter.api.Test;
 
+import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -230,8 +232,12 @@ class HTTPBodyTest {
         HTTPBody bodyWithoutCharset = new HTTPBody("content", "text/html", "");
         HTTPBody bodyWithNullContentType = new HTTPBody("content", null, "");
 
-        assertEquals("utf-8", bodyWithCharset.getCharset().orElse(null));
-        assertEquals("ISO-8859-1", bodyWithCharsetUpper.getCharset().orElse(null));
+        Optional<String> charset1 = bodyWithCharset.getCharset();
+        assertTrue(charset1.isPresent());
+        assertEquals("utf-8", charset1.get());
+        Optional<String> charset2 = bodyWithCharsetUpper.getCharset();
+        assertTrue(charset2.isPresent());
+        assertEquals("ISO-8859-1", charset2.get());
         assertTrue(bodyWithoutCharset.getCharset().isEmpty());
         assertTrue(bodyWithNullContentType.getCharset().isEmpty());
     }
@@ -242,9 +248,15 @@ class HTTPBodyTest {
         HTTPBody body2 = new HTTPBody("content", "text/html; charset=windows-1252;", "");
         HTTPBody body3 = new HTTPBody("content", "application/xml;charset=utf-16", ""); // No space
 
-        assertEquals("utf-8", body1.getCharset().orElse(null));
-        assertEquals("windows-1252", body2.getCharset().orElse(null));
-        assertEquals("utf-16", body3.getCharset().orElse(null));
+        Optional<String> charset1 = body1.getCharset();
+        assertTrue(charset1.isPresent());
+        assertEquals("utf-8", charset1.get());
+        Optional<String> charset2 = body2.getCharset();
+        assertTrue(charset2.isPresent());
+        assertEquals("windows-1252", charset2.get());
+        Optional<String> charset3 = body3.getCharset();
+        assertTrue(charset3.isPresent());
+        assertEquals("utf-16", charset3.get());
     }
 
     @Test
@@ -436,7 +448,9 @@ class HTTPBodyTest {
         HTTPBody body = new HTTPBody(specialContent, "text/plain; charset=utf-8", "br");
 
         assertEquals(specialContent, body.content());
-        assertEquals("utf-8", body.getCharset().orElse(null));
+        Optional<String> charset = body.getCharset();
+        assertTrue(charset.isPresent());
+        assertEquals("utf-8", charset.get());
         assertTrue(body.isCompressed());
     }
 
@@ -447,6 +461,8 @@ class HTTPBodyTest {
 
         assertEquals(unicodeContent, body.content());
         assertTrue(body.hasContent());
-        assertEquals("utf-8", body.getCharset().orElse(null));
+        Optional<String> charset = body.getCharset();
+        assertTrue(charset.isPresent());
+        assertEquals("utf-8", charset.get());
     }
 }

@@ -54,30 +54,48 @@ class DecodingStageTest {
     @Test
     @DisplayName("Should handle null input gracefully")
     void shouldHandleNullInput() {
-        assertNull(pathDecoder.validate(null));
-        assertNull(parameterDecoder.validate(null));
+        assertEquals(Optional.empty(), pathDecoder.validate(null));
+        assertEquals(Optional.empty(), parameterDecoder.validate(null));
     }
 
     @Test
     @DisplayName("Should handle empty input")
     void shouldHandleEmptyInput() {
-        assertEquals("", pathDecoder.validate(""));
-        assertEquals("", parameterDecoder.validate(""));
+        Optional<String> result1 = pathDecoder.validate("");
+        assertTrue(result1.isPresent());
+        assertEquals("", result1.get());
+        Optional<String> result2 = parameterDecoder.validate("");
+        assertTrue(result2.isPresent());
+        assertEquals("", result2.get());
     }
 
     @Test
     @DisplayName("Should decode standard URL encoding")
     void shouldDecodeStandardUrlEncoding() {
         // Basic percent encoding
-        assertEquals("/api/users", pathDecoder.validate("/api/users"));
-        assertEquals("/api/users/123", pathDecoder.validate("/api/users%2F123"));
-        assertEquals("hello world", parameterDecoder.validate("hello%20world"));
-        assertEquals("user@example.com", parameterDecoder.validate("user%40example.com"));
+        Optional<String> result1 = pathDecoder.validate("/api/users");
+        assertTrue(result1.isPresent());
+        assertEquals("/api/users", result1.get());
+        Optional<String> result2 = pathDecoder.validate("/api/users%2F123");
+        assertTrue(result2.isPresent());
+        assertEquals("/api/users/123", result2.get());
+        Optional<String> result3 = parameterDecoder.validate("hello%20world");
+        assertTrue(result3.isPresent());
+        assertEquals("hello world", result3.get());
+        Optional<String> result4 = parameterDecoder.validate("user%40example.com");
+        assertTrue(result4.isPresent());
+        assertEquals("user@example.com", result4.get());
 
         // Special characters
-        assertEquals("path with spaces", pathDecoder.validate("path%20with%20spaces"));
-        assertEquals("query=value&other=data", parameterDecoder.validate("query%3Dvalue%26other%3Ddata"));
-        assertEquals("file.txt", pathDecoder.validate("file.txt")); // No encoding needed
+        Optional<String> result5 = pathDecoder.validate("path%20with%20spaces");
+        assertTrue(result5.isPresent());
+        assertEquals("path with spaces", result5.get());
+        Optional<String> result6 = parameterDecoder.validate("query%3Dvalue%26other%3Ddata");
+        assertTrue(result6.isPresent());
+        assertEquals("query=value&other=data", result6.get());
+        Optional<String> result7 = pathDecoder.validate("file.txt");
+        assertTrue(result7.isPresent());
+        assertEquals("file.txt", result7.get()); // No encoding needed
     }
 
     @Test
@@ -123,8 +141,9 @@ class DecodingStageTest {
         DecodingStage lenientDecoder = new DecodingStage(allowingConfig, ValidationType.URL_PATH);
 
         // This should not throw an exception
-        String result = lenientDecoder.validate("/admin%252Fusers");
-        assertEquals("/admin%2Fusers", result); // First layer decoded
+        Optional<String> result = lenientDecoder.validate("/admin%252Fusers");
+        assertTrue(result.isPresent());
+        assertEquals("/admin%2Fusers", result.get()); // First layer decoded
     }
 
     /**
@@ -176,11 +195,15 @@ class DecodingStageTest {
 
         // String that doesn't change with normalization
         String normalInput = "regular-path";
-        assertEquals(normalInput, unicodeDecoder.validate(normalInput));
+        Optional<String> result1 = unicodeDecoder.validate(normalInput);
+        assertTrue(result1.isPresent());
+        assertEquals(normalInput, result1.get());
 
         // Test with already normalized Unicode
         String normalizedUnicode = "café"; // NFC form
-        assertEquals(normalizedUnicode, unicodeDecoder.validate(normalizedUnicode));
+        Optional<String> result2 = unicodeDecoder.validate(normalizedUnicode);
+        assertTrue(result2.isPresent());
+        assertEquals(normalizedUnicode, result2.get());
     }
 
     @Test
@@ -220,7 +243,11 @@ class DecodingStageTest {
 
         // Even with decomposed Unicode, should not throw exception
         String decomposed = "cafe\u0301";
-        assertDoesNotThrow(() -> noUnicodeDecoder.validate(decomposed));
+        assertDoesNotThrow(() -> {
+            Optional<String> result = noUnicodeDecoder.validate(decomposed);
+            assertTrue(result.isPresent());
+            return result.get();
+        });
     }
 
     @Test
@@ -271,7 +298,9 @@ class DecodingStageTest {
             threads[i] = new Thread(() -> {
                 try {
                     String input = "/api/path%2F" + threadIndex;
-                    String result = decoder.validate(input);
+                    Optional<String> optionalResult = decoder.validate(input);
+                    assertTrue(optionalResult.isPresent());
+                    String result = optionalResult.get();
                     results[threadIndex] = result.equals("/api/path/" + threadIndex);
                 } catch (UrlSecurityException e) {
                     results[threadIndex] = false;
@@ -318,11 +347,15 @@ class DecodingStageTest {
         var conditionalDecoder = pathDecoder.when(input -> input != null && !input.isEmpty());
 
         // Should pass through null and empty without validation
-        assertNull(conditionalDecoder.validate(null));
-        assertEquals("", conditionalDecoder.validate(""));
+        assertEquals(Optional.empty(), conditionalDecoder.validate(null));
+        Optional<String> result1 = conditionalDecoder.validate("");
+        assertTrue(result1.isPresent());
+        assertEquals("", result1.get());
 
         // Should validate non-empty input
-        assertEquals("/api/path", conditionalDecoder.validate("/api%2Fpath"));
+        Optional<String> result2 = conditionalDecoder.validate("/api%2Fpath");
+        assertTrue(result2.isPresent());
+        assertEquals("/api/path", result2.get());
 
         // Should still throw on double encoding for non-empty input
         assertThrows(UrlSecurityException.class,
@@ -349,8 +382,9 @@ class DecodingStageTest {
     @DisplayName("Should handle complex decoding scenarios")
     @MethodSource("complexDecodingScenarios")
     void shouldHandleComplexDecodingScenarios(String input, String expected, String description) {
-        String result = pathDecoder.validate(input);
-        assertEquals(expected, result, description);
+        Optional<String> result = pathDecoder.validate(input);
+        assertTrue(result.isPresent(), description);
+        assertEquals(expected, result.get(), description);
     }
 
     @Test
@@ -364,7 +398,9 @@ class DecodingStageTest {
 
         DecodingStage minimalDecoder = new DecodingStage(minimalConfig, ValidationType.URL_PATH);
 
-        assertEquals("/api/path", minimalDecoder.validate("/api%2Fpath"));
+        Optional<String> result = minimalDecoder.validate("/api%2Fpath");
+        assertTrue(result.isPresent());
+        assertEquals("/api/path", result.get());
 
         // Should still detect double encoding
         assertThrows(UrlSecurityException.class,
@@ -378,24 +414,24 @@ class DecodingStageTest {
     @SuppressWarnings("java:S5961")
     void shouldNotDecodeHtmlEntities() {
         // HTML entities should pass through unchanged - they are application-layer encodings
-        assertEquals("&lt;/script&gt;", pathDecoder.validate("&lt;/script&gt;"));
-        assertEquals("path&sol;..&sol;admin", pathDecoder.validate("path&sol;..&sol;admin"));
-        assertEquals("alert(&apos;xss&apos;)", pathDecoder.validate("alert(&apos;xss&apos;)"));
-        assertEquals("data=&quot;value&quot;", pathDecoder.validate("data=&quot;value&quot;"));
-        assertEquals("user &amp; admin", pathDecoder.validate("user &amp; admin"));
+        assertEquals("&lt;/script&gt;", pathDecoder.validate("&lt;/script&gt;").orElse(null));
+        assertEquals("path&sol;..&sol;admin", pathDecoder.validate("path&sol;..&sol;admin").orElse(null));
+        assertEquals("alert(&apos;xss&apos;)", pathDecoder.validate("alert(&apos;xss&apos;)").orElse(null));
+        assertEquals("data=&quot;value&quot;", pathDecoder.validate("data=&quot;value&quot;").orElse(null));
+        assertEquals("user &amp; admin", pathDecoder.validate("user &amp; admin").orElse(null));
 
         // Decimal numeric entities should pass through unchanged
-        assertEquals("&#47;admin", pathDecoder.validate("&#47;admin"));
-        assertEquals("&#60;script&#62;", pathDecoder.validate("&#60;script&#62;"));
-        assertEquals("&#39;attack&#39;", pathDecoder.validate("&#39;attack&#39;"));
-        assertEquals("&#34;injection&#34;", pathDecoder.validate("&#34;injection&#34;"));
+        assertEquals("&#47;admin", pathDecoder.validate("&#47;admin").orElse(null));
+        assertEquals("&#60;script&#62;", pathDecoder.validate("&#60;script&#62;").orElse(null));
+        assertEquals("&#39;attack&#39;", pathDecoder.validate("&#39;attack&#39;").orElse(null));
+        assertEquals("&#34;injection&#34;", pathDecoder.validate("&#34;injection&#34;").orElse(null));
 
         // Hexadecimal numeric entities should pass through unchanged
-        assertEquals("&#x2F;", pathDecoder.validate("&#x2F;"));
-        assertEquals("&#x3C;", pathDecoder.validate("&#x3C;"));
-        assertEquals("&#x3E;", pathDecoder.validate("&#x3E;"));
-        assertEquals("&#x27;", pathDecoder.validate("&#x27;"));
-        assertEquals("&#x22;", pathDecoder.validate("&#x22;"));
+        assertEquals("&#x2F;", pathDecoder.validate("&#x2F;").orElse(null));
+        assertEquals("&#x3C;", pathDecoder.validate("&#x3C;").orElse(null));
+        assertEquals("&#x3E;", pathDecoder.validate("&#x3E;").orElse(null));
+        assertEquals("&#x27;", pathDecoder.validate("&#x27;").orElse(null));
+        assertEquals("&#x22;", pathDecoder.validate("&#x22;").orElse(null));
     }
 
     @Test
@@ -403,58 +439,58 @@ class DecodingStageTest {
     @SuppressWarnings("java:S5961")
     void shouldNotDecodeJavaScriptEscapes() {
         // JavaScript escapes should pass through unchanged - they are application-layer encodings
-        assertEquals("\\x3c/script\\x3e", pathDecoder.validate("\\x3c/script\\x3e"));
-        assertEquals("\\x2fadmin", pathDecoder.validate("\\x2fadmin"));
-        assertEquals("\\x27attack\\x27", pathDecoder.validate("\\x27attack\\x27"));
-        assertEquals("\\x22injection\\x22", pathDecoder.validate("\\x22injection\\x22"));
+        assertEquals("\\x3c/script\\x3e", pathDecoder.validate("\\x3c/script\\x3e").orElse(null));
+        assertEquals("\\x2fadmin", pathDecoder.validate("\\x2fadmin").orElse(null));
+        assertEquals("\\x27attack\\x27", pathDecoder.validate("\\x27attack\\x27").orElse(null));
+        assertEquals("\\x22injection\\x22", pathDecoder.validate("\\x22injection\\x22").orElse(null));
 
         // Unicode escapes should pass through unchanged
-        assertEquals("\\u003cscript\\u003e", pathDecoder.validate("\\u003cscript\\u003e"));
-        assertEquals("\\u002fpath", pathDecoder.validate("\\u002fpath"));
-        assertEquals("\\u0027xss\\u0027", pathDecoder.validate("\\u0027xss\\u0027"));
-        assertEquals("\\u0022sqli\\u0022", pathDecoder.validate("\\u0022sqli\\u0022"));
+        assertEquals("\\u003cscript\\u003e", pathDecoder.validate("\\u003cscript\\u003e").orElse(null));
+        assertEquals("\\u002fpath", pathDecoder.validate("\\u002fpath").orElse(null));
+        assertEquals("\\u0027xss\\u0027", pathDecoder.validate("\\u0027xss\\u0027").orElse(null));
+        assertEquals("\\u0022sqli\\u0022", pathDecoder.validate("\\u0022sqli\\u0022").orElse(null));
 
         // Octal escapes should pass through unchanged
-        assertEquals("\\057", pathDecoder.validate("\\057"));
-        assertEquals("\\074", pathDecoder.validate("\\074"));
-        assertEquals("\\076", pathDecoder.validate("\\076"));
-        assertEquals("\\047", pathDecoder.validate("\\047"));
-        assertEquals("\\042", pathDecoder.validate("\\042"));
+        assertEquals("\\057", pathDecoder.validate("\\057").orElse(null));
+        assertEquals("\\074", pathDecoder.validate("\\074").orElse(null));
+        assertEquals("\\076", pathDecoder.validate("\\076").orElse(null));
+        assertEquals("\\047", pathDecoder.validate("\\047").orElse(null));
+        assertEquals("\\042", pathDecoder.validate("\\042").orElse(null));
     }
 
     @Test
     @DisplayName("Should handle HTTP protocol encoding only - no cross-layer mixing")
     void shouldHandleHttpProtocolEncodingOnly() {
         // URL encoding should be decoded (HTTP protocol layer)
-        assertEquals("&lt;/script&gt;", pathDecoder.validate("&lt;%2Fscript&gt;"));
-        assertEquals("path&sol;../admin", pathDecoder.validate("path&sol;..%2Fadmin"));
+        assertEquals("&lt;/script&gt;", pathDecoder.validate("&lt;%2Fscript&gt;").orElse(null));
+        assertEquals("path&sol;../admin", pathDecoder.validate("path&sol;..%2Fadmin").orElse(null));
 
         // JavaScript escapes should pass through, URL encoding should be decoded
-        assertEquals("\\x3c/script\\x3e", pathDecoder.validate("\\x3c%2Fscript\\x3e"));
-        assertEquals("\\x2Fadmin", pathDecoder.validate("\\x2F%61dmin")); // %61 = 'a'
+        assertEquals("\\x3c/script\\x3e", pathDecoder.validate("\\x3c%2Fscript\\x3e").orElse(null));
+        assertEquals("\\x2Fadmin", pathDecoder.validate("\\x2F%61dmin").orElse(null)); // %61 = 'a'
 
         // HTML entities and JavaScript escapes should both pass through unchanged
-        assertEquals("&lt;script&gt;alert(\\x27xss\\x27)&lt;/script&gt;", pathDecoder.validate("&lt;script&gt;alert(\\x27xss\\x27)&lt;/script&gt;"));
+        assertEquals("&lt;script&gt;alert(\\x27xss\\x27)&lt;/script&gt;", pathDecoder.validate("&lt;script&gt;alert(\\x27xss\\x27)&lt;/script&gt;").orElse(null));
 
         // Only URL encoding should be decoded from mixed input
-        assertEquals("path&sol;..\\x2Fadmin", pathDecoder.validate("path&sol;..\\x2F%61dmin"));
+        assertEquals("path&sol;..\\x2Fadmin", pathDecoder.validate("path&sol;..\\x2F%61dmin").orElse(null));
     }
 
     @Test
     @DisplayName("Should pass through all application-layer encodings unchanged")
     void shouldPassThroughApplicationLayerEncodingsUnchanged() {
         // HTML entities should remain unchanged (application layer responsibility)
-        assertEquals("&invalid;", pathDecoder.validate("&invalid;"));
-        assertEquals("&#9999999;", pathDecoder.validate("&#9999999;")); // Invalid codepoint (too large)
-        assertEquals("&#xZZZZ;", pathDecoder.validate("&#xZZZZ;")); // Invalid hex
+        assertEquals("&invalid;", pathDecoder.validate("&invalid;").orElse(null));
+        assertEquals("&#9999999;", pathDecoder.validate("&#9999999;").orElse(null)); // Invalid codepoint (too large)
+        assertEquals("&#xZZZZ;", pathDecoder.validate("&#xZZZZ;").orElse(null)); // Invalid hex
 
         // JavaScript escapes should remain unchanged (application layer responsibility)
-        assertEquals("\\xZZ", pathDecoder.validate("\\xZZ")); // Invalid hex
-        assertEquals("\\uZZZZ", pathDecoder.validate("\\uZZZZ")); // Invalid unicode
-        assertEquals("\\999", pathDecoder.validate("\\999")); // Invalid octal (> 255)
+        assertEquals("\\xZZ", pathDecoder.validate("\\xZZ").orElse(null)); // Invalid hex
+        assertEquals("\\uZZZZ", pathDecoder.validate("\\uZZZZ").orElse(null)); // Invalid unicode
+        assertEquals("\\999", pathDecoder.validate("\\999").orElse(null)); // Invalid octal (> 255)
 
         // Mixed with valid URL encoding (only URL encoding should be processed)
-        assertEquals("valid&sol;&invalid;", pathDecoder.validate("valid&sol;&invalid;"));
+        assertEquals("valid&sol;&invalid;", pathDecoder.validate("valid&sol;&invalid;").orElse(null));
     }
 
     @Test
@@ -462,15 +498,15 @@ class DecodingStageTest {
     void shouldProcessOnlyHttpProtocolLayerDecoding() {
         // HTML entities should NOT be decoded - application layer responsibility
         String htmlEntities = "&lt;script&gt;"; // Should remain unchanged
-        assertEquals("&lt;script&gt;", pathDecoder.validate(htmlEntities));
+        assertEquals("&lt;script&gt;", pathDecoder.validate(htmlEntities).orElse(null));
 
         // JavaScript escapes should NOT be decoded - application layer responsibility
         String jsEscapes = "\\x3cscript\\x3e"; // Should remain unchanged
-        assertEquals("\\x3cscript\\x3e", pathDecoder.validate(jsEscapes));
+        assertEquals("\\x3cscript\\x3e", pathDecoder.validate(jsEscapes).orElse(null));
 
         // URL encoding SHOULD be decoded - HTTP protocol layer responsibility
         String urlEncoding = "%3Cscript%3E"; // Should decode to <script>
-        assertEquals("<script>", pathDecoder.validate(urlEncoding));
+        assertEquals("<script>", pathDecoder.validate(urlEncoding).orElse(null));
 
         // UTF-8 overlong encoding should be detected and blocked
         assertThrows(UrlSecurityException.class,
@@ -481,9 +517,15 @@ class DecodingStageTest {
     @DisplayName("Should maintain HTTP protocol-layer functionality")
     void shouldMaintainHttpProtocolLayerFunctionality() {
         // URL decoding should continue to work (HTTP protocol layer)
-        assertEquals("/api/users/123", pathDecoder.validate("/api/users%2F123"));
-        assertEquals("hello world", parameterDecoder.validate("hello%20world"));
-        assertEquals("user@example.com", parameterDecoder.validate("user%40example.com"));
+        Optional<String> result1 = pathDecoder.validate("/api/users%2F123");
+        assertTrue(result1.isPresent());
+        assertEquals("/api/users/123", result1.get());
+        Optional<String> result2 = parameterDecoder.validate("hello%20world");
+        assertTrue(result2.isPresent());
+        assertEquals("hello world", result2.get());
+        Optional<String> result3 = parameterDecoder.validate("user%40example.com");
+        assertTrue(result3.isPresent());
+        assertEquals("user@example.com", result3.get());
 
         // Double encoding detection should still work (HTTP protocol layer)
         assertThrows(UrlSecurityException.class,
@@ -496,7 +538,9 @@ class DecodingStageTest {
         DecodingStage unicodeDecoder = new DecodingStage(unicodeConfig, ValidationType.URL_PATH);
 
         String normalInput = "regular-path";
-        assertEquals(normalInput, unicodeDecoder.validate(normalInput));
+        Optional<String> result = unicodeDecoder.validate(normalInput);
+        assertTrue(result.isPresent());
+        assertEquals(normalInput, result.get());
 
         // UTF-8 overlong encoding detection should work (HTTP protocol layer)
         assertThrows(UrlSecurityException.class,
@@ -532,16 +576,18 @@ class DecodingStageTest {
     void shouldHandleHttpProtocolEncodingScenarios(String input, String expected, String description) {
         // Specifically test that only HTTP protocol-layer encoding is processed
         // while application-layer encodings (HTML entities, JS escapes) pass through unchanged
-        String result = pathDecoder.validate(input);
-        assertEquals(expected, result, description);
+        Optional<String> result = pathDecoder.validate(input);
+        assertTrue(result.isPresent());
+        String resultString = result.get();
+        assertEquals(expected, resultString, description);
 
         // Additional validation: ensure the result contains expected patterns for application-layer encodings
         if (description.contains("pass through")) {
             // For pass-through scenarios, input and result should be identical (no decoding occurred)
-            assertEquals(input, result, "Application-layer encoding should pass through unchanged");
+            assertEquals(input, resultString, "Application-layer encoding should pass through unchanged");
         } else if (description.contains("URL encoded")) {
             // For URL encoding scenarios, ensure actual decoding occurred
-            assertNotEquals(input, result, "URL encoding should be decoded at HTTP protocol layer");
+            assertNotEquals(input, resultString, "URL encoding should be decoded at HTTP protocol layer");
         }
     }
 

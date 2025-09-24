@@ -33,6 +33,8 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 
+import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 @EnableGeneratorController
@@ -56,8 +58,9 @@ class PipelineFactoryTest {
             HttpSecurityValidator pipeline = PipelineFactory.createUrlPathPipeline(config, eventCounter);
             assertInstanceOf(URLPathValidationPipeline.class, pipeline);
 
-            String result = pipeline.validate(validPath);
-            assertEquals(validPath, result);
+            Optional<String> result = pipeline.validate(validPath);
+            assertTrue(result.isPresent());
+            assertEquals(validPath, result.get());
         }
 
         @ParameterizedTest
@@ -66,8 +69,9 @@ class PipelineFactoryTest {
             HttpSecurityValidator pipeline = PipelineFactory.createUrlParameterPipeline(config, eventCounter);
             assertInstanceOf(URLParameterValidationPipeline.class, pipeline);
 
-            String result = pipeline.validate(validParam);
-            assertNotNull(result, "URL parameter pipeline should process valid input without throwing exception");
+            Optional<String> result = pipeline.validate(validParam);
+            assertTrue(result.isPresent());
+            assertNotNull(result.get(), "URL parameter pipeline should process valid input without throwing exception");
         }
 
         @ParameterizedTest
@@ -76,8 +80,9 @@ class PipelineFactoryTest {
             HttpSecurityValidator pipeline = PipelineFactory.createHeaderNamePipeline(config, eventCounter);
             assertInstanceOf(HTTPHeaderValidationPipeline.class, pipeline);
 
-            String result = pipeline.validate(validHeaderName);
-            assertEquals(validHeaderName, result);
+            Optional<String> result = pipeline.validate(validHeaderName);
+            assertTrue(result.isPresent());
+            assertEquals(validHeaderName, result.get());
         }
 
         @ParameterizedTest
@@ -86,8 +91,9 @@ class PipelineFactoryTest {
             HttpSecurityValidator pipeline = PipelineFactory.createHeaderValuePipeline(config, eventCounter);
             assertInstanceOf(HTTPHeaderValidationPipeline.class, pipeline);
 
-            String result = pipeline.validate(validHeaderValue);
-            assertEquals(validHeaderValue, result);
+            Optional<String> result = pipeline.validate(validHeaderValue);
+            assertTrue(result.isPresent());
+            assertEquals(validHeaderValue, result.get());
         }
 
     }
@@ -272,8 +278,9 @@ class PipelineFactoryTest {
         @TypeGeneratorSource(value = ValidURLPathGenerator.class, count = 5)
         void shouldWorkWithValidInputs(String validInput) {
             HttpSecurityValidator pipeline = PipelineFactory.createUrlPathPipeline(config, eventCounter);
-            String result = pipeline.validate(validInput);
-            assertEquals(validInput, result);
+            Optional<String> result = pipeline.validate(validInput);
+            assertTrue(result.isPresent());
+            assertEquals(validInput, result.get());
         }
 
         @ParameterizedTest

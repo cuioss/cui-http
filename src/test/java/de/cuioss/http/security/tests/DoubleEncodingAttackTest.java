@@ -206,9 +206,10 @@ class DoubleEncodingAttackTest {
 
         // When: Validating the legitimate path
         try {
-            String result = pipeline.validate(validPath);
+            var result = pipeline.validate(validPath);
             // Then: Should return validated result
-            assertNotNull(result, "Valid path should return validated result: " + validPath);
+            assertTrue(result.isPresent(), "Valid path should return validated result: " + validPath);
+            assertNotNull(result.get(), "Valid path result should not be null: " + validPath);
 
             // And: No security events should be recorded for valid paths
             assertEquals(initialEventCount, eventCounter.getTotalCount(),
@@ -253,10 +254,11 @@ class DoubleEncodingAttackTest {
             long initialEventCount = eventCounter.getTotalCount();
 
             try {
-                String result = pipeline.validate(edgeCase);
-                // If validation passes, result should not be null
+                var result = pipeline.validate(edgeCase);
+                // If validation passes, result should be present
                 // Some edge cases might be legitimate patterns
-                assertNotNull(result, "Validated result should not be null for: " + edgeCase);
+                assertTrue(result.isPresent(), "Validated result should be present for: " + edgeCase);
+                assertNotNull(result.get(), "Validated result should not be null for: " + edgeCase);
 
             } catch (UrlSecurityException e) {
                 // Edge cases might be rejected for various reasons

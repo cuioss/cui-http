@@ -24,6 +24,7 @@ import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
@@ -144,7 +145,7 @@ ValidationType validationType) implements HttpSecurityValidator {
      * </ol>
      *
      * @param value The input path to validate and normalize
-     * @return The validated and normalized path
+     * @return The validated and normalized path wrapped in Optional, or Optional.empty() if input was null
      * @throws UrlSecurityException if any security violations are detected:
      *                              <ul>
      *                                <li>EXCESSIVE_NESTING - if path contains too many segments or depth</li>
@@ -153,9 +154,12 @@ ValidationType validationType) implements HttpSecurityValidator {
      *                              </ul>
      */
     @Override
-    public String validate(@Nullable String value) throws UrlSecurityException {
-        if (value == null || value.isEmpty()) {
-            return value;
+    public Optional<String> validate(@Nullable String value) throws UrlSecurityException {
+        if (value == null) {
+            return Optional.empty();
+        }
+        if (value.isEmpty()) {
+            return Optional.of(value);
         }
 
         // Save original for comparison and error reporting
@@ -187,7 +191,7 @@ ValidationType validationType) implements HttpSecurityValidator {
                     .build();
         }
 
-        return normalized;
+        return Optional.of(normalized);
     }
 
     /**
@@ -387,10 +391,10 @@ ValidationType validationType) implements HttpSecurityValidator {
     @Override
     public HttpSecurityValidator when(Predicate<String> condition) {
         return input -> {
-            if (condition.test(input)) {
-                return validate(input);
+            if (input == null || !condition.test(input)) {
+                return Optional.ofNullable(input);
             }
-            return input;
+            return validate(input);
         };
     }
 

@@ -18,6 +18,7 @@ package de.cuioss.http.security.core;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import org.jspecify.annotations.Nullable;
 
+import java.util.Optional;
 import java.util.function.Predicate;
 
 /**
@@ -85,6 +86,7 @@ public interface HttpSecurityValidator {
      * <ul>
      *   <li>Return the input unchanged if it's safe</li>
      *   <li>Return a sanitized/normalized version if safe transformations are possible</li>
+     *   <li>Return Optional.empty() if the input was null</li>
      *   <li>Throw UrlSecurityException if the input represents a security threat</li>
      * </ul>
      *
@@ -92,16 +94,16 @@ public interface HttpSecurityValidator {
      * and security requirements. Critical security validators should prefer rejection
      * over sanitization to avoid bypasses.</p>
      *
-     * @param value The input to validate. May be null depending on implementation requirements.
-     * @return The validated, potentially sanitized or normalized value. Should not be null
-     *         unless the input was null and null inputs are explicitly supported.
+     * @param value The input to validate. May be null.
+     * @return The validated, potentially sanitized or normalized value wrapped in Optional.
+     *         Returns Optional.empty() if the input was null.
      * @throws UrlSecurityException If the input represents a security violation that cannot
      *         be safely sanitized. The exception should include detailed context about the
      *         failure for logging and debugging purposes.
      * @throws IllegalArgumentException If the input is malformed in a way that prevents
      *         security analysis (distinct from security violations).
      */
-    String validate(@Nullable String value) throws UrlSecurityException;
+    Optional<String> validate(@Nullable String value) throws UrlSecurityException;
 
     /**
      * Creates a composite validator that applies this validator followed by the given validator.
@@ -125,7 +127,10 @@ public interface HttpSecurityValidator {
         if (after == null) {
             throw new NullPointerException("after validator must not be null");
         }
-        return value -> after.validate(this.validate(value));
+        return value -> {
+            Optional<String> result = this.validate(value);
+            return result.isPresent() ? after.validate(result.get()) : Optional.empty();
+        };
     }
 
     /**
@@ -147,7 +152,10 @@ public interface HttpSecurityValidator {
         if (before == null) {
             throw new NullPointerException("before validator must not be null");
         }
-        return value -> this.validate(before.validate(value));
+        return value -> {
+            Optional<String> result = before.validate(value);
+            return result.isPresent() ? this.validate(result.get()) : Optional.empty();
+        };
     }
 
     /**
@@ -172,7 +180,12 @@ public interface HttpSecurityValidator {
         if (predicate == null) {
             throw new NullPointerException("predicate must not be null");
         }
-        return value -> predicate.test(value) ? this.validate(value) : value;
+        return value -> {
+            if (value == null || !predicate.test(value)) {
+                return Optional.ofNullable(value);
+            }
+            return this.validate(value);
+        };
     }
 
     /**
@@ -183,7 +196,7 @@ public interface HttpSecurityValidator {
      * @since 1.0
      */
     static HttpSecurityValidator identity() {
-        return value -> value;
+        return Optional::ofNullable;
     }
 
     /**

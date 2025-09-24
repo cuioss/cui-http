@@ -237,7 +237,8 @@ class UnicodeNormalizationAttackTest {
                 long initialEventCount = eventCounter.getTotalCount();
 
                 try {
-                    String result = pipeline.validate(test);
+                    var result = pipeline.validate(test);
+                    assertTrue(result.isPresent(), "Unicode test validation should return result if successful: " + test);
                     // If it passes, the normalized result should be recorded/checked
                     assertNotNull(result, "Result should not be null for: " + test);
 
@@ -296,7 +297,8 @@ class UnicodeNormalizationAttackTest {
             long initialEventCount = eventCounter.getTotalCount();
 
             try {
-                String result = pipeline.validate(edgeCase);
+                var result = pipeline.validate(edgeCase);
+                assertTrue(result.isPresent(), "Edge case validation should return result if successful: " + edgeCase);
                 // If validation passes, result should not be null
                 assertNotNull(result, "Validated result should not be null for: " +
                         edgeCase.codePoints().mapToObj("U+%04X"::formatted).toList());
@@ -350,7 +352,8 @@ class UnicodeNormalizationAttackTest {
             long initialEventCount = eventCounter.getTotalCount();
 
             try {
-                String result = pipeline.validate(content);
+                var result = pipeline.validate(content);
+                assertTrue(result.isPresent(), "Content validation should return result if successful: " + content);
                 assertNotNull(result, "Legitimate Unicode content should be processable: " + content);
 
                 // In a URL security context, even legitimate Unicode might be blocked
@@ -384,7 +387,8 @@ class UnicodeNormalizationAttackTest {
 
         // When: Validating the legitimate path
         try {
-            String result = pipeline.validate(validPath);
+            var result = pipeline.validate(validPath);
+            assertTrue(result.isPresent(), "Valid path should return validated result: " + validPath);
             // Then: Should return validated result
             assertNotNull(result, "Valid path should return validated result: " + validPath);
 
@@ -424,7 +428,8 @@ class UnicodeNormalizationAttackTest {
             long initialEventCount = eventCounter.getTotalCount();
 
             try {
-                pipeline.validate(testCase);
+                var result = pipeline.validate(testCase);
+                assertTrue(result.isPresent(), "Test case validation should return result if successful: " + testCase);
 
                 // If the original passes, the normalized versions should be handled consistently
                 // (though they might still fail for other security reasons)

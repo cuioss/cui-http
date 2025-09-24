@@ -23,6 +23,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
+import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class CharacterValidationStageTest {
@@ -33,8 +35,10 @@ class CharacterValidationStageTest {
     void shouldAllowNullAndEmptyValues() throws UrlSecurityException {
         CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.URL_PATH);
 
-        assertNull(stage.validate(null));
-        assertEquals("", stage.validate(""));
+        assertEquals(Optional.empty(), stage.validate(null));
+        var result = stage.validate("");
+        assertTrue(result.isPresent());
+        assertEquals("", result.get());
     }
 
     @Test
@@ -42,10 +46,14 @@ class CharacterValidationStageTest {
         CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.URL_PATH);
 
         String validPath = "/api/users/123";
-        assertEquals(validPath, stage.validate(validPath));
+        var result = stage.validate(validPath);
+        assertTrue(result.isPresent());
+        assertEquals(validPath, result.get());
 
         String complexPath = "/path/with-special_chars.txt~test!$&'()*+,;=:@";
-        assertEquals(complexPath, stage.validate(complexPath));
+        var complexResult = stage.validate(complexPath);
+        assertTrue(complexResult.isPresent());
+        assertEquals(complexPath, complexResult.get());
     }
 
     @Test
@@ -53,10 +61,14 @@ class CharacterValidationStageTest {
         CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.PARAMETER_NAME);
 
         String validParam = "userName123";
-        assertEquals(validParam, stage.validate(validParam));
+        var result = stage.validate(validParam);
+        assertTrue(result.isPresent());
+        assertEquals(validParam, result.get());
 
         String complexParam = "param_name-with.special~chars!$'()*+,;";
-        assertEquals(complexParam, stage.validate(complexParam));
+        var complexResult = stage.validate(complexParam);
+        assertTrue(complexResult.isPresent());
+        assertEquals(complexParam, complexResult.get());
     }
 
     @Test
@@ -64,10 +76,14 @@ class CharacterValidationStageTest {
         CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.HEADER_NAME);
 
         String validHeader = "X-Custom-Header";
-        assertEquals(validHeader, stage.validate(validHeader));
+        var result = stage.validate(validHeader);
+        assertTrue(result.isPresent());
+        assertEquals(validHeader, result.get());
 
         String headerWithNumbers = "Header123";
-        assertEquals(headerWithNumbers, stage.validate(headerWithNumbers));
+        var numbersResult = stage.validate(headerWithNumbers);
+        assertTrue(numbersResult.isPresent());
+        assertEquals(headerWithNumbers, numbersResult.get());
     }
 
     @Test
@@ -75,7 +91,9 @@ class CharacterValidationStageTest {
         CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.HEADER_VALUE);
 
         String headerValue = "Mozilla/5.0 Chrome Safari";
-        assertEquals(headerValue, stage.validate(headerValue));
+        var result = stage.validate(headerValue);
+        assertTrue(result.isPresent());
+        assertEquals(headerValue, result.get());
     }
 
     @Test
@@ -88,7 +106,8 @@ class CharacterValidationStageTest {
 
         assertEquals(UrlSecurityFailureType.NULL_BYTE_INJECTION, exception.getFailureType());
         assertEquals(ValidationType.URL_PATH, exception.getValidationType());
-        assertTrue(exception.getDetail().orElse("").contains("Null byte detected at position 10"));
+        assertTrue(exception.getDetail().isPresent());
+        assertTrue(exception.getDetail().get().contains("Null byte detected at position 10"));
     }
 
     @Test
@@ -101,7 +120,8 @@ class CharacterValidationStageTest {
 
         assertEquals(UrlSecurityFailureType.NULL_BYTE_INJECTION, exception.getFailureType());
         assertEquals(ValidationType.URL_PATH, exception.getValidationType());
-        assertTrue(exception.getDetail().orElse("").contains("Encoded null byte (%00) detected at position 10"));
+        assertTrue(exception.getDetail().isPresent());
+        assertTrue(exception.getDetail().get().contains("Encoded null byte (%00) detected at position 10"));
     }
 
     @Test
@@ -114,7 +134,8 @@ class CharacterValidationStageTest {
 
         assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
         assertEquals(ValidationType.URL_PATH, exception.getValidationType());
-        assertTrue(exception.getDetail().orElse("").contains("Invalid character ' ' (0x20) at position 10"));
+        assertTrue(exception.getDetail().isPresent());
+        assertTrue(exception.getDetail().get().contains("Invalid character ' ' (0x20) at position 10"));
     }
 
     @Test
@@ -127,7 +148,8 @@ class CharacterValidationStageTest {
                 stage.validate(incompleteEncoding));
 
         assertEquals(UrlSecurityFailureType.INVALID_ENCODING, exception.getFailureType());
-        assertTrue(exception.getDetail().orElse("").contains("Incomplete percent encoding at position 10"));
+        assertTrue(exception.getDetail().isPresent());
+        assertTrue(exception.getDetail().get().contains("Incomplete percent encoding at position 10"));
     }
 
     @Test
@@ -139,7 +161,8 @@ class CharacterValidationStageTest {
                 stage.validate(invalidHex));
 
         assertEquals(UrlSecurityFailureType.INVALID_ENCODING, exception.getFailureType());
-        assertTrue(exception.getDetail().orElse("").contains("Invalid hex digits in percent encoding at position 10"));
+        assertTrue(exception.getDetail().isPresent());
+        assertTrue(exception.getDetail().get().contains("Invalid hex digits in percent encoding at position 10"));
     }
 
     @Test
@@ -147,13 +170,19 @@ class CharacterValidationStageTest {
         CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.URL_PATH);
 
         String encodedPath = "/path/with%20encoded%2Fchars";
-        assertEquals(encodedPath, stage.validate(encodedPath));
+        var encodedResult = stage.validate(encodedPath);
+        assertTrue(encodedResult.isPresent());
+        assertEquals(encodedPath, encodedResult.get());
 
         String upperCaseHex = "/path/with%2A%2B";
-        assertEquals(upperCaseHex, stage.validate(upperCaseHex));
+        var upperResult = stage.validate(upperCaseHex);
+        assertTrue(upperResult.isPresent());
+        assertEquals(upperCaseHex, upperResult.get());
 
         String lowerCaseHex = "/path/with%2a%2b";
-        assertEquals(lowerCaseHex, stage.validate(lowerCaseHex));
+        var lowerResult = stage.validate(lowerCaseHex);
+        assertTrue(lowerResult.isPresent());
+        assertEquals(lowerCaseHex, lowerResult.get());
     }
 
     @Test
@@ -165,7 +194,11 @@ class CharacterValidationStageTest {
         String headerWithEncoding = "Header%20Name";
 
         // This should actually pass since % is allowed in headers
-        assertDoesNotThrow(() -> stage.validate(headerWithEncoding));
+        assertDoesNotThrow(() -> {
+            var result = stage.validate(headerWithEncoding);
+            assertTrue(result.isPresent());
+            return result.get();
+        });
 
         // Test with a character that's actually not allowed in headers (control character)
         String headerWithControlChar = "Header\u0001Name";
@@ -173,7 +206,8 @@ class CharacterValidationStageTest {
                 stage.validate(headerWithControlChar));
 
         assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
-        assertTrue(exception.getDetail().orElse("").contains("Invalid character"));
+        assertTrue(exception.getDetail().isPresent());
+        assertTrue(exception.getDetail().get().contains("Invalid character"));
     }
 
     @ParameterizedTest
@@ -182,7 +216,11 @@ class CharacterValidationStageTest {
         CharacterValidationStage stage = new CharacterValidationStage(config, type);
 
         // Should not throw for basic alphanumeric
-        assertDoesNotThrow(() -> stage.validate("abc123"));
+        assertDoesNotThrow(() -> {
+            var result = stage.validate("abc123");
+            assertTrue(result.isPresent());
+            return result.get();
+        });
 
         // Should reject null byte for all types
         assertThrows(UrlSecurityException.class, () -> stage.validate("test\0null"));

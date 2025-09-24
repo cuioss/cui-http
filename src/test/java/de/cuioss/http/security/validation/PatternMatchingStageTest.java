@@ -24,6 +24,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -42,9 +44,11 @@ class PatternMatchingStageTest {
         PatternMatchingStage stage = new PatternMatchingStage(config, ValidationType.URL_PATH);
 
         String input = "/api/users/123";
-        String result = stage.validate(input);
+        Optional<String> result = stage.validate(input);
+        assertTrue(result.isPresent());
+        String resultString = result.get();
 
-        assertEquals(input, result, "Pattern matching stage should return input unchanged when no patterns match");
+        assertEquals(input, resultString, "Pattern matching stage should return input unchanged when no patterns match");
     }
 
     @Test
@@ -52,7 +56,7 @@ class PatternMatchingStageTest {
         SecurityConfiguration config = SecurityConfiguration.defaults();
         PatternMatchingStage stage = new PatternMatchingStage(config, ValidationType.URL_PATH);
 
-        assertNull(stage.validate(null), "Pattern matching stage should return null for null input");
+        assertEquals(Optional.empty(), stage.validate(null), "Pattern matching stage should return null for null input");
     }
 
     @Test
@@ -60,7 +64,9 @@ class PatternMatchingStageTest {
         SecurityConfiguration config = SecurityConfiguration.defaults();
         PatternMatchingStage stage = new PatternMatchingStage(config, ValidationType.URL_PATH);
 
-        assertEquals("", stage.validate(""), "Pattern matching stage should return empty string for empty input");
+        Optional<String> result = stage.validate("");
+        assertTrue(result.isPresent());
+        assertEquals("", result.get(), "Pattern matching stage should return empty string for empty input");
     }
 
     // ========== Path Traversal Detection Tests ==========
@@ -107,7 +113,8 @@ class PatternMatchingStageTest {
                 () -> stage.validate("/api" + encodedPath + "passwd"));
 
         assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, exception.getFailureType(), "Exception should indicate path traversal detection for encoded patterns");
-        assertTrue(exception.getDetail().orElse("").contains("traversal"), "Exception detail should mention traversal");
+        assertTrue(exception.getDetail().isPresent(), "Exception should have detail");
+        assertTrue(exception.getDetail().get().contains("traversal"), "Exception detail should mention traversal");
     }
 
     // ========== SQL Injection Detection Tests ==========
@@ -154,7 +161,8 @@ class PatternMatchingStageTest {
                 () -> stage.validate(fullPath));
 
         assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType());
-        assertTrue(exception.getDetail().orElse("").contains("Suspicious path"));
+        assertTrue(exception.getDetail().isPresent(), "Exception should have detail");
+        assertTrue(exception.getDetail().get().contains("Suspicious path"));
     }
 
     @ParameterizedTest
@@ -171,9 +179,9 @@ class PatternMatchingStageTest {
         PatternMatchingStage stage = new PatternMatchingStage(config, ValidationType.URL_PATH);
 
         String fullPath = "/app" + suspiciousPath;
-        String result = stage.validate(fullPath);
-
-        assertEquals(fullPath, result); // Should pass through without throwing
+        Optional<String> result = stage.validate(fullPath);
+        assertTrue(result.isPresent());
+        assertEquals(fullPath, result.get()); // Should pass through without throwing
     }
 
     // ========== Suspicious Parameter Name Tests ==========
@@ -200,7 +208,8 @@ class PatternMatchingStageTest {
 
         assertEquals(UrlSecurityFailureType.SUSPICIOUS_PARAMETER_NAME, exception.getFailureType());
         assertEquals(ValidationType.PARAMETER_NAME, exception.getValidationType());
-        assertTrue(exception.getDetail().orElse("").contains("parameter name"));
+        assertTrue(exception.getDetail().isPresent(), "Exception should have detail");
+        assertTrue(exception.getDetail().get().contains("parameter name"));
     }
 
     @Test
@@ -210,8 +219,9 @@ class PatternMatchingStageTest {
                 .build();
         PatternMatchingStage stage = new PatternMatchingStage(config, ValidationType.PARAMETER_NAME);
 
-        String result = stage.validate("cmd");
-        assertEquals("cmd", result); // Should pass through
+        Optional<String> result = stage.validate("cmd");
+        assertTrue(result.isPresent(), "Validation should return result");
+        assertEquals("cmd", result.get()); // Should pass through
     }
 
     // ========== Case Sensitivity Tests ==========
@@ -275,10 +285,14 @@ class PatternMatchingStageTest {
 
         // Should NOT detect in other types
         PatternMatchingStage pathStage = new PatternMatchingStage(config, ValidationType.URL_PATH);
-        assertEquals("script", pathStage.validate("script"));
+        Optional<String> pathResult = pathStage.validate("script");
+        assertTrue(pathResult.isPresent(), "Path validation should return result");
+        assertEquals("script", pathResult.get());
 
         PatternMatchingStage valueStage = new PatternMatchingStage(config, ValidationType.PARAMETER_VALUE);
-        assertEquals("script", valueStage.validate("script"));
+        Optional<String> valueResult = valueStage.validate("script");
+        assertTrue(valueResult.isPresent(), "Value validation should return result");
+        assertEquals("script", valueResult.get());
     }
 
     // ========== Conditional Validation Tests ==========
@@ -291,7 +305,9 @@ class PatternMatchingStageTest {
         HttpSecurityValidator conditionalValidator = stage.when(input -> input != null && input.length() > 5);
 
         // Should pass short input without validation
-        assertEquals("../", conditionalValidator.validate("../"));
+        Optional<String> conditionalResult = conditionalValidator.validate("../");
+        assertTrue(conditionalResult.isPresent(), "Conditional validation should return result");
+        assertEquals("../", conditionalResult.get());
 
         // Should validate long input and detect attack
         assertThrows(UrlSecurityException.class,
@@ -336,9 +352,9 @@ class PatternMatchingStageTest {
 
         // Input with special characters but no attack patterns
         String specialChars = "!@#$%^&*()_+-=[]{}|;:,.<>?";
-        String result = stage.validate(specialChars);
-
-        assertEquals(specialChars, result);
+        Optional<String> result = stage.validate(specialChars);
+        assertTrue(result.isPresent(), "Special chars validation should return result");
+        assertEquals(specialChars, result.get());
     }
 
     // ========== toString() Test ==========
