@@ -100,6 +100,7 @@ import java.util.stream.Collectors;
  * @since 1.0
  * @see SecurityConfigurationBuilder
  */
+@SuppressWarnings("javaarchitecture:S7027") // Intentional: Builder pattern requires bidirectional dependency
 public record SecurityConfiguration(
 // Path Security
 int maxPathLength,
