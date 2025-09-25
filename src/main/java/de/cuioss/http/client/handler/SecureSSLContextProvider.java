@@ -187,31 +187,31 @@ public record SecureSSLContextProvider(String minimumTlsVersion) {
      * </ol>
      *
      * @param sslContext the SSLContext to validate, may be null
-     * @return a secure SSLContext, either the validated input or a newly created one
+     * @return a secure SSLContext, either the validated input or a newly created one (never null)
      */
     public SSLContext getOrCreateSecureSSLContext(@Nullable SSLContext sslContext) {
         try {
             if (sslContext != null) {
                 // Validate the provided SSL context
                 String protocol = sslContext.getProtocol();
-                /*~~(TODO: DEBUG no LogRecord)~~>*/LOGGER.debug(HttpLogMessages.DEBUG.SSL_CONTEXT_PROTOCOL.format(protocol));
+                LOGGER.debug("SSL context protocol: %s", protocol);
 
                 // Check if the protocol is secure according to the configured TLS versions
                 if (isSecureTlsVersion(protocol)) {
                     // The provided context was secure and is being used
-                    /*~~(TODO: DEBUG no LogRecord)~~>*/LOGGER.debug(HttpLogMessages.DEBUG.SSL_USING_PROVIDED_CONTEXT.format(protocol));
+                    LOGGER.debug("Using provided SSL context with protocol: %s", protocol);
                     return sslContext;
                 }
 
                 // If not secure, create a new secure context
                 LOGGER.warn(HttpLogMessages.WARN.SSL_INSECURE_PROTOCOL.format(protocol));
                 SSLContext secureContext = createSecureSSLContext();
-                /*~~(TODO: DEBUG no LogRecord)~~>*/LOGGER.debug(HttpLogMessages.DEBUG.SSL_CREATED_SECURE_CONTEXT.format(minimumTlsVersion));
+                LOGGER.debug("Created secure SSL context with minimum TLS version: %s", minimumTlsVersion);
                 return secureContext;
             } else {
                 // If no context provided, create a new secure one
                 SSLContext secureContext = createSecureSSLContext();
-                /*~~(TODO: DEBUG no LogRecord)~~>*/LOGGER.debug(HttpLogMessages.DEBUG.SSL_NO_CONTEXT_PROVIDED.format(minimumTlsVersion));
+                LOGGER.debug("No SSL context provided, created secure context with minimum TLS version: %s", minimumTlsVersion);
                 return secureContext;
             }
         } catch (NoSuchAlgorithmException | KeyStoreException | KeyManagementException e) {

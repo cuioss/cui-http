@@ -17,7 +17,6 @@ package de.cuioss.http.security.data;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
@@ -56,14 +55,23 @@ class AttributeParserTest {
             assertEquals(expected, result.get());
         }
 
-        @Test
-        @DisplayName("Should handle attribute with only equals sign")
-        void shouldHandleOnlyEqualsSign() {
-            String attributes = "name=";
-            Optional<String> result = AttributeParser.extractAttributeValue(attributes, "name");
+        @ParameterizedTest
+        @CsvSource({
+                "'name=', 'name', '', true, 'Should handle attribute with only equals sign'",
+                "'name=value; other=value2', 'missing', '', false, 'Should return empty for non-existent attribute'",
+                "'longname=value1; name=value2', 'name', 'value2', true, 'Should match exact attribute name (end position)'",
+                "'name=value2; longname=value1', 'name', 'value2', true, 'Should match exact attribute name (start position)'"
+        })
+        @DisplayName("Should handle edge cases in attribute extraction")
+        void shouldHandleEdgeCases(String attributes, String attributeName, String expectedValue, boolean shouldBePresent, String description) {
+            Optional<String> result = AttributeParser.extractAttributeValue(attributes, attributeName);
 
-            assertTrue(result.isPresent());
-            assertEquals("", result.get());
+            if (shouldBePresent) {
+                assertTrue(result.isPresent(), description);
+                assertEquals(expectedValue, result.get(), description);
+            } else {
+                assertTrue(result.isEmpty(), description);
+            }
         }
 
         @ParameterizedTest
@@ -72,32 +80,6 @@ class AttributeParserTest {
         void shouldReturnEmptyForNullOrEmptyString(String attributes) {
             Optional<String> result = AttributeParser.extractAttributeValue(attributes, "name");
             assertTrue(result.isEmpty());
-        }
-
-        @Test
-        @DisplayName("Should return empty for non-existent attribute")
-        void shouldReturnEmptyForNonExistentAttribute() {
-            String attributes = "name=value; other=value2";
-            Optional<String> result = AttributeParser.extractAttributeValue(attributes, "missing");
-
-            assertTrue(result.isEmpty());
-        }
-
-        @Test
-        @DisplayName("Should match exact attribute name")
-        void shouldMatchExactAttributeName() {
-            // Fixed implementation now correctly matches exact attribute names
-            String attributes = "longname=value1; name=value2";
-            Optional<String> result = AttributeParser.extractAttributeValue(attributes, "name");
-
-            assertTrue(result.isPresent());
-            assertEquals("value2", result.get()); // Now correctly matches exact "name" attribute
-
-            // Test with attribute at beginning
-            String properlyFormatted = "name=value2; longname=value1";
-            Optional<String> exactMatch = AttributeParser.extractAttributeValue(properlyFormatted, "name");
-            assertTrue(exactMatch.isPresent());
-            assertEquals("value2", exactMatch.get());
         }
 
         @ParameterizedTest
@@ -129,25 +111,18 @@ class AttributeParserTest {
             assertEquals(expected, result.get());
         }
 
-        @Test
-        @DisplayName("Should handle special characters in values")
-        @SuppressWarnings("java:S5976")
-        void shouldHandleSpecialCharactersInValues() {
-            String attributes = "url=https://example.com/path?query=1&other=2; name=value";
-            Optional<String> result = AttributeParser.extractAttributeValue(attributes, "url");
+        @ParameterizedTest
+        @CsvSource({
+                "'url=https://example.com/path?query=1&other=2; name=value', 'url', 'https://example.com/path?query=1&other=2'",
+                "'formula=a=b+c; other=value', 'formula', 'a=b+c'"
+        })
+        @DisplayName("Should handle complex values with special characters")
+        @SuppressWarnings({"java:S5976", "java:S4144"})
+        void shouldHandleComplexValues(String attributes, String attributeName, String expected) {
+            Optional<String> result = AttributeParser.extractAttributeValue(attributes, attributeName);
 
             assertTrue(result.isPresent());
-            assertEquals("https://example.com/path?query=1&other=2", result.get());
-        }
-
-        @Test
-        @DisplayName("Should handle values with equals signs")
-        void shouldHandleValuesWithEqualsSigns() {
-            String attributes = "formula=a=b+c; other=value";
-            Optional<String> result = AttributeParser.extractAttributeValue(attributes, "formula");
-
-            assertTrue(result.isPresent());
-            assertEquals("a=b+c", result.get());
+            assertEquals(expected, result.get());
         }
 
         @ParameterizedTest
@@ -164,47 +139,21 @@ class AttributeParserTest {
             assertEquals("value", result.get());
         }
 
-        @Test
-        @DisplayName("Should handle quoted values")
-        void shouldHandleQuotedValues() {
-            String attributes = "name=\"quoted value\"; other=unquoted";
-            Optional<String> result = AttributeParser.extractAttributeValue(attributes, "name");
+        @ParameterizedTest
+        @CsvSource({
+                "'name=\"quoted value\"; other=unquoted', 'name', '\"quoted value\"'",
+                "'Name=CaseSensitiveValue', 'name', 'CaseSensitiveValue'",
+                "'session_id=123; id=456', 'id', '456'",
+                "'user-id=abc; id=xyz', 'id', 'xyz'",
+                "'prefix_name=first; name=second', 'name', 'second'"
+        })
+        @DisplayName("Should handle quoted values, case preservation, and exact attribute matching")
+        @SuppressWarnings("java:S4144")
+        void shouldHandleQuotedValuesAndExactMatching(String attributes, String attributeName, String expected) {
+            Optional<String> result = AttributeParser.extractAttributeValue(attributes, attributeName);
 
             assertTrue(result.isPresent());
-            assertEquals("\"quoted value\"", result.get());
-        }
-
-        @Test
-        @DisplayName("Should preserve case in values")
-        void shouldPreserveCaseInValues() {
-            String attributes = "Name=CaseSensitiveValue";
-            Optional<String> result = AttributeParser.extractAttributeValue(attributes, "name");
-
-            assertTrue(result.isPresent());
-            assertEquals("CaseSensitiveValue", result.get());
-        }
-
-        @Test
-        @DisplayName("Should not match shorter attribute names that are suffixes of longer ones")
-        void shouldNotMatchSuffixAttributes() {
-            // Bug reproduction test: searching for "id" should not match "session_id"
-            String attributes = "session_id=123; id=456";
-            Optional<String> result = AttributeParser.extractAttributeValue(attributes, "id");
-
-            // This should return "456" not "123"
-            assertTrue(result.isPresent());
-            assertEquals("456", result.get(), "Should match exact attribute 'id', not 'session_id'");
-
-            // Additional test cases
-            String attributes2 = "user-id=abc; id=xyz";
-            Optional<String> result2 = AttributeParser.extractAttributeValue(attributes2, "id");
-            assertTrue(result2.isPresent());
-            assertEquals("xyz", result2.get(), "Should match exact attribute 'id', not 'user-id'");
-
-            String attributes3 = "prefix_name=first; name=second";
-            Optional<String> result3 = AttributeParser.extractAttributeValue(attributes3, "name");
-            assertTrue(result3.isPresent());
-            assertEquals("second", result3.get(), "Should match exact attribute 'name', not 'prefix_name'");
+            assertEquals(expected, result.get());
         }
     }
 }

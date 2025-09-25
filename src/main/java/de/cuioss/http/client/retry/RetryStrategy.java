@@ -17,12 +17,24 @@ package de.cuioss.http.client.retry;
 
 import de.cuioss.http.client.result.HttpResultObject;
 
+import java.util.concurrent.CompletableFuture;
+
 /**
- * HTTP-specific retry strategy interface using the result pattern.
+ * HTTP-specific retry strategy interface using virtual threads and asynchronous execution.
+ *
+ * <h2>Async Design with Virtual Threads</h2>
+ * This interface leverages Java 21's virtual threads to provide efficient, non-blocking retry operations:
+ *
+ * <ul>
+ *   <li><strong>Non-blocking delays</strong> - Uses CompletableFuture.delayedExecutor() instead of Thread.sleep()</li>
+ *   <li><strong>Virtual thread execution</strong> - Operations run on lightweight virtual threads</li>
+ *   <li><strong>Composable operations</strong> - CompletableFuture API enables natural async composition</li>
+ *   <li><strong>Resource efficient</strong> - No blocked threads during retry delays</li>
+ *   <li><strong>Scalable</strong> - Handles thousands of concurrent retry operations</li>
+ * </ul>
  *
  * <h2>Result Pattern Approach</h2>
- * This interface has evolved from exception-based error handling to the CUI result pattern,
- * providing several key benefits:
+ * Continues to use the CUI result pattern with enhanced async capabilities:
  *
  * <ul>
  *   <li><strong>No exceptions for flow control</strong> - All error states become result states</li>
@@ -32,55 +44,63 @@ import de.cuioss.http.client.result.HttpResultObject;
  *   <li><strong>State-based flow</strong> - FRESH, CACHED, STALE, RECOVERED, ERROR states</li>
  * </ul>
  *
- * <h2>Usage Pattern</h2>
+ * <h2>Usage Patterns</h2>
+ * <h3>Blocking Usage (Legacy Compatibility)</h3>
  * <pre>
  * RetryStrategy strategy = RetryStrategies.exponentialBackoff();
- * HttpResultObject&lt;String&gt; result = strategy.execute(operation, context);
+ * HttpResultObject&lt;String&gt; result = strategy.execute(operation, context).get();
  *
  * if (!result.isValid()) {
  *     // Handle error cases
- *     if (result.isRetryable()) {
- *         // Error is retryable, but all attempts were exhausted
- *         scheduleBackgroundRetry();
- *     } else {
- *         // Non-retryable error, use fallback
- *         useFallbackContent(result.getResult());
- *     }
+ *     useFallbackContent(result.getResult());
  * } else {
- *     // Success cases - check specific states if needed
- *     if (result.getState() == HttpResultState.RECOVERED) {
- *         logger.info("Operation recovered after {} attempts",
- *             result.getRetryMetrics().getTotalAttempts());
- *     }
  *     processResult(result.getResult());
  * }
+ * </pre>
+ *
+ * <h3>Async Composition (Recommended)</h3>
+ * <pre>
+ * strategy.execute(operation, context)
+ *     .thenCompose(result -> {
+ *         if (result.isValid()) {
+ *             return processResult(result.getResult());
+ *         } else {
+ *             return handleError(result);
+ *         }
+ *     })
+ *     .thenAccept(processed -> updateCache(processed))
+ *     .exceptionally(ex -> handleException(ex));
  * </pre>
  */
 @FunctionalInterface
 public interface RetryStrategy {
 
     /**
-     * Executes the given HTTP operation with retry logic using the result pattern.
+     * Executes the given HTTP operation with retry logic using virtual threads and async execution.
+     *
+     * <p>This method runs operations on virtual threads with non-blocking delays between retry attempts.
+     * The implementation uses {@code CompletableFuture.delayedExecutor()} with virtual thread executors
+     * to provide efficient, scalable retry operations without blocking threads during delays.</p>
      *
      * @param <T> the type of result returned by the operation
      * @param operation the HTTP operation to retry
      * @param context retry context with operation name and attempt info
-     * @return HttpResultObject containing the result and comprehensive error/retry information
+     * @return CompletableFuture containing HttpResultObject with result and comprehensive error/retry information
      */
-    <T> HttpResultObject<T> execute(HttpOperation<T> operation, RetryContext context);
+    <T> CompletableFuture<HttpResultObject<T>> execute(HttpOperation<T> operation, RetryContext context);
 
     /**
      * Creates a no-op retry strategy (single attempt only).
      * Useful for disabling retry in specific scenarios or configurations.
      *
-     * @return a retry strategy that executes the operation exactly once
+     * @return a retry strategy that executes the operation exactly once using virtual threads
      */
     static RetryStrategy none() {
         return new RetryStrategy() {
             @Override
-            public <T> HttpResultObject<T> execute(HttpOperation<T> operation, RetryContext context) {
-                // No retry - just execute once and return result
-                return operation.execute();
+            public <T> CompletableFuture<HttpResultObject<T>> execute(HttpOperation<T> operation, RetryContext context) {
+                // No retry - just execute once on virtual thread and return completed future
+                return CompletableFuture.completedFuture(operation.execute());
             }
         };
     }

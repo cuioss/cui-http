@@ -125,7 +125,7 @@ ValidationType validationType) implements HttpSecurityValidator {
      * double-encoded, UTF-8 overlong, and mixed encoding attempts.
      * ReDoS-safe: Uses only atomic patterns without nested or consecutive quantifiers.
      */
-    @SuppressWarnings("java:S5869") private static final Pattern ENCODED_TRAVERSAL_PATTERN = Pattern.compile(
+    @SuppressWarnings({"java:S5869", "java:S5867", "java:S5855"}) private static final Pattern ENCODED_TRAVERSAL_PATTERN = Pattern.compile(
             """
             %2e%2e(%2f|%5c|/|\\\\)|\
             \\.%2e(%2f|%5c|/|\\\\)|%2e\\.(%2f|%5c|/|\\\\)|\
@@ -141,7 +141,7 @@ ValidationType validationType) implements HttpSecurityValidator {
      * Pre-compiled regex pattern for detecting multiple dots followed by path separators.
      * ReDoS-safe: Uses specific atomic patterns without quantifiers that could cause backtracking.
      */
-    @SuppressWarnings({"java:S5869", "RegExpDuplicateCharacterInClass"}) private static final Pattern DOT_SEPARATOR_PATTERN = Pattern.compile(
+    @SuppressWarnings({"java:S5869", "java:S6035", "RegExpSingleCharAlternation"}) private static final Pattern DOT_SEPARATOR_PATTERN = Pattern.compile(
             """
             \\.\\.(/|\\\\)|\\.\\.%2f|\\.\\.%5c|\
             \\.\\.\\.(/|\\\\)|\\.\\.\\.%2f|\\.\\.\\.%5c|\

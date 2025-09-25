@@ -20,9 +20,8 @@ import de.cuioss.tools.logging.CuiLogger;
 
 import java.time.Duration;
 import java.util.Objects;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.*;
 
-import static de.cuioss.http.client.HttpLogMessages.DEBUG;
 import static de.cuioss.http.client.HttpLogMessages.INFO;
 import static de.cuioss.http.client.HttpLogMessages.WARN;
 
@@ -39,6 +38,7 @@ import static de.cuioss.http.client.HttpLogMessages.WARN;
  * The strategy includes intelligent exception classification to determine
  * which exceptions should trigger retries versus immediate failure.
  */
+@SuppressWarnings("java:S6218")
 public class ExponentialBackoffRetryStrategy implements RetryStrategy {
 
     private static final CuiLogger LOGGER = new CuiLogger(ExponentialBackoffRetryStrategy.class);
@@ -61,120 +61,109 @@ public class ExponentialBackoffRetryStrategy implements RetryStrategy {
     }
 
     @Override
-    @SuppressWarnings({"java:S3776", "java:S135"})
-    public <T> HttpResultObject<T> execute(HttpOperation<T> operation, RetryContext context) {
+    public <T> CompletableFuture<HttpResultObject<T>> execute(HttpOperation<T> operation, RetryContext context) {
         Objects.requireNonNull(operation, "operation");
         Objects.requireNonNull(context, "context");
 
         long totalStartTime = System.nanoTime();
         retryMetrics.recordRetryStart(context);
 
-        HttpResultObject<T> lastResult = null;
-
-        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
-            long attemptStartTime = System.nanoTime();
-
-            /*~~(TODO: DEBUG no LogRecord)~~>*/LOGGER.debug(DEBUG.RETRY_ATTEMPT_STARTING.format(attempt, context.operationName()));
-
-            // Execute operation - no exceptions to catch
-            HttpResultObject<T> result = operation.execute();
-            lastResult = result;
-
-            Duration attemptDuration = Duration.ofNanos(System.nanoTime() - attemptStartTime);
-
-            if (result.isValid()) {
-                // Success - record and return
-                retryMetrics.recordRetryAttempt(context, attempt, attemptDuration, true);
-
-                Duration totalDuration = Duration.ofNanos(System.nanoTime() - totalStartTime);
-                retryMetrics.recordRetryComplete(context, totalDuration, true, attempt);
-
-                if (attempt > 1) {
-                    LOGGER.info(INFO.RETRY_OPERATION_SUCCEEDED_AFTER_ATTEMPTS.format(context.operationName(), attempt, maxAttempts));
-                    // This is a recovery after retries - modify state to indicate recovery
-                    return result.copyStateAndDetails(result.getResult()); // Keep original result but could modify state if needed
-                } else {
-                    // First attempt succeeded
-                    return result;
-                }
-            } else {
-                // Operation failed - record attempt
-                retryMetrics.recordRetryAttempt(context, attempt, attemptDuration, false);
-
-                if (attempt == maxAttempts) {
-                    LOGGER.warn(WARN.RETRY_MAX_ATTEMPTS_REACHED.format(context.operationName(), maxAttempts, "Final attempt failed"));
-                    break;
-                }
-
-                // Check if this error is retryable
-                if (!result.isRetryable()) {
-                    /*~~(TODO: DEBUG no LogRecord)~~>*/LOGGER.debug(DEBUG.RETRY_NON_RETRYABLE_ERROR.format(context.operationName(), attemptDuration.toMillis()));
-                    break;
-                }
-
-                /*~~(TODO: DEBUG no LogRecord)~~>*/LOGGER.debug(DEBUG.RETRY_ATTEMPT_FAILED.format(attempt, context.operationName(), attemptDuration.toMillis()));
-
-                Duration delay = calculateDelay(attempt);
-
-                try {
-                    delayBeforeRetry(context, delay, attempt + 1);
-                } catch (RetryException delayException) {
-                    // Delay interrupted - return the actual operation failure (not synthetic result)
-                    Duration totalDuration = Duration.ofNanos(System.nanoTime() - totalStartTime);
-                    retryMetrics.recordRetryComplete(context, totalDuration, false, attempt);
-                    /*~~(TODO: DEBUG no LogRecord)~~>*/LOGGER.debug(DEBUG.RETRY_DELAY_INTERRUPTED.format(context.operationName()));
-                    return lastResult; // Return real operation result, not synthetic one
-                }
-            }
-        }
-
-        // All attempts failed or non-retryable error
-        Duration totalDuration = Duration.ofNanos(System.nanoTime() - totalStartTime);
-        retryMetrics.recordRetryComplete(context, totalDuration, false, maxAttempts);
-        LOGGER.warn(WARN.RETRY_OPERATION_FAILED.format(context.operationName(), maxAttempts, totalDuration.toMillis()));
-
-        // Return the last result from the operation (which contains the error details)
-        return lastResult;
+        return executeAttempt(operation, context, 1, totalStartTime);
     }
-
 
     /**
-     * Performs synchronous delay before retry attempt.
+     * Executes a single retry attempt using virtual threads with async delays.
      *
-     * <p><strong>Design Note:</strong> This implementation uses Thread.sleep() for simplicity
-     * and correctness in a synchronous API. While Thread.sleep() blocks the executing thread,
-     * this is intentional as the RetryStrategy API is synchronous by design. Converting to
-     * async (ScheduledExecutorService) would require changing the entire API to return
-     * CompletableFuture, which would be a breaking change. For applications requiring
-     * non-blocking retries, consider wrapping the entire retry operation in a separate
-     * thread or executor service.</p>
+     * @param operation the HTTP operation to execute
+     * @param context retry context with operation name and attempt info
+     * @param attempt current attempt number (1-based)
+     * @param totalStartTime start time for total retry operation timing
+     * @return CompletableFuture containing the result of this attempt or recursive retry
      */
-    private void delayBeforeRetry(RetryContext context, Duration plannedDelay, int nextAttemptNumber)
-            throws RetryException {
+    private <T> CompletableFuture<HttpResultObject<T>> executeAttempt(
+            HttpOperation<T> operation, RetryContext context, int attempt, long totalStartTime) {
 
-        long delayStartTime = System.nanoTime();
+        // Execute operation on virtual thread
+        return CompletableFuture
+                .supplyAsync(() -> {
+                    long attemptStartTime = System.nanoTime();
+                    LOGGER.debug("Starting retry attempt %s for operation %s", attempt, context.operationName());
 
-        try {
-            // Simple blocking delay - honest about being synchronous
-            Thread.sleep(plannedDelay.toMillis());
+                    // Execute operation - no exceptions to catch, using result pattern
+                    HttpResultObject<T> result = operation.execute();
+                    Duration attemptDuration = Duration.ofNanos(System.nanoTime() - attemptStartTime);
 
-            Duration actualDelay = Duration.ofNanos(System.nanoTime() - delayStartTime);
-            retryMetrics.recordRetryDelay(context, nextAttemptNumber, plannedDelay, actualDelay);
+                    // Record attempt metrics
+                    boolean success = result.isValid();
+                    retryMetrics.recordRetryAttempt(context, attempt, attemptDuration, success);
 
-            // Log significant delay deviations
-            long delayDifference = Math.abs(actualDelay.toMillis() - plannedDelay.toMillis());
-            if (delayDifference > 50) {
-                /*~~(TODO: DEBUG no LogRecord)~~>*/LOGGER.debug(DEBUG.RETRY_DELAY_DEVIATION.format(
-                        context.operationName(), plannedDelay.toMillis(), actualDelay.toMillis(), delayDifference));
-            }
+                    return new AttemptResult<>(result, attemptDuration, success);
+                }, Executors.newVirtualThreadPerTaskExecutor())
+                .thenCompose(attemptResult -> {
+                    HttpResultObject<T> result = attemptResult.result();
+                    Duration attemptDuration = attemptResult.attemptDuration();
+                    boolean success = attemptResult.success();
 
-        } catch (InterruptedException e) {
-            Duration actualDelay = Duration.ofNanos(System.nanoTime() - delayStartTime);
-            retryMetrics.recordRetryDelay(context, nextAttemptNumber, plannedDelay, actualDelay);
-            Thread.currentThread().interrupt();
-            throw new RetryException("Retry interrupted for " + context.operationName(), e);
-        }
+                    if (success) {
+                        // Success - record completion and return
+                        Duration totalDuration = Duration.ofNanos(System.nanoTime() - totalStartTime);
+                        retryMetrics.recordRetryComplete(context, totalDuration, true, attempt);
+
+                        if (attempt > 1) {
+                            LOGGER.info(INFO.RETRY_OPERATION_SUCCEEDED_AFTER_ATTEMPTS.format(context.operationName(), attempt, maxAttempts));
+                            // This is a recovery after retries - could modify state to indicate recovery if needed
+                            return CompletableFuture.completedFuture(result.copyStateAndDetails(result.getResult()));
+                        } else {
+                            // First attempt succeeded
+                            return CompletableFuture.completedFuture(result);
+                        }
+                    } else {
+                        // Operation failed
+                        if (attempt >= maxAttempts) {
+                            // Max attempts reached
+                            LOGGER.warn(WARN.RETRY_MAX_ATTEMPTS_REACHED.format(context.operationName(), maxAttempts, "Final attempt failed"));
+                            Duration totalDuration = Duration.ofNanos(System.nanoTime() - totalStartTime);
+                            retryMetrics.recordRetryComplete(context, totalDuration, false, maxAttempts);
+                            LOGGER.warn(WARN.RETRY_OPERATION_FAILED.format(context.operationName(), maxAttempts, totalDuration.toMillis()));
+                            return CompletableFuture.completedFuture(result);
+                        }
+
+                        // Check if this error is retryable
+                        if (!result.isRetryable()) {
+                            LOGGER.debug("Non-retryable error for operation %s (duration: %sms)", context.operationName(), attemptDuration.toMillis());
+                            Duration totalDuration = Duration.ofNanos(System.nanoTime() - totalStartTime);
+                            retryMetrics.recordRetryComplete(context, totalDuration, false, attempt);
+                            return CompletableFuture.completedFuture(result);
+                        }
+
+                        LOGGER.debug("Retry attempt %s failed for operation %s (duration: %sms)", attempt, context.operationName(), attemptDuration.toMillis());
+
+                        // Calculate delay and schedule retry using CompletableFuture.delayedExecutor
+                        Duration delay = calculateDelay(attempt);
+                        int nextAttempt = attempt + 1;
+
+                        // Record delay metrics
+                        retryMetrics.recordRetryDelay(context, nextAttempt, delay, delay); // Planned = actual for async delays
+
+                        // Use CompletableFuture.delayedExecutor with virtual threads
+                        Executor delayedExecutor = CompletableFuture.delayedExecutor(
+                                delay.toMillis(), TimeUnit.MILLISECONDS,
+                                Executors.newVirtualThreadPerTaskExecutor()
+                        );
+
+                        return CompletableFuture
+                                .supplyAsync(() -> executeAttempt(operation, context, nextAttempt, totalStartTime), delayedExecutor)
+                                .thenCompose(future -> future);
+                    }
+                });
     }
+
+    /**
+     * Record for holding attempt result data.
+     */
+    private record AttemptResult<T>(HttpResultObject<T> result, Duration attemptDuration, boolean success) {
+    }
+
 
     /**
      * Calculates the delay for the given attempt using exponential backoff with jitter.

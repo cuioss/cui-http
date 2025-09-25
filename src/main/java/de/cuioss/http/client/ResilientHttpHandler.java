@@ -99,6 +99,19 @@ public class ResilientHttpHandler<T> {
      * automatically retrying transient failures and preventing permanent failure states
      * that previously affected WellKnownResolver and JWKS loading.
      *
+     * <h2>Virtual Threads Integration</h2>
+     * <p>
+     * The retry strategy now uses Java 21 virtual threads with non-blocking delays for efficient
+     * resource utilization. While this method maintains a synchronous API for compatibility,
+     * the internal retry operations run asynchronously on virtual threads, providing:
+     * </p>
+     * <ul>
+     *   <li><strong>Non-blocking delays</strong>: Uses CompletableFuture.delayedExecutor() instead of Thread.sleep()</li>
+     *   <li><strong>Resource efficiency</strong>: No blocked threads during retry delays</li>
+     *   <li><strong>High scalability</strong>: Supports thousands of concurrent retry operations</li>
+     *   <li><strong>Better composition</strong>: Internal async operations can be composed efficiently</li>
+     * </ul>
+     *
      * <h2>Result States</h2>
      * <ul>
      *   <li><strong>VALID + 200</strong>: Content freshly loaded from server (equivalent to LOADED_FROM_SERVER)</li>
@@ -128,7 +141,8 @@ public class ResilientHttpHandler<T> {
             // Use RetryStrategy to handle transient failures
             RetryContext retryContext = new RetryContext("ETag-HTTP-Load:" + httpHandler.getUri().toString(), 1);
 
-            HttpResultObject<T> result = retryStrategy.execute(this::fetchContentWithCache, retryContext);
+            // Execute async retry strategy and block for result (maintains existing synchronous API)
+            HttpResultObject<T> result = retryStrategy.execute(this::fetchContentWithCache, retryContext).join();
 
             // Update status based on the result
             updateStatusFromResult(result);
@@ -213,14 +227,14 @@ public class ResilientHttpHandler<T> {
 
             if (response.statusCode() == 304) {
                 // Not Modified - content hasn't changed, return cached content
-                /*~~(TODO: DEBUG no LogRecord)~~>*/LOGGER.debug(HttpLogMessages.DEBUG.HTTP_NOT_MODIFIED.format(httpHandler.getUrl()));
+                LOGGER.debug("HTTP content not modified (304) for %s", httpHandler.getUrl());
                 return handleNotModifiedResult();
             } else if (statusFamily == HttpStatusFamily.SUCCESS) {
                 // 2xx Success - fresh content, update cache and return
                 Object rawContent = response.body();
                 String etag = response.headers().firstValue("ETag").orElse(null);
 
-                /*~~(TODO: DEBUG no LogRecord)~~>*/LOGGER.debug(HttpLogMessages.DEBUG.HTTP_RESPONSE_RECEIVED.format(response.statusCode(), statusFamily, httpHandler.getUrl(), etag));
+                LOGGER.debug("HTTP response received: %s %s for %s (etag: %s)", response.statusCode(), statusFamily, httpHandler.getUrl(), etag);
 
                 // Convert raw content to target type
                 Optional<T> contentOpt = contentConverter.convert(rawContent);

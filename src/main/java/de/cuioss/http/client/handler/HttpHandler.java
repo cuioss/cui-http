@@ -131,28 +131,38 @@ public final class HttpHandler {
 
     @Getter private final URI uri;
     @Getter private final URL url;
-    @Getter private final SSLContext sslContext;
+    @Getter private final @Nullable SSLContext sslContext;
     @Getter private final int connectionTimeoutSeconds;
     @Getter private final int readTimeoutSeconds;
     private final HttpClient httpClient;
 
-    private HttpHandler(URI uri, URL url, SSLContext sslContext,
-            int connectionTimeoutSeconds, int readTimeoutSeconds) {
+    // Constructor for HTTP URIs (no SSL context needed)
+    private HttpHandler(URI uri, URL url, int connectionTimeoutSeconds, int readTimeoutSeconds) {
+        this.uri = uri;
+        this.url = url;
+        this.sslContext = null;
+        this.connectionTimeoutSeconds = connectionTimeoutSeconds;
+        this.readTimeoutSeconds = readTimeoutSeconds;
+
+        // Create the HttpClient for HTTP
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(connectionTimeoutSeconds))
+                .build();
+    }
+
+    // Constructor for HTTPS URIs (SSL context required)
+    private HttpHandler(URI uri, URL url, SSLContext sslContext, int connectionTimeoutSeconds, int readTimeoutSeconds) {
         this.uri = uri;
         this.url = url;
         this.sslContext = sslContext;
         this.connectionTimeoutSeconds = connectionTimeoutSeconds;
         this.readTimeoutSeconds = readTimeoutSeconds;
 
-        // Create the HttpClient once during construction
-        var httpClientBuilder = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(connectionTimeoutSeconds));
-
-        // For HTTPS URIs, SSL context must be set
-        if ("https".equalsIgnoreCase(uri.getScheme())) {
-            httpClientBuilder.sslContext(sslContext);
-        }
-        this.httpClient = httpClientBuilder.build();
+        // Create the HttpClient for HTTPS
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(connectionTimeoutSeconds))
+                .sslContext(sslContext)
+                .build();
     }
 
     public static HttpHandlerBuilder builder() {
@@ -413,20 +423,23 @@ public final class HttpHandler {
             // Convert the URI to a URL
             URL verifiedUrl;
             try {
+                //noinspection DataFlowIssue
                 verifiedUrl = uri.toURL();
             } catch (MalformedURLException e) {
                 throw new IllegalStateException("Failed to convert URI to URL: " + uri, e);
             }
 
-            // Create a secure SSL context if the URI uses HTTPS or if explicitly provided
-            SSLContext secureContext = null;
-            if ("https".equalsIgnoreCase(uri.getScheme()) || secureSSLContextProvider != null || sslContext != null) {
+            // Use appropriate constructor based on scheme
+            if ("https".equalsIgnoreCase(uri.getScheme())) {
+                // For HTTPS, create or validate SSL context
                 SecureSSLContextProvider actualSecureSSLContextProvider = secureSSLContextProvider != null ?
                         secureSSLContextProvider : new SecureSSLContextProvider();
-                secureContext = actualSecureSSLContextProvider.getOrCreateSecureSSLContext(sslContext);
+                SSLContext secureContext = actualSecureSSLContextProvider.getOrCreateSecureSSLContext(sslContext);
+                return new HttpHandler(uri, verifiedUrl, secureContext, actualConnectionTimeoutSeconds, actualReadTimeoutSeconds);
+            } else {
+                // For HTTP, no SSL context needed
+                return new HttpHandler(uri, verifiedUrl, actualConnectionTimeoutSeconds, actualReadTimeoutSeconds);
             }
-
-            return new HttpHandler(uri, verifiedUrl, secureContext, actualConnectionTimeoutSeconds, actualReadTimeoutSeconds);
         }
 
         /**

@@ -69,7 +69,7 @@ class RetryMetricsTest {
             return HttpResultObject.error("", HttpErrorCategory.NETWORK_ERROR,
                     new ResultDetail(new de.cuioss.uimodel.nameprovider.DisplayName("Connection failed"),
                             new ConnectException("Connection failed")));
-        }, context);
+        }, context).join();
 
         // Verify the result indicates failure
         assertFalse(result.isValid(), "Result should be invalid when all retry attempts fail");
@@ -106,7 +106,7 @@ class RetryMetricsTest {
                                 new ConnectException("Connection failed")));
             }
             return HttpResultObject.success("success", null, 200);
-        }, context);
+        }, context).join();
 
         assertTrue(result.isValid(), "Retry strategy should return valid result");
         assertEquals("success", result.getResult(), "Retry strategy should return successful result");
