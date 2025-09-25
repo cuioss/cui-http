@@ -94,10 +94,10 @@ public final class URLPathValidationPipeline extends AbstractValidationPipeline 
         return List.of(
                 new LengthValidationStage(config, ValidationType.URL_PATH),
                 new CharacterValidationStage(config, ValidationType.URL_PATH),
-                new PatternMatchingStage(config, ValidationType.URL_PATH), // MOVED HERE - before decoding/normalization
+                new PatternMatchingStage(config, ValidationType.URL_PATH), // Run before decoding/normalization to catch raw traversal patterns
                 new DecodingStage(config, ValidationType.URL_PATH),
                 new NormalizationStage(config, ValidationType.URL_PATH),
-                new PatternMatchingStage(config, ValidationType.URL_PATH)  // DUPLICATE - after normalization for defense in depth
+                new PatternMatchingStage(config, ValidationType.URL_PATH)  // Run again after normalization for defense-in-depth against canonicalization attacks
         );
     }
 

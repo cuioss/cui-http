@@ -92,11 +92,11 @@ This project follows CUI standards documented in `/doc/ai-rules.md`. Key require
 
 ## Security Validation Contract
 
-All validators follow the "String in, String out, throws on violation" pattern:
+All validators follow the "Optional return, throws on violation" pattern:
 
 ```java
 public interface HttpSecurityValidator {
-    String validate(String input) throws UrlSecurityException;
+    Optional<String> validate(@Nullable String value) throws UrlSecurityException;
 }
 ```
 
@@ -115,8 +115,8 @@ Validators are:
 
 ## Important Files
 
-- `/doc/http-verification/specification/pipeline-architecture-standards.adoc`: Pipeline selection rules
-- `/doc/http-verification/specification/generator-contract.adoc`: Generator implementation standards
+- `/doc/http-security/specification/pipeline-architecture-standards.adoc`: Pipeline selection rules
+- `/doc/http-security/specification/generator-contract.adoc`: Generator implementation standards
 - `/doc/ai-rules.md`: CUI development standards
 - `/src/main/java/module-info.java`: Module definition
 

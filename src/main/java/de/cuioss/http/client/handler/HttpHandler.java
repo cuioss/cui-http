@@ -137,6 +137,10 @@ public final class HttpHandler {
     @Getter private final int connectionTimeoutSeconds;
     @Getter private final int readTimeoutSeconds;
 
+    // Cached HttpClient instance - lazily initialized and reused for all requests
+    // Marked volatile for thread-safe lazy initialization
+    private volatile HttpClient cachedHttpClient;
+
 
     public static HttpHandlerBuilder builder() {
         return new HttpHandlerBuilder();
@@ -224,20 +228,31 @@ public final class HttpHandler {
     }
 
     /**
-     * Creates an {@link HttpClient} with the configured SSL context and connection timeout.
-     * This method can be used to get a pre-configured HttpClient for making HTTP requests.
+     * Gets the configured {@link HttpClient} for making HTTP requests.
+     * This method uses lazy initialization to create the HttpClient once and reuses it for all requests,
+     * improving performance by leveraging connection pooling and avoiding repeated client creation overhead.
      *
      * @return A configured {@link HttpClient} with the SSL context and connection timeout
      */
     public HttpClient createHttpClient() {
-        HttpClient.Builder httpClientBuilder = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(connectionTimeoutSeconds));
+        // Double-checked locking for thread-safe lazy initialization
+        HttpClient result = cachedHttpClient;
+        if (result == null) {
+            synchronized (this) {
+                result = cachedHttpClient;
+                if (result == null) {
+                    HttpClient.Builder httpClientBuilder = HttpClient.newBuilder()
+                            .connectTimeout(Duration.ofSeconds(connectionTimeoutSeconds));
 
-        // For HTTPS URIs, SSL context must be set
-        if ("https".equalsIgnoreCase(uri.getScheme())) {
-            httpClientBuilder.sslContext(sslContext);
+                    // For HTTPS URIs, SSL context must be set
+                    if ("https".equalsIgnoreCase(uri.getScheme())) {
+                        httpClientBuilder.sslContext(sslContext);
+                    }
+                    cachedHttpClient = result = httpClientBuilder.build();
+                }
+            }
         }
-        return httpClientBuilder.build();
+        return result;
     }
 
     /**
