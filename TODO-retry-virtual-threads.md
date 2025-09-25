@@ -28,10 +28,8 @@ public interface RetryStrategy {
 
 ### Implementation Strategy
 
-#### Option 1: Virtual Thread with Sleep (Simplest)
-
 ```java
-public <T> CompletableFuture<HttpResultObject<T>> executeAsync(
+public <T> CompletableFuture<HttpResultObject<T>> execute(
     HttpOperation<T> operation,
     RetryContext context
 ) {
@@ -62,82 +60,6 @@ private <T> HttpResultObject<T> executeSynchronous(
 }
 ```
 
-#### Option 2: Custom Virtual Thread Scheduler (More Complex)
-
-```java
-public class VirtualThreadRetryScheduler {
-
-    public <T> CompletableFuture<HttpResultObject<T>> scheduleRetry(
-        HttpOperation<T> operation,
-        RetryContext context,
-        int attempt
-    ) {
-        if (attempt > maxAttempts) {
-            return CompletableFuture.completedFuture(lastResult);
-        }
-
-        // Execute operation on virtual thread
-        return CompletableFuture
-            .supplyAsync(operation::execute, Executors.newVirtualThreadPerTaskExecutor())
-            .thenCompose(result -> {
-                if (result.isValid() || !result.isRetryable() || attempt == maxAttempts) {
-                    return CompletableFuture.completedFuture(result);
-                }
-
-                // Schedule next attempt after delay
-                Duration delay = calculateDelay(attempt);
-                return delayedExecutor(delay)
-                    .thenCompose(__ -> scheduleRetry(operation, context, attempt + 1));
-            });
-    }
-
-    private CompletableFuture<Void> delayedExecutor(Duration delay) {
-        return CompletableFuture.runAsync(
-            () -> {
-                try {
-                    Thread.sleep(delay.toMillis());
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new CompletionException(e);
-                }
-            },
-            Executors.newVirtualThreadPerTaskExecutor()
-        );
-    }
-}
-```
-
-#### Option 3: Hybrid Approach with Fallback
-
-```java
-public class ModernRetryStrategy {
-    private static final boolean VIRTUAL_THREADS_AVAILABLE = checkVirtualThreadSupport();
-    private final Executor executor;
-
-    public ModernRetryStrategy() {
-        this.executor = VIRTUAL_THREADS_AVAILABLE
-            ? Executors.newVirtualThreadPerTaskExecutor()
-            : ForkJoinPool.commonPool(); // Fallback for pre-21 JVMs
-    }
-
-    public <T> CompletableFuture<HttpResultObject<T>> executeAsync(
-        HttpOperation<T> operation,
-        RetryContext context
-    ) {
-        if (VIRTUAL_THREADS_AVAILABLE) {
-            // Use simple Thread.sleep with virtual threads
-            return CompletableFuture.supplyAsync(
-                () -> executeSynchronous(operation, context),
-                executor
-            );
-        } else {
-            // Use ScheduledExecutorService for platform threads
-            return executeWithScheduler(operation, context);
-        }
-    }
-}
-```
-
 ## Analysis of Industry Solutions
 
 ### Resilience4j Approach
@@ -158,15 +80,15 @@ public class ModernRetryStrategy {
 - Non-blocking by design
 - Virtual thread support via `Schedulers.boundedElastic()`
 
-## Recommended Solution
+## Solution
 
-Given Java 21 as minimum version, recommend **Option 1** (Virtual Thread with Sleep) because:
+Given Java 21 as minimum version, use Virtual Threads with Thread.sleep() because:
 
 1. **Simplicity**: Minimal code changes, reuses existing synchronous logic
 2. **Efficiency**: Virtual threads handle blocking operations efficiently
 3. **Works with existing `HttpOperation` interface**: No need to change operation signatures
 4. **Performance**: Virtual threads automatically yield during `Thread.sleep()`
-5. **Maintainability**: Less complex than custom schedulers
+5. **Maintainability**: Simple and straightforward implementation
 
 ## Implementation Plan
 
@@ -181,11 +103,6 @@ Given Java 21 as minimum version, recommend **Option 1** (Virtual Thread with Sl
 1. Update `ResilientHttpHandler` to handle async retry results
 2. Update all callers to use CompletableFuture API
 3. Update tests to handle async operations
-
-### Phase 3: Optimization
-1. Add metrics for virtual thread usage
-2. Implement adaptive retry delays based on system load
-3. Add circuit breaker integration
 
 ## Testing Strategy
 
