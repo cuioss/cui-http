@@ -78,6 +78,14 @@ final class AttributeParser {
      * common edge cases like missing values, trailing/leading whitespace, and attributes
      * at the end of the string.</p>
      *
+     * <p><strong>Implementation Note:</strong> This method uses simple semicolon splitting
+     * which is sufficient for the current use cases (cookie attributes per RFC 6265 and
+     * charset extraction from Content-Type headers). It does NOT handle quoted values
+     * containing semicolons (e.g., profile="url;version=1"). Current usage patterns don't
+     * require this complexity as cookie values and charset values don't contain semicolons.
+     * If such support is needed in the future, a stateful parser respecting quoted strings
+     * would be required.</p>
+     *
      * @param attributeString The string containing attributes (e.g., "name=value; other=value2"), may be null
      * @param attributeName The name of the attribute to extract (case-insensitive)
      * @return An Optional containing the attribute value if found, or empty otherwise

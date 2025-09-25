@@ -139,8 +139,15 @@ public class ExponentialBackoffRetryStrategy implements RetryStrategy {
 
 
     /**
-     * Performs delay using ScheduledExecutorService instead of Thread.sleep().
-     * This allows for proper interruption handling and doesn't block thread pools.
+     * Performs synchronous delay before retry attempt.
+     *
+     * <p><strong>Design Note:</strong> This implementation uses Thread.sleep() for simplicity
+     * and correctness in a synchronous API. While Thread.sleep() blocks the executing thread,
+     * this is intentional as the RetryStrategy API is synchronous by design. Converting to
+     * async (ScheduledExecutorService) would require changing the entire API to return
+     * CompletableFuture, which would be a breaking change. For applications requiring
+     * non-blocking retries, consider wrapping the entire retry operation in a separate
+     * thread or executor service.</p>
      */
     private void delayBeforeRetry(RetryContext context, Duration plannedDelay, int nextAttemptNumber)
             throws RetryException {

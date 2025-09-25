@@ -899,7 +899,7 @@ public class ComprehensiveSecurityTest {
         
         assertNotNull(result);
         // Result might be normalized but should still be valid
-        assertTrue(isValidPath(result));
+        assertTrue(isValidPath(result), "Validation result should be a valid path: " + result);
     }
     
     @ParameterizedTest(name = "Parameter validation [{index}]")

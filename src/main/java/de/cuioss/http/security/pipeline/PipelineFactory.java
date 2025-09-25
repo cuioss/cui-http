@@ -210,7 +210,12 @@ public final class PipelineFactory {
             case HEADER_NAME -> createHeaderNamePipeline(config, eventCounter);
             case HEADER_VALUE -> createHeaderValuePipeline(config, eventCounter);
             case PARAMETER_NAME -> throw new IllegalArgumentException(
-                    "PARAMETER_NAME validation is not supported. Use PARAMETER_VALUE for parameter validation.");
+                    """
+                    PARAMETER_NAME validation is not supported. Use PARAMETER_VALUE for parameter validation.
+                    Design rationale: Parameter names in query strings have similar security requirements
+                    to parameter values (injection prevention, encoding validation, etc.). The PARAMETER_VALUE
+                    pipeline handles both cases effectively. If distinct validation is needed in the future,
+                    a separate PARAMETER_NAME pipeline can be implemented.""");
             case BODY -> throw new IllegalArgumentException(
                     "BODY validation pipeline has been removed. HTTP body content validation should be handled at application layer.");
             case COOKIE_NAME, COOKIE_VALUE -> throw new IllegalArgumentException(

@@ -22,7 +22,11 @@ module de.cuioss.http {
     requires de.cuioss.uimodel;
 
     // Client HTTP utilities
+    exports de.cuioss.http.client;
+    exports de.cuioss.http.client.converter;
     exports de.cuioss.http.client.handler;
+    exports de.cuioss.http.client.result;
+    exports de.cuioss.http.client.retry;
 
     // Security validation core
     exports de.cuioss.http.security.core;
