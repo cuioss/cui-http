@@ -18,11 +18,8 @@ Leverage Java 21's Virtual Threads to create a modern, efficient retry mechanism
 
 ```java
 public interface RetryStrategy {
-    // Current synchronous API
-    <T> HttpResultObject<T> execute(HttpOperation<T> operation, RetryContext context);
-
-    // New async API with Virtual Threads
-    <T> CompletableFuture<HttpResultObject<T>> executeAsync(
+    // Single async API using Virtual Threads (no sync version)
+    <T> CompletableFuture<HttpResultObject<T>> execute(
         HttpOperation<T> operation,
         RetryContext context
     );
@@ -167,21 +164,23 @@ Given Java 21 as minimum version, recommend **Option 1** (Virtual Thread with Sl
 
 1. **Simplicity**: Minimal code changes, reuses existing synchronous logic
 2. **Efficiency**: Virtual threads handle blocking operations efficiently
-3. **Compatibility**: Works with existing `HttpOperation` interface
+3. **Works with existing `HttpOperation` interface**: No need to change operation signatures
 4. **Performance**: Virtual threads automatically yield during `Thread.sleep()`
 5. **Maintainability**: Less complex than custom schedulers
 
 ## Implementation Plan
 
-### Phase 1: Add Async API (Non-Breaking)
-1. Add `executeAsync()` method to `RetryStrategy` interface with default implementation
-2. Implement virtual thread-based async execution in `ExponentialBackoffRetryStrategy`
-3. Keep existing synchronous `execute()` method for backward compatibility
+**Pre-1.0 Rule**: This library is pre-1.0, so we make breaking changes without deprecation or transition periods.
 
-### Phase 2: Migrate Consumers
-1. Update `ResilientHttpHandler` to use async retry API
-2. Add `CompletableFuture`-based methods to public API
-3. Document migration path for existing users
+### Phase 1: Replace Sync with Async API
+1. Change `RetryStrategy` interface to return `CompletableFuture<HttpResultObject<T>>`
+2. Update all implementations to use virtual threads
+3. Remove synchronous `execute()` method entirely
+
+### Phase 2: Update All Consumers
+1. Update `ResilientHttpHandler` to handle async retry results
+2. Update all callers to use CompletableFuture API
+3. Update tests to handle async operations
 
 ### Phase 3: Optimization
 1. Add metrics for virtual thread usage
@@ -192,26 +191,26 @@ Given Java 21 as minimum version, recommend **Option 1** (Virtual Thread with Sl
 
 1. **Unit Tests**: Verify retry logic with deterministic delays
 2. **Concurrency Tests**: Validate behavior under high concurrent load
-3. **Performance Tests**: Compare throughput vs blocking implementation
-4. **Compatibility Tests**: Ensure backward compatibility with sync API
+3. **Performance Tests**: Measure throughput improvements with virtual threads
+4. **Integration Tests**: Verify async operation composition works correctly
 
-## Code Migration Example
+## Code Changes Required
 
 ```java
-// Before
+// Before (synchronous)
 HttpResultObject<String> result = retryStrategy.execute(
     () -> httpClient.send(request),
     context
 );
 
-// After (async)
-CompletableFuture<HttpResultObject<String>> futureResult = retryStrategy.executeAsync(
+// After (only async API exists)
+HttpResultObject<String> result = retryStrategy.execute(
     () -> httpClient.send(request),
     context
-);
+).get(); // Block if synchronous behavior needed
 
-// After (async with composition)
-retryStrategy.executeAsync(() -> httpClient.send(request), context)
+// After (fully async with composition)
+retryStrategy.execute(() -> httpClient.send(request), context)
     .thenCompose(result -> processResult(result))
     .thenAccept(processed -> updateCache(processed))
     .exceptionally(ex -> handleError(ex));
@@ -227,7 +226,7 @@ retryStrategy.executeAsync(() -> httpClient.send(request), context)
 
 ## Open Questions
 
-1. Should we provide both sync and async APIs or migrate fully to async?
+1. ~~Should we provide both sync and async APIs or migrate fully to async?~~ **Decision: Async only (pre-1.0 rule)**
 2. How to handle retry metrics with async operations?
 3. Should we add reactive streams (Flow API) support?
 4. Integration with existing observability tools?
