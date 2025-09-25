@@ -281,30 +281,8 @@ boolean logSecurityViolations
      * @param headerName The header name to check (null returns false)
      * @return true if the header is allowed, false if blocked or null
      */
-    @SuppressWarnings("DuplicatedCode")
     public boolean isHeaderAllowed(@Nullable String headerName) {
-        if (headerName == null) {
-            return false;
-        }
-
-        // Check blocked list first
-        String checkName = caseSensitiveComparison ? headerName : headerName.toLowerCase();
-        Set<String> blocked = caseSensitiveComparison ? blockedHeaderNames :
-                blockedHeaderNames.stream().map(String::toLowerCase).collect(Collectors.toSet());
-
-        if (blocked.contains(checkName)) {
-            return false;
-        }
-
-        // If there's an allow list, check it
-        if (allowedHeaderNames != null) {
-            Set<String> allowed = caseSensitiveComparison ? allowedHeaderNames :
-                    allowedHeaderNames.stream().map(String::toLowerCase).collect(Collectors.toSet());
-            return allowed.contains(checkName);
-        }
-
-        // No allow list means all headers are allowed (except blocked ones)
-        return true;
+        return isAllowed(headerName, allowedHeaderNames, blockedHeaderNames);
     }
 
     /**
@@ -313,29 +291,40 @@ boolean logSecurityViolations
      * @param contentType The content type to check (null returns false)
      * @return true if the content type is allowed, false if blocked or null
      */
-    @SuppressWarnings("DuplicatedCode")
     public boolean isContentTypeAllowed(@Nullable String contentType) {
-        if (contentType == null) {
+        return isAllowed(contentType, allowedContentTypes, blockedContentTypes);
+    }
+
+    /**
+     * Common helper method to check if a value is allowed based on allow and block lists.
+     *
+     * @param value The value to check (null returns false)
+     * @param allowedSet The set of allowed values (null means all allowed)
+     * @param blockedSet The set of blocked values
+     * @return true if the value is allowed, false if blocked or null
+     */
+    private boolean isAllowed(@Nullable String value, @Nullable Set<String> allowedSet, Set<String> blockedSet) {
+        if (value == null) {
             return false;
         }
 
         // Check blocked list first
-        String checkType = caseSensitiveComparison ? contentType : contentType.toLowerCase();
-        Set<String> blocked = caseSensitiveComparison ? blockedContentTypes :
-                blockedContentTypes.stream().map(String::toLowerCase).collect(Collectors.toSet());
+        String checkValue = caseSensitiveComparison ? value : value.toLowerCase();
+        Set<String> blocked = caseSensitiveComparison ? blockedSet :
+                blockedSet.stream().map(String::toLowerCase).collect(Collectors.toSet());
 
-        if (blocked.contains(checkType)) {
+        if (blocked.contains(checkValue)) {
             return false;
         }
 
         // If there's an allow list, check it
-        if (allowedContentTypes != null) {
-            Set<String> allowed = caseSensitiveComparison ? allowedContentTypes :
-                    allowedContentTypes.stream().map(String::toLowerCase).collect(Collectors.toSet());
-            return allowed.contains(checkType);
+        if (allowedSet != null) {
+            Set<String> allowed = caseSensitiveComparison ? allowedSet :
+                    allowedSet.stream().map(String::toLowerCase).collect(Collectors.toSet());
+            return allowed.contains(checkValue);
         }
 
-        // No allow list means all content types are allowed (except blocked ones)
+        // No allow list means all values are allowed (except blocked ones)
         return true;
     }
 
