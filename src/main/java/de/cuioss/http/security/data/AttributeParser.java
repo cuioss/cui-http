@@ -87,29 +87,30 @@ final class AttributeParser {
             return Optional.empty();
         }
 
-        String lowerAttrString = attributeString.toLowerCase();
         String lowerAttrName = attributeName.toLowerCase();
 
-        // Look for "attributeName=" pattern
-        String searchPattern = lowerAttrName + "=";
-        int startIndex = lowerAttrString.indexOf(searchPattern);
+        // Split by semicolons to process each attribute individually
+        String[] attributes = attributeString.split(";");
+        for (String attribute : attributes) {
+            String trimmedAttr = attribute.trim();
+            int equalsIndex = trimmedAttr.indexOf('=');
 
-        if (startIndex == -1) {
-            return Optional.empty();
+            if (equalsIndex > 0) {
+                // Extract the key part before '='
+                String key = trimmedAttr.substring(0, equalsIndex).trim();
+
+                // Check for exact match (case-insensitive)
+                if (key.equalsIgnoreCase(lowerAttrName)) {
+                    // Extract value after '='
+                    if (trimmedAttr.length() > equalsIndex + 1) {
+                        return Optional.of(trimmedAttr.substring(equalsIndex + 1).trim());
+                    }
+                    // Attribute exists but has empty value (e.g., "name=")
+                    return Optional.of("");
+                }
+            }
         }
 
-        // Find the start of the value
-        int valueStart = startIndex + searchPattern.length();
-        if (valueStart >= attributeString.length()) {
-            return Optional.empty();
-        }
-
-        // Find the end of the value (semicolon or end of string)
-        int valueEnd = attributeString.indexOf(';', valueStart);
-        if (valueEnd == -1) {
-            valueEnd = attributeString.length();
-        }
-
-        return Optional.of(attributeString.substring(valueStart, valueEnd).trim());
+        return Optional.empty();
     }
 }

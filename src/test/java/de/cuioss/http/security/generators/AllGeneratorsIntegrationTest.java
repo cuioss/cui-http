@@ -28,6 +28,7 @@ import de.cuioss.http.security.generators.url.InvalidURLGenerator;
 import de.cuioss.http.security.generators.url.ValidURLGenerator;
 import de.cuioss.http.security.generators.url.ValidURLParameterGenerator;
 import de.cuioss.test.generator.TypedGenerator;
+import de.cuioss.test.generator.junit.EnableGeneratorController;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashSet;
@@ -40,6 +41,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Integration test for all HTTP security generators.
  * Implements: Task G10 from HTTP verification specification
  */
+@EnableGeneratorController
 class AllGeneratorsIntegrationTest {
 
     private final PathTraversalGenerator pathTraversalGenerator = new PathTraversalGenerator();

@@ -62,7 +62,8 @@ class AttributeParserTest {
             String attributes = "name=";
             Optional<String> result = AttributeParser.extractAttributeValue(attributes, "name");
 
-            assertTrue(result.isEmpty());
+            assertTrue(result.isPresent());
+            assertEquals("", result.get());
         }
 
         @ParameterizedTest
@@ -83,17 +84,16 @@ class AttributeParserTest {
         }
 
         @Test
-        @DisplayName("Should match first occurrence of attribute name")
-        void shouldMatchFirstOccurrence() {
-            // Note: Current implementation matches substring, so "name=" is found within "longname="
-            // This is a known limitation that matches the original behavior
+        @DisplayName("Should match exact attribute name")
+        void shouldMatchExactAttributeName() {
+            // Fixed implementation now correctly matches exact attribute names
             String attributes = "longname=value1; name=value2";
             Optional<String> result = AttributeParser.extractAttributeValue(attributes, "name");
 
             assertTrue(result.isPresent());
-            assertEquals("value1", result.get()); // Matches "name=" within "longname="
+            assertEquals("value2", result.get()); // Now correctly matches exact "name" attribute
 
-            // To get exact match behavior, attributes should be properly separated
+            // Test with attribute at beginning
             String properlyFormatted = "name=value2; longname=value1";
             Optional<String> exactMatch = AttributeParser.extractAttributeValue(properlyFormatted, "name");
             assertTrue(exactMatch.isPresent());
@@ -182,6 +182,29 @@ class AttributeParserTest {
 
             assertTrue(result.isPresent());
             assertEquals("CaseSensitiveValue", result.get());
+        }
+
+        @Test
+        @DisplayName("Should not match shorter attribute names that are suffixes of longer ones")
+        void shouldNotMatchSuffixAttributes() {
+            // Bug reproduction test: searching for "id" should not match "session_id"
+            String attributes = "session_id=123; id=456";
+            Optional<String> result = AttributeParser.extractAttributeValue(attributes, "id");
+
+            // This should return "456" not "123"
+            assertTrue(result.isPresent());
+            assertEquals("456", result.get(), "Should match exact attribute 'id', not 'session_id'");
+
+            // Additional test cases
+            String attributes2 = "user-id=abc; id=xyz";
+            Optional<String> result2 = AttributeParser.extractAttributeValue(attributes2, "id");
+            assertTrue(result2.isPresent());
+            assertEquals("xyz", result2.get(), "Should match exact attribute 'id', not 'user-id'");
+
+            String attributes3 = "prefix_name=first; name=second";
+            Optional<String> result3 = AttributeParser.extractAttributeValue(attributes3, "name");
+            assertTrue(result3.isPresent());
+            assertEquals("second", result3.get(), "Should match exact attribute 'name', not 'prefix_name'");
         }
     }
 }

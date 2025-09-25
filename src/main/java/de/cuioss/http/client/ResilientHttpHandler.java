@@ -128,7 +128,7 @@ public class ResilientHttpHandler<T> {
             // Use RetryStrategy to handle transient failures
             RetryContext retryContext = new RetryContext("ETag-HTTP-Load:" + httpHandler.getUri().toString(), 1);
 
-            HttpResultObject<T> result = retryStrategy.execute(this::fetchJwksContentWithCache, retryContext);
+            HttpResultObject<T> result = retryStrategy.execute(this::fetchContentWithCache, retryContext);
 
             // Update status based on the result
             updateStatusFromResult(result);
@@ -193,7 +193,7 @@ public class ResilientHttpHandler<T> {
      * @return HttpResultObject containing content and state information, never null
      */
     @SuppressWarnings("java:S2095")
-    private HttpResultObject<T> fetchJwksContentWithCache() {
+    private HttpResultObject<T> fetchContentWithCache() {
         // Build request with conditional headers
         HttpRequest.Builder requestBuilder = httpHandler.requestBuilder();
 

@@ -256,4 +256,51 @@ class CharacterValidationStageTest {
         assertTrue(toString.contains("CharacterValidationStage"));
         assertTrue(toString.contains("URL_PATH"));
     }
+
+    @Test
+    void shouldHandleUnicodeCharactersConsistentlyWithAllowHighBitCharacters() {
+        // Test with allowHighBitCharacters = true (default)
+        SecurityConfiguration configWithHighBit = SecurityConfiguration.builder()
+                .allowHighBitCharacters(true)
+                .build();
+
+        CharacterValidationStage pathStage = new CharacterValidationStage(configWithHighBit, ValidationType.URL_PATH);
+        CharacterValidationStage paramNameStage = new CharacterValidationStage(configWithHighBit, ValidationType.PARAMETER_NAME);
+        CharacterValidationStage paramValueStage = new CharacterValidationStage(configWithHighBit, ValidationType.PARAMETER_VALUE);
+
+        // Test extended ASCII (128-255) - should be allowed with allowHighBitCharacters=true
+        String extendedAscii = "test\u00E9"; // é (U+00E9)
+        assertDoesNotThrow(() -> pathStage.validate(extendedAscii),
+                "Extended ASCII should be allowed in URL_PATH when allowHighBitCharacters=true");
+        assertDoesNotThrow(() -> paramNameStage.validate(extendedAscii),
+                "Extended ASCII should be allowed in PARAMETER_NAME when allowHighBitCharacters=true");
+        assertDoesNotThrow(() -> paramValueStage.validate(extendedAscii),
+                "Extended ASCII should be allowed in PARAMETER_VALUE when allowHighBitCharacters=true");
+
+        // Test Unicode above 255 - currently rejected even with allowHighBitCharacters=true
+        // This is the confusing behavior that needs clarification
+        String unicode = "test中文"; // Chinese characters
+
+        // Current behavior: Unicode > 255 is rejected for paths/parameters even with allowHighBitCharacters=true
+        // This is confusing because the name "allowHighBitCharacters" implies it would allow these
+        assertThrows(UrlSecurityException.class, () -> pathStage.validate(unicode),
+                "Unicode > 255 is currently rejected in URL_PATH even with allowHighBitCharacters=true");
+        assertThrows(UrlSecurityException.class, () -> paramNameStage.validate(unicode),
+                "Unicode > 255 is currently rejected in PARAMETER_NAME even with allowHighBitCharacters=true");
+        assertThrows(UrlSecurityException.class, () -> paramValueStage.validate(unicode),
+                "Unicode > 255 is currently rejected in PARAMETER_VALUE even with allowHighBitCharacters=true");
+
+        // Test with allowHighBitCharacters = false
+        SecurityConfiguration configWithoutHighBit = SecurityConfiguration.builder()
+                .allowHighBitCharacters(false)
+                .build();
+
+        CharacterValidationStage restrictedStage = new CharacterValidationStage(configWithoutHighBit, ValidationType.URL_PATH);
+
+        // Both extended ASCII and Unicode should be rejected
+        assertThrows(UrlSecurityException.class, () -> restrictedStage.validate(extendedAscii),
+                "Extended ASCII should be rejected when allowHighBitCharacters=false");
+        assertThrows(UrlSecurityException.class, () -> restrictedStage.validate(unicode),
+                "Unicode should be rejected when allowHighBitCharacters=false");
+    }
 }
