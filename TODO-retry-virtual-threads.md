@@ -28,67 +28,125 @@ public interface RetryStrategy {
 
 ### Implementation Strategy
 
+#### Option 1: CompletableFuture.delayedExecutor() (Recommended)
+
 ```java
 public <T> CompletableFuture<HttpResultObject<T>> execute(
     HttpOperation<T> operation,
     RetryContext context
 ) {
-    return CompletableFuture.supplyAsync(() -> {
-        // Virtual threads make Thread.sleep() acceptable
-        // The JVM will park the virtual thread without blocking OS threads
-        return executeSynchronous(operation, context);
-    }, Executors.newVirtualThreadPerTaskExecutor());
+    return executeAttempt(operation, context, 1);
 }
 
-private <T> HttpResultObject<T> executeSynchronous(
+private <T> CompletableFuture<HttpResultObject<T>> executeAttempt(
     HttpOperation<T> operation,
-    RetryContext context
+    RetryContext context,
+    int attempt
 ) {
-    // Existing logic with Thread.sleep() - acceptable with virtual threads
-    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
-        HttpResultObject<T> result = operation.execute();
-        if (result.isValid() || !result.isRetryable()) {
-            return result;
-        }
+    // Execute on virtual thread
+    return CompletableFuture
+        .supplyAsync(operation::execute, Executors.newVirtualThreadPerTaskExecutor())
+        .thenCompose(result -> {
+            if (result.isValid() || !result.isRetryable() || attempt >= maxAttempts) {
+                return CompletableFuture.completedFuture(result);
+            }
 
-        if (attempt < maxAttempts) {
+            // Calculate delay and retry with CompletableFuture.delayedExecutor
             Duration delay = calculateDelay(attempt);
-            Thread.sleep(delay.toMillis()); // OK with virtual threads!
-        }
+            Executor delayedExecutor = CompletableFuture.delayedExecutor(
+                delay.toMillis(), TimeUnit.MILLISECONDS,
+                Executors.newVirtualThreadPerTaskExecutor()
+            );
+
+            return CompletableFuture
+                .supplyAsync(() -> executeAttempt(operation, context, attempt + 1), delayedExecutor)
+                .thenCompose(future -> future);
+        });
+}
+```
+
+#### Option 2: Hybrid ScheduledExecutorService + Virtual Threads
+
+```java
+public class HybridRetryStrategy {
+    private final ScheduledExecutorService scheduler =
+        Executors.newSingleThreadScheduledExecutor(); // Small scheduler for timing
+    private final Executor virtualExecutor =
+        Executors.newVirtualThreadPerTaskExecutor(); // Virtual threads for work
+
+    public <T> CompletableFuture<HttpResultObject<T>> execute(
+        HttpOperation<T> operation,
+        RetryContext context
+    ) {
+        return executeAttempt(operation, context, 1);
     }
-    return lastResult;
+
+    private <T> CompletableFuture<HttpResultObject<T>> executeAttempt(
+        HttpOperation<T> operation,
+        RetryContext context,
+        int attempt
+    ) {
+        return CompletableFuture
+            .supplyAsync(operation::execute, virtualExecutor)
+            .thenCompose(result -> {
+                if (result.isValid() || !result.isRetryable() || attempt >= maxAttempts) {
+                    return CompletableFuture.completedFuture(result);
+                }
+
+                Duration delay = calculateDelay(attempt);
+                CompletableFuture<HttpResultObject<T>> future = new CompletableFuture<>();
+
+                scheduler.schedule(() -> {
+                    executeAttempt(operation, context, attempt + 1)
+                        .whenComplete((res, ex) -> {
+                            if (ex != null) future.completeExceptionally(ex);
+                            else future.complete(res);
+                        });
+                }, delay.toMillis(), TimeUnit.MILLISECONDS);
+
+                return future;
+            });
+    }
 }
 ```
 
 ## Analysis of Industry Solutions
 
 ### Resilience4j Approach
-- Uses `ScheduledExecutorService` for delays
-- Requires explicit executor for async operations
+- Uses `ScheduledExecutorService` for delays ✅
 - `Retry.decorateCompletionStage()` requires ScheduledExecutorService parameter
-- Not optimized for virtual threads (predates Java 21)
+- **Issue**: Not optimized for virtual threads (predates Java 21)
+- **Solution**: Use hybrid approach with virtual thread executors
 
-### Spring Retry
-- Uses `Thread.sleep()` in synchronous mode
-- `@Retryable` annotation with AOP
-- Spring Boot 3.2+ adds `SimpleAsyncTaskScheduler` with virtual thread support
+### Spring Retry Evolution
+- **Old**: Uses `Thread.sleep()` in synchronous mode ❌
+- **New**: Spring Boot 3.2+ adds `SimpleAsyncTaskScheduler` with virtual thread support ✅
 - Auto-configures virtual threads when `spring.threads.virtual.enabled=true`
+- **Lesson**: Even Spring moved away from Thread.sleep()
 
 ### Project Reactor (Mono/Flux)
-- Uses reactor's internal scheduler for delays
-- `Mono.delay()` and `retryWhen()` operators
-- Non-blocking by design
-- Virtual thread support via `Schedulers.boundedElastic()`
+- Uses reactor's internal scheduler for delays ✅
+- `Mono.delay()` and `retryWhen()` operators - proper non-blocking delays
+- **Lesson**: Reactive frameworks never use Thread.sleep() for delays
+
+### Key Industry Insight
+All modern async libraries avoid Thread.sleep() and use proper delay mechanisms (schedulers, timers, etc.)
 
 ## Solution
 
-Given Java 21 as minimum version, use Virtual Threads with Thread.sleep() because:
+**Research Finding**: Thread.sleep() is NOT the best approach, even with virtual threads. Better alternatives exist:
 
-1. **Simplicity**: Minimal code changes, reuses existing synchronous logic
-2. **Efficiency**: Virtual threads handle blocking operations efficiently
-3. **Works with existing `HttpOperation` interface**: No need to change operation signatures
-4. **Performance**: Virtual threads automatically yield during `Thread.sleep()`
-5. **Maintainability**: Simple and straightforward implementation
+1. **CompletableFuture.delayedExecutor()** - Proper non-blocking delay mechanism (Java 9+)
+2. **Hybrid ScheduledExecutorService + Virtual Threads** - Optimal resource utilization
+3. **No Thread.sleep()** - Avoids blocking and scheduler limitations
+
+**Recommended Approach**: CompletableFuture.delayedExecutor() with virtual thread executor because:
+
+1. **Non-blocking**: Doesn't park threads during delays
+2. **Composable**: Integrates naturally with CompletableFuture chains
+3. **Resource Efficient**: Uses proper JVM delay mechanisms
+4. **Scalable**: Handles thousands of concurrent delayed operations
+5. **Modern**: Designed for async programming patterns
 
 ## Implementation Plan
 
@@ -135,22 +193,35 @@ retryStrategy.execute(() -> httpClient.send(request), context)
 
 ## Benefits
 
-1. **Non-blocking**: Virtual threads don't block OS threads during delays
-2. **Scalable**: Can handle thousands of concurrent retry operations
-3. **Resource Efficient**: Virtual threads have minimal memory overhead
-4. **Simple**: Retains straightforward programming model
-5. **Future-proof**: Aligns with Java platform direction
+### CompletableFuture.delayedExecutor() Advantages:
+1. **True Non-blocking**: No thread parking during delays
+2. **Composable**: Natural integration with async pipelines
+3. **JVM Optimized**: Uses internal JVM timer mechanisms
+4. **Scalable**: Handles millions of concurrent delayed operations
+5. **Resource Efficient**: Minimal memory overhead for delays
+6. **Modern Design**: Built for async programming patterns
+
+### Why Not Thread.sleep() (Even with Virtual Threads):
+1. **Still blocks**: Parks virtual thread during delay
+2. **No composition**: Doesn't integrate with CompletableFuture chains
+3. **Scheduler limitations**: Virtual thread scheduler doesn't time-share
+4. **Resource waste**: Consumes carrier thread during sleep
+5. **Not designed for delays**: Thread.sleep() simulates blocking, not scheduling
 
 ## Open Questions
 
 1. ~~Should we provide both sync and async APIs or migrate fully to async?~~ **Decision: Async only (pre-1.0 rule)**
-2. How to handle retry metrics with async operations?
-3. Should we add reactive streams (Flow API) support?
-4. Integration with existing observability tools?
+2. ~~Should we use Thread.sleep() with virtual threads?~~ **Decision: No, use CompletableFuture.delayedExecutor()**
+3. How to handle retry metrics with async operations?
+4. Should we add reactive streams (Flow API) support?
+5. Integration with existing observability tools?
+6. Should we create a single ScheduledExecutorService for all retry delays or per-strategy?
 
 ## References
 
 - [JEP 444: Virtual Threads](https://openjdk.org/jeps/444)
-- [Resilience4j Retry Documentation](https://resilience4j.readme.io/docs/retry)
+- [CompletableFuture.delayedExecutor() JavaDoc](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/CompletableFuture.html#delayedExecutor(long,java.util.concurrent.TimeUnit))
+- [Virtual Threads with ScheduledExecutorService - Baeldung](https://www.baeldung.com/java-scheduledexecutorservice-virtual-threads)
 - [Spring Boot Virtual Threads](https://spring.io/blog/2022/10/11/embracing-virtual-threads)
-- [Java 21 Virtual Threads Guide](https://docs.oracle.com/en/java/javase/21/core/virtual-threads.html)
+- [Virtual Thread Performance Analysis - Alibaba](https://www.alibabacloud.com/blog/exploration-of-java-virtual-threads-and-performance-analysis_601860)
+- [Async Retry Pattern Examples](https://nurkiewicz.com/2013/07/asynchronous-retry-pattern.html)
