@@ -109,17 +109,12 @@ final class AttributeParser {
 
                 // Check for exact match (case-insensitive)
                 if (trimmedKey.equalsIgnoreCase(lowerAttrName)) {
-                    // Extract value after '=' (without trimming for strict RFC compliance)
+                    // Extract value after '=' and trim whitespace per RFC 6265
                     String value = trimmedAttr.substring(equalsIndex + 1);
+                    // RFC 6265 allows trimming whitespace from attribute values
                     String trimmedValue = value.trim();
 
-                    // Check if value has leading spaces - this violates RFC 6265 strict formatting
-                    if (!value.equals(trimmedValue)) {
-                        // Value has leading spaces - this violates RFC 6265 strict formatting
-                        continue;
-                    }
-
-                    // Return the value (which may be empty for "name=")
+                    // Return the trimmed value (which may be empty for "name=")
                     return Optional.of(trimmedValue);
                 }
             }

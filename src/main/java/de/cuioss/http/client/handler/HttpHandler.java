@@ -22,7 +22,6 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import lombok.ToString;
 import org.jspecify.annotations.Nullable;
 
@@ -138,7 +137,7 @@ public final class HttpHandler {
     private final HttpClient httpClient;
 
     private HttpHandler(URI uri, URL url, SSLContext sslContext,
-                        int connectionTimeoutSeconds, int readTimeoutSeconds) {
+            int connectionTimeoutSeconds, int readTimeoutSeconds) {
         this.uri = uri;
         this.url = url;
         this.sslContext = sslContext;

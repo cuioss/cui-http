@@ -74,7 +74,7 @@ public class ExponentialBackoffRetryStrategy implements RetryStrategy {
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             long attemptStartTime = System.nanoTime();
 
-            LOGGER.debug(DEBUG.RETRY_ATTEMPT_STARTING.format(attempt, context.operationName()));
+            /*~~(TODO: DEBUG no LogRecord)~~>*/LOGGER.debug(DEBUG.RETRY_ATTEMPT_STARTING.format(attempt, context.operationName()));
 
             // Execute operation - no exceptions to catch
             HttpResultObject<T> result = operation.execute();
@@ -108,11 +108,11 @@ public class ExponentialBackoffRetryStrategy implements RetryStrategy {
 
                 // Check if this error is retryable
                 if (!result.isRetryable()) {
-                    LOGGER.debug(DEBUG.RETRY_NON_RETRYABLE_ERROR.format(context.operationName(), attemptDuration.toMillis()));
+                    /*~~(TODO: DEBUG no LogRecord)~~>*/LOGGER.debug(DEBUG.RETRY_NON_RETRYABLE_ERROR.format(context.operationName(), attemptDuration.toMillis()));
                     break;
                 }
 
-                LOGGER.debug(DEBUG.RETRY_ATTEMPT_FAILED.format(attempt, context.operationName(), attemptDuration.toMillis()));
+                /*~~(TODO: DEBUG no LogRecord)~~>*/LOGGER.debug(DEBUG.RETRY_ATTEMPT_FAILED.format(attempt, context.operationName(), attemptDuration.toMillis()));
 
                 Duration delay = calculateDelay(attempt);
 
@@ -122,7 +122,7 @@ public class ExponentialBackoffRetryStrategy implements RetryStrategy {
                     // Delay interrupted - return the actual operation failure (not synthetic result)
                     Duration totalDuration = Duration.ofNanos(System.nanoTime() - totalStartTime);
                     retryMetrics.recordRetryComplete(context, totalDuration, false, attempt);
-                    LOGGER.debug(DEBUG.RETRY_DELAY_INTERRUPTED.format(context.operationName()));
+                    /*~~(TODO: DEBUG no LogRecord)~~>*/LOGGER.debug(DEBUG.RETRY_DELAY_INTERRUPTED.format(context.operationName()));
                     return lastResult; // Return real operation result, not synthetic one
                 }
             }
@@ -157,7 +157,7 @@ public class ExponentialBackoffRetryStrategy implements RetryStrategy {
             // Log significant delay deviations
             long delayDifference = Math.abs(actualDelay.toMillis() - plannedDelay.toMillis());
             if (delayDifference > 50) {
-                LOGGER.debug(DEBUG.RETRY_DELAY_DEVIATION.format(
+                /*~~(TODO: DEBUG no LogRecord)~~>*/LOGGER.debug(DEBUG.RETRY_DELAY_DEVIATION.format(
                         context.operationName(), plannedDelay.toMillis(), actualDelay.toMillis(), delayDifference));
             }
 

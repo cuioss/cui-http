@@ -125,12 +125,13 @@ ValidationType validationType) implements HttpSecurityValidator {
      * double-encoded, UTF-8 overlong, and mixed encoding attempts.
      * ReDoS-safe: Uses only atomic patterns without nested or consecutive quantifiers.
      */
-    @SuppressWarnings({"java:S5869", "RegExpDuplicateCharacterInClass"}) private static final Pattern ENCODED_TRAVERSAL_PATTERN = Pattern.compile(
+    @SuppressWarnings("java:S5869") private static final Pattern ENCODED_TRAVERSAL_PATTERN = Pattern.compile(
             """
-            %2e%2e[%2f%5c/\\\\]|\
-            \\.%2e[%2f%5c/\\\\]|%2e\\.[%2f%5c/\\\\]|\
-            %252e%252e[%252f%255c]|\
-            %c0%ae%c0%ae[%c0%af%c1%9c/\\\\]|%c1%9c%c1%9c|%c1%8s|\
+            %2e%2e(%2f|%5c|/|\\\\)|\
+            \\.%2e(%2f|%5c|/|\\\\)|%2e\\.(%2f|%5c|/|\\\\)|\
+            %252e%252e(%252f|%255c)|\
+            \\.\\.(%252f|%255c)|\
+            %c0%ae%c0%ae(%c0%af|%c1%9c|/|\\\\)|%c1%9c%c1%9c|%c1%8s|\
             %c0%ae%c0%ae%c0%af|%c0%ae%c0%af|%c1%9c|\
             %2e%2e//|%2e%2e\\\\\\\\""",
             Pattern.CASE_INSENSITIVE
@@ -142,10 +143,10 @@ ValidationType validationType) implements HttpSecurityValidator {
      */
     @SuppressWarnings({"java:S5869", "RegExpDuplicateCharacterInClass"}) private static final Pattern DOT_SEPARATOR_PATTERN = Pattern.compile(
             """
-            \\.\\.[/\\\\%2f%5c]|\
-            \\.\\.\\.[/\\\\%2f%5c]|\
-            \\.\\.\\.\\.\\.[/\\\\%2f%5c]|\
-            \\.\\.\\.\\.\\.\\.[/\\\\%2f%5c]""",
+            \\.\\.(/|\\\\)|\\.\\.%2f|\\.\\.%5c|\
+            \\.\\.\\.(/|\\\\)|\\.\\.\\.%2f|\\.\\.\\.%5c|\
+            \\.\\.\\.\\.(/|\\\\)|\\.\\.\\.\\.%2f|\\.\\.\\.\\.%5c|\
+            \\.\\.\\.\\.\\.(/|\\\\)|\\.\\.\\.\\.\\.%2f|\\.\\.\\.\\.\\.%5c""",
             Pattern.CASE_INSENSITIVE
     );
 
