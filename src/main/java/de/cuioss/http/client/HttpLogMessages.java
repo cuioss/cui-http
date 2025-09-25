@@ -88,6 +88,103 @@ public final class HttpLogMessages {
                 .identifier(105)
                 .template("Retry operation '%s' failed after %s attempts in %sms")
                 .build();
+
+        public static final LogRecord HTTP_PING_IO_ERROR = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(106)
+                .template("IO error while pinging URI %s: %s")
+                .build();
+
+        public static final LogRecord HTTP_PING_INTERRUPTED = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(107)
+                .template("Interrupted while pinging URI %s: %s")
+                .build();
+
+        public static final LogRecord HTTP_PING_ERROR = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(108)
+                .template("Error while pinging URI %s: %s")
+                .build();
+
+        public static final LogRecord SSL_INSECURE_PROTOCOL = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(109)
+                .template("Provided SSL context uses insecure protocol: %s. Creating a secure context instead.")
+                .build();
+    }
+
+    /**
+     * Contains debug-level log messages for detailed information during development and troubleshooting.
+     */
+    @UtilityClass
+    public static final class DEBUG {
+
+        public static final LogRecord SSL_CONTEXT_PROTOCOL = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(200)
+                .template("Provided SSL context uses protocol: %s")
+                .build();
+
+        public static final LogRecord SSL_USING_PROVIDED_CONTEXT = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(201)
+                .template("Using provided SSL context with protocol: %s")
+                .build();
+
+        public static final LogRecord SSL_CREATED_SECURE_CONTEXT = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(202)
+                .template("Created secure SSL context with %s")
+                .build();
+
+        public static final LogRecord SSL_NO_CONTEXT_PROVIDED = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(203)
+                .template("No SSL context provided, created secure SSL context with %s")
+                .build();
+
+        public static final LogRecord HTTP_NOT_MODIFIED = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(204)
+                .template("Received 304 Not Modified from %s")
+                .build();
+
+        public static final LogRecord HTTP_RESPONSE_RECEIVED = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(205)
+                .template("Received %s %s from %s with ETag: %s")
+                .build();
+
+        public static final LogRecord RETRY_ATTEMPT_STARTING = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(206)
+                .template("Starting retry attempt %s for operation '%s'")
+                .build();
+
+        public static final LogRecord RETRY_NON_RETRYABLE_ERROR = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(207)
+                .template("Operation failed with non-retryable error for '%s' after %sms")
+                .build();
+
+        public static final LogRecord RETRY_ATTEMPT_FAILED = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(208)
+                .template("Retry attempt %s failed for operation '%s' after %sms - retryable error")
+                .build();
+
+        public static final LogRecord RETRY_DELAY_INTERRUPTED = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(209)
+                .template("Retry delay interrupted for '%s', returning last operation result")
+                .build();
+
+        public static final LogRecord RETRY_DELAY_DEVIATION = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(210)
+                .template("Retry delay deviation for '%s': planned=%sms, actual=%sms, difference=%sms")
+                .build();
     }
 
 }

@@ -15,6 +15,7 @@
  */
 package de.cuioss.http.client.handler;
 
+import de.cuioss.http.client.HttpLogMessages;
 import de.cuioss.tools.collect.CollectionLiterals;
 import de.cuioss.tools.logging.CuiLogger;
 import org.jspecify.annotations.Nullable;
@@ -193,25 +194,24 @@ public record SecureSSLContextProvider(String minimumTlsVersion) {
             if (sslContext != null) {
                 // Validate the provided SSL context
                 String protocol = sslContext.getProtocol();
-                LOGGER.debug(DEBUG_SSL_CONTEXT_PROTOCOL, protocol);
+                LOGGER.debug(HttpLogMessages.DEBUG.SSL_CONTEXT_PROTOCOL.format(protocol));
 
                 // Check if the protocol is secure according to the configured TLS versions
                 if (isSecureTlsVersion(protocol)) {
                     // The provided context was secure and is being used
-                    LOGGER.debug(DEBUG_USING_SSL_CONTEXT, protocol);
+                    LOGGER.debug(HttpLogMessages.DEBUG.SSL_USING_PROVIDED_CONTEXT.format(protocol));
                     return sslContext;
                 }
 
                 // If not secure, create a new secure context
-                // cui-rewrite:disable CuiLogRecordPatternRecipe
-                LOGGER.warn(WARN_INSECURE_SSL_PROTOCOL, protocol);
+                LOGGER.warn(HttpLogMessages.WARN.SSL_INSECURE_PROTOCOL.format(protocol));
                 SSLContext secureContext = createSecureSSLContext();
-                LOGGER.debug(DEBUG_CREATED_SECURE_CONTEXT, minimumTlsVersion);
+                LOGGER.debug(HttpLogMessages.DEBUG.SSL_CREATED_SECURE_CONTEXT.format(minimumTlsVersion));
                 return secureContext;
             } else {
                 // If no context provided, create a new secure one
                 SSLContext secureContext = createSecureSSLContext();
-                LOGGER.debug(DEBUG_NO_SSL_CONTEXT, minimumTlsVersion);
+                LOGGER.debug(HttpLogMessages.DEBUG.SSL_NO_CONTEXT_PROVIDED.format(minimumTlsVersion));
                 return secureContext;
             }
         } catch (NoSuchAlgorithmException | KeyStoreException | KeyManagementException e) {
@@ -219,10 +219,4 @@ public record SecureSSLContextProvider(String minimumTlsVersion) {
             throw new IllegalStateException("Failed to create a secure SSL context", e);
         }
     }
-
-    private static final String DEBUG_SSL_CONTEXT_PROTOCOL = "Provided SSL context uses protocol: %s";
-    private static final String DEBUG_USING_SSL_CONTEXT = "Using provided SSL context with protocol: %s";
-    private static final String WARN_INSECURE_SSL_PROTOCOL = "Provided SSL context uses insecure protocol: %s. Creating a secure context instead.";
-    private static final String DEBUG_CREATED_SECURE_CONTEXT = "Created secure SSL context with %s";
-    private static final String DEBUG_NO_SSL_CONTEXT = "No SSL context provided, created secure SSL context with %s";
 }

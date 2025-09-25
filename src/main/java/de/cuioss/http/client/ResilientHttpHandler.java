@@ -213,14 +213,14 @@ public class ResilientHttpHandler<T> {
 
             if (response.statusCode() == 304) {
                 // Not Modified - content hasn't changed, return cached content
-                LOGGER.debug("Received 304 Not Modified from %s", httpHandler.getUrl());
+                LOGGER.debug(HttpLogMessages.DEBUG.HTTP_NOT_MODIFIED.format(httpHandler.getUrl()));
                 return handleNotModifiedResult();
             } else if (statusFamily == HttpStatusFamily.SUCCESS) {
                 // 2xx Success - fresh content, update cache and return
                 Object rawContent = response.body();
                 String etag = response.headers().firstValue("ETag").orElse(null);
 
-                LOGGER.debug("Received %s %s from %s with ETag: %s", response.statusCode(), statusFamily, httpHandler.getUrl(), etag);
+                LOGGER.debug(HttpLogMessages.DEBUG.HTTP_RESPONSE_RECEIVED.format(response.statusCode(), statusFamily, httpHandler.getUrl(), etag));
 
                 // Convert raw content to target type
                 Optional<T> contentOpt = contentConverter.convert(rawContent);

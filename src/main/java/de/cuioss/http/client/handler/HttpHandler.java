@@ -15,6 +15,7 @@
  */
 package de.cuioss.http.client.handler;
 
+import de.cuioss.http.client.HttpLogMessages;
 import de.cuioss.tools.logging.CuiLogger;
 import de.cuioss.tools.string.MoreStrings;
 import lombok.AccessLevel;
@@ -199,7 +200,6 @@ public final class HttpHandler {
      * @return The HTTP status code family, or {@link HttpStatusFamily#UNKNOWN} if an error occurred
      */
     // HttpClient implements AutoCloseable in Java 17 but doesn't need to be closed
-    // cui-rewrite:disable CuiLogRecordPatternRecipe
     @SuppressWarnings("try")
     private HttpStatusFamily pingWithMethod(String method, HttpRequest.BodyPublisher bodyPublisher) {
         try {
@@ -211,14 +211,14 @@ public final class HttpHandler {
             HttpResponse<Void> response = httpClient.send(request, HttpResponse.BodyHandlers.discarding());
             return HttpStatusFamily.fromStatusCode(response.statusCode());
         } catch (IOException e) {
-            LOGGER.warn(e, "IO error while pinging URI %s: %s", uri, e.getMessage());
+            LOGGER.warn(e, HttpLogMessages.WARN.HTTP_PING_IO_ERROR.format(uri, e.getMessage()));
             return HttpStatusFamily.UNKNOWN;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            LOGGER.warn("Interrupted while pinging URI %s: %s", uri, e.getMessage());
+            LOGGER.warn(HttpLogMessages.WARN.HTTP_PING_INTERRUPTED.format(uri, e.getMessage()));
             return HttpStatusFamily.UNKNOWN;
         } catch (IllegalArgumentException | SecurityException e) {
-            LOGGER.warn(e, "Error while pinging URI %s: %s", uri, e.getMessage());
+            LOGGER.warn(e, HttpLogMessages.WARN.HTTP_PING_ERROR.format(uri, e.getMessage()));
             return HttpStatusFamily.UNKNOWN;
         }
     }
