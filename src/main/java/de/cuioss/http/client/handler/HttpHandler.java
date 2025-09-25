@@ -117,7 +117,6 @@ import java.util.regex.Pattern;
 @EqualsAndHashCode
 @ToString
 @Builder(builderClassName = "HttpHandlerBuilder", access = AccessLevel.PRIVATE)
-@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class HttpHandler {
 
     private static final CuiLogger LOGGER = new CuiLogger(HttpHandler.class);
@@ -136,11 +135,26 @@ public final class HttpHandler {
     @Getter private final SSLContext sslContext;
     @Getter private final int connectionTimeoutSeconds;
     @Getter private final int readTimeoutSeconds;
+    private final HttpClient httpClient;
 
-    // Cached HttpClient instance - lazily initialized and reused for all requests
-    // Marked volatile for thread-safe lazy initialization
-    private volatile HttpClient cachedHttpClient;
+    private HttpHandler(URI uri, URL url, SSLContext sslContext,
+                        int connectionTimeoutSeconds, int readTimeoutSeconds) {
+        this.uri = uri;
+        this.url = url;
+        this.sslContext = sslContext;
+        this.connectionTimeoutSeconds = connectionTimeoutSeconds;
+        this.readTimeoutSeconds = readTimeoutSeconds;
 
+        // Create the HttpClient once during construction
+        var httpClientBuilder = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(connectionTimeoutSeconds));
+
+        // For HTTPS URIs, SSL context must be set
+        if ("https".equalsIgnoreCase(uri.getScheme())) {
+            httpClientBuilder.sslContext(sslContext);
+        }
+        this.httpClient = httpClientBuilder.build();
+    }
 
     public static HttpHandlerBuilder builder() {
         return new HttpHandlerBuilder();
@@ -207,12 +221,12 @@ public final class HttpHandler {
     @SuppressWarnings("try")
     private HttpStatusFamily pingWithMethod(String method, HttpRequest.BodyPublisher bodyPublisher) {
         try {
-            HttpClient httpClient = createHttpClient();
+            HttpClient client = createHttpClient();
             HttpRequest request = requestBuilder()
                     .method(method, bodyPublisher)
                     .build();
 
-            HttpResponse<Void> response = httpClient.send(request, HttpResponse.BodyHandlers.discarding());
+            HttpResponse<Void> response = client.send(request, HttpResponse.BodyHandlers.discarding());
             return HttpStatusFamily.fromStatusCode(response.statusCode());
         } catch (IOException e) {
             LOGGER.warn(e, HttpLogMessages.WARN.HTTP_PING_IO_ERROR.format(uri, e.getMessage()));
@@ -229,30 +243,13 @@ public final class HttpHandler {
 
     /**
      * Gets the configured {@link HttpClient} for making HTTP requests.
-     * This method uses lazy initialization to create the HttpClient once and reuses it for all requests,
-     * improving performance by leveraging connection pooling and avoiding repeated client creation overhead.
+     * The HttpClient is created once during construction and reused for all requests,
+     * improving performance by leveraging connection pooling.
      *
      * @return A configured {@link HttpClient} with the SSL context and connection timeout
      */
     public HttpClient createHttpClient() {
-        // Double-checked locking for thread-safe lazy initialization
-        HttpClient result = cachedHttpClient;
-        if (result == null) {
-            synchronized (this) {
-                result = cachedHttpClient;
-                if (result == null) {
-                    HttpClient.Builder httpClientBuilder = HttpClient.newBuilder()
-                            .connectTimeout(Duration.ofSeconds(connectionTimeoutSeconds));
-
-                    // For HTTPS URIs, SSL context must be set
-                    if ("https".equalsIgnoreCase(uri.getScheme())) {
-                        httpClientBuilder.sslContext(sslContext);
-                    }
-                    cachedHttpClient = result = httpClientBuilder.build();
-                }
-            }
-        }
-        return result;
+        return httpClient;
     }
 
     /**
