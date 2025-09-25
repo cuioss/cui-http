@@ -96,17 +96,31 @@ final class AttributeParser {
             int equalsIndex = trimmedAttr.indexOf('=');
 
             if (equalsIndex > 0) {
-                // Extract the key part before '='
-                String key = trimmedAttr.substring(0, equalsIndex).trim();
+                // Extract the key part before '=' (without trimming for strict RFC compliance)
+                String key = trimmedAttr.substring(0, equalsIndex);
+
+                // RFC 6265 requires strict formatting - no spaces around '='
+                // Only trim the key if it doesn't have trailing spaces (strict parsing)
+                String trimmedKey = key.trim();
+                if (!key.equals(trimmedKey)) {
+                    // Key has trailing spaces - this violates RFC 6265 strict formatting
+                    continue;
+                }
 
                 // Check for exact match (case-insensitive)
-                if (key.equalsIgnoreCase(lowerAttrName)) {
-                    // Extract value after '='
-                    if (trimmedAttr.length() > equalsIndex + 1) {
-                        return Optional.of(trimmedAttr.substring(equalsIndex + 1).trim());
+                if (trimmedKey.equalsIgnoreCase(lowerAttrName)) {
+                    // Extract value after '=' (without trimming for strict RFC compliance)
+                    String value = trimmedAttr.substring(equalsIndex + 1);
+                    String trimmedValue = value.trim();
+
+                    // Check if value has leading spaces - this violates RFC 6265 strict formatting
+                    if (!value.equals(trimmedValue)) {
+                        // Value has leading spaces - this violates RFC 6265 strict formatting
+                        continue;
                     }
-                    // Attribute exists but has empty value (e.g., "name=")
-                    return Optional.of("");
+
+                    // Return the value (which may be empty for "name=")
+                    return Optional.of(trimmedValue);
                 }
             }
         }
