@@ -18,7 +18,6 @@ package de.cuioss.http.security.pipeline;
 import de.cuioss.http.security.config.SecurityConfiguration;
 import de.cuioss.http.security.core.HttpSecurityValidator;
 import de.cuioss.http.security.core.ValidationType;
-import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.http.security.validation.CharacterValidationStage;
 import de.cuioss.http.security.validation.LengthValidationStage;
@@ -27,11 +26,9 @@ import de.cuioss.http.security.validation.PatternMatchingStage;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.ToString;
-import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 
 /**
  * Sequential validation pipeline specifically for HTTP header components.
@@ -80,13 +77,11 @@ import java.util.Optional;
  *
  * @since 1.0
  */
-@EqualsAndHashCode
-@ToString
+@EqualsAndHashCode(callSuper = false, of = {"validationType"})
+@ToString(callSuper = true)
 @Getter
-public final class HTTPHeaderValidationPipeline implements HttpSecurityValidator {
+public final class HTTPHeaderValidationPipeline extends AbstractValidationPipeline {
 
-    private final List<HttpSecurityValidator> stages;
-    private final SecurityEventCounter eventCounter;
     private final ValidationType validationType;
 
     /**
@@ -102,8 +97,7 @@ public final class HTTPHeaderValidationPipeline implements HttpSecurityValidator
     public HTTPHeaderValidationPipeline(SecurityConfiguration config,
             SecurityEventCounter eventCounter,
             ValidationType validationType) {
-        this.eventCounter = Objects.requireNonNull(eventCounter, "EventCounter must not be null");
-        Objects.requireNonNull(config, "Config must not be null");
+        super(createStages(config, validationType), Objects.requireNonNull(eventCounter, "EventCounter must not be null"));
         Objects.requireNonNull(validationType, "ValidationType must not be null");
 
         if (!validationType.isHeader()) {
@@ -111,10 +105,15 @@ public final class HTTPHeaderValidationPipeline implements HttpSecurityValidator
         }
 
         this.validationType = validationType;
+    }
+
+    private static List<HttpSecurityValidator> createStages(SecurityConfiguration config, ValidationType validationType) {
+        Objects.requireNonNull(config, "Config must not be null");
+        Objects.requireNonNull(validationType, "ValidationType must not be null");
 
         // Create validation stages in the correct order for HTTP headers
         // Note: Headers typically don't need URL decoding, so we skip DecodingStage
-        this.stages = List.of(
+        return List.of(
                 new LengthValidationStage(config, validationType),
                 new CharacterValidationStage(config, validationType),
                 new NormalizationStage(config, validationType),
@@ -123,39 +122,8 @@ public final class HTTPHeaderValidationPipeline implements HttpSecurityValidator
     }
 
     @Override
-    @SuppressWarnings("DuplicatedCode")
-    public Optional<String> validate(@Nullable String value) throws UrlSecurityException {
-        if (value == null) {
-            return Optional.empty();
-        }
-
-        String result = value;
-
-        // Sequential execution with early termination
-        for (HttpSecurityValidator stage : stages) {
-            try {
-                Optional<String> stageResult = stage.validate(result);
-                if (stageResult.isEmpty()) {
-                    return Optional.empty();
-                }
-                result = stageResult.get();
-            } catch (UrlSecurityException e) {
-                // Track security event
-                eventCounter.increment(e.getFailureType());
-
-                // Re-throw with correct validation type
-                throw UrlSecurityException.builder()
-                        .failureType(e.getFailureType())
-                        .validationType(validationType)
-                        .originalInput(value) // Use original input, not current result
-                        .sanitizedInput(e.getSanitizedInput().orElse(null))
-                        .detail(e.getDetail().orElse("Validation failed"))
-                        .cause(e.getCause())
-                        .build();
-            }
-        }
-
-        return Optional.of(result);
+    public ValidationType getValidationType() {
+        return validationType;
     }
 
 }

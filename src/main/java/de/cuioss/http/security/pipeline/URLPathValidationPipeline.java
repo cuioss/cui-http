@@ -18,17 +18,14 @@ package de.cuioss.http.security.pipeline;
 import de.cuioss.http.security.config.SecurityConfiguration;
 import de.cuioss.http.security.core.HttpSecurityValidator;
 import de.cuioss.http.security.core.ValidationType;
-import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.http.security.validation.*;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.ToString;
-import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 
 /**
  * Sequential validation pipeline specifically for URL path components.
@@ -70,15 +67,13 @@ import java.util.Optional;
  *
  * @since 1.0
  */
-@EqualsAndHashCode
-@ToString
+@EqualsAndHashCode(callSuper = false, of = {})
+@ToString(callSuper = true)
 @Getter
 @SuppressWarnings("ClassCanBeRecord")
-public final class URLPathValidationPipeline implements HttpSecurityValidator {
+public final class URLPathValidationPipeline extends AbstractValidationPipeline {
 
-    private final List<HttpSecurityValidator> stages;
-    private final SecurityEventCounter eventCounter;
-    private static final ValidationType validationType = ValidationType.URL_PATH;
+    private static final ValidationType VALIDATION_TYPE = ValidationType.URL_PATH;
 
     /**
      * Creates a new URL path validation pipeline with the specified configuration.
@@ -89,12 +84,14 @@ public final class URLPathValidationPipeline implements HttpSecurityValidator {
      */
     public URLPathValidationPipeline(SecurityConfiguration config,
             SecurityEventCounter eventCounter) {
-        this.eventCounter = Objects.requireNonNull(eventCounter, "EventCounter must not be null");
-        Objects.requireNonNull(config, "Config must not be null");
+        super(createStages(config), Objects.requireNonNull(eventCounter, "EventCounter must not be null"));
+    }
 
+    private static List<HttpSecurityValidator> createStages(SecurityConfiguration config) {
+        Objects.requireNonNull(config, "Config must not be null");
         // Create validation stages in the correct order
         // CRITICAL: PatternMatchingStage must run BEFORE normalization to catch all traversal patterns
-        this.stages = List.of(
+        return List.of(
                 new LengthValidationStage(config, ValidationType.URL_PATH),
                 new CharacterValidationStage(config, ValidationType.URL_PATH),
                 new PatternMatchingStage(config, ValidationType.URL_PATH), // MOVED HERE - before decoding/normalization
@@ -105,48 +102,8 @@ public final class URLPathValidationPipeline implements HttpSecurityValidator {
     }
 
     @Override
-    @SuppressWarnings("DuplicatedCode")
-    public Optional<String> validate(@Nullable String value) throws UrlSecurityException {
-        if (value == null) {
-            return Optional.empty();
-        }
-
-        String result = value;
-
-        // Sequential execution with early termination
-        for (HttpSecurityValidator stage : stages) {
-            try {
-                Optional<String> stageResult = stage.validate(result);
-                if (stageResult.isEmpty()) {
-                    return Optional.empty();
-                }
-                result = stageResult.get();
-            } catch (UrlSecurityException e) {
-                // Track security event
-                eventCounter.increment(e.getFailureType());
-
-                // Re-throw with correct validation type
-                throw UrlSecurityException.builder()
-                        .failureType(e.getFailureType())
-                        .validationType(validationType)
-                        .originalInput(value) // Use original input, not current result
-                        .sanitizedInput(e.getSanitizedInput().orElse(null))
-                        .detail(e.getDetail().orElse("Validation failed"))
-                        .cause(e.getCause())
-                        .build();
-            }
-        }
-
-        return Optional.of(result);
-    }
-
-    /**
-     * Returns the validation type handled by this pipeline.
-     *
-     * @return ValidationType.URL_PATH
-     */
     public ValidationType getValidationType() {
-        return validationType;
+        return VALIDATION_TYPE;
     }
 
 }
