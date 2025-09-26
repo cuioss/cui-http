@@ -89,7 +89,14 @@ import java.util.Optional;
  * <ul>
  *   <li><strong>allowNullBytes</strong> - Whether to permit null bytes (default: false)</li>
  *   <li><strong>allowControlCharacters</strong> - Whether to permit control characters (default: false)</li>
- *   <li><strong>allowExtendedAscii</strong> - Whether to permit extended ASCII characters (128-255). Note: For URL paths and parameters, this only affects characters 128-255. Unicode characters beyond 255 are always rejected for URLs per RFC 3986. For headers and body content, this also enables Unicode support. (default: false)</li>
+ *   <li><strong>allowExtendedAscii</strong> - Whether to permit extended ASCII characters (128-255).
+ *       <ul>
+ *         <li>For URL paths and parameters: Allows characters 128-255 when enabled</li>
+ *         <li>For header names and cookies: Always rejected per RFC (setting ignored)</li>
+ *         <li>For header values and body: Enables both extended ASCII and Unicode support</li>
+ *         <li>Note: Unicode beyond 255 is always rejected for URLs per RFC 3986</li>
+ *       </ul>
+ *       (default: false)</li>
  * </ul>
  *
  * <h3>Performance Characteristics</h3>
@@ -280,14 +287,16 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
         }
 
         // Extended ASCII characters (128-255)
-        // SECURITY FIX: Must check if the validation type supports extended/Unicode characters
-        // before allowing based on allowExtendedAscii flag
+        // Different validation types have different rules for extended ASCII
         if (ch <= 255) {
-            // If the validation type doesn't support Unicode/extended chars, reject immediately
-            if (!supportsUnicodeCharacters()) {
-                return false;  // RFC compliance: header names, URLs, cookies must be ASCII-only
+            // Header names and cookie names/values must be ASCII-only per RFC
+            if (validationType == ValidationType.HEADER_NAME ||
+                    validationType == ValidationType.COOKIE_NAME ||
+                    validationType == ValidationType.COOKIE_VALUE) {
+                return false;  // RFC compliance: these must be ASCII-only
             }
-            // For types that support extended chars (body, header values), check configuration
+            // For other types (URL paths, parameters, header values, body),
+            // allow extended ASCII based on configuration
             return allowExtendedAscii || allowedChars.get(ch);
         }
 

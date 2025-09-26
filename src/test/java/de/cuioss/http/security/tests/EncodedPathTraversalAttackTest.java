@@ -15,8 +15,6 @@
  */
 package de.cuioss.http.security.tests;
 
-import java.util.regex.Pattern;
-
 import de.cuioss.http.security.config.SecurityConfiguration;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.generators.encoding.BoundaryFuzzingGenerator;
@@ -31,6 +29,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.*;
 

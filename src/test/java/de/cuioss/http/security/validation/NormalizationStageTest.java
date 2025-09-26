@@ -248,11 +248,11 @@ class NormalizationStageTest {
      */
     @ParameterizedTest
     @ValueSource(strings = {
-        "a/..c",              // .. in middle of filename
-        "file..txt",          // .. in middle of filename without separator
-        "api/search..html",   // .. at end of filename
-        "..config",           // .. at start of filename (not a directory)
-        "path/sub..dir/file"  // .. in middle of directory name
+            "a/..c",              // .. in middle of filename
+            "file..txt",          // .. in middle of filename without separator
+            "api/search..html",   // .. at end of filename
+            "..config",           // .. at start of filename (not a directory)
+            "path/sub..dir/file"  // .. in middle of directory name
     })
     void validate_withLegitimateDoubleDotsInFilenames_shouldNotBeRejected(String input) {
         Optional<String> result = stage.validate(input);

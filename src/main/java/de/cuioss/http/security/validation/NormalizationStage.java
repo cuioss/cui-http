@@ -171,21 +171,23 @@ ValidationType validationType) implements HttpSecurityValidator {
      * Pattern to detect paths starting with "..\\".
      * Matches paths that begin with double dot followed by backslash.
      */
-    static final Pattern STARTS_WITH_DOTDOT_BACKSLASH_PATTERN = Pattern.compile("^\\.\\\\.*");
+    static final Pattern STARTS_WITH_DOTDOT_BACKSLASH_PATTERN = Pattern.compile("^\\.\\.\\\\..*");
 
     /**
      * Pattern to detect internal slash-dotdot patterns.
-     * Matches "/" followed by ".." anywhere in the path.
+     * Matches "/" followed by ".." only when it's a directory traversal (followed by "/" or end of string).
+     * This avoids false positives for filenames starting with ".." like "a/..c"
      * Optimized for .find() usage without unnecessary .* wrappers.
      */
-    static final Pattern CONTAINS_SLASH_DOTDOT_PATTERN = Pattern.compile("/\\.\\.");
+    static final Pattern CONTAINS_SLASH_DOTDOT_PATTERN = Pattern.compile("/\\.\\.(?:/|$)");
 
     /**
      * Pattern to detect internal dotdot-backslash patterns.
      * Matches ".." followed by "\\" anywhere in the path.
+     * Used in conjunction with STARTS_WITH_DOTDOT_BACKSLASH_PATTERN to exclude initial "..\\".
      * Optimized for .find() usage without unnecessary .* wrappers.
      */
-    static final Pattern CONTAINS_DOTDOT_BACKSLASH_PATTERN = Pattern.compile("\\.\\\\");
+    static final Pattern CONTAINS_DOTDOT_BACKSLASH_PATTERN = Pattern.compile("\\.\\.\\\\");
 
 
     /**
@@ -438,7 +440,7 @@ ValidationType validationType) implements HttpSecurityValidator {
         // Pattern 4: Windows-style backslash traversal (but not if it starts with ..)
         // Patterns starting with .. should be handled by escapesRoot check
         return CONTAINS_DOTDOT_BACKSLASH_PATTERN.matcher(input).find() &&
-            !STARTS_WITH_DOTDOT_BACKSLASH_PATTERN.matcher(input).matches();
+                !STARTS_WITH_DOTDOT_BACKSLASH_PATTERN.matcher(input).matches();
     }
 
     /**
@@ -454,14 +456,19 @@ ValidationType validationType) implements HttpSecurityValidator {
      */
     private boolean containsInternalPathTraversal(String path) {
         // After normalization, check for .. segments that aren't at the start
-        if (CONTAINS_SLASH_DOTDOT_PATTERN.matcher(path).find() ||
-            CONTAINS_DOTDOT_BACKSLASH_PATTERN.matcher(path).find()) {
+        if (CONTAINS_SLASH_DOTDOT_PATTERN.matcher(path).find()) {
+            return true;
+        }
+
+        // For backslash patterns, exclude those starting with ..\\ (handled by escapesRoot)
+        if (CONTAINS_DOTDOT_BACKSLASH_PATTERN.matcher(path).find() &&
+                !STARTS_WITH_DOTDOT_BACKSLASH_PATTERN.matcher(path).matches()) {
             return true;
         }
 
         // Check for .. at end of path (without leading ../)
         if (ENDS_WITH_SLASH_DOTDOT_PATTERN.matcher(path).matches() &&
-            !STARTS_WITH_DOTDOT_SLASH_PATTERN.matcher(path).matches()) {
+                !STARTS_WITH_DOTDOT_SLASH_PATTERN.matcher(path).matches()) {
             return true;
         }
 
@@ -498,7 +505,7 @@ ValidationType validationType) implements HttpSecurityValidator {
     private boolean escapesRoot(String path) {
         // Check if normalized path tries to escape root
         return STARTS_WITH_DOTDOT_SLASH_PATTERN.matcher(path).matches() ||
-               STARTS_WITH_DOTDOT_BACKSLASH_PATTERN.matcher(path).matches();
+                STARTS_WITH_DOTDOT_BACKSLASH_PATTERN.matcher(path).matches();
     }
 
     /**

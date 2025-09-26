@@ -452,7 +452,7 @@ class HttpHandlerTest {
             // The current implementation should handle this gracefully
             // This test documents the expectation that NPE should be caught and wrapped
             assertDoesNotThrow(builder::build,
-                "URI to URL conversion should not throw NPE but wrap it in IllegalStateException");
+                    "URI to URL conversion should not throw NPE but wrap it in IllegalStateException");
         }
 
         @Test
@@ -463,7 +463,7 @@ class HttpHandlerTest {
 
             var exception = assertThrows(IllegalArgumentException.class, builder::build);
             assertEquals("URI must not be null or empty.", exception.getMessage(),
-                      "Should throw IllegalArgumentException for missing URL");
+                    "Should throw IllegalArgumentException for missing URL");
         }
     }
 }
