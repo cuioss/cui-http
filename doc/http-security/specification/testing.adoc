@@ -43,9 +43,9 @@ src/test/java/de/cuioss/http/security/
 ├── generators/                              # Test data generators (organized by type)
 │   ├── AllGeneratorsIntegrationTest.java   # Generator integration tests
 │   ├── SupportedValidationTypeGenerator.java
-│   ├── body/                               # HTTP body generators
-│   │   ├── HTTPBodyGenerator.java
-│   │   └── ValidHTTPBodyContentGenerator.java
+│   ├── body/                               # Note: HTTP body validation has been eliminated
+│   │   ├── HTTPBodyGenerator.java          # (Deprecated - no longer used)
+│   │   └── ValidHTTPBodyContentGenerator.java  # (Deprecated - no longer used)
 │   ├── cookie/                             # Cookie generators
 │   │   ├── AttackCookieGenerator.java
 │   │   └── ValidCookieGenerator.java
@@ -151,8 +151,13 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 @EnableGeneratorController
 public class PathTraversalAttackTest {
-    
+
     private final HttpSecurityValidator validator = createValidator();
+
+    private HttpSecurityValidator createValidator() {
+        // Create a path validation pipeline for testing
+        return PipelineFactory.createPipeline(ValidationType.URL_PATH);
+    }
     
     @ParameterizedTest(name = "T1: Path traversal [{index}]: {0}")
     @TypeGeneratorSource(value = PathTraversalGenerator.class, count = 100)
@@ -730,7 +735,7 @@ public class GeneratorsArgumentsProvider implements ArgumentsProvider {
             case PARAMETER_NAME -> new URLParameterNameGenerator();
             case PARAMETER_VALUE -> new URLParameterValueGenerator();
             case COOKIE -> new CookieGenerator();
-            case HTTP_BODY -> new HTTPBodyGenerator();
+            case HTTP_BODY -> throw new UnsupportedOperationException("HTTP body validation has been eliminated from the architecture");
         };
     }
 }
@@ -977,8 +982,13 @@ public class ComprehensiveSecurityTest {
  * Implements: link:plan.adoc#_phase_710_false_positive_prevention_tests[Tasks T31-T33]
  */
 public class FalsePositiveTest {
-    
+
     private final HttpSecurityValidator validator = createValidator();
+
+    private HttpSecurityValidator createValidator() {
+        // Create a path validation pipeline for testing
+        return PipelineFactory.createPipeline(ValidationType.URL_PATH);
+    }
     
     @ParameterizedTest(name = "Valid URLs should pass [{index}]: {0}")
     @GeneratorsSource(value = GeneratorType.VALID_URL, limit = 500)
@@ -1010,8 +1020,13 @@ public class FalsePositiveTest {
  * Implements: link:plan.adoc#_phase_711_performance_validation_tests[Tasks T34-T36]
  */
 public class PerformanceValidationTest {
-    
+
     private final HttpSecurityValidator validator = createValidator();
+
+    private HttpSecurityValidator createValidator() {
+        // Create a path validation pipeline for testing
+        return PipelineFactory.createPipeline(ValidationType.URL_PATH);
+    }
     
     @ParameterizedTest(name = "Performance test [{index}]")
     @GeneratorsSource(value = {
@@ -1039,13 +1054,26 @@ public class PerformanceValidationTest {
 }
 
 /**
- * Cookie and HTTP body validation tests.
+ * Cookie and HTTP header validation tests.
+ * Note: HTTP body validation has been eliminated from the architecture.
+ * All URL validation is now handled by URLPathValidationPipeline.
  */
 public class HTTPDataValidationTest {
-    
+
     private final HttpSecurityValidator cookieValidator = createCookieValidator();
-    private final HttpSecurityValidator bodyValidator = createBodyValidator();
-    
+    private final HttpSecurityValidator headerValidator = createHeaderValidator();
+
+    private HttpSecurityValidator createCookieValidator() {
+        // Create a cookie validation pipeline
+        // Note: This would typically use specialized cookie validation rules
+        return PipelineFactory.createPipeline(ValidationType.HEADER_VALUE);
+    }
+
+    private HttpSecurityValidator createHeaderValidator() {
+        // Create a header validation pipeline
+        return PipelineFactory.createPipeline(ValidationType.HEADER_VALUE);
+    }
+
     @ParameterizedTest(name = "Cookie validation [{index}]")
     @GeneratorsSource(value = GeneratorType.COOKIE, limit = 100)
     void testCookieValidation(String cookieValue, String generatorType) {
@@ -1060,16 +1088,16 @@ public class HTTPDataValidationTest {
         }
     }
     
-    @ParameterizedTest(name = "HTTP body validation [{index}]")
-    @GeneratorsSource(value = GeneratorType.HTTP_BODY, limit = 100)
-    void testHTTPBodyValidation(String bodyContent, String generatorType) {
-        // HTTPBodyGenerator creates various body content types
+    @ParameterizedTest(name = "HTTP header validation [{index}]")
+    @GeneratorsSource(value = GeneratorType.HTTP_HEADER, limit = 100)
+    void testHTTPHeaderValidation(String headerValue, String generatorType) {
+        // HTTPHeaderGenerator creates various header content types
         try {
-            String result = bodyValidator.execute(bodyContent);
-            // Valid body content
+            String result = headerValidator.execute(headerValue);
+            // Valid header content
             assertNotNull(result);
         } catch (UrlSecurityException e) {
-            // Malicious body content detected
+            // Malicious header content detected
             assertNotNull(e.getFailureType());
         }
     }
@@ -1083,6 +1111,11 @@ public class CombinedAttackTest {
     private static final CuiLogger logger = new CuiLogger(CombinedAttackTest.class);
 
     private final HttpSecurityValidator validator = createValidator();
+
+    private HttpSecurityValidator createValidator() {
+        // Create a path validation pipeline for testing
+        return PipelineFactory.createPipeline(ValidationType.URL_PATH);
+    }
     
     @ParameterizedTest(name = "Combined attacks [{index}]: {1}")
     @GeneratorsSource(value = {

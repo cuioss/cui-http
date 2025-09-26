@@ -93,7 +93,7 @@ SecurityConfiguration config = SecurityConfiguration.defaults();
 // Standard configuration for most path-based attacks
 
 // For Unicode path content:
-config = SecurityConfiguration.builder()
+SecurityConfiguration unicodeConfig = SecurityConfiguration.builder()
     .allowHighBitCharacters(true)
     .build();
 ----

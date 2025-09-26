@@ -23,20 +23,18 @@
  *
  * <h3>Available Pipelines</h3>
  * <ul>
- *   <li>{@link de.cuioss.http.security.pipeline.URLPathValidationPipeline} - Path traversal and encoding attacks on URL paths</li>
+ *   <li>{@link de.cuioss.http.security.pipeline.URLPathValidationPipeline} - Path traversal, encoding attacks, and all URL validation</li>
  *   <li>{@link de.cuioss.http.security.pipeline.URLParameterValidationPipeline} - XSS and injection attacks via URL parameters</li>
  *   <li>{@link de.cuioss.http.security.pipeline.HTTPHeaderValidationPipeline} - Header injection and CRLF attacks</li>
- *   <li>{@link de.cuioss.http.security.pipeline.HTTPBodyValidationPipeline} - Content-based attacks in request bodies</li>
  *   <li>{@link de.cuioss.http.security.pipeline.PipelineFactory} - Factory for creating and configuring pipelines</li>
  * </ul>
  *
  * <h3>Pipeline Selection</h3>
  * <p>Choose the appropriate pipeline based on the HTTP component being validated:</p>
  * <ul>
- *   <li><strong>URL Paths</strong> - Use {@code URLPathValidationPipeline} for paths like {@code /api/users/123}</li>
+ *   <li><strong>URL Paths</strong> - Use {@code URLPathValidationPipeline} for paths and full URLs like {@code /api/users/123} or {@code http://example.com/path}</li>
  *   <li><strong>Parameters</strong> - Use {@code URLParameterValidationPipeline} for query parameters and form data</li>
  *   <li><strong>Headers</strong> - Use {@code HTTPHeaderValidationPipeline} for HTTP headers</li>
- *   <li><strong>Bodies</strong> - Use {@code HTTPBodyValidationPipeline} for request/response bodies</li>
  * </ul>
  *
  * <h3>Usage Example</h3>
