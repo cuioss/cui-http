@@ -145,8 +145,9 @@ ValidationType validationType) implements HttpSecurityValidator {
      * Pattern to detect multiple consecutive dots with path separators.
      * Matches patterns like ".../" or "...\\" which could be traversal bypass attempts.
      * Does not match legitimate filenames like "file...txt".
+     * Uses .find() with simple pattern to prevent ReDoS attacks.
      */
-    static final Pattern MULTIPLE_DOTS_WITH_SEPARATOR_PATTERN = Pattern.compile(".*\\.{3,}(/|\\\\).*");
+    static final Pattern MULTIPLE_DOTS_WITH_SEPARATOR_PATTERN = Pattern.compile("\\.{3,}[/\\\\]");
 
     /**
      * Pattern for splitting paths on forward slash or backslash separators.
@@ -175,14 +176,16 @@ ValidationType validationType) implements HttpSecurityValidator {
     /**
      * Pattern to detect internal slash-dotdot patterns.
      * Matches "/" followed by ".." anywhere in the path.
+     * Optimized for .find() usage without unnecessary .* wrappers.
      */
-    static final Pattern CONTAINS_SLASH_DOTDOT_PATTERN = Pattern.compile(".*/\\.\\.*");
+    static final Pattern CONTAINS_SLASH_DOTDOT_PATTERN = Pattern.compile("/\\.\\.");
 
     /**
      * Pattern to detect internal dotdot-backslash patterns.
      * Matches ".." followed by "\\" anywhere in the path.
+     * Optimized for .find() usage without unnecessary .* wrappers.
      */
-    static final Pattern CONTAINS_DOTDOT_BACKSLASH_PATTERN = Pattern.compile(".*\\.\\\\.*");
+    static final Pattern CONTAINS_DOTDOT_BACKSLASH_PATTERN = Pattern.compile("\\.\\\\");
 
 
     /**
@@ -428,7 +431,7 @@ ValidationType validationType) implements HttpSecurityValidator {
 
         // Pattern 3: Multiple consecutive dots with separators (traversal bypass attempts)
         // Covers ".../" but NOT "file...txt"
-        if (MULTIPLE_DOTS_WITH_SEPARATOR_PATTERN.matcher(input).matches()) {
+        if (MULTIPLE_DOTS_WITH_SEPARATOR_PATTERN.matcher(input).find()) {
             return true;
         }
 
