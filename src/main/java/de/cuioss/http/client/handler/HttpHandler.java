@@ -493,9 +493,21 @@ public final class HttpHandler {
             }
 
             String scheme = uri.getScheme();
+            if (scheme == null) {
+                throw new MalformedURLException("URI scheme cannot be null");
+            }
+
             String host = uri.getHost();
+            if (host == null) {
+                // Some URIs like URNs don't have hosts and can't be converted to URLs
+                throw new MalformedURLException("URI does not have a host component: " + uri);
+            }
+
             int port = uri.getPort();
             String file = uri.getRawPath();
+            if (file == null) {
+                file = "";
+            }
 
             // Add query if present
             if (uri.getRawQuery() != null) {

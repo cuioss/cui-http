@@ -85,7 +85,7 @@ class MixedEncodingAttackTest {
     void setUp() {
         config = SecurityConfiguration.builder()
                 .failOnSuspiciousPatterns(true)
-                .allowHighBitCharacters(false)  // Reject encoded high-bit chars
+                .allowExtendedAscii(false)  // Reject encoded high-bit chars
                 .allowControlCharacters(false) // Reject encoded control chars
                 .normalizeUnicode(true)        // Normalize Unicode encoding
                 .caseSensitiveComparison(true) // Strict comparison

@@ -261,7 +261,7 @@ class CharacterValidationStageTest {
     void shouldHandleUnicodeCharactersConsistentlyWithAllowHighBitCharacters() {
         // Test with allowHighBitCharacters = true (default)
         SecurityConfiguration configWithHighBit = SecurityConfiguration.builder()
-                .allowHighBitCharacters(true)
+                .allowExtendedAscii(true)
                 .build();
 
         CharacterValidationStage pathStage = new CharacterValidationStage(configWithHighBit, ValidationType.URL_PATH);
@@ -292,7 +292,7 @@ class CharacterValidationStageTest {
 
         // Test with allowHighBitCharacters = false
         SecurityConfiguration configWithoutHighBit = SecurityConfiguration.builder()
-                .allowHighBitCharacters(false)
+                .allowExtendedAscii(false)
                 .build();
 
         CharacterValidationStage restrictedStage = new CharacterValidationStage(configWithoutHighBit, ValidationType.URL_PATH);

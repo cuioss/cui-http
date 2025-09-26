@@ -61,7 +61,7 @@ class EdgeCaseValidURLsDatabaseTest {
     void setUp() {
         // Use a permissive configuration for edge cases
         SecurityConfiguration config = SecurityConfiguration.builder()
-                .allowHighBitCharacters(true)
+                .allowExtendedAscii(true)
                 .maxPathLength(1000)  // Allow longer paths for edge cases
                 .build();
         eventCounter = new SecurityEventCounter();

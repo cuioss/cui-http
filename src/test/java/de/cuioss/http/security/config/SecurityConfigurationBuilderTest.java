@@ -81,7 +81,7 @@ class SecurityConfigurationBuilderTest {
 
         assertFalse(config.allowNullBytes());
         assertFalse(config.allowControlCharacters());
-        assertTrue(config.allowHighBitCharacters());
+        assertTrue(config.allowExtendedAscii());
         assertFalse(config.normalizeUnicode());
     }
 
@@ -438,13 +438,13 @@ class SecurityConfigurationBuilderTest {
         SecurityConfiguration config = SecurityConfiguration.builder()
                 .allowNullBytes(true)
                 .allowControlCharacters(true)
-                .allowHighBitCharacters(false)
+                .allowExtendedAscii(false)
                 .normalizeUnicode(true)
                 .build();
 
         assertTrue(config.allowNullBytes());
         assertTrue(config.allowControlCharacters());
-        assertFalse(config.allowHighBitCharacters());
+        assertFalse(config.allowExtendedAscii());
         assertTrue(config.normalizeUnicode());
     }
 
@@ -456,7 +456,7 @@ class SecurityConfigurationBuilderTest {
 
         assertTrue(config.allowNullBytes());
         assertFalse(config.allowControlCharacters());
-        assertTrue(config.allowHighBitCharacters());
+        assertTrue(config.allowExtendedAscii());
         assertFalse(config.normalizeUnicode());
     }
 
@@ -542,7 +542,7 @@ class SecurityConfigurationBuilderTest {
         assertEquals(3, configAllowedTypes.size());
         assertEquals(2, config.blockedContentTypes().size());
         assertFalse(config.allowNullBytes());
-        assertTrue(config.allowHighBitCharacters());
+        assertTrue(config.allowExtendedAscii());
         assertTrue(config.normalizeUnicode());
         assertFalse(config.caseSensitiveComparison());
         assertTrue(config.failOnSuspiciousPatterns());

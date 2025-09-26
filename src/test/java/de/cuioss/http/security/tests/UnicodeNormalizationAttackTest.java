@@ -87,7 +87,7 @@ class UnicodeNormalizationAttackTest {
         SecurityConfiguration config = SecurityConfiguration.builder()
                 .normalizeUnicode(true)
                 .failOnSuspiciousPatterns(true)
-                .allowHighBitCharacters(false)  // Reject high-bit Unicode
+                .allowExtendedAscii(false)  // Reject high-bit Unicode
                 .allowControlCharacters(false)
                 .build();
         eventCounter = new SecurityEventCounter();

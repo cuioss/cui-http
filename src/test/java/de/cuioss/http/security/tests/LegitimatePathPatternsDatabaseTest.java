@@ -62,7 +62,7 @@ class LegitimatePathPatternsDatabaseTest {
     void setUp() {
         // Use a configuration that allows legitimate patterns
         SecurityConfiguration config = SecurityConfiguration.builder()
-                .allowHighBitCharacters(true)  // Allow UTF-8 encoded international characters
+                .allowExtendedAscii(true)  // Allow UTF-8 encoded international characters
                 .maxPathLength(500)  // Allow reasonably long paths
                 .build();
         eventCounter = new SecurityEventCounter();

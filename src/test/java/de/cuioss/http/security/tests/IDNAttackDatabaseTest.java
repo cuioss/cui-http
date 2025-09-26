@@ -59,7 +59,7 @@ class IDNAttackDatabaseTest {
     @BeforeEach
     void setUp() {
         SecurityConfiguration config = SecurityConfiguration.builder()
-                .allowHighBitCharacters(true)  // Allow Unicode/IDN characters
+                .allowExtendedAscii(true)  // Allow Unicode/IDN characters
                 .failOnSuspiciousPatterns(true)  // Enable suspicious pattern detection
                 .build();
         eventCounter = new SecurityEventCounter();

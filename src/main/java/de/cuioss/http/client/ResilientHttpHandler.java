@@ -285,7 +285,7 @@ public class ResilientHttpHandler<T> {
         String etag = response.headers().firstValue("ETag").orElse(null);
 
         LOGGER.debug("HTTP response received: %s SUCCESS for %s (etag: %s)",
-                    response.statusCode(), httpHandler.getUrl(), etag);
+                response.statusCode(), httpHandler.getUrl(), etag);
 
         // Convert raw content to target type
         Optional<T> contentOpt = contentConverter.convert(rawContent);

@@ -62,7 +62,7 @@ class LegitimateSpecialCharactersDatabaseTest {
     void setUp() {
         // Use a configuration that allows special characters and international text
         SecurityConfiguration config = SecurityConfiguration.builder()
-                .allowHighBitCharacters(true)  // Allow UTF-8 encoded characters
+                .allowExtendedAscii(true)  // Allow UTF-8 encoded characters
                 .maxPathLength(500)
                 .build();
         eventCounter = new SecurityEventCounter();

@@ -1,0 +1,386 @@
+[INFO] Scanning for projects...
+[INFO] Inspecting build with total of 1 modules
+[INFO] Installing Central Publishing features
+[INFO] 
+[INFO] -------------------------< de.cuioss:cui-http >-------------------------
+[INFO] Building CUI HTTP 1.0.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- clean:3.5.0:clean (default-clean) @ cui-http ---
+[INFO] Deleting /Users/oliver/git/cui-http/target
+[INFO] 
+[INFO] --- enforcer:3.5.0:enforce (mojo-enforcer-rules) @ cui-http ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.RequirePluginVersions passed
+[INFO] Rule 1: org.apache.maven.enforcer.rules.version.RequireMavenVersion passed
+[INFO] Rule 2: org.apache.maven.enforcer.rules.version.RequireJavaVersion passed
+[INFO] Rule 3: org.codehaus.mojo.extraenforcer.model.RequirePropertyDiverges passed
+[INFO] Rule 4: org.codehaus.mojo.extraenforcer.model.RequirePropertyDiverges passed
+[INFO] Rule 5: org.apache.maven.enforcer.rules.RequireSameVersions passed
+[INFO] 
+[INFO] --- license:5.0.0:format (format-license-headers) @ cui-http ---
+[INFO] Updating license headers...
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ cui-http ---
+[INFO] skip non existing resourceDirectory /Users/oliver/git/cui-http/src/main/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ cui-http ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 56 source files with javac [debug release 21 module-path] to target/classes
+[INFO] JDK-8318913 workaround: patched module-info.class requires version from [21.0.7] to [21] on 2 JDK modules [java.base, java.net.http]
+[INFO] /Users/oliver/git/cui-http/src/main/java/de/cuioss/http/client/handler/HttpHandler.java: /Users/oliver/git/cui-http/src/main/java/de/cuioss/http/client/handler/HttpHandler.java verwendet oder überschreibt eine veraltete API.
+[INFO] /Users/oliver/git/cui-http/src/main/java/de/cuioss/http/client/handler/HttpHandler.java: Wiederholen Sie die Kompilierung mit -Xlint:deprecation, um Details zu erhalten.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ cui-http ---
+[INFO] skip non existing resourceDirectory /Users/oliver/git/cui-http/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ cui-http ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 134 source files with javac [debug release 21 module-path] to target/test-classes
+[INFO] 
+[INFO] >>> rewrite:6.12.0:run (rewrite) > process-test-classes @ cui-http >>>
+[INFO] 
+[INFO] --- enforcer:3.5.0:enforce (mojo-enforcer-rules) @ cui-http ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.RequirePluginVersions passed
+[INFO] Rule 3: org.codehaus.mojo.extraenforcer.model.RequirePropertyDiverges passed
+[INFO] Rule 4: org.codehaus.mojo.extraenforcer.model.RequirePropertyDiverges passed
+[INFO] Rule 5: org.apache.maven.enforcer.rules.RequireSameVersions passed
+[INFO] 
+[INFO] --- license:5.0.0:format (format-license-headers) @ cui-http ---
+[INFO] Updating license headers...
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ cui-http ---
+[INFO] skip non existing resourceDirectory /Users/oliver/git/cui-http/src/main/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ cui-http ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ cui-http ---
+[INFO] skip non existing resourceDirectory /Users/oliver/git/cui-http/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ cui-http ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 134 source files with javac [debug release 21 module-path] to target/test-classes
+[INFO] 
+[INFO] <<< rewrite:6.12.0:run (rewrite) < process-test-classes @ cui-http <<<
+[INFO] 
+[INFO] 
+[INFO] --- rewrite:6.12.0:run (rewrite) @ cui-http ---
+[INFO] Using active recipe(s) [de.cuioss.rewrite.format.AnnotationNewlineFormat, de.cuioss.rewrite.logging.CuiLoggerStandardsRecipe, de.cuioss.rewrite.logging.CuiLogRecordPatternRecipe, de.cuioss.rewrite.logging.InvalidExceptionUsageRecipe, org.openrewrite.java.format.AutoFormat, org.openrewrite.java.format.NormalizeLineBreaks, org.openrewrite.java.format.RemoveTrailingWhitespace, org.openrewrite.java.migrate.UpgradeToJava21, org.openrewrite.java.migrate.lang.UseTextBlocks, org.openrewrite.java.migrate.lang.StringFormatted, org.openrewrite.staticanalysis.InstanceOfPatternMatch, org.openrewrite.java.migrate.util.JavaUtilAPIs, org.openrewrite.java.migrate.util.OptionalNotEmptyToIsPresent, org.openrewrite.java.migrate.util.OptionalNotPresentToIsEmpty, org.openrewrite.java.migrate.util.ReplaceStreamCollectWithToList, org.openrewrite.java.migrate.util.UseLocaleOf, org.openrewrite.java.migrate.util.UseMapOf, org.openrewrite.java.OrderImports, org.openrewrite.java.RemoveUnusedImports, org.openrewrite.java.ShortenFullyQualifiedTypeReferences, org.openrewrite.java.testing.junit5.JUnit5BestPractices, org.openrewrite.java.testing.junit5.RemoveTryCatchFailBlocks, org.openrewrite.staticanalysis.EqualsAvoidsNull, org.openrewrite.staticanalysis.NoPrimitiveWrappersForToStringOrCompareTo, org.openrewrite.staticanalysis.SimplifyBooleanExpression, org.openrewrite.staticanalysis.UnnecessaryParentheses]
+[INFO] Using active styles(s) []
+[INFO] Validating active recipes...
+[INFO] Project [CUI HTTP] Resolving Poms...
+[INFO] Project [CUI HTTP] Parsing source files
+[INFO] Running recipe(s)...
+[WARNING] Changes have been made to pom.xml by:
+[WARNING]     org.openrewrite.java.migrate.UpgradeToJava21
+[WARNING]         org.openrewrite.java.migrate.UpgradeToJava17
+[WARNING]             org.openrewrite.java.migrate.Java8toJava11
+[WARNING]                 org.openrewrite.java.migrate.UpgradeBuildToJava11
+[WARNING]                     org.openrewrite.java.migrate.UpgradeJavaVersion: {version=11}
+[WARNING]                         org.openrewrite.maven.UpdateMavenProjectPropertyJavaVersion: {version=11}
+[WARNING]             org.openrewrite.java.migrate.UpgradeBuildToJava17
+[WARNING]                 org.openrewrite.java.migrate.UpgradeJavaVersion: {version=17}
+[WARNING]                     org.openrewrite.maven.UpdateMavenProjectPropertyJavaVersion: {version=17}
+[WARNING]         org.openrewrite.java.migrate.UpgradeBuildToJava21
+[WARNING]             org.openrewrite.java.migrate.UpgradeJavaVersion: {version=21}
+[WARNING]                 org.openrewrite.maven.UpdateMavenProjectPropertyJavaVersion: {version=21}
+[WARNING] Changes have been made to src/main/java/de/cuioss/http/client/ResilientHttpHandler.java by:
+[WARNING]     de.cuioss.rewrite.format.AnnotationNewlineFormat
+[WARNING]         org.openrewrite.java.format.AutoFormat
+[WARNING] Please review and commit the results.
+[WARNING] Estimate time saved: 6m
+[INFO] 
+[INFO] --- surefire:3.5.3:test (default-test) @ cui-http ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running de.cuioss.http.security.pipeline.URLParameterValidationPipelineTest
+[INFO] Running de.cuioss.http.security.pipeline.URLParameterValidationPipelineTest$PipelineBehavior
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.076 s -- in de.cuioss.http.security.pipeline.URLParameterValidationPipelineTest$PipelineBehavior
+[INFO] Running de.cuioss.http.security.pipeline.URLParameterValidationPipelineTest$ParameterSpecificScenarios
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.016 s -- in de.cuioss.http.security.pipeline.URLParameterValidationPipelineTest$ParameterSpecificScenarios
+[INFO] Running de.cuioss.http.security.pipeline.URLParameterValidationPipelineTest$SecurityValidation
+[INFO] Tests run: 22, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.033 s -- in de.cuioss.http.security.pipeline.URLParameterValidationPipelineTest$SecurityValidation
+[INFO] Running de.cuioss.http.security.pipeline.URLParameterValidationPipelineTest$ValidInputHandling
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.010 s -- in de.cuioss.http.security.pipeline.URLParameterValidationPipelineTest$ValidInputHandling
+[INFO] Running de.cuioss.http.security.pipeline.URLParameterValidationPipelineTest$PipelineCreation
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in de.cuioss.http.security.pipeline.URLParameterValidationPipelineTest$PipelineCreation
+[INFO] Tests run: 0, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.151 s -- in de.cuioss.http.security.pipeline.URLParameterValidationPipelineTest
+[INFO] Running de.cuioss.http.security.pipeline.HTTPHeaderValidationPipelineTest
+[INFO] Running de.cuioss.http.security.pipeline.HTTPHeaderValidationPipelineTest$ValidationTypeSpecific
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in de.cuioss.http.security.pipeline.HTTPHeaderValidationPipelineTest$ValidationTypeSpecific
+[INFO] Running de.cuioss.http.security.pipeline.HTTPHeaderValidationPipelineTest$PipelineBehavior
+[INFO] Tests run: 14, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.017 s -- in de.cuioss.http.security.pipeline.HTTPHeaderValidationPipelineTest$PipelineBehavior
+[INFO] Running de.cuioss.http.security.pipeline.HTTPHeaderValidationPipelineTest$SecurityValidation
+[INFO] Tests run: 13, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.012 s -- in de.cuioss.http.security.pipeline.HTTPHeaderValidationPipelineTest$SecurityValidation
+[INFO] Running de.cuioss.http.security.pipeline.HTTPHeaderValidationPipelineTest$ValidInputHandling
+[INFO] Tests run: 22, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.018 s -- in de.cuioss.http.security.pipeline.HTTPHeaderValidationPipelineTest$ValidInputHandling
+[INFO] Running de.cuioss.http.security.pipeline.HTTPHeaderValidationPipelineTest$PipelineCreation
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in de.cuioss.http.security.pipeline.HTTPHeaderValidationPipelineTest$PipelineCreation
+[INFO] Tests run: 0, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.054 s -- in de.cuioss.http.security.pipeline.HTTPHeaderValidationPipelineTest
+[INFO] Running de.cuioss.http.security.pipeline.PipelineFactoryTest
+[INFO] Running de.cuioss.http.security.pipeline.PipelineFactoryTest$FactoryBehavior
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.019 s -- in de.cuioss.http.security.pipeline.PipelineFactoryTest$FactoryBehavior
+[INFO] Running de.cuioss.http.security.pipeline.PipelineFactoryTest$PipelineSetOperations
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.014 s -- in de.cuioss.http.security.pipeline.PipelineFactoryTest$PipelineSetOperations
+[INFO] Running de.cuioss.http.security.pipeline.PipelineFactoryTest$GenericFactoryMethods
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in de.cuioss.http.security.pipeline.PipelineFactoryTest$GenericFactoryMethods
+[INFO] Running de.cuioss.http.security.pipeline.PipelineFactoryTest$ValidationAndErrorHandling
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in de.cuioss.http.security.pipeline.PipelineFactoryTest$ValidationAndErrorHandling
+[INFO] Running de.cuioss.http.security.pipeline.PipelineFactoryTest$PipelineCreation
+[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.022 s -- in de.cuioss.http.security.pipeline.PipelineFactoryTest$PipelineCreation
+[INFO] Tests run: 0, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.069 s -- in de.cuioss.http.security.pipeline.PipelineFactoryTest
+[INFO] Running de.cuioss.http.security.pipeline.URLPathValidationPipelineTest
+[INFO] Running de.cuioss.http.security.pipeline.URLPathValidationPipelineTest$PipelineBehavior
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in de.cuioss.http.security.pipeline.URLPathValidationPipelineTest$PipelineBehavior
+[INFO] Running de.cuioss.http.security.pipeline.URLPathValidationPipelineTest$SecurityValidation
+[INFO] Tests run: 26, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.017 s -- in de.cuioss.http.security.pipeline.URLPathValidationPipelineTest$SecurityValidation
+[INFO] Running de.cuioss.http.security.pipeline.URLPathValidationPipelineTest$ValidInputHandling
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in de.cuioss.http.security.pipeline.URLPathValidationPipelineTest$ValidInputHandling
+[INFO] Running de.cuioss.http.security.pipeline.URLPathValidationPipelineTest$PipelineCreation
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in de.cuioss.http.security.pipeline.URLPathValidationPipelineTest$PipelineCreation
+[INFO] Tests run: 0, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.032 s -- in de.cuioss.http.security.pipeline.URLPathValidationPipelineTest
+[INFO] Running de.cuioss.http.security.core.ValidationTypeTest
+[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in de.cuioss.http.security.core.ValidationTypeTest
+[INFO] Running de.cuioss.http.security.core.UrlSecurityFailureTypeTest
+[INFO] Tests run: 149, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.062 s -- in de.cuioss.http.security.core.UrlSecurityFailureTypeTest
+[INFO] Running de.cuioss.http.security.core.HttpSecurityValidatorTest
+[INFO] Tests run: 19, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in de.cuioss.http.security.core.HttpSecurityValidatorTest
+[INFO] Running de.cuioss.http.security.config.SecurityConfigurationBuilderTest
+[INFO] Tests run: 40, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.012 s -- in de.cuioss.http.security.config.SecurityConfigurationBuilderTest
+[INFO] Running de.cuioss.http.security.config.SecurityDefaultsTest
+[INFO] Tests run: 24, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in de.cuioss.http.security.config.SecurityDefaultsTest
+[INFO] Running de.cuioss.http.security.config.SecurityConfigurationTest
+[INFO] Tests run: 63, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.055 s -- in de.cuioss.http.security.config.SecurityConfigurationTest
+[INFO] Running de.cuioss.http.security.tests.NullBytePathTraversalAttackTest
+[INFO] Tests run: 217, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.115 s -- in de.cuioss.http.security.tests.NullBytePathTraversalAttackTest
+[INFO] Running de.cuioss.http.security.tests.UnicodePathTraversalAttackTest
+[INFO] Tests run: 169, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.081 s -- in de.cuioss.http.security.tests.UnicodePathTraversalAttackTest
+[INFO] Running de.cuioss.http.security.tests.UnicodeNormalizationAttackTest
+[INFO] Tests run: 110, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.058 s -- in de.cuioss.http.security.tests.UnicodeNormalizationAttackTest
+[INFO] Running de.cuioss.http.security.tests.OWASPZAPAttackDatabaseTest
+[INFO] Tests run: 18, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.011 s -- in de.cuioss.http.security.tests.OWASPZAPAttackDatabaseTest
+[INFO] Running de.cuioss.http.security.tests.HttpHeaderInjectionAttackTest
+[INFO] Tests run: 158, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.049 s -- in de.cuioss.http.security.tests.HttpHeaderInjectionAttackTest
+[INFO] Running de.cuioss.http.security.tests.UnicodeControlCharacterAttackTest
+[INFO] Tests run: 129, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.061 s -- in de.cuioss.http.security.tests.UnicodeControlCharacterAttackTest
+[INFO] Running de.cuioss.http.security.tests.ModSecurityCRSAttackDatabaseTest
+[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.028 s -- in de.cuioss.http.security.tests.ModSecurityCRSAttackDatabaseTest
+[INFO] Running de.cuioss.http.security.tests.MixedEncodingAttackTest
+[INFO] Tests run: 36, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.041 s -- in de.cuioss.http.security.tests.MixedEncodingAttackTest
+[INFO] Running de.cuioss.http.security.tests.EdgeCaseValidURLsDatabaseTest
+[INFO] Tests run: 80, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.032 s -- in de.cuioss.http.security.tests.EdgeCaseValidURLsDatabaseTest
+[INFO] Running de.cuioss.http.security.tests.IDNAttackDatabaseTest
+[INFO] Tests run: 23, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.012 s -- in de.cuioss.http.security.tests.IDNAttackDatabaseTest
+[INFO] Running de.cuioss.http.security.tests.LegitimateSpecialCharactersDatabaseTest
+[INFO] Tests run: 60, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.030 s -- in de.cuioss.http.security.tests.LegitimateSpecialCharactersDatabaseTest
+[INFO] Running de.cuioss.http.security.tests.ProtocolHandlerAttackTest
+[INFO] Tests run: 73, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.020 s -- in de.cuioss.http.security.tests.ProtocolHandlerAttackTest
+[INFO] Running de.cuioss.http.security.tests.DoubleEncodingAttackTest
+[INFO] Tests run: 121, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.051 s -- in de.cuioss.http.security.tests.DoubleEncodingAttackTest
+[INFO] Running de.cuioss.http.security.tests.NginxCVEAttackDatabaseTest
+[INFO] Tests run: 22, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in de.cuioss.http.security.tests.NginxCVEAttackDatabaseTest
+[INFO] Running de.cuioss.http.security.tests.PathTraversalAttackTest
+[INFO] Tests run: 130, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.036 s -- in de.cuioss.http.security.tests.PathTraversalAttackTest
+[INFO] Running de.cuioss.http.security.tests.IISCVEAttackDatabaseTest
+[INFO] Tests run: 15, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in de.cuioss.http.security.tests.IISCVEAttackDatabaseTest
+[INFO] Running de.cuioss.http.security.tests.LegitimatePathPatternsDatabaseTest
+[INFO] Tests run: 40, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.026 s -- in de.cuioss.http.security.tests.LegitimatePathPatternsDatabaseTest
+[INFO] Running de.cuioss.http.security.tests.ApacheCVEAttackDatabaseTest
+[INFO] Tests run: 15, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in de.cuioss.http.security.tests.ApacheCVEAttackDatabaseTest
+[INFO] Running de.cuioss.http.security.tests.HomographAttackDatabaseTest
+[INFO] Tests run: 22, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in de.cuioss.http.security.tests.HomographAttackDatabaseTest
+[INFO] Running de.cuioss.http.security.tests.EncodedPathTraversalAttackTest
+[INFO] Tests run: 230, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.060 s -- in de.cuioss.http.security.tests.EncodedPathTraversalAttackTest
+[INFO] Running de.cuioss.http.security.tests.HttpRequestSmugglingAttackTest
+[INFO] Tests run: 395, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.084 s -- in de.cuioss.http.security.tests.HttpRequestSmugglingAttackTest
+[INFO] Running de.cuioss.http.security.tests.URLLengthLimitAttackTest
+[INFO] Tests run: 79, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.067 s -- in de.cuioss.http.security.tests.URLLengthLimitAttackTest
+[INFO] Running de.cuioss.http.security.tests.IPv6AttackDatabaseTest
+[INFO] Tests run: 24, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in de.cuioss.http.security.tests.IPv6AttackDatabaseTest
+[INFO] Running de.cuioss.http.security.tests.OWASPTop10AttackDatabaseTest
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in de.cuioss.http.security.tests.OWASPTop10AttackDatabaseTest
+[INFO] Running de.cuioss.http.security.exceptions.UrlSecurityExceptionTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in de.cuioss.http.security.exceptions.UrlSecurityExceptionTest
+[INFO] Running de.cuioss.http.security.generators.encoding.DoubleEncodingAttackGeneratorTest
+[INFO] Tests run: 100, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.013 s -- in de.cuioss.http.security.generators.encoding.DoubleEncodingAttackGeneratorTest
+[INFO] Running de.cuioss.http.security.generators.encoding.BoundaryFuzzingGeneratorTest
+[INFO] Tests run: 200, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.025 s -- in de.cuioss.http.security.generators.encoding.BoundaryFuzzingGeneratorTest
+[INFO] Running de.cuioss.http.security.generators.encoding.EncodingCombinationGeneratorTest
+[INFO] Tests run: 100, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.020 s -- in de.cuioss.http.security.generators.encoding.EncodingCombinationGeneratorTest
+[INFO] Running de.cuioss.http.security.generators.encoding.UnicodeAttackGeneratorTest
+[INFO] Tests run: 200, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.026 s -- in de.cuioss.http.security.generators.encoding.UnicodeAttackGeneratorTest
+[INFO] Running de.cuioss.http.security.generators.encoding.PathTraversalGeneratorTest
+[INFO] Tests run: 100, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.013 s -- in de.cuioss.http.security.generators.encoding.PathTraversalGeneratorTest
+[INFO] Running de.cuioss.http.security.generators.AllGeneratorsIntegrationTest
+[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.155 s -- in de.cuioss.http.security.generators.AllGeneratorsIntegrationTest
+[INFO] Running de.cuioss.http.security.generators.url.PathTraversalURLGeneratorTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in de.cuioss.http.security.generators.url.PathTraversalURLGeneratorTest
+[INFO] Running de.cuioss.http.security.generators.url.ValidURLParameterGeneratorTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in de.cuioss.http.security.generators.url.ValidURLParameterGeneratorTest
+[INFO] Running de.cuioss.http.security.generators.url.ValidURLGeneratorTest
+[INFO] Tests run: 100, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.015 s -- in de.cuioss.http.security.generators.url.ValidURLGeneratorTest
+[INFO] Running de.cuioss.http.security.generators.url.PathTraversalParameterGeneratorTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in de.cuioss.http.security.generators.url.PathTraversalParameterGeneratorTest
+[INFO] Running de.cuioss.http.security.generators.url.InvalidURLGeneratorTest
+[INFO] Tests run: 200, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.028 s -- in de.cuioss.http.security.generators.url.InvalidURLGeneratorTest
+[INFO] Running de.cuioss.http.security.generators.url.ValidURLPathGeneratorTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in de.cuioss.http.security.generators.url.ValidURLPathGeneratorTest
+[INFO] Running de.cuioss.http.security.generators.url.NullByteURLGeneratorTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in de.cuioss.http.security.generators.url.NullByteURLGeneratorTest
+[INFO] Running de.cuioss.http.security.generators.injection.URLLengthLimitAttackGeneratorTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in de.cuioss.http.security.generators.injection.URLLengthLimitAttackGeneratorTest
+[INFO] Running de.cuioss.http.security.generators.injection.HttpRequestSmugglingAttackGeneratorTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in de.cuioss.http.security.generators.injection.HttpRequestSmugglingAttackGeneratorTest
+[INFO] Running de.cuioss.http.security.generators.SupportedValidationTypeGeneratorContractTest
+[INFO] Tests run: 103, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.016 s -- in de.cuioss.http.security.generators.SupportedValidationTypeGeneratorContractTest
+[INFO] Running de.cuioss.http.security.generators.cookie.ValidCookieGeneratorTest
+[INFO] Tests run: 100, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.016 s -- in de.cuioss.http.security.generators.cookie.ValidCookieGeneratorTest
+[INFO] Running de.cuioss.http.security.generators.cookie.AttackCookieGeneratorTest
+[INFO] Tests run: 100, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.014 s -- in de.cuioss.http.security.generators.cookie.AttackCookieGeneratorTest
+[INFO] Running de.cuioss.http.security.generators.header.HTTPHeaderInjectionGeneratorTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in de.cuioss.http.security.generators.header.HTTPHeaderInjectionGeneratorTest
+[INFO] Running de.cuioss.http.security.generators.header.ValidHTTPHeaderNameGeneratorTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in de.cuioss.http.security.generators.header.ValidHTTPHeaderNameGeneratorTest
+[INFO] Running de.cuioss.http.security.generators.header.InvalidHTTPHeaderNameGeneratorTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in de.cuioss.http.security.generators.header.InvalidHTTPHeaderNameGeneratorTest
+[INFO] Running de.cuioss.http.security.monitoring.SecurityEventCounterTest
+[INFO] Tests run: 24, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.044 s -- in de.cuioss.http.security.monitoring.SecurityEventCounterTest
+[INFO] Running de.cuioss.http.security.monitoring.URLSecurityLogMessagesTest
+[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in de.cuioss.http.security.monitoring.URLSecurityLogMessagesTest
+[INFO] Running de.cuioss.http.security.data.CookieTest
+[INFO] Tests run: 84, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.017 s -- in de.cuioss.http.security.data.CookieTest
+[INFO] Running de.cuioss.http.security.data.AttributeParserTest
+[INFO] Running de.cuioss.http.security.data.AttributeParserTest$ExtractAttributeValue
+[INFO] Tests run: 31, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.028 s -- in de.cuioss.http.security.data.AttributeParserTest$ExtractAttributeValue
+[INFO] Tests run: 0, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.028 s -- in de.cuioss.http.security.data.AttributeParserTest
+[INFO] Running de.cuioss.http.security.data.URLParameterTest
+[INFO] Tests run: 21, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in de.cuioss.http.security.data.URLParameterTest
+[INFO] Running de.cuioss.http.security.data.HTTPBodyTest
+[INFO] Tests run: 34, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.046 s -- in de.cuioss.http.security.data.HTTPBodyTest
+[INFO] Running de.cuioss.http.security.validation.NormalizationStageTest
+[INFO] Tests run: 38, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.009 s -- in de.cuioss.http.security.validation.NormalizationStageTest
+[INFO] Running de.cuioss.http.security.validation.LengthValidationStageTest
+[INFO] Tests run: 35, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.009 s -- in de.cuioss.http.security.validation.LengthValidationStageTest
+[INFO] Running de.cuioss.http.security.validation.DecodingStageTest
+[INFO] Tests run: 59, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.015 s -- in de.cuioss.http.security.validation.DecodingStageTest
+[INFO] Running de.cuioss.http.security.validation.PatternMatchingStageTest
+[INFO] Tests run: 55, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.009 s -- in de.cuioss.http.security.validation.PatternMatchingStageTest
+[INFO] Running de.cuioss.http.security.validation.CharacterValidationStageTest
+[INFO] Tests run: 24, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in de.cuioss.http.security.validation.CharacterValidationStageTest
+[INFO] Running de.cuioss.http.security.validation.CharacterValidationConstantsTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in de.cuioss.http.security.validation.CharacterValidationConstantsTest
+[INFO] Running de.cuioss.http.client.handler.HttpStatusFamilyTest
+[INFO] Running de.cuioss.http.client.handler.HttpStatusFamilyTest$ToStringTests
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in de.cuioss.http.client.handler.HttpStatusFamilyTest$ToStringTests
+[INFO] Running de.cuioss.http.client.handler.HttpStatusFamilyTest$UtilityMethodTests
+[INFO] Tests run: 53, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.010 s -- in de.cuioss.http.client.handler.HttpStatusFamilyTest$UtilityMethodTests
+[INFO] Running de.cuioss.http.client.handler.HttpStatusFamilyTest$ContainsTests
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in de.cuioss.http.client.handler.HttpStatusFamilyTest$ContainsTests
+[INFO] Running de.cuioss.http.client.handler.HttpStatusFamilyTest$FromStatusCodeTests
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in de.cuioss.http.client.handler.HttpStatusFamilyTest$FromStatusCodeTests
+[INFO] Tests run: 0, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.013 s -- in de.cuioss.http.client.handler.HttpStatusFamilyTest
+[INFO] Running de.cuioss.http.client.handler.HttpHandlerTest
+[INFO] Running de.cuioss.http.client.handler.HttpHandlerTest$AsBuilderTests
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.168 s -- in de.cuioss.http.client.handler.HttpHandlerTest$AsBuilderTests
+[INFO] Running de.cuioss.http.client.handler.HttpHandlerTest$UrlUriConversionTests
+[ERROR] Tests run: 2, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.005 s <<< FAILURE! -- in de.cuioss.http.client.handler.HttpHandlerTest$UrlUriConversionTests
+[ERROR] de.cuioss.http.client.handler.HttpHandlerTest$UrlUriConversionTests.buildShouldThrowIllegalStateExceptionForInvalidUri -- Time elapsed: 0.003 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: Unexpected exception type thrown, expected: <java.lang.IllegalStateException> but was: <java.lang.NullPointerException>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+	at org.junit.jupiter.api.AssertThrows.assertThrows(AssertThrows.java:67)
+	at org.junit.jupiter.api.AssertThrows.assertThrows(AssertThrows.java:35)
+	at org.junit.jupiter.api.Assertions.assertThrows(Assertions.java:3128)
+	at de.cuioss.http.client.handler.HttpHandlerTest$UrlUriConversionTests.buildShouldThrowIllegalStateExceptionForInvalidUri(HttpHandlerTest.java:366)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+Caused by: java.lang.NullPointerException: Cannot invoke "String.indexOf(int)" because "file" is null
+	at java.base/java.net.URL.<init>(URL.java:530)
+	at java.base/java.net.URL.<init>(URL.java:418)
+	at java.base/java.net.URL.<init>(URL.java:447)
+	at de.cuioss.http.client.handler.HttpHandler$HttpHandlerBuilder.createURLFromURI(HttpHandler.java:512)
+	at de.cuioss.http.client.handler.HttpHandler$HttpHandlerBuilder.build(HttpHandler.java:426)
+	at org.junit.jupiter.api.AssertThrows.assertThrows(AssertThrows.java:53)
+	... 7 more
+
+[INFO] Running de.cuioss.http.client.handler.HttpHandlerTest$PingTests
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.173 s -- in de.cuioss.http.client.handler.HttpHandlerTest$PingTests
+[INFO] Running de.cuioss.http.client.handler.HttpHandlerTest$RequestBuilderTests
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in de.cuioss.http.client.handler.HttpHandlerTest$RequestBuilderTests
+[INFO] Running de.cuioss.http.client.handler.HttpHandlerTest$BuilderTests
+[INFO] Tests run: 18, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.030 s -- in de.cuioss.http.client.handler.HttpHandlerTest$BuilderTests
+[INFO] Tests run: 0, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.379 s -- in de.cuioss.http.client.handler.HttpHandlerTest
+[INFO] Running de.cuioss.http.client.handler.SecureSSLContextProviderTest
+[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in de.cuioss.http.client.handler.SecureSSLContextProviderTest
+[INFO] Running de.cuioss.http.client.result.HttpResultStateContractTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in de.cuioss.http.client.result.HttpResultStateContractTest
+[INFO] Running de.cuioss.http.client.result.HttpResultStateTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in de.cuioss.http.client.result.HttpResultStateTest
+[INFO] Running de.cuioss.http.client.result.HttpErrorCategoryTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in de.cuioss.http.client.result.HttpErrorCategoryTest
+[INFO] Running de.cuioss.http.client.result.HttpResultObjectTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in de.cuioss.http.client.result.HttpResultObjectTest
+[INFO] Running de.cuioss.http.client.result.HttpErrorCategoryContractTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in de.cuioss.http.client.result.HttpErrorCategoryContractTest
+[INFO] Running de.cuioss.http.client.retry.RetryContextTest
+[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.015 s -- in de.cuioss.http.client.retry.RetryContextTest
+[INFO] Running de.cuioss.http.client.retry.RetryMetricsTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.037 s -- in de.cuioss.http.client.retry.RetryMetricsTest
+[INFO] Running de.cuioss.http.client.retry.ExponentialBackoffRetryStrategyTest
+[INFO] Running de.cuioss.http.client.retry.ExponentialBackoffRetryStrategyTest$StaticFactoryMethods
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in de.cuioss.http.client.retry.ExponentialBackoffRetryStrategyTest$StaticFactoryMethods
+[INFO] Running de.cuioss.http.client.retry.ExponentialBackoffRetryStrategyTest$AsyncOperationHandling
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.050 s -- in de.cuioss.http.client.retry.ExponentialBackoffRetryStrategyTest$AsyncOperationHandling
+[INFO] Running de.cuioss.http.client.retry.ExponentialBackoffRetryStrategyTest$ConfigurationValidation
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.011 s -- in de.cuioss.http.client.retry.ExponentialBackoffRetryStrategyTest$ConfigurationValidation
+[INFO] Running de.cuioss.http.client.retry.ExponentialBackoffRetryStrategyTest$DelayCalculation
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 7.017 s -- in de.cuioss.http.client.retry.ExponentialBackoffRetryStrategyTest$DelayCalculation
+[INFO] Running de.cuioss.http.client.retry.ExponentialBackoffRetryStrategyTest$RetryableExceptions
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.146 s -- in de.cuioss.http.client.retry.ExponentialBackoffRetryStrategyTest$RetryableExceptions
+[INFO] Running de.cuioss.http.client.retry.ExponentialBackoffRetryStrategyTest$SuccessfulOperations
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.035 s -- in de.cuioss.http.client.retry.ExponentialBackoffRetryStrategyTest$SuccessfulOperations
+[INFO] Tests run: 0, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 7.263 s -- in de.cuioss.http.client.retry.ExponentialBackoffRetryStrategyTest
+[INFO] Running de.cuioss.http.client.converter.StringContentConverterTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in de.cuioss.http.client.converter.StringContentConverterTest
+[INFO] Running de.cuioss.http.client.converter.HttpContentConverterTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in de.cuioss.http.client.converter.HttpContentConverterTest
+[INFO] Running de.cuioss.http.client.HttpHandlerProviderTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in de.cuioss.http.client.HttpHandlerProviderTest
+[INFO] Running de.cuioss.http.client.ResilientHttpHandlerProviderTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in de.cuioss.http.client.ResilientHttpHandlerProviderTest
+[INFO] Running de.cuioss.http.client.ResilientHttpHandlerIntegrationTest
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 20.38 s -- in de.cuioss.http.client.ResilientHttpHandlerIntegrationTest
+[INFO] Running de.cuioss.http.client.LoadingStatusProviderTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in de.cuioss.http.client.LoadingStatusProviderTest
+[INFO] Running de.cuioss.http.client.ResilientHttpHandlerSimpleTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in de.cuioss.http.client.ResilientHttpHandlerSimpleTest
+[INFO] 
+[INFO] Results:
+[INFO] 
+[ERROR] Failures: 
+[ERROR]   HttpHandlerTest$UrlUriConversionTests.buildShouldThrowIllegalStateExceptionForInvalidUri:366 Unexpected exception type thrown, expected: <java.lang.IllegalStateException> but was: <java.lang.NullPointerException>
+[INFO] 
+[ERROR] Tests run: 4786, Failures: 1, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  01:19 min
+[INFO] Finished at: 2025-09-26T14:20:21+02:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.3:test (default-test) on project cui-http: There are test failures.
+[ERROR] 
+[ERROR] See /Users/oliver/git/cui-http/target/surefire-reports for the individual test results.
+[ERROR] See dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException

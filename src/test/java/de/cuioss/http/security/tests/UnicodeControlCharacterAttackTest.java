@@ -84,7 +84,7 @@ class UnicodeControlCharacterAttackTest {
     void setUp() {
         config = SecurityConfiguration.builder()
                 .allowControlCharacters(false)  // Reject control characters
-                .allowHighBitCharacters(false)  // Reject high-bit characters too
+                .allowExtendedAscii(false)  // Reject high-bit characters too
                 .failOnSuspiciousPatterns(true)
                 .build();
         eventCounter = new SecurityEventCounter();
