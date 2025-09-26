@@ -420,10 +420,18 @@ public final class HttpHandler {
                 throw new IllegalArgumentException("Read timeout must be positive");
             }
 
-            // Convert the URI to a URL without using deprecated toURL() method
+            // Convert the URI to a URL
+            // Note: URI.toURL() is deprecated but all alternatives (URL constructors) are also deprecated.
+            // We suppress the warning since we need to create a URL for backward compatibility.
+            if (uri == null) {
+                throw new IllegalArgumentException("URI cannot be null");
+            }
+
             URL verifiedUrl;
             try {
-                verifiedUrl = createURLFromURI(uri);
+                @SuppressWarnings("deprecation") // All URL creation methods are deprecated since Java 20
+                URL url = uri.toURL();
+                verifiedUrl = url;
             } catch (MalformedURLException e) {
                 throw new IllegalStateException("Failed to convert URI to URL: " + uri, e);
             }
@@ -478,53 +486,5 @@ public final class HttpHandler {
             throw new IllegalArgumentException("URI must not be null or empty.");
         }
 
-        /**
-         * Helper method to convert a URI to a URL without using the deprecated URI.toURL() method.
-         * This implementation constructs a URL from URI components to avoid the deprecated API
-         * which is marked for removal since Java 20.
-         *
-         * @param uri The URI to convert
-         * @return A URL representation of the URI
-         * @throws MalformedURLException if the URI cannot be converted to a valid URL
-         */
-        private static URL createURLFromURI(URI uri) throws MalformedURLException {
-            if (uri == null) {
-                throw new MalformedURLException("URI cannot be null");
-            }
-
-            String scheme = uri.getScheme();
-            if (scheme == null) {
-                throw new MalformedURLException("URI scheme cannot be null");
-            }
-
-            String host = uri.getHost();
-            if (host == null) {
-                // Some URIs like URNs don't have hosts and can't be converted to URLs
-                throw new MalformedURLException("URI does not have a host component: " + uri);
-            }
-
-            int port = uri.getPort();
-            String file = uri.getRawPath();
-            if (file == null) {
-                file = "";
-            }
-
-            // Add query if present
-            if (uri.getRawQuery() != null) {
-                file = file + "?" + uri.getRawQuery();
-            }
-
-            // Add fragment if present
-            if (uri.getRawFragment() != null) {
-                file = file + "#" + uri.getRawFragment();
-            }
-
-            // Handle default ports
-            if (port == -1) {
-                return new URL(scheme, host, file);
-            } else {
-                return new URL(scheme, host, port, file);
-            }
-        }
     }
 }
