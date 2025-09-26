@@ -562,13 +562,6 @@ public class SecurityConfigurationBuilder {
         return this;
     }
 
-    /**
-     * @deprecated Use {@link #allowExtendedAscii(boolean)} instead
-     */
-    @Deprecated(since = "1.1", forRemoval = true)
-    public SecurityConfigurationBuilder allowHighBitCharacters(boolean allow) {
-        return allowExtendedAscii(allow);
-    }
 
     /**
      * Sets whether Unicode normalization should be performed.
