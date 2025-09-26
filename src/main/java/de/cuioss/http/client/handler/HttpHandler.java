@@ -430,7 +430,7 @@ public final class HttpHandler {
             URL verifiedUrl;
             try {
                 verifiedUrl = uri.toURL();
-            } catch (MalformedURLException | IllegalArgumentException e) {
+            } catch (MalformedURLException | IllegalArgumentException | NullPointerException e) {
                 throw new IllegalStateException("Failed to convert URI to URL: " + uri, e);
             }
 

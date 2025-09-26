@@ -242,6 +242,35 @@ class NormalizationStageTest {
     }
 
     /**
+     * Test that legitimate paths containing .. but not actual traversal patterns are allowed.
+     * This reproduces the false positive issue where paths like 'a/..c' were incorrectly
+     * flagged as traversal attempts.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "a/..c",              // .. in middle of filename
+        "file..txt",          // .. in middle of filename without separator
+        "api/search..html",   // .. at end of filename
+        "..config",           // .. at start of filename (not a directory)
+        "path/sub..dir/file"  // .. in middle of directory name
+    })
+    void validate_withLegitimateDoubleDotsInFilenames_shouldNotBeRejected(String input) {
+        Optional<String> result = stage.validate(input);
+        assertTrue(result.isPresent(), "Path '" + input + "' should be allowed but was rejected");
+        assertEquals(input, result.get(), "Path should remain unchanged after normalization");
+    }
+
+    /**
+     * Test that actual traversal patterns are still properly detected.
+     */
+    @Test
+    void validate_withActualTraversalPattern_shouldBeRejected() {
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> stage.validate("valid/../segment"));
+        assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, exception.getFailureType());
+    }
+
+    /**
      * Test that the stage correctly reports its configuration.
      */
     @Test
