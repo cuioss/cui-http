@@ -255,7 +255,7 @@ Implemented in: URLPathValidationPipeline and URLParameterValidationPipeline
 * JSON/XML content validation
 * File upload filename validation
 
-Body data structure: link:../../../src/main/java/de/cuioss/http/security/data/HTTPBody.java[HTTPBody]
+Note: Body validation pipeline has been eliminated from the architecture. Body content validation should be handled at the application layer.
 
 ==== Cookie Validation
 

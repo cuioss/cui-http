@@ -420,11 +420,10 @@ public final class HttpHandler {
                 throw new IllegalArgumentException("Read timeout must be positive");
             }
 
-            // Convert the URI to a URL
+            // Convert the URI to a URL without using deprecated toURL() method
             URL verifiedUrl;
             try {
-                //noinspection DataFlowIssue
-                verifiedUrl = uri.toURL();
+                verifiedUrl = createURLFromURI(uri);
             } catch (MalformedURLException e) {
                 throw new IllegalStateException("Failed to convert URI to URL: " + uri, e);
             }
@@ -477,6 +476,43 @@ public final class HttpHandler {
 
             // If we get here, no valid URI source was provided
             throw new IllegalArgumentException("URI must not be null or empty.");
+        }
+
+        /**
+         * Helper method to convert a URI to a URL without using the deprecated URI.toURL() method.
+         * This implementation constructs a URL from URI components to avoid the deprecated API
+         * which is marked for removal since Java 20.
+         *
+         * @param uri The URI to convert
+         * @return A URL representation of the URI
+         * @throws MalformedURLException if the URI cannot be converted to a valid URL
+         */
+        private static URL createURLFromURI(URI uri) throws MalformedURLException {
+            if (uri == null) {
+                throw new MalformedURLException("URI cannot be null");
+            }
+
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            int port = uri.getPort();
+            String file = uri.getRawPath();
+
+            // Add query if present
+            if (uri.getRawQuery() != null) {
+                file = file + "?" + uri.getRawQuery();
+            }
+
+            // Add fragment if present
+            if (uri.getRawFragment() != null) {
+                file = file + "#" + uri.getRawFragment();
+            }
+
+            // Handle default ports
+            if (port == -1) {
+                return new URL(scheme, host, file);
+            } else {
+                return new URL(scheme, host, port, file);
+            }
         }
     }
 }

@@ -75,7 +75,6 @@ The following classes implement the core security validation components:
 ==== Data Models
 * link:../../../src/main/java/de/cuioss/http/security/data/URLParameter.java[URLParameter] - URL parameter representation
 * link:../../../src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie] - Cookie data model
-* link:../../../src/main/java/de/cuioss/http/security/data/HTTPBody.java[HTTPBody] - HTTP body representation
 
 For implementation details, see the JavaDoc of each class.
 

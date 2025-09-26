@@ -83,7 +83,7 @@ The project produces a `generators` artifact containing security testing utiliti
 
 This project follows CUI standards documented in `/doc/ai-rules.md`. Key requirements:
 
-1. **Pre-commit checks are mandatory**: Always run `./mvnw -Ppre-commit clean verify` before commits
+1. **Pre-commit checks are mandatory**: Always run the pre-commit checks (see Build Commands section) before commits
 2. **Use CuiLogger**: Private static final LOGGER, never use slf4j or System.out
 3. **JUnit 5 only**: No Mockito, PowerMock, or Hamcrest
 4. **Minimum 80% test coverage**: Critical paths need 100%

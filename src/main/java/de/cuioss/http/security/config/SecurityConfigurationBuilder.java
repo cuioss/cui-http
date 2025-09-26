@@ -114,7 +114,7 @@ public class SecurityConfigurationBuilder {
     // Encoding Security defaults
     private boolean allowNullBytes = false;
     private boolean allowControlCharacters = false;
-    private boolean allowHighBitCharacters = true;
+    private boolean allowExtendedAscii = true;
     private boolean normalizeUnicode = false;
 
     // General Policy defaults
@@ -550,14 +550,24 @@ public class SecurityConfigurationBuilder {
     }
 
     /**
-     * Sets whether high-bit characters are allowed in content.
+     * Sets whether extended ASCII characters (128-255) are allowed in content.
+     * For URL paths and parameters, this only affects characters 128-255.
+     * For headers and body content, this also enables Unicode support.
      *
-     * @param allow true to allow high-bit characters, false to block them
+     * @param allow true to allow extended ASCII and applicable Unicode characters, false to block them
      * @return This builder for method chaining
      */
-    public SecurityConfigurationBuilder allowHighBitCharacters(boolean allow) {
-        this.allowHighBitCharacters = allow;
+    public SecurityConfigurationBuilder allowExtendedAscii(boolean allow) {
+        this.allowExtendedAscii = allow;
         return this;
+    }
+
+    /**
+     * @deprecated Use {@link #allowExtendedAscii(boolean)} instead
+     */
+    @Deprecated(since = "1.1", forRemoval = true)
+    public SecurityConfigurationBuilder allowHighBitCharacters(boolean allow) {
+        return allowExtendedAscii(allow);
     }
 
     /**
@@ -584,7 +594,7 @@ public class SecurityConfigurationBuilder {
             boolean allowHighBit, boolean normalizeUni) {
         return allowNullBytes(allowNulls)
                 .allowControlCharacters(allowControls)
-                .allowHighBitCharacters(allowHighBit)
+                .allowExtendedAscii(allowHighBit)
                 .normalizeUnicode(normalizeUni);
     }
 
@@ -650,7 +660,7 @@ public class SecurityConfigurationBuilder {
                 maxHeaderCount, maxHeaderNameLength, maxHeaderValueLength, allowedHeaderNames, blockedHeaderNames,
                 maxCookieCount, maxCookieNameLength, maxCookieValueLength, requireSecureCookies, requireHttpOnlyCookies,
                 maxBodySize, allowedContentTypes, blockedContentTypes,
-                allowNullBytes, allowControlCharacters, allowHighBitCharacters, normalizeUnicode,
+                allowNullBytes, allowControlCharacters, allowExtendedAscii, normalizeUnicode,
                 caseSensitiveComparison, failOnSuspiciousPatterns, logSecurityViolations
         );
     }

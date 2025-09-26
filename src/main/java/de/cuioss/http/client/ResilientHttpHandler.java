@@ -209,65 +209,13 @@ public class ResilientHttpHandler<T> {
     @SuppressWarnings("java:S2095")
     private HttpResultObject<T> fetchContentWithCache() {
         // Build request with conditional headers
-        HttpRequest.Builder requestBuilder = httpHandler.requestBuilder();
-
-        // Add If-None-Match header if we have a cached ETag
-        if (cachedResult != null) {
-            cachedResult.getETag().ifPresent(etag ->
-                    requestBuilder.header("If-None-Match", etag));
-        }
-
-        HttpRequest request = requestBuilder.build();
+        HttpRequest request = buildRequestWithConditionalHeaders();
 
         try {
             HttpClient client = httpHandler.createHttpClient();
             HttpResponse<?> response = client.send(request, contentConverter.getBodyHandler());
 
-            HttpStatusFamily statusFamily = HttpStatusFamily.fromStatusCode(response.statusCode());
-
-            if (response.statusCode() == 304) {
-                // Not Modified - content hasn't changed, return cached content
-                LOGGER.debug("HTTP content not modified (304) for %s", httpHandler.getUrl());
-                return handleNotModifiedResult();
-            } else if (statusFamily == HttpStatusFamily.SUCCESS) {
-                // 2xx Success - fresh content, update cache and return
-                Object rawContent = response.body();
-                String etag = response.headers().firstValue("ETag").orElse(null);
-
-                LOGGER.debug("HTTP response received: %s %s for %s (etag: %s)", response.statusCode(), statusFamily, httpHandler.getUrl(), etag);
-
-                // Convert raw content to target type
-                Optional<T> contentOpt = contentConverter.convert(rawContent);
-
-                if (contentOpt.isPresent()) {
-                    // Successful conversion - update cache with new result
-                    T content = contentOpt.get();
-                    HttpResultObject<T> result = HttpResultObject.success(content, etag, response.statusCode());
-                    this.cachedResult = result;
-                    return result;
-                } else {
-                    // Content conversion failed - return error with no cache update
-                    LOGGER.warn(HttpLogMessages.WARN.CONTENT_CONVERSION_FAILED.format(httpHandler.getUrl()));
-                    return HttpResultObject.error(
-                            getEmptyFallback(), // Safe empty fallback
-                            HttpErrorCategory.INVALID_CONTENT,
-                            new ResultDetail(
-                                    new DisplayName("Content conversion failed for %s".formatted(httpHandler.getUrl())))
-                    );
-                }
-            } else {
-                // HTTP error - this will trigger retry if it's a 5xx server error
-                LOGGER.warn(HttpLogMessages.WARN.HTTP_STATUS_WARNING.format(response.statusCode(), statusFamily, httpHandler.getUrl()));
-
-                // For 4xx client errors, don't retry and return error with cache fallback if available
-                if (statusFamily == HttpStatusFamily.CLIENT_ERROR) {
-                    return handleErrorResult(HttpErrorCategory.CLIENT_ERROR);
-                }
-
-                // For 5xx server errors, return error result with cache fallback if available
-                // RetryStrategy will handle retry logic, but if retries are exhausted we want cached content
-                return handleErrorResult(HttpErrorCategory.SERVER_ERROR);
-            }
+            return processHttpResponse(response);
 
         } catch (IOException e) {
             LOGGER.warn(e, HttpLogMessages.WARN.HTTP_FETCH_FAILED.format(httpHandler.getUrl()));
@@ -279,6 +227,105 @@ public class ResilientHttpHandler<T> {
             // InterruptedException should not be retried
             return handleErrorResult(HttpErrorCategory.NETWORK_ERROR);
         }
+    }
+
+    /**
+     * Builds an HTTP request with conditional headers (ETag support).
+     *
+     * @return configured HttpRequest with conditional headers if available
+     */
+    private HttpRequest buildRequestWithConditionalHeaders() {
+        HttpRequest.Builder requestBuilder = httpHandler.requestBuilder();
+
+        // Add If-None-Match header if we have a cached ETag
+        if (cachedResult != null) {
+            cachedResult.getETag().ifPresent(etag ->
+                    requestBuilder.header("If-None-Match", etag));
+        }
+
+        return requestBuilder.build();
+    }
+
+    /**
+     * Processes the HTTP response and returns appropriate result based on status code.
+     *
+     * @param response the HTTP response to process
+     * @return HttpResultObject representing the processed response
+     */
+    private HttpResultObject<T> processHttpResponse(HttpResponse<?> response) {
+        HttpStatusFamily statusFamily = HttpStatusFamily.fromStatusCode(response.statusCode());
+
+        if (response.statusCode() == 304) {
+            return handleNotModifiedResponse();
+        } else if (statusFamily == HttpStatusFamily.SUCCESS) {
+            return handleSuccessResponse(response);
+        } else {
+            return handleErrorResponse(response.statusCode(), statusFamily);
+        }
+    }
+
+    /**
+     * Handles HTTP 304 Not Modified responses.
+     *
+     * @return cached content result if available
+     */
+    private HttpResultObject<T> handleNotModifiedResponse() {
+        LOGGER.debug("HTTP content not modified (304) for %s", httpHandler.getUrl());
+        return handleNotModifiedResult();
+    }
+
+    /**
+     * Handles successful HTTP responses (2xx status codes).
+     *
+     * @param response the successful HTTP response
+     * @return success result with converted content or error if conversion fails
+     */
+    private HttpResultObject<T> handleSuccessResponse(HttpResponse<?> response) {
+        Object rawContent = response.body();
+        String etag = response.headers().firstValue("ETag").orElse(null);
+
+        LOGGER.debug("HTTP response received: %s SUCCESS for %s (etag: %s)",
+                    response.statusCode(), httpHandler.getUrl(), etag);
+
+        // Convert raw content to target type
+        Optional<T> contentOpt = contentConverter.convert(rawContent);
+
+        if (contentOpt.isPresent()) {
+            // Successful conversion - update cache with new result
+            T content = contentOpt.get();
+            HttpResultObject<T> result = HttpResultObject.success(content, etag, response.statusCode());
+            this.cachedResult = result;
+            return result;
+        } else {
+            // Content conversion failed - return error with no cache update
+            LOGGER.warn(HttpLogMessages.WARN.CONTENT_CONVERSION_FAILED.format(httpHandler.getUrl()));
+            return HttpResultObject.error(
+                    getEmptyFallback(), // Safe empty fallback
+                    HttpErrorCategory.INVALID_CONTENT,
+                    new ResultDetail(
+                            new DisplayName("Content conversion failed for %s".formatted(httpHandler.getUrl())))
+            );
+        }
+    }
+
+    /**
+     * Handles error HTTP responses (4xx, 5xx status codes).
+     *
+     * @param statusCode the HTTP status code
+     * @param statusFamily the HTTP status family
+     * @return error result with appropriate category
+     */
+    private HttpResultObject<T> handleErrorResponse(int statusCode, HttpStatusFamily statusFamily) {
+        LOGGER.warn(HttpLogMessages.WARN.HTTP_STATUS_WARNING.format(statusCode, statusFamily, httpHandler.getUrl()));
+
+        // For 4xx client errors, don't retry and return error with cache fallback if available
+        if (statusFamily == HttpStatusFamily.CLIENT_ERROR) {
+            return handleErrorResult(HttpErrorCategory.CLIENT_ERROR);
+        }
+
+        // For 5xx server errors, return error result with cache fallback if available
+        // RetryStrategy will handle retry logic, but if retries are exhausted we want cached content
+        return handleErrorResult(HttpErrorCategory.SERVER_ERROR);
     }
 
     /**

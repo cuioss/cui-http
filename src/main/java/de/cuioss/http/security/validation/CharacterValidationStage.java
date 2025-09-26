@@ -89,7 +89,7 @@ import java.util.Optional;
  * <ul>
  *   <li><strong>allowNullBytes</strong> - Whether to permit null bytes (default: false)</li>
  *   <li><strong>allowControlCharacters</strong> - Whether to permit control characters (default: false)</li>
- *   <li><strong>allowHighBitCharacters</strong> - Whether to permit non-ASCII characters (default: false)</li>
+ *   <li><strong>allowExtendedAscii</strong> - Whether to permit extended ASCII characters (128-255). Note: For URL paths and parameters, this only affects characters 128-255. Unicode characters beyond 255 are always rejected for URLs per RFC 3986. For headers and body content, this also enables Unicode support. (default: false)</li>
  * </ul>
  *
  * <h3>Performance Characteristics</h3>
@@ -114,13 +114,13 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
     private final boolean allowPercentEncoding;
     private final boolean allowNullBytes;
     private final boolean allowControlCharacters;
-    private final boolean allowHighBitCharacters;
+    private final boolean allowExtendedAscii;
 
     public CharacterValidationStage(SecurityConfiguration config, ValidationType type) {
         this.validationType = type;
         this.allowNullBytes = config.allowNullBytes();
         this.allowControlCharacters = config.allowControlCharacters();
-        this.allowHighBitCharacters = config.allowHighBitCharacters();
+        this.allowExtendedAscii = config.allowExtendedAscii();
         // Use the shared BitSet directly - it's read-only after initialization
         this.allowedChars = CharacterValidationConstants.getCharacterSet(type);
 
@@ -281,16 +281,18 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
 
         // Extended ASCII characters (128-255) - check configuration and base character set
         if (ch <= 255) {
-            return allowHighBitCharacters || allowedChars.get(ch);
+            return allowExtendedAscii || allowedChars.get(ch);
         }
 
-        // Unicode characters above 255 - allow only if high-bit characters are allowed
-        // and the validation type supports it (e.g., BODY content is more permissive than URL paths)
+        // Unicode characters above 255:
+        // For URLs (paths/parameters): Always rejected per RFC 3986 (ASCII-only)
+        // For headers/body: Allowed if allowExtendedAscii is true (which enables full Unicode support for these contexts)
         // Always reject combining characters (U+0300-U+036F) as they can cause normalization issues
         if (ch >= 0x0300 && ch <= 0x036F) {
             return false;
         }
-        return allowHighBitCharacters && supportsUnicodeCharacters();
+        // The allowExtendedAscii flag controls both extended ASCII and Unicode for applicable validation types
+        return allowExtendedAscii && supportsUnicodeCharacters();
     }
 
     /**
@@ -322,8 +324,12 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
 
     /**
      * Determines if the current validation type supports Unicode characters beyond 255.
-     * URL paths and parameter validation are more restrictive per RFC 3986,
-     * while body and header content can be more permissive.
+     * URL paths and parameter validation are restricted to ASCII per RFC 3986,
+     * while body and header content can contain Unicode when allowExtendedAscii is enabled.
+     *
+     * Note: This method works in conjunction with allowExtendedAscii flag:
+     * - For URLs/parameters: Always returns false (ASCII-only per RFC)
+     * - For headers/body: Returns true, allowing Unicode when allowExtendedAscii is enabled
      */
     private boolean supportsUnicodeCharacters() {
         return switch (validationType) {

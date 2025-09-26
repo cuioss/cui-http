@@ -31,7 +31,6 @@
         <system>GitHub Issues</system>
     </issueManagement>
     <properties>
-        <maven.compiler.release>21</maven.compiler.release>
         <maven.jar.plugin.automatic.module.name>de.cuioss.http</maven.jar.plugin.automatic.module.name>
     </properties>
     <dependencies>

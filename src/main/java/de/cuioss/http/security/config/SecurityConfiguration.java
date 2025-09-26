@@ -91,7 +91,7 @@ import java.util.stream.Collectors;
  * @param blockedContentTypes Set of blocked content types
  * @param allowNullBytes Whether to allow null bytes in content
  * @param allowControlCharacters Whether to allow control characters
- * @param allowHighBitCharacters Whether to allow high-bit characters
+ * @param allowExtendedAscii Whether to allow extended ASCII characters (128-255) and Unicode where applicable
  * @param normalizeUnicode Whether to normalize Unicode characters
  * @param caseSensitiveComparison Whether string comparisons should be case-sensitive
  * @param failOnSuspiciousPatterns Whether to fail on detection of suspicious patterns
@@ -134,7 +134,7 @@ Set<String> blockedContentTypes,
 // Encoding Security
 boolean allowNullBytes,
 boolean allowControlCharacters,
-boolean allowHighBitCharacters,
+boolean allowExtendedAscii,
 boolean normalizeUnicode,
 
 // General Policies
@@ -225,7 +225,7 @@ boolean logSecurityViolations
                 .maxBodySize(1024L * 1024) // 1MB
                 .allowNullBytes(false)
                 .allowControlCharacters(false)
-                .allowHighBitCharacters(false)
+                .allowExtendedAscii(false)
                 .normalizeUnicode(true)
                 .caseSensitiveComparison(true)
                 .failOnSuspiciousPatterns(true)
@@ -258,7 +258,7 @@ boolean logSecurityViolations
                 .maxBodySize(10L * 1024 * 1024) // 10MB
                 .allowNullBytes(false) // Still don't allow this
                 .allowControlCharacters(true)
-                .allowHighBitCharacters(true)
+                .allowExtendedAscii(true)
                 .normalizeUnicode(false)
                 .caseSensitiveComparison(false)
                 .failOnSuspiciousPatterns(false)
@@ -370,7 +370,7 @@ boolean logSecurityViolations
                 maxHeaderCount, maxHeaderNameLength, maxHeaderValueLength, allowedHeaderNames, blockedHeaderNames,
                 maxCookieCount, maxCookieNameLength, maxCookieValueLength, requireSecureCookies, requireHttpOnlyCookies,
                 maxBodySize, allowedContentTypes, blockedContentTypes,
-                allowNullBytes, allowControlCharacters, allowHighBitCharacters, normalizeUnicode,
+                allowNullBytes, allowControlCharacters, allowExtendedAscii, normalizeUnicode,
                 caseSensitiveComparison, failOnSuspiciousPatterns, logSecurityViolations
         );
     }
@@ -389,7 +389,7 @@ boolean logSecurityViolations
                 maxHeaderCount, maxHeaderNameLength, maxHeaderValueLength, allowedHeaderNames, blockedHeaderNames,
                 maxCookieCount, maxCookieNameLength, maxCookieValueLength, requireSecure, requireHttpOnly,
                 maxBodySize, allowedContentTypes, blockedContentTypes,
-                allowNullBytes, allowControlCharacters, allowHighBitCharacters, normalizeUnicode,
+                allowNullBytes, allowControlCharacters, allowExtendedAscii, normalizeUnicode,
                 caseSensitiveComparison, failOnSuspiciousPatterns, logSecurityViolations
         );
     }
@@ -407,7 +407,7 @@ boolean logSecurityViolations
                 maxHeaderCount, maxHeaderNameLength, maxHeaderValueLength, allowedHeaderNames, blockedHeaderNames,
                 maxCookieCount, maxCookieNameLength, maxCookieValueLength, requireSecureCookies, requireHttpOnlyCookies,
                 maxBodySize, allowedContentTypes, blockedContentTypes,
-                allowNullBytes, allowControlCharacters, allowHighBitCharacters, normalizeUnicode,
+                allowNullBytes, allowControlCharacters, allowExtendedAscii, normalizeUnicode,
                 caseSensitiveComparison, failOnSuspiciousPatterns, enableLogging
         );
     }
