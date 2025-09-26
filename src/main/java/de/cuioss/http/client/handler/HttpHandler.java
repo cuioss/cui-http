@@ -429,9 +429,7 @@ public final class HttpHandler {
 
             URL verifiedUrl;
             try {
-                @SuppressWarnings("deprecation") // All URL creation methods are deprecated since Java 20
-                URL url = uri.toURL();
-                verifiedUrl = url;
+                verifiedUrl = uri.toURL();
             } catch (MalformedURLException e) {
                 throw new IllegalStateException("Failed to convert URI to URL: " + uri, e);
             }
