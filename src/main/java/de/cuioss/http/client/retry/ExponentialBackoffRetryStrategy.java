@@ -111,8 +111,8 @@ public class ExponentialBackoffRetryStrategy implements RetryStrategy {
 
                         if (attempt > 1) {
                             LOGGER.info(INFO.RETRY_OPERATION_SUCCEEDED_AFTER_ATTEMPTS.format(context.operationName(), attempt, maxAttempts));
-                            // This is a recovery after retries - could modify state to indicate recovery if needed
-                            return CompletableFuture.completedFuture(result.copyStateAndDetails(result.getResult()));
+                            // Operation succeeded after retries - just return the successful result
+                            return CompletableFuture.completedFuture(result);
                         } else {
                             // First attempt succeeded
                             return CompletableFuture.completedFuture(result);

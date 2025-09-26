@@ -18,7 +18,6 @@ package de.cuioss.http.security.config;
 import org.jspecify.annotations.Nullable;
 
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * Immutable record representing comprehensive security configuration for HTTP validation.
@@ -308,20 +307,31 @@ boolean logSecurityViolations
             return false;
         }
 
-        // Check blocked list first
-        String checkValue = caseSensitiveComparison ? value : value.toLowerCase();
-        Set<String> blocked = caseSensitiveComparison ? blockedSet :
-                blockedSet.stream().map(String::toLowerCase).collect(Collectors.toSet());
+        // For case-sensitive comparison, use sets as-is
+        if (caseSensitiveComparison) {
+            // Check blocked list first
+            if (blockedSet.contains(value)) {
+                return false;
+            }
+            // If there's an allow list, check it
+            if (allowedSet != null) {
+                return allowedSet.contains(value);
+            }
+            // No allow list means all values are allowed (except blocked ones)
+            return true;
+        }
 
-        if (blocked.contains(checkValue)) {
+        // For case-insensitive comparison, convert value once and use streams efficiently
+        String checkValue = value.toLowerCase();
+
+        // Check blocked list first using stream anyMatch (short-circuits on first match)
+        if (blockedSet.stream().anyMatch(blocked -> blocked.equalsIgnoreCase(checkValue))) {
             return false;
         }
 
         // If there's an allow list, check it
         if (allowedSet != null) {
-            Set<String> allowed = caseSensitiveComparison ? allowedSet :
-                    allowedSet.stream().map(String::toLowerCase).collect(Collectors.toSet());
-            return allowed.contains(checkValue);
+            return allowedSet.stream().anyMatch(allowed -> allowed.equalsIgnoreCase(checkValue));
         }
 
         // No allow list means all values are allowed (except blocked ones)

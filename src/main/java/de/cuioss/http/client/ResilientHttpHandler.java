@@ -190,7 +190,7 @@ public class ResilientHttpHandler<T> {
         } else {
             return HttpResultObject.error(
                     getEmptyFallback(), // Safe empty fallback
-                    HttpErrorCategory.NETWORK_ERROR,
+                    HttpErrorCategory.SERVER_ERROR,
                     new ResultDetail(
                             new DisplayName("304 Not Modified but no cached content available"))
             );
