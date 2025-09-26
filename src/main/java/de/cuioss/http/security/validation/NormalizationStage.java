@@ -184,21 +184,6 @@ ValidationType validationType) implements HttpSecurityValidator {
      */
     static final Pattern CONTAINS_DOTDOT_BACKSLASH_PATTERN = Pattern.compile(".*\\.\\\\.*");
 
-    // Common string constants for path traversal detection
-    /** Double dot segment used in directory traversal */
-    static final String DOT_DOT = "..";
-
-    /** Unix-style parent directory reference */
-    static final String DOT_DOT_SLASH = "../";
-
-    /** Windows-style parent directory reference */
-    static final String DOT_DOT_BACKSLASH = "..\\";
-
-    /** Unix path separator */
-    static final String FORWARD_SLASH = "/";
-
-    /** Current directory reference */
-    static final String DOT = ".";
 
     /**
      * Validates and normalizes a path with comprehensive security checks.
@@ -290,9 +275,9 @@ ValidationType validationType) implements HttpSecurityValidator {
         }
 
         // RFC 3986 path segment normalization with recursion protection
-        String[] segments = uriComponent.split(FORWARD_SLASH, -1);
+        String[] segments = uriComponent.split("/", -1);
         List<String> outputSegments = new ArrayList<>();
-        boolean isAbsolute = uriComponent.startsWith(FORWARD_SLASH);
+        boolean isAbsolute = uriComponent.startsWith("/");
 
         // Validate segment count
         validateSegmentCount(segments.length, uriComponent);
@@ -340,12 +325,12 @@ ValidationType validationType) implements HttpSecurityValidator {
             }
             case ".." -> {
                 // Parent directory
-                if (!outputSegments.isEmpty() && !DOT_DOT.equals(outputSegments.getLast())) {
+                if (!outputSegments.isEmpty() && !"..".equals(outputSegments.getLast())) {
                     // Can resolve this .. by removing the previous segment
                     outputSegments.removeLast();
                 } else if (!isAbsolute) {
                     // For relative paths, keep .. if we can't resolve it
-                    outputSegments.add(DOT_DOT);
+                    outputSegments.add("..");
                 }
                 // For absolute paths, .. at root is ignored
             }
@@ -392,20 +377,20 @@ ValidationType validationType) implements HttpSecurityValidator {
 
         // Add leading slash for absolute paths
         if (isAbsolute) {
-            result.append(FORWARD_SLASH);
+            result.append("/");
         }
 
         // Add segments
         for (int i = 0; i < outputSegments.size(); i++) {
             if (i > 0) {
-                result.append(FORWARD_SLASH);
+                result.append("/");
             }
             result.append(outputSegments.get(i));
         }
 
         // Preserve trailing slash if present and we have content, or for root path
-        if (originalInput.endsWith(FORWARD_SLASH) && !result.toString().endsWith(FORWARD_SLASH) && (!outputSegments.isEmpty() || isAbsolute)) {
-            result.append(FORWARD_SLASH);
+        if (originalInput.endsWith("/") && !result.toString().endsWith("/") && (!outputSegments.isEmpty() || isAbsolute)) {
+            result.append("/");
         }
 
         return result.toString();
@@ -437,7 +422,7 @@ ValidationType validationType) implements HttpSecurityValidator {
 
         // Pattern 2: Encoded traversal attempts (based on Apache CVE research)
         // Covers URL encoded variants like "..%2e/" or "%2e%2e/"
-        if (input.contains(DOT_DOT + "%") || input.contains("%2e%2e") || input.contains("%2E%2E")) {
+        if (input.contains("..%") || input.contains("%2e%2e") || input.contains("%2E%2E")) {
             return true;
         }
 
@@ -449,12 +434,8 @@ ValidationType validationType) implements HttpSecurityValidator {
 
         // Pattern 4: Windows-style backslash traversal (but not if it starts with ..)
         // Patterns starting with .. should be handled by escapesRoot check
-        if (CONTAINS_DOTDOT_BACKSLASH_PATTERN.matcher(input).find() &&
-            !STARTS_WITH_DOTDOT_BACKSLASH_PATTERN.matcher(input).matches()) {
-            return true;
-        }
-
-        return false;
+        return CONTAINS_DOTDOT_BACKSLASH_PATTERN.matcher(input).find() &&
+            !STARTS_WITH_DOTDOT_BACKSLASH_PATTERN.matcher(input).matches();
     }
 
     /**
@@ -482,18 +463,18 @@ ValidationType validationType) implements HttpSecurityValidator {
         }
 
         // Check for standalone .. that isn't at the beginning
-        if (DOT_DOT.equals(path)) {
+        if ("..".equals(path)) {
             return true;
         }
 
         // Additional security: check for any .. that appears as a complete path segment
         // This catches cases where .. remains as directory navigation after normalization
         // but excludes .. that appears embedded within filenames (fixing false positives)
-        if (path.contains(DOT_DOT)) {
+        if (path.contains("..")) {
             // Check if .. appears as a complete path segment (separated by slashes)
             String[] segments = PATH_SEPARATOR_PATTERN.split(path);
             for (String segment : segments) {
-                if (DOT_DOT.equals(segment)) {
+                if ("..".equals(segment)) {
                     return true;
                 }
             }
