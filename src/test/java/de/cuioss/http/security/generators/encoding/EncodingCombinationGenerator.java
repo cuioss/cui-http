@@ -18,6 +18,8 @@ package de.cuioss.http.security.generators.encoding;
 import de.cuioss.test.generator.Generators;
 import de.cuioss.test.generator.TypedGenerator;
 
+import java.util.regex.Pattern;
+
 /**
  * Generates various encoding combinations for bypass attempts.
  *
@@ -26,6 +28,10 @@ import de.cuioss.test.generator.TypedGenerator;
  * Implements: Task G2 from HTTP verification specification
  */
 public class EncodingCombinationGenerator implements TypedGenerator<String> {
+
+    // Precompiled patterns for case conversion in hex encoding
+    private static final Pattern LOWERCASE_2E_PATTERN = Pattern.compile("%2e");
+    private static final Pattern LOWERCASE_2F_PATTERN = Pattern.compile("%2f");
 
     // QI-6: Dynamic generation components
     private final TypedGenerator<Integer> basePatternTypeGen = Generators.integers(1, 5);
@@ -113,8 +119,8 @@ public class EncodingCombinationGenerator implements TypedGenerator<String> {
 
     private String applyMixedCase(String input) {
         // Mix uppercase and lowercase in hex encoding
-        return input.replaceAll("%2e", "%2E")
-                .replaceAll("%2f", "%2F");
+        String result = LOWERCASE_2E_PATTERN.matcher(input).replaceAll("%2E");
+        return LOWERCASE_2F_PATTERN.matcher(result).replaceAll("%2F");
     }
 
     @Override

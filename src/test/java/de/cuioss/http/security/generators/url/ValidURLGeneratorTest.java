@@ -20,6 +20,8 @@ import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 
+import java.util.regex.Pattern;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -27,6 +29,10 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 @EnableGeneratorController
 class ValidURLGeneratorTest {
+
+    // Precompiled patterns for URL validation
+    private static final Pattern URL_PARAMS_PATTERN = Pattern.compile("[a-zA-Z0-9=&._%+-]+");
+    private static final Pattern URL_QUERY_SPLIT_PATTERN = Pattern.compile("\\?");
 
     @ParameterizedTest
     @TypeGeneratorSource(value = ValidURLGenerator.class, count = 100)
@@ -51,10 +57,10 @@ class ValidURLGeneratorTest {
 
         // Should be well-formed if it has parameters
         if (generatedValue.contains("?")) {
-            String[] parts = generatedValue.split("\\?", 2);
+            String[] parts = URL_QUERY_SPLIT_PATTERN.split(generatedValue, 2);
             assertEquals(2, parts.length, "URL with parameters should have proper format");
             String params = parts[1];
-            assertTrue(params.matches("[a-zA-Z0-9=&._%+-]+"),
+            assertTrue(URL_PARAMS_PATTERN.matcher(params).matches(),
                     "URL parameters should contain valid characters");
         }
 
