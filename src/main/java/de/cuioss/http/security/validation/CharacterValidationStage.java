@@ -279,8 +279,15 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
             return allowedChars.get(ch);
         }
 
-        // Extended ASCII characters (128-255) - check configuration and base character set
+        // Extended ASCII characters (128-255)
+        // SECURITY FIX: Must check if the validation type supports extended/Unicode characters
+        // before allowing based on allowExtendedAscii flag
         if (ch <= 255) {
+            // If the validation type doesn't support Unicode/extended chars, reject immediately
+            if (!supportsUnicodeCharacters()) {
+                return false;  // RFC compliance: header names, URLs, cookies must be ASCII-only
+            }
+            // For types that support extended chars (body, header values), check configuration
             return allowExtendedAscii || allowedChars.get(ch);
         }
 

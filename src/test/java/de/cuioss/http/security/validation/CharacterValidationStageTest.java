@@ -258,6 +258,47 @@ class CharacterValidationStageTest {
     }
 
     @Test
+    void shouldRejectNonAsciiCharactersInHeaderNamesRegardlessOfConfig() {
+        // RFC 7230: Header field names are tokens consisting of ASCII characters 33-126
+        // This test reproduces the security issue where extended ASCII could be incorrectly allowed
+
+        // Test with allowExtendedAscii = true (this should NOT affect header names)
+        SecurityConfiguration configWithExtended = SecurityConfiguration.builder()
+                .allowExtendedAscii(true)
+                .build();
+
+        CharacterValidationStage headerNameStage = new CharacterValidationStage(
+                configWithExtended, ValidationType.HEADER_NAME);
+
+        // Extended ASCII characters (128-255) should ALWAYS be rejected in header names
+        String headerWithExtendedAscii = "X-Custom-Heäder"; // ä = U+00E4 (228)
+
+        // This test will FAIL if the bug exists (extended ASCII incorrectly allowed)
+        // and PASS if the bug is fixed (extended ASCII correctly rejected)
+        assertThrows(UrlSecurityException.class,
+                () -> headerNameStage.validate(headerWithExtendedAscii),
+                "SECURITY BUG: Header names must reject extended ASCII even when allowExtendedAscii=true");
+
+        // Test with Latin-1 supplement character
+        String headerWithLatin1 = "Content-Typé"; // é = U+00E9 (233)
+        assertThrows(UrlSecurityException.class,
+                () -> headerNameStage.validate(headerWithLatin1),
+                "Header names must reject Latin-1 supplement characters");
+
+        // Test with high-bit character
+        String headerWithHighBit = "X-Test\u00FF"; // ÿ = U+00FF (255)
+        assertThrows(UrlSecurityException.class,
+                () -> headerNameStage.validate(headerWithHighBit),
+                "Header names must reject all non-ASCII characters");
+
+        // Verify that regular ASCII header names still work
+        String validHeader = "X-Custom-Header";
+        var result = assertDoesNotThrow(() -> headerNameStage.validate(validHeader));
+        assertTrue(result.isPresent());
+        assertEquals(validHeader, result.get());
+    }
+
+    @Test
     void shouldHandleUnicodeCharactersConsistentlyWithAllowHighBitCharacters() {
         // Test with allowHighBitCharacters = true (default)
         SecurityConfiguration configWithHighBit = SecurityConfiguration.builder()
