@@ -135,11 +135,11 @@ ValidationType validationType) implements HttpSecurityValidator {
 
     /**
      * Pattern to detect suspicious single-component directory traversal.
-     * Matches patterns like "valid/../segment" where a single alphanumeric word
-     * precedes "../" and is followed by another alphanumeric word.
-     * This targets specific attack fingerprints while allowing legitimate navigation.
+     * Matches patterns like "valid/../segment" where a single path segment (not starting with ..)
+     * precedes "../" and is followed by another path segment.
+     * Updated to handle RFC 3986 allowed characters including dots, tildes, and sub-delimiters.
      */
-    static final Pattern SINGLE_COMPONENT_TRAVERSAL_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]+/\\.\\./[a-zA-Z0-9_-]+$");
+    static final Pattern SINGLE_COMPONENT_TRAVERSAL_PATTERN = Pattern.compile("^(?!\\.\\./)[^/\\\\]+/\\.\\./[^/\\\\]+$");
 
     /**
      * Pattern to detect multiple consecutive dots with path separators.

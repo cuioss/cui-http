@@ -345,4 +345,25 @@ class NormalizationStageTest {
         assertEquals(maliciousInput, exception.getOriginalInput());
         assertTrue(exception.getSanitizedInput().isPresent(), "Sanitized input should be present in exception");
     }
+
+    /**
+     * Test that the SINGLE_COMPONENT_TRAVERSAL_PATTERN correctly detects traversal
+     * attempts with RFC 3986 allowed characters like dots, tildes, and sub-delimiters.
+     * This reproduces the issue where patterns like "foo.bar/../baz" could bypass detection.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "foo.bar/../baz",        // dots in path segments
+            "file~backup/../config", // tilde in path segments
+            "app(v1)/../secret",     // parentheses (sub-delimiters)
+            "data!temp/../admin",    // exclamation mark (sub-delimiter)
+            "log*debug/../system"    // asterisk (sub-delimiter)
+    })
+    void validate_withExpandedTraversalPatterns_shouldBeRejected(String input) {
+        // These should be detected as PATH_TRAVERSAL_DETECTED, not allowed to pass through
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> stage.validate(input),
+                "Pattern '" + input + "' should be detected as traversal attempt but was allowed");
+        assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, exception.getFailureType());
+    }
 }
