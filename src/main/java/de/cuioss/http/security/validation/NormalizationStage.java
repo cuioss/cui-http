@@ -408,7 +408,10 @@ ValidationType validationType) implements HttpSecurityValidator {
      * for defense in depth. It identifies patterns that indicate malicious directory
      * navigation intent, such as "valid/../segment", regardless of normalization outcome.</p>
      *
-     * <p>Based on research analysis of CVEs (CVE-2021-41773, CVE-2021-42013, CVE-2024-38819)
+     * <p>Based on research analysis of CVEs:
+     * <a href="https://nvd.nist.gov/vuln/detail/CVE-2021-41773">CVE-2021-41773</a>,
+     * <a href="https://nvd.nist.gov/vuln/detail/CVE-2021-42013">CVE-2021-42013</a>,
+     * <a href="https://nvd.nist.gov/vuln/detail/CVE-2024-38819">CVE-2024-38819</a>
      * and industry best practices, patterns like "directory/../target" represent attack
      * fingerprints that should be rejected semantically before syntactic processing.</p>
      *

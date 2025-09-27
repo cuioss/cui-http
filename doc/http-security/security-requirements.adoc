@@ -48,10 +48,10 @@ These requirements are derived from:
 
 * The system must detect all known path traversal patterns
 * Must detect patterns from CVE database including:
-  ** CVE-2021-41773: Apache httpd path traversal
-  ** CVE-2021-42013: Apache httpd double encoding
-  ** CVE-2020-5410: Spring Cloud Config traversal
-  ** CVE-2019-0232: Apache Tomcat RCE via traversal
+  ** link:https://nvd.nist.gov/vuln/detail/CVE-2021-41773[CVE-2021-41773]: Apache httpd path traversal
+  ** link:https://nvd.nist.gov/vuln/detail/CVE-2021-42013[CVE-2021-42013]: Apache httpd double encoding
+  ** link:https://nvd.nist.gov/vuln/detail/CVE-2020-5410[CVE-2020-5410]: Spring Cloud Config traversal
+  ** link:https://nvd.nist.gov/vuln/detail/CVE-2019-0232[CVE-2019-0232]: Apache Tomcat RCE via traversal
 * Must detect novel combinations of known techniques
 * Must maintain pattern database for emerging threats
 * Reference: link:analysis/cve-analysis.adoc[CVE Analysis]

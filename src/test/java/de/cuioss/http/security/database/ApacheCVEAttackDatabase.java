@@ -33,10 +33,22 @@ import java.util.List;
  *
  * <h3>CVE Coverage</h3>
  * <ul>
- *   <li><strong>Path Traversal CVEs</strong>: CVE-2021-41773, CVE-2021-42013, CVE-2019-0230</li>
- *   <li><strong>Server CVEs</strong>: CVE-2020-1927, CVE-2019-0211, CVE-2018-1333</li>
- *   <li><strong>Module CVEs</strong>: CVE-2017-15710, CVE-2016-8743, CVE-2021-40438</li>
- *   <li><strong>Tomcat CVEs</strong>: CVE-2020-1938, CVE-2019-0199, CVE-2018-1336</li>
+ *   <li><strong>Path Traversal CVEs</strong>:
+ *       <a href="https://nvd.nist.gov/vuln/detail/CVE-2021-41773">CVE-2021-41773</a>,
+ *       <a href="https://nvd.nist.gov/vuln/detail/CVE-2021-42013">CVE-2021-42013</a>,
+ *       <a href="https://nvd.nist.gov/vuln/detail/CVE-2019-0230">CVE-2019-0230</a></li>
+ *   <li><strong>Server CVEs</strong>:
+ *       <a href="https://nvd.nist.gov/vuln/detail/CVE-2020-1927">CVE-2020-1927</a>,
+ *       <a href="https://nvd.nist.gov/vuln/detail/CVE-2019-0211">CVE-2019-0211</a>,
+ *       <a href="https://nvd.nist.gov/vuln/detail/CVE-2018-1333">CVE-2018-1333</a></li>
+ *   <li><strong>Module CVEs</strong>:
+ *       <a href="https://nvd.nist.gov/vuln/detail/CVE-2017-15710">CVE-2017-15710</a>,
+ *       <a href="https://nvd.nist.gov/vuln/detail/CVE-2016-8743">CVE-2016-8743</a>,
+ *       <a href="https://nvd.nist.gov/vuln/detail/CVE-2021-40438">CVE-2021-40438</a></li>
+ *   <li><strong>Tomcat CVEs</strong>:
+ *       <a href="https://nvd.nist.gov/vuln/detail/CVE-2020-1938">CVE-2020-1938</a>,
+ *       <a href="https://nvd.nist.gov/vuln/detail/CVE-2019-0199">CVE-2019-0199</a>,
+ *       <a href="https://nvd.nist.gov/vuln/detail/CVE-2018-1336">CVE-2018-1336</a></li>
  * </ul>
  *
  * @since 1.0
