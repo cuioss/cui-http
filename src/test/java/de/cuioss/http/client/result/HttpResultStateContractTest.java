@@ -13,17 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package de.cuioss.http;
+package de.cuioss.http.client.result;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import de.cuioss.test.valueobjects.junit5.contracts.ShouldHandleObjectContracts;
 
-import org.junit.jupiter.api.Test;
+/**
+ * Contract test for {@link HttpResultState} to verify proper enum implementation.
+ */
+class HttpResultStateContractTest implements ShouldHandleObjectContracts<HttpResultState> {
 
-class HelloTest {
-
-    @Test
-    void test() {
-        assertEquals("Hello cui", new Hello().hello("cui"));
+    @Override
+    public HttpResultState getUnderTest() {
+        return HttpResultState.FRESH;
     }
-
 }

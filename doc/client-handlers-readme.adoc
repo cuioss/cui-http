@@ -1,0 +1,297 @@
+= HTTP Client Handlers
+:toc: left
+:toclevels: 2
+:toc-title: Table of Contents
+:source-highlighter: highlight.js
+
+toc::[]
+
+== Maven Coordinates
+
+[source, xml]
+----
+<dependency>
+    <groupId>de.cuioss</groupId>
+    <artifactId>cui-http</artifactId>
+</dependency>
+----
+
+== Overview
+
+HTTP client utilities providing simplified HTTP request execution, SSL/TLS context management, and HTTP status classification.
+
+== Components
+
+=== Core HTTP Handlers
+
+==== xref:../src/main/java/de/cuioss/http/client/handler/HttpHandler.java[HttpHandler]
+
+Builder-based HTTP client wrapper with automatic SSL context creation for HTTPS.
+
+* Uses `@Builder` pattern for configuration
+* Auto-creates secure SSL context via SecureSSLContextProvider when not provided
+* Configurable connection and read timeouts (default: 10 seconds)
+* Thread-safe after construction
+
+==== xref:../src/main/java/de/cuioss/http/client/ResilientHttpHandler.java[ResilientHttpHandler]
+
+Advanced HTTP handler providing resilient loading with retry logic and ETag-based caching.
+
+* Automatic retry with configurable strategies
+* ETag-based HTTP caching (304 Not Modified support)
+* Content conversion via pluggable converters
+* Thread-safe with proper concurrency handling
+* Comprehensive error categorization and recovery
+
+==== xref:../src/main/java/de/cuioss/http/client/HttpHandlerProvider.java[HttpHandlerProvider]
+
+Interface for providing HTTP handlers with retry strategies.
+
+* Enables configuration-based handler creation
+* Combines HTTP handler with retry strategy
+* Used by ResilientHttpHandler for flexible initialization
+
+=== SSL/TLS Support
+
+==== xref:../src/main/java/de/cuioss/http/client/handler/SecureSSLContextProvider.java[SecureSSLContextProvider]
+
+Utility for creating TLS 1.2+ SSL contexts.
+
+=== HTTP Status Classification
+
+==== xref:../src/main/java/de/cuioss/http/client/handler/HttpStatusFamily.java[HttpStatusFamily]
+
+Enum for RFC 7231 HTTP status code classification with static helper methods.
+
+=== Content Conversion
+
+==== xref:../src/main/java/de/cuioss/http/client/converter/HttpContentConverter.java[HttpContentConverter]
+
+Interface for converting HTTP response bodies to domain objects.
+
+* Generic type-safe conversion
+* Configurable body handlers
+* Empty value support for null/empty responses
+
+==== xref:../src/main/java/de/cuioss/http/client/converter/StringContentConverter.java[StringContentConverter]
+
+Built-in content converter for String responses.
+
+* Identity conversion (no transformation)
+* Useful for raw text/JSON responses
+* Factory method: `StringContentConverter.identity()`
+
+=== Result Handling
+
+==== xref:../src/main/java/de/cuioss/http/client/result/HttpResultObject.java[HttpResultObject]
+
+HTTP-specific result pattern implementation with ETag support.
+
+* Extends CUI result framework for HTTP operations
+* ETag support for cache optimization
+* HTTP status code tracking
+* Error categorization via HttpErrorCategory
+* Factory methods for common scenarios
+
+==== xref:../src/main/java/de/cuioss/http/client/result/HttpErrorCategory.java[HttpErrorCategory]
+
+Error categorization for HTTP operations.
+
+* `NETWORK_ERROR` - Connection failures, timeouts
+* `SERVER_ERROR` - 5xx responses
+* `CLIENT_ERROR` - 4xx responses
+* `INVALID_CONTENT` - Content conversion failures
+* Retry eligibility determination
+
+==== xref:../src/main/java/de/cuioss/http/client/result/HttpResultState.java[HttpResultState]
+
+HTTP-specific result states extending CUI result framework.
+
+=== Retry Strategies
+
+==== xref:../src/main/java/de/cuioss/http/client/retry/RetryStrategy.java[RetryStrategy]
+
+Interface for HTTP retry strategies with built-in implementations.
+
+* `RetryStrategy.none()` - No retry
+* `RetryStrategies.exponentialBackoff()` - Exponential backoff with jitter
+* Custom strategies via ExponentialBackoffRetryStrategy builder
+* Configurable max attempts and delays
+
+==== xref:../src/main/java/de/cuioss/http/client/retry/ExponentialBackoffRetryStrategy.java[ExponentialBackoffRetryStrategy]
+
+Exponential backoff implementation with jitter.
+
+* Default: 3 attempts, 1s initial delay, 2x multiplier
+* Random jitter to prevent thundering herd
+* Maximum delay capped at 30 seconds
+
+==== xref:../src/main/java/de/cuioss/http/client/retry/RetryContext.java[RetryContext]
+
+Context information passed to retry strategies.
+
+* Tracks attempt count
+* Provides last exception
+* HTTP response details when available
+
+==== xref:../src/main/java/de/cuioss/http/client/retry/RetryMetrics.java[RetryMetrics]
+
+Metrics collection for retry operations.
+
+* Total attempts
+* Successful/failed counts
+* Timing information
+* Success rate calculation
+
+=== Loading Status
+
+==== xref:../src/main/java/de/cuioss/http/client/LoadingStatusProvider.java[LoadingStatusProvider]
+
+Interface for components providing loading status.
+
+==== xref:../src/main/java/de/cuioss/http/client/LoaderStatus.java[LoaderStatus]
+
+Enum representing loader states.
+
+* `UNDEFINED` - Initial state
+* `IN_PROGRESS` - Currently loading
+* `ERROR` - Load failed
+* `OK` - Successfully loaded
+
+=== Logging
+
+==== xref:../src/main/java/de/cuioss/http/client/HttpLogMessages.java[HttpLogMessages]
+
+Centralized log messages for HTTP operations.
+
+* Structured logging with CuiLogger
+* Consistent error codes
+* Debug, info, warning, and error levels
+
+== Usage Examples
+
+=== Basic HTTP Handler
+
+[source,java]
+----
+HttpHandler handler = HttpHandler.builder()
+    .uri("https://api.example.com/data")
+    .connectionTimeoutSeconds(10)
+    .readTimeoutSeconds(30)
+    .build();
+
+HttpClient client = handler.createHttpClient();
+HttpRequest request = handler.requestBuilder()
+    .GET()
+    .build();
+HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+if (HttpStatusFamily.isSuccess(response.statusCode())) {
+    processData(response.body());
+}
+----
+
+=== Resilient HTTP Handler with Retry
+
+[source,java]
+----
+// Create handler provider with retry strategy
+HttpHandlerProvider provider = new HttpHandlerProvider() {
+    @Override
+    public HttpHandler getHttpHandler() {
+        return HttpHandler.builder()
+            .uri("https://api.example.com/data")
+            .build();
+    }
+
+    @Override
+    public RetryStrategy getRetryStrategy() {
+        return RetryStrategies.exponentialBackoff();
+    }
+};
+
+// Create resilient handler with string conversion
+ResilientHttpHandler<String> resilientHandler = new ResilientHttpHandler<>(
+    provider,
+    StringContentConverter.identity()
+);
+
+// Load with automatic retry and caching
+HttpResultObject<String> result = resilientHandler.load();
+
+if (result.isValid()) {
+    String content = result.getResult();
+    Optional<String> etag = result.getETag();
+
+    // Process successful result
+    processContent(content);
+} else {
+    // Handle error with detailed information
+    result.getHttpErrorCategory().ifPresent(category -> {
+        if (category.isRetryable()) {
+            scheduleRetry();
+        }
+    });
+}
+----
+
+=== Custom Content Converter
+
+[source,java]
+----
+// Custom converter for JSON to domain object
+HttpContentConverter<User> userConverter = new HttpContentConverter<User>() {
+    @Override
+    public Optional<User> convert(Object rawContent) {
+        if (rawContent instanceof String json) {
+            try {
+                return Optional.of(objectMapper.readValue(json, User.class));
+            } catch (Exception e) {
+                return Optional.empty();
+            }
+        }
+        return Optional.empty();
+    }
+
+    @Override
+    public HttpResponse.BodyHandler<?> getBodyHandler() {
+        return HttpResponse.BodyHandlers.ofString();
+    }
+
+    @Override
+    public User emptyValue() {
+        return new User(); // Default empty user
+    }
+};
+
+// Use with resilient handler
+ResilientHttpHandler<User> userHandler = new ResilientHttpHandler<>(
+    httpHandlerProvider,
+    userConverter
+);
+----
+
+=== Retry Strategy Configuration
+
+[source,java]
+----
+// No retry
+RetryStrategy noRetry = RetryStrategy.none();
+
+// Exponential backoff with defaults
+RetryStrategy exponential = RetryStrategies.exponentialBackoff();
+
+// Custom exponential backoff
+RetryStrategy customExponential = ExponentialBackoffRetryStrategy.builder()
+    .maxAttempts(5)
+    .initialDelayMillis(500)
+    .maxDelayMillis(10000)
+    .multiplier(1.5)
+    .build();
+----
+
+
+== Related Documentation
+
+* xref:../doc/http-security/README.adoc[HTTP Security Validation Framework]
+* xref:https://tools.ietf.org/html/rfc7231[RFC 7231 - HTTP/1.1 Semantics]

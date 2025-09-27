@@ -14,7 +14,30 @@
  * limitations under the License.
  */
 module de.cuioss.http {
-    exports de.cuioss.http;
 
     requires static lombok;
+    requires org.jspecify;
+    requires de.cuioss.java.tools;
+    requires java.net.http;
+    requires de.cuioss.uimodel;
+
+    // Client HTTP utilities
+    exports de.cuioss.http.client;
+    exports de.cuioss.http.client.converter;
+    exports de.cuioss.http.client.handler;
+    exports de.cuioss.http.client.result;
+    exports de.cuioss.http.client.retry;
+
+    // Security validation core
+    exports de.cuioss.http.security.core;
+    exports de.cuioss.http.security.config;
+    exports de.cuioss.http.security.pipeline;
+    exports de.cuioss.http.security.validation;
+    exports de.cuioss.http.security.exceptions;
+
+    // Security data models
+    exports de.cuioss.http.security.data;
+
+    // Security monitoring
+    exports de.cuioss.http.security.monitoring;
 }

@@ -1,0 +1,110 @@
+= HTTP Security Test Generators
+:toc: left
+:toclevels: 2
+:toc-title: Table of Contents
+:source-highlighter: highlight.js
+
+== Maven Coordinates
+
+[source, xml]
+----
+<dependency>
+    <groupId>de.cuioss</groupId>
+    <artifactId>cui-http</artifactId>
+    <classifier>generators</classifier>
+    <scope>test</scope>
+</dependency>
+----
+
+== Overview
+
+Test artifact containing attack databases with curated real-world attack patterns and test data generators for security validation testing.
+
+== Attack Databases
+
+All databases implement `AttackDatabase` interface and provide `AttackTestCase` records with:
+
+- Attack string
+- Expected `UrlSecurityFailureType`
+- Attack description
+- Detection rationale
+
+=== CVE-Based Databases
+
+* **ApacheCVEAttackDatabase** - Apache HTTP Server and Tomcat CVE exploits
+* **IISCVEAttackDatabase** - Microsoft IIS and Windows vulnerabilities
+* **NginxCVEAttackDatabase** - Nginx server CVE patterns
+
+=== Standards-Based Databases
+
+* **OWASPTop10AttackDatabase** - OWASP Top 10 2021 attack vectors
+* **ModSecurityCRSAttackDatabase** - ModSecurity Core Rule Set patterns
+* **OWASPZAPAttackDatabase** - OWASP ZAP scanner patterns
+
+=== Specialized Databases
+
+* **HomographAttackDatabase** - Unicode homograph attacks
+* **IPv6AttackDatabase** - IPv6-specific patterns
+* **ProtocolHandlerAttackDatabase** - Protocol manipulation attacks
+* **IDNAttackDatabase** - Internationalized Domain Name attacks
+
+=== Legitimate Pattern Databases
+
+* **LegitimatePathPatternsDatabase** - Valid patterns that should pass
+* **EdgeCaseValidURLsDatabase** - Edge case legitimate URLs
+* **LegitimateSpecialCharactersDatabase** - Valid special characters
+
+== Test Generators
+
+The test artifact includes generators organized by category (body, cookie, encoding, header, injection, url).
+
+For complete generator architecture and categories, see link:http-security/specification/testing.adoc[Testing Framework].
+
+== Usage
+
+=== With JUnit 5 Parameterized Tests
+
+[source,java]
+----
+@ParameterizedTest
+@ArgumentsSource(ApacheCVEAttackDatabase.ArgumentsProvider.class)
+void shouldRejectAttacks(AttackTestCase testCase) {
+    var exception = assertThrows(UrlSecurityException.class,
+        () -> pipeline.validate(testCase.attackString()));
+
+    assertEquals(testCase.expectedFailureType(), exception.getFailureType());
+}
+----
+
+=== Direct Access to Test Cases
+
+[source,java]
+----
+import static de.cuioss.http.security.database.ApacheCVEAttackDatabase.*;
+
+@Test
+void shouldDetectCVE202141773() {
+    AttackTestCase testCase = CVE_2021_41773_PATH_TRAVERSAL_PASSWD;
+    // Use testCase.attackString(), testCase.expectedFailureType(), etc.
+}
+----
+
+=== Multiple Database Integration
+
+[source,java]
+----
+static Stream<AttackTestCase> getAllTestCases() {
+    return Stream.of(
+        new ApacheCVEAttackDatabase(),
+        new IISCVEAttackDatabase(),
+        new OWASPTop10AttackDatabase()
+    ).flatMap(db -> StreamSupport.stream(
+        db.getAttackTestCases().spliterator(), false));
+}
+----
+
+== Related Documentation
+
+* link:http-security/specification/testing.adoc[Testing Framework] - Complete test framework structure
+* link:test-framework-structure.adoc[Test Framework Structure] - Detailed file listing with links
+* link:http-security/analysis/cve-analysis.adoc[CVE Analysis] - Attack patterns and vulnerabilities

@@ -1,0 +1,265 @@
+= HTTP Security Validation Specification
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+link:../README.adoc[← Back to Documentation Overview]
+
+== Purpose
+
+This specification defines the security validation requirements for HTTP components in the CUI HTTP library. It establishes standards for validating URLs, parameters, headers, and bodies to prevent security vulnerabilities including path traversal attacks, encoding bypasses, and injection attempts.
+
+== Requirements
+
+=== Core Requirements
+
+The HTTP security validation system must:
+
+1. *Protect Against Common Attacks*: Detect and prevent path traversal, encoding bypasses, and injection attempts
+2. *Defense in Depth*: Apply multiple validation stages sequentially
+3. *Fail Secure*: Reject any input that violates security policies
+4. *Secure Defaults*: Use configuration based on OWASP and RFC standards
+5. *Thread Safety*: Support concurrent validation operations
+6. *Performance*: Complete validation within 1ms for typical inputs
+7. *Transparency*: Log security events for monitoring and analysis
+
+=== Constraints
+
+* Must integrate with existing CUI HTTP infrastructure
+* Must maintain backward compatibility with existing APIs
+* Must support Java 21+ features and module system
+* Must achieve minimum 80% test coverage
+
+== Architecture
+
+=== High-Level Architecture
+
+The HTTP Security Validation system follows a layered architecture with these key components:
+
+1. **Core Validation Interface**: Defines the contract for all validators
+2. **Validation Pipeline**: Executes validation stages sequentially
+3. **Validation Stages**: Individual validation components (length, character, decoding, normalization, pattern matching)
+4. **Security Event Tracking**: Monitors and logs security violations
+
+=== Component Structure
+
+The system is organized into the following packages:
+
+* `de.cuioss.http.security.core` - Core interfaces and enumerations
+* `de.cuioss.http.security.config` - Security configuration management
+* `de.cuioss.http.security.monitoring` - Event tracking and logging
+* `de.cuioss.http.security.validation` - Individual validation stages
+* `de.cuioss.http.security.pipeline` - Validation pipeline implementations
+* `de.cuioss.http.security.exceptions` - Security exception handling
+
+== Core Components
+
+_See Requirement link:../functional-requirements.adoc#HTTP-1[HTTP-1: Multi-Component Validation Support]_
+
+_See Requirement link:../functional-requirements.adoc#HTTP-3[HTTP-3: Fail-Fast Security Model]_
+
+=== Status: IMPLEMENTED
+
+The following classes implement the core security validation components:
+
+==== Core Interfaces
+* link:../../../src/main/java/de/cuioss/http/security/core/HttpSecurityValidator.java[HttpSecurityValidator] - Core functional interface for validation
+* link:../../../src/main/java/de/cuioss/http/security/core/ValidationType.java[ValidationType] - Enumeration of input types for validation
+* link:../../../src/main/java/de/cuioss/http/security/core/UrlSecurityFailureType.java[UrlSecurityFailureType] - Comprehensive failure type enumeration
+
+==== Exception Handling
+* link:../../../src/main/java/de/cuioss/http/security/exceptions/UrlSecurityException.java[UrlSecurityException] - Main exception for security violations
+
+==== Data Models
+* link:../../../src/main/java/de/cuioss/http/security/data/URLParameter.java[URLParameter] - URL parameter representation
+* link:../../../src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie] - Cookie data model
+
+For implementation details, see the JavaDoc of each class.
+
+The following tests verify the implementation:
+
+* link:../../../src/test/java/de/cuioss/http/security/core/HttpSecurityValidatorTest.java[HttpSecurityValidatorTest]
+* link:../../../src/test/java/de/cuioss/http/security/core/ValidationTypeTest.java[ValidationTypeTest]
+* link:../../../src/test/java/de/cuioss/http/security/core/UrlSecurityFailureTypeTest.java[UrlSecurityFailureTypeTest]
+* link:../../../src/test/java/de/cuioss/http/security/exceptions/UrlSecurityExceptionTest.java[UrlSecurityExceptionTest]
+
+== Configuration Architecture
+
+_See Requirement link:../functional-requirements.adoc#HTTP-13[HTTP-13: Configurable Security Rules]_
+
+_See Requirement link:../functional-requirements.adoc#HTTP-14[HTTP-14: Type-Specific Configuration]_
+
+=== Status: IMPLEMENTED
+
+The following classes implement the security configuration system:
+
+* link:../../../src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration] - Main configuration record
+* link:../../../src/main/java/de/cuioss/http/security/config/SecurityConfigurationBuilder.java[SecurityConfigurationBuilder] - Builder for configuration
+* link:../../../src/main/java/de/cuioss/http/security/config/SecurityDefaults.java[SecurityDefaults] - Default security constants
+
+The configuration system provides:
+
+1. **Immutable Configuration**: Thread-safe configuration objects
+2. **Security Levels**: STRICT, DEFAULT, and LENIENT security profiles
+3. **Builder Pattern**: Flexible configuration creation
+4. **Secure Defaults**: OWASP and RFC-based default values
+For implementation details and configuration constants, see the JavaDoc of the configuration classes.
+
+The following tests verify the configuration implementation:
+
+* link:../../../src/test/java/de/cuioss/http/security/config/SecurityConfigurationTest.java[SecurityConfigurationTest]
+* link:../../../src/test/java/de/cuioss/http/security/config/SecurityConfigurationBuilderTest.java[SecurityConfigurationBuilderTest]
+* link:../../../src/test/java/de/cuioss/http/security/config/SecurityDefaultsTest.java[SecurityDefaultsTest]
+
+== Validation Stages
+
+_See Requirement link:../functional-requirements.adoc#HTTP-4[HTTP-4: Sequential Validation Pipeline]_
+
+_See Requirement link:../functional-requirements.adoc#HTTP-5[HTTP-5: Stage-Based Validation Architecture]_
+
+=== Status: IMPLEMENTED
+
+All validation stages follow these principles:
+
+1. **Immutability**: Configuration stored in final fields, no runtime state changes
+2. **Performance**: Pre-compiled patterns, optimized algorithms, <1ms per stage
+3. **Thread Safety**: No mutable state, safe for concurrent use
+4. **Clear Contracts**: String input/output with UrlSecurityException on violations
+
+The following classes implement the validation stages:
+
+* link:../../../src/main/java/de/cuioss/http/security/validation/LengthValidationStage.java[LengthValidationStage] - Size limit validation (must be first to prevent DoS)
+
+* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - RFC-compliant character validation
+* link:../../../src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage] - URL decoding with security checks
+
+* link:../../../src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage] - Path normalization per RFC 3986
+* link:../../../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Attack pattern detection
+* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationConstants.java[CharacterValidationConstants] - RFC-compliant character sets
+
+For implementation details, see the JavaDoc of each validation stage class.
+
+
+
+== Pipeline Architecture
+
+_See Requirement link:../functional-requirements.adoc#HTTP-4[HTTP-4: Sequential Validation Pipeline]_
+
+_See Requirement link:../functional-requirements.adoc#HTTP-7[HTTP-7: Directory Traversal Detection]_
+
+_See Requirement link:../security-requirements.adoc#SEC-3[SEC-3: Comprehensive Traversal Pattern Detection]_
+
+[NOTE]
+====
+For detailed pipeline selection guidelines and architecture standards, see link:pipeline-architecture-standards.adoc[Pipeline Architecture Standards].
+====
+
+=== Status: IMPLEMENTED
+
+The following classes implement the validation pipeline system:
+
+* link:../../../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline] - URL path validation
+* link:../../../src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline] - URL parameter validation
+* link:../../../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] - HTTP header validation
+* link:../../../src/main/java/de/cuioss/http/security/pipeline/PipelineFactory.java[PipelineFactory] - Factory for pipeline creation
+
+Each pipeline is optimized for its specific HTTP component validation requirements.
+
+== Security Event Tracking
+
+_See Requirement link:../functional-requirements.adoc#HTTP-16[HTTP-16: Security Event Tracking]_
+
+_See Requirement link:../security-requirements.adoc#SEC-11[SEC-11: Security Event Logging]_
+
+=== Status: IMPLEMENTED
+
+The following classes implement security event tracking and monitoring:
+
+* link:../../../src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter] - Thread-safe event counting
+* link:../../../src/main/java/de/cuioss/http/security/monitoring/URLSecurityLogMessages.java[URLSecurityLogMessages] - Structured logging with LogRecord pattern
+
+For implementation details, see the JavaDoc of each monitoring class.
+
+== Verification Tests
+
+The following test suites verify the implementation meets this specification:
+
+=== Unit Tests
+* link:../../../src/test/java/de/cuioss/http/security/core/HttpSecurityValidatorTest.java[HttpSecurityValidatorTest] - Core interface tests
+* link:../../../src/test/java/de/cuioss/http/security/core/UrlSecurityFailureTypeTest.java[UrlSecurityFailureTypeTest] - Failure type enumeration tests
+* link:../../../src/test/java/de/cuioss/http/security/config/SecurityConfigurationTest.java[SecurityConfigurationTest] - Configuration tests
+
+=== Validation Stage Tests
+* link:../../../src/test/java/de/cuioss/http/security/validation/LengthValidationStageTest.java[LengthValidationStageTest] - Length validation tests
+* link:../../../src/test/java/de/cuioss/http/security/validation/CharacterValidationStageTest.java[CharacterValidationStageTest] - Character validation tests
+* link:../../../src/test/java/de/cuioss/http/security/validation/DecodingStageTest.java[DecodingStageTest] - Decoding stage tests
+* link:../../../src/test/java/de/cuioss/http/security/validation/NormalizationStageTest.java[NormalizationStageTest] - Path normalization tests
+* link:../../../src/test/java/de/cuioss/http/security/validation/PatternMatchingStageTest.java[PatternMatchingStageTest] - Pattern matching tests
+
+=== Pipeline Tests
+* link:../../../src/test/java/de/cuioss/http/security/pipeline/URLPathValidationPipelineTest.java[URLPathValidationPipelineTest] - Path pipeline tests
+* link:../../../src/test/java/de/cuioss/http/security/pipeline/URLParameterValidationPipelineTest.java[URLParameterValidationPipelineTest] - Parameter pipeline tests
+* link:../../../src/test/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipelineTest.java[HTTPHeaderValidationPipelineTest] - Header pipeline tests
+* link:../../../src/test/java/de/cuioss/http/security/pipeline/PipelineFactoryTest.java[PipelineFactoryTest] - Factory tests
+
+=== Attack Database Tests
+* link:../../../src/test/java/de/cuioss/http/security/tests/OWASPZAPAttackDatabaseTest.java[OWASPZAPAttackDatabaseTest] - OWASP ZAP attack patterns
+* link:../../../src/test/java/de/cuioss/http/security/tests/ApacheCVEAttackDatabaseTest.java[ApacheCVEAttackDatabaseTest] - Apache CVE tests
+* link:../../../src/test/java/de/cuioss/http/security/tests/IISCVEAttackDatabaseTest.java[IISCVEAttackDatabaseTest] - IIS CVE tests
+* link:../../../src/test/java/de/cuioss/http/security/tests/UnicodePathTraversalAttackTest.java[UnicodePathTraversalAttackTest] - Unicode attack tests
+* link:../../../src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java[HttpHeaderInjectionAttackTest] - Header injection tests
+* link:../../../src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] - Request smuggling tests
+
+== Performance Optimization
+
+=== Optimization Strategies
+
+1. **Pre-compilation**: All patterns compiled during construction
+2. **Immutable Caching**: Configuration and patterns stored in final fields
+3. **Early Termination**: Stop processing on first security violation
+4. **Efficient Algorithms**: Use StringBuilder, BitSet for character validation
+5. **Memory Management**: Minimize string allocations
+
+=== Performance Requirements
+
+- Individual stage: <0.2ms per stage
+- Complete pipeline: <1ms total for typical inputs (5 stages × 0.2ms)
+- Memory: O(n) where n is input length
+- Thread safety: No synchronization needed (immutable)
+- Benchmark: 95th percentile must meet these requirements
+
+== Usage Patterns
+
+The security validation system provides type-safe pipeline creation through the PipelineFactory:
+
+1. **Specialized Pipelines**: Create validators optimized for specific HTTP components (paths, parameters, headers, bodies)
+2. **Generic Factory Method**: Create validators based on ValidationType enumeration
+3. **Pipeline Sets**: Create common sets of pipelines for comprehensive validation
+
+Each pipeline is configured with appropriate validation stages:
+
+* **URLPathValidationPipeline**: Optimized for path traversal and encoding attacks
+* **URLParameterValidationPipeline**: Focused on parameter injection and XSS
+* **HTTPHeaderValidationPipeline**: Prevents header injection and CRLF attacks
+
+For usage examples, see the JavaDoc of link:../../../src/main/java/de/cuioss/http/security/pipeline/PipelineFactory.java[PipelineFactory].
+
+== Security Considerations
+
+=== Attack Coverage
+
+- Path traversal: ../, ..\, encoded variants
+- HTTP protocol encoding attacks: Double/triple URL encoding, UTF-8 overlong encoding, mixed case hex encoding
+- Unicode attacks: Normalization, homographs, control characters
+- Injection: XSS, SQL, LDAP, command injection patterns
+- Protocol attacks: Header injection, request smuggling
+- DoS: Size limits, algorithmic complexity
+
+=== Default Security Posture
+
+- All defaults follow maximum security (OWASP/RFC)
+- No lenient modes - security by default
+- Explicit overrides required for less restrictive settings
+- Comprehensive logging and monitoring

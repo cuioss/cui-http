@@ -1,0 +1,317 @@
+= OWASP Path Traversal Prevention Best Practices
+:toc: left
+:toclevels: 3
+:sectnums:
+:icons: font
+
+link:../README.adoc[← Back to Documentation Index]
+
+== Overview
+
+OWASP guidelines for preventing path traversal vulnerabilities applied in the cui-http security validation framework.
+
+== Core Prevention Principles
+
+=== Primary Defense: Avoid User Input in File Operations
+
+The most effective defense against path traversal is to completely avoid passing user-supplied input to filesystem APIs.
+
+**Implementation Strategies:**
+
+* Use indirect reference maps (user selects from numbered options)
+* Generate internal identifiers mapped to actual resources
+* Store files with system-generated names, maintaining original names separately
+
+=== Defense in Depth Architecture
+
+When user input cannot be avoided, implement multiple layers of defense:
+
+[cols="1,3,2"]
+|===
+|Layer |Control |Purpose
+
+|1
+|Input Validation (Whitelist)
+|Accept only known-good values
+
+|2
+|Path Canonicalization
+|Resolve to absolute paths
+
+|3
+|Containment Validation
+|Ensure paths stay within boundaries
+
+|4
+|Access Controls
+|Limit filesystem permissions
+
+|5
+|Monitoring & Logging
+|Detect and respond to attacks
+
+|===
+
+== OWASP Recommended Implementation
+
+=== Input Validation Techniques
+
+==== Character Validation
+Implemented in: link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage]
+
+* Whitelist validation for allowed characters
+* Pattern matching against link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationConstants.java[CharacterValidationConstants]
+
+=== Path Canonicalization and Validation
+
+==== Normalization Implementation
+Implemented in: link:../../../src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]
+
+* Path normalization and canonicalization
+* Unicode normalization (NFC, NFD, NFKC, NFKD)
+* Platform-specific path separator handling
+
+=== Encoding and Decoding Handling
+
+==== Common Encoding Schemes to Address
+
+[cols="2,3,2"]
+|===
+|Encoding Type |Example |Decoded Value
+
+|URL Encoding
+|`%2e%2e%2f`
+|`../`
+
+|Double Encoding
+|`%252e%252e%252f`
+|`../` (after double decode)
+
+|Unicode
+|`\u002e\u002e\u002f`
+|`../`
+
+|Mixed Case (Windows)
+|`..\\..\\`
+|`../../`
+
+|Null Bytes
+|`file.pdf%00.jpg`
+|`file.pdf` (bypasses extension check)
+
+|===
+
+==== Decoding Implementation
+Implemented in: link:../../../src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage]
+
+* URL decoding with double-encoding detection
+* UTF-8 overlong encoding prevention
+* Null byte removal
+* Multiple encoding scheme handling
+
+== OWASP Testing Methodology
+
+=== Input Vector Enumeration
+
+Identify all potential entry points for path traversal:
+
+. **HTTP Parameters**
+  * GET parameters: `?file=`, `?page=`, `?doc=`
+  * POST body parameters
+  * Multipart form data
+
+. **HTTP Headers**
+  * Custom headers
+  * Cookie values
+  * Referer headers
+
+. **File Upload**
+  * Filename parameters
+  * Content-Type headers
+
+=== Test Cases from OWASP Guide
+
+==== Basic Traversal Patterns
+----
+../../../etc/passwd
+..\..\..\..\windows\win.ini
+....//....//....//etc/passwd
+..;/..;/..;/etc/passwd
+----
+
+==== Encoded Traversal Patterns
+----
+%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd
+%252e%252e%252f
+..%c0%af..%c0%af..%c0%afetc%c0%afpasswd
+----
+
+==== Advanced Bypass Techniques
+----
+/var/www/../../etc/passwd
+C:\inetpub\wwwroot\..\..\Windows\win.ini
+/../../../../../../../../etc/passwd%00.jpg
+....\/....\/....\/etc/passwd
+----
+
+=== Validation Testing Approach
+
+. **Positive Testing**: Verify legitimate file access works
+. **Negative Testing**: Confirm malicious patterns are blocked
+. **Boundary Testing**: Test edge cases and limits
+. **Encoding Testing**: Verify all encoding schemes handled
+. **Platform Testing**: Test OS-specific patterns
+
+== Security Patterns and Architecture
+
+=== Secure Validation Patterns
+
+==== Path Validation Pipeline
+Implemented in: link:../../../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]
+
+* Sequential validation stages
+* Pattern matching for known attacks
+* Configurable security levels via link:../../../src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration]
+
+=== HTTP Header Validation
+
+Implemented in: link:../../../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline]
+
+* Header injection prevention
+* CRLF attack detection
+* Header value validation against RFC 7230
+
+== Real-World Attack Pattern Detection
+
+=== Pattern Matching Implementation
+Implemented in: link:../../../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage]
+
+* Path traversal pattern detection
+* CVE-based attack patterns
+* OWASP Top 10 attack vectors
+* Configurable pattern database
+
+== Monitoring and Detection
+
+=== Security Event Monitoring
+Implemented in: link:../../../src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]
+
+* Attack attempt counting by type
+* Failure type categorization
+* Metrics collection for security monitoring
+
+=== Logging Implementation
+Implemented in: link:../../../src/main/java/de/cuioss/http/security/monitoring/URLSecurityLogMessages.java[URLSecurityLogMessages]
+
+* Structured security event logging
+* CuiLogger integration
+* Attack pattern logging
+
+
+== Key Implementation Points
+
+* Use link:../../../src/main/java/de/cuioss/http/security/pipeline/PipelineFactory.java[PipelineFactory] to select appropriate validation pipeline
+* Configure via link:../../../src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration] with sensible defaults
+* Monitor security events with link:../../../src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]
+* All validators implement link:../../../src/main/java/de/cuioss/http/security/core/HttpSecurityValidator.java[HttpSecurityValidator] interface
+
+== HTTP/URL Standards and Validation
+
+=== RFC Compliance for URL Validation
+
+==== RFC 3986 - URI Generic Syntax
+
+* **Unreserved Characters**: `A-Z`, `a-z`, `0-9`, `-`, `.`, `_`, `~`
+* **Reserved Characters**: `:`, `/`, `?`, `#`, `[`, `]`, `@`, `!`, `$`, `&`, `'`, `(`, `)`, `*`, `+`, `,`, `;`, `=`
+* **Percent-Encoding Required**: For all other characters
+* **Path Segment Rules**: Cannot contain unencoded `?` or `#`
+
+==== RFC 7230 - HTTP/1.1 Message Syntax
+
+* **Request-URI**: Must be properly encoded
+* **Header Field Names**: Token characters only
+* **Path Normalization**: Remove dot-segments
+* **Case Sensitivity**: Path components are case-sensitive
+
+=== HTTP Parameter Validation
+
+==== URL Query Parameter Validation
+
+Implemented in: link:../../../src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline]
+
+* RFC 3986 compliant validation
+* Parameter name and value validation
+* Length limits enforcement
+* Null byte detection
+
+Parameter data structure: link:../../../src/main/java/de/cuioss/http/security/data/URLParameter.java[URLParameter]
+
+==== HTTP Body Validation
+
+Implemented in: URLPathValidationPipeline and URLParameterValidationPipeline
+
+* Full URL validation with protocols (URLPathValidationPipeline)
+* Protocol pattern detection (URLParameterValidationPipeline)
+* JSON/XML content validation
+* File upload filename validation
+
+Note: Body validation pipeline has been eliminated from the architecture. Body content validation should be handled at the application layer.
+
+==== Cookie Validation
+
+Cookie data structure: link:../../../src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie]
+Attribute parsing: link:../../../src/main/java/de/cuioss/http/security/data/AttributeParser.java[AttributeParser]
+
+==== Common Parameter Attack Patterns
+
+[cols="2,3,2"]
+|===
+|Attack Type |Example |Detection Method
+
+|Direct Traversal
+|`file=../../../etc/passwd`
+|Pattern matching
+
+|Encoded Traversal
+|`file=%2e%2e%2f%2e%2e%2f`
+|Decode then validate
+
+|Double Encoding
+|`file=%252e%252e%252f`
+|Recursive decoding
+
+|Unicode Encoding
+|`file=%u002e%u002e%u002f`
+|Unicode normalization
+
+|Null Byte Injection
+|`file=image.jpg%00.pdf`
+|Null byte detection
+
+|Parameter Pollution
+|`file=safe.txt&file=../etc/passwd`
+|Validate all occurrences
+
+|Case Variation
+|`file=..%2F..%2f`
+|Case-insensitive matching
+
+|===
+
+== References
+
+* link:https://owasp.org/www-project-web-security-testing-guide/[OWASP Web Security Testing Guide v4.2]
+* link:https://cheatsheetseries.owasp.org/cheatsheets/Path_Traversal_Defense_Cheat_Sheet.html[OWASP Path Traversal Prevention Cheat Sheet]
+* link:https://owasp.org/www-project-top-ten/[OWASP Top 10 2021 - A01:2021 Broken Access Control]
+* link:https://nvd.nist.gov/[CVE Database and National Vulnerability Database]
+* link:https://snyk.io/research/[Snyk Security Research]
+* link:https://portswigger.net/web-security/file-path-traversal[PortSwigger Web Security Academy]
+
+=== RFC Standards
+
+* link:https://www.rfc-editor.org/rfc/rfc3986[RFC 3986 - Uniform Resource Identifier (URI): Generic Syntax]
+* link:https://www.rfc-editor.org/rfc/rfc7230[RFC 7230 - Hypertext Transfer Protocol (HTTP/1.1): Message Syntax and Routing]
+* link:https://www.rfc-editor.org/rfc/rfc3987[RFC 3987 - Internationalized Resource Identifiers (IRIs)]
+* link:https://www.rfc-editor.org/rfc/rfc6265[RFC 6265 - HTTP State Management Mechanism]
+* link:https://www.rfc-editor.org/rfc/rfc8941[RFC 8941 - Structured Field Values for HTTP]
+
