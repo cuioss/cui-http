@@ -260,16 +260,6 @@ ValidationType validationType) implements HttpSecurityValidator {
                     .build();
         }
 
-        // Critical: Block ANY occurrence of ../  patterns regardless of context
-        // This ensures even patterns that would normalize safely are blocked (defense in depth)
-        if (originalValue.contains("../") || originalValue.contains("..\\")) {
-            throw UrlSecurityException.builder()
-                    .failureType(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED)
-                    .validationType(validationType)
-                    .originalInput(originalValue)
-                    .detail("Path traversal pattern detected: dot-dot-slash sequence found")
-                    .build();
-        }
     }
 
     // XSS pattern checking removed - application layer responsibility.

@@ -118,8 +118,6 @@ src/test/java/de/cuioss/http/security/
     └── PatternMatchingStageTest.java
 ----
 
-include::../../test-framework-structure.adoc[]
-
 == Test Components
 
 === Generators and Databases

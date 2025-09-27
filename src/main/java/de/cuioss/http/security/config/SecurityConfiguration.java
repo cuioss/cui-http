@@ -128,7 +128,7 @@ public final class SecurityConfiguration {
     /**
      * Creates a SecurityConfiguration with validation of constraints.
      */
-    public SecurityConfiguration(
+    SecurityConfiguration(
             int maxPathLength,
             boolean allowPathTraversal,
             boolean allowDoubleEncoding,
