@@ -117,7 +117,7 @@ public class HttpResultObject<T> extends ResultObject<T> {
      * @param httpStatus optional HTTP status code
      */
     public HttpResultObject(T result, ResultState state, ResultDetail resultDetail,
-            HttpErrorCategory httpErrorCategory, String etag, Integer httpStatus) {
+                            HttpErrorCategory httpErrorCategory, String etag, Integer httpStatus) {
         super(result, state, resultDetail, httpErrorCategory);
         this.etag = etag;
         this.httpStatus = httpStatus;

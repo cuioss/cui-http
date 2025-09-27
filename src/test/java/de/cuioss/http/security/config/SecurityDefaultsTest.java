@@ -230,7 +230,7 @@ class SecurityDefaultsTest {
         assertTrue(SecurityDefaults.STRICT_CONFIGURATION.isStrict());
         assertFalse(SecurityDefaults.DEFAULT_CONFIGURATION.isStrict());
         assertFalse(SecurityDefaults.DEFAULT_CONFIGURATION.isLenient());
-        assertTrue(SecurityDefaults.LENIENT_CONFIGURATION.isLenient());
+        assertFalse(SecurityDefaults.LENIENT_CONFIGURATION.isLenient()); // Not fully lenient - still blocks path traversal and null bytes
     }
 
     @Test

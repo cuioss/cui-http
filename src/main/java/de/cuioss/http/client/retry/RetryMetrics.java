@@ -56,7 +56,7 @@ public interface RetryMetrics {
      * @param successful whether this specific attempt succeeded
      */
     void recordRetryAttempt(RetryContext context, int attemptNumber, Duration attemptDuration,
-            boolean successful);
+                            boolean successful);
 
     /**
      * Records the actual delay time between retry attempts.
@@ -100,7 +100,7 @@ public interface RetryMetrics {
 
         @Override
         public void recordRetryAttempt(RetryContext context, int attemptNumber, Duration attemptDuration,
-                boolean successful) {
+                                       boolean successful) {
             // No-op
         }
 

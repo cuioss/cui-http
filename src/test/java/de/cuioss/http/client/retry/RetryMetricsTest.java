@@ -145,7 +145,7 @@ class RetryMetricsTest {
 
         @Override
         public void recordRetryAttempt(RetryContext context, int attemptNumber, Duration attemptDuration,
-                boolean successful) {
+                                       boolean successful) {
             retryAttemptCount++;
         }
 

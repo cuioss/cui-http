@@ -51,7 +51,7 @@ public class ExponentialBackoffRetryStrategy implements RetryStrategy {
     private final RetryMetrics retryMetrics;
 
     ExponentialBackoffRetryStrategy(int maxAttempts, Duration initialDelay, double backoffMultiplier,
-            Duration maxDelay, double jitterFactor, RetryMetrics retryMetrics) {
+                                    Duration maxDelay, double jitterFactor, RetryMetrics retryMetrics) {
         this.maxAttempts = maxAttempts;
         this.initialDelay = Objects.requireNonNull(initialDelay, "initialDelay");
         this.backoffMultiplier = backoffMultiplier;

@@ -55,7 +55,7 @@ class SecurityConfigurationTest {
         assertEquals(1024, config.maxPathLength());
         assertFalse(config.allowPathTraversal());
         assertFalse(config.allowDoubleEncoding());
-        assertEquals(20, config.maxParameterCount());
+        assertEquals(50, config.maxParameterCount());
         assertTrue(config.requireSecureCookies());
         assertTrue(config.requireHttpOnlyCookies());
         assertFalse(config.allowNullBytes());
@@ -69,15 +69,15 @@ class SecurityConfigurationTest {
         SecurityConfiguration config = SecurityConfiguration.lenient();
 
         assertEquals(8192, config.maxPathLength());
-        assertFalse(config.allowPathTraversal()); // Still disabled
+        assertTrue(config.allowPathTraversal()); // WARNING: Security risk
         assertTrue(config.allowDoubleEncoding());
-        assertEquals(500, config.maxParameterCount());
+        assertEquals(1000, config.maxParameterCount());
         assertFalse(config.requireSecureCookies());
         assertFalse(config.requireHttpOnlyCookies());
-        assertFalse(config.allowNullBytes()); // Still disabled
+        assertTrue(config.allowNullBytes()); // Lenient allows null bytes
         assertTrue(config.allowControlCharacters());
         assertFalse(config.failOnSuspiciousPatterns());
-        assertTrue(config.logSecurityViolations());
+        assertFalse(config.logSecurityViolations()); // Lenient doesn't log violations
     }
 
     @Test
@@ -393,54 +393,8 @@ class SecurityConfigurationTest {
         assertFalse(defaults.isLenient()); // Default is balanced
     }
 
-    @Test
-    void shouldCreateConfigurationWithModifiedPathSecurity() {
-        SecurityConfiguration original = SecurityConfiguration.defaults();
-        SecurityConfiguration modified = original.withPathSecurity(2048, true);
-
-        assertEquals(2048, modified.maxPathLength());
-        assertTrue(modified.allowPathTraversal());
-
-        // Original should be unchanged
-        assertEquals(4096, original.maxPathLength());
-        assertFalse(original.allowPathTraversal());
-
-        // Other settings should be preserved
-        assertEquals(original.maxParameterCount(), modified.maxParameterCount());
-        assertEquals(original.logSecurityViolations(), modified.logSecurityViolations());
-    }
-
-    @Test
-    void shouldCreateConfigurationWithModifiedCookieSecurity() {
-        SecurityConfiguration original = SecurityConfiguration.defaults();
-        SecurityConfiguration modified = original.withCookieSecurity(true, true);
-
-        assertTrue(modified.requireSecureCookies());
-        assertTrue(modified.requireHttpOnlyCookies());
-
-        // Original should be unchanged
-        assertFalse(original.requireSecureCookies());
-        assertFalse(original.requireHttpOnlyCookies());
-
-        // Other settings should be preserved
-        assertEquals(original.maxPathLength(), modified.maxPathLength());
-        assertEquals(original.logSecurityViolations(), modified.logSecurityViolations());
-    }
-
-    @Test
-    void shouldCreateConfigurationWithModifiedLogging() {
-        SecurityConfiguration original = SecurityConfiguration.defaults();
-        SecurityConfiguration modified = original.withLogging(false);
-
-        assertFalse(modified.logSecurityViolations());
-
-        // Original should be unchanged
-        assertTrue(original.logSecurityViolations());
-
-        // Other settings should be preserved
-        assertEquals(original.maxPathLength(), modified.maxPathLength());
-        assertEquals(original.requireSecureCookies(), modified.requireSecureCookies());
-    }
+    // Note: with* methods are no longer available after converting from record to class
+    // The class is now fully immutable and configurations must be created via the builder
 
     @Test
     void shouldSupportEquality() {

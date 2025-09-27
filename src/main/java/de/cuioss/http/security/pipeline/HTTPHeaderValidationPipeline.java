@@ -95,8 +95,8 @@ public final class HTTPHeaderValidationPipeline extends AbstractValidationPipeli
      * @throws IllegalArgumentException if validationType is not a header type
      */
     public HTTPHeaderValidationPipeline(SecurityConfiguration config,
-            SecurityEventCounter eventCounter,
-            ValidationType validationType) {
+                                        SecurityEventCounter eventCounter,
+                                        ValidationType validationType) {
         super(createStages(config, validationType), Objects.requireNonNull(eventCounter, "EventCounter must not be null"));
         Objects.requireNonNull(validationType, "ValidationType must not be null");
 
