@@ -180,23 +180,6 @@ public class ResilientHttpHandler<T> {
         }
     }
 
-    /**
-     * Handles 304 Not Modified response by returning cached content.
-     */
-    private HttpResultObject<T> handleNotModifiedResult() {
-        LOGGER.debug("HTTP content not modified (304), using cached version");
-        if (cachedResult != null) {
-            return HttpResultObject.success(cachedResult.getResult(), cachedResult.getETag().orElse(null), 304);
-        } else {
-            return HttpResultObject.error(
-                    getEmptyFallback(), // Safe empty fallback
-                    HttpErrorCategory.SERVER_ERROR,
-                    new ResultDetail(
-                            new DisplayName("304 Not Modified but no cached content available"))
-            );
-        }
-    }
-
 
     /**
      * Executes HTTP request with ETag validation support and direct HttpResultObject return.
@@ -271,7 +254,16 @@ public class ResilientHttpHandler<T> {
      */
     private HttpResultObject<T> handleNotModifiedResponse() {
         LOGGER.debug("HTTP content not modified (304) for %s", httpHandler.getUrl());
-        return handleNotModifiedResult();
+        if (cachedResult != null) {
+            return HttpResultObject.success(cachedResult.getResult(), cachedResult.getETag().orElse(null), 304);
+        } else {
+            return HttpResultObject.error(
+                    getEmptyFallback(), // Safe empty fallback
+                    HttpErrorCategory.SERVER_ERROR,
+                    new ResultDetail(
+                            new DisplayName("304 Not Modified but no cached content available"))
+            );
+        }
     }
 
     /**
