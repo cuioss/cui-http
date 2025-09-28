@@ -15,9 +15,11 @@
  */
 package de.cuioss.http.client;
 
+import de.cuioss.http.client.converter.StringContentConverter;
 import de.cuioss.http.client.result.HttpErrorCategory;
 import de.cuioss.http.client.result.HttpResultObject;
 import de.cuioss.test.juli.junit5.EnableTestLogger;
+import de.cuioss.tools.net.http.HttpHandler;
 import de.cuioss.uimodel.nameprovider.DisplayName;
 import de.cuioss.uimodel.result.ResultDetail;
 import de.cuioss.uimodel.result.ResultState;
@@ -36,6 +38,21 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 @EnableTestLogger
 class ResilientHttpHandlerSimpleTest {
+
+    @Test
+    void withoutRetryFactoryMethod() {
+        // Create a simple HttpHandler for testing
+        var httpHandler = HttpHandler.builder()
+                .url("http://test.example.com")
+                .build();
+
+        // Test the withoutRetry factory method
+        ResilientHttpHandler<String> handler = ResilientHttpHandler.withoutRetry(httpHandler, StringContentConverter.identity());
+
+        assertNotNull(handler);
+        // The handler should be created successfully without retry capability
+        // Further testing would require mocking HTTP responses, which is done in integration tests
+    }
 
     @Test
     void httpResultObjectSuccessStates() {

@@ -79,14 +79,22 @@ public class ResilientHttpHandler<T> {
     }
 
     /**
-     * Constructor accepting HttpHandler directly.
+     * Creates a ResilientHttpHandler instance without retry capability.
      * <p>
-     * This constructor creates an ResilientHttpHandler with no retry capability.
+     * This static factory method creates a ResilientHttpHandler that only provides ETag caching
+     * and content conversion functionality, without retry logic.
      * For retry-capable HTTP operations, use {@link #ResilientHttpHandler(HttpHandlerProvider, HttpContentConverter)} instead.
      *
      * @param httpHandler the HTTP handler for making requests
+     * @param contentConverter the converter for HTTP content
+     * @param <T> the type of content to be converted
+     * @return a ResilientHttpHandler instance configured without retry capability
      */
-    public ResilientHttpHandler(@NonNull HttpHandler httpHandler, @NonNull HttpContentConverter<T> contentConverter) {
+    public static <T> ResilientHttpHandler<T> withoutRetry(@NonNull HttpHandler httpHandler, @NonNull HttpContentConverter<T> contentConverter) {
+        return new ResilientHttpHandler<>(httpHandler, contentConverter);
+    }
+
+    private ResilientHttpHandler(@NonNull HttpHandler httpHandler, @NonNull HttpContentConverter<T> contentConverter) {
         this.httpHandler = httpHandler;
         this.retryStrategy = RetryStrategy.none();
         this.contentConverter = contentConverter;

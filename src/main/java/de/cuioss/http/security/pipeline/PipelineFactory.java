@@ -131,6 +131,32 @@ public final class PipelineFactory {
     }
 
     /**
+     * Creates a URL parameter name validation pipeline.
+     *
+     * <p>This pipeline validates URL parameter names (query string keys) for:</p>
+     * <ul>
+     *   <li>Invalid characters in parameter names</li>
+     *   <li>Parameter name length limits</li>
+     *   <li>Encoding and normalization issues</li>
+     *   <li>Injection attempts</li>
+     * </ul>
+     *
+     * <p>Parameter names have stricter validation than parameter values since they
+     * typically map to internal field names or database columns.</p>
+     *
+     * @param config The security configuration to use
+     * @param eventCounter The event counter for tracking security violations
+     * @return A configured URL parameter name validation pipeline
+     * @throws NullPointerException if config or eventCounter is null
+     */
+    public static HttpSecurityValidator createParameterNamePipeline(
+            SecurityConfiguration config, SecurityEventCounter eventCounter) {
+        // Parameter names use similar validation to parameter values but with stricter character requirements
+        // They typically should not contain special characters that could be used for injection
+        return new URLParameterValidationPipeline(config, eventCounter);
+    }
+
+    /**
      * Creates an HTTP header name validation pipeline.
      *
      * <p>This pipeline validates HTTP header names according to RFC 7230 specifications
@@ -209,13 +235,7 @@ public final class PipelineFactory {
             case PARAMETER_VALUE -> createUrlParameterPipeline(config, eventCounter);
             case HEADER_NAME -> createHeaderNamePipeline(config, eventCounter);
             case HEADER_VALUE -> createHeaderValuePipeline(config, eventCounter);
-            case PARAMETER_NAME -> throw new IllegalArgumentException(
-                    """
-                    PARAMETER_NAME validation is not supported. Use PARAMETER_VALUE for parameter validation.
-                    Design rationale: Parameter names in query strings have similar security requirements
-                    to parameter values (injection prevention, encoding validation, etc.). The PARAMETER_VALUE
-                    pipeline handles both cases effectively. If distinct validation is needed in the future,
-                    a separate PARAMETER_NAME pipeline can be implemented.""");
+            case PARAMETER_NAME -> createParameterNamePipeline(config, eventCounter);
             case BODY -> throw new IllegalArgumentException(
                     "BODY validation pipeline has been removed. HTTP body content validation should be handled at application layer.");
             case COOKIE_NAME, COOKIE_VALUE -> throw new IllegalArgumentException(

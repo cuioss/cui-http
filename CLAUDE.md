@@ -81,7 +81,7 @@ The project produces a `generators` artifact containing security testing utiliti
 
 ## CUI Standards Integration
 
-This project follows CUI standards documented in `/doc/ai-rules.md`. Key requirements:
+This project follows CUI standards documented in `doc/ai-rules.md`. Key requirements:
 
 1. **Pre-commit checks are mandatory**: Always run the pre-commit checks (see Build Commands section) before commits
 2. **Use CuiLogger**: Private static final LOGGER, never use slf4j or System.out

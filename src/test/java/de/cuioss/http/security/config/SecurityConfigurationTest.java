@@ -480,4 +480,29 @@ class SecurityConfigurationTest {
         assertThrows(UnsupportedOperationException.class, () ->
                 config.blockedHeaderNames().add("X-Modified"));
     }
+
+    @Test
+    void lenientConfigurationShouldBeIdentifiedAsLenient() {
+        // Test that lenient().isLenient() returns true
+        SecurityConfiguration lenientConfig = SecurityConfiguration.lenient();
+
+        // Verify the lenient configuration has expected settings
+        assertTrue(lenientConfig.allowPathTraversal(),
+                "Lenient config should allow path traversal");
+        assertTrue(lenientConfig.allowDoubleEncoding(),
+                "Lenient config should allow double encoding");
+        assertTrue(lenientConfig.isLenient(),
+                "SecurityConfiguration.lenient().isLenient() should return true");
+    }
+
+    @Test
+    void strictConfigurationShouldNotBeIdentifiedAsLenient() {
+        // Test that strict().isLenient() returns false
+        SecurityConfiguration strictConfig = SecurityConfiguration.strict();
+
+        assertFalse(strictConfig.allowPathTraversal(),
+                "Strict config should not allow path traversal");
+        assertFalse(strictConfig.isLenient(),
+                "SecurityConfiguration.strict().isLenient() should return false");
+    }
 }

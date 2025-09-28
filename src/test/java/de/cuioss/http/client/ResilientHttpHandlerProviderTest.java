@@ -111,11 +111,11 @@ class ResilientHttpHandlerProviderTest {
                 .url(TEST_URL)
                 .build();
 
-        // When: Creating ResilientHttpHandler with direct HttpHandler constructor
-        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(httpHandler, StringContentConverter.identity());
+        // When: Creating ResilientHttpHandler with the withoutRetry factory method
+        ResilientHttpHandler<String> handler = ResilientHttpHandler.withoutRetry(httpHandler, StringContentConverter.identity());
 
-        // Then: Should still work for backward compatibility
-        assertNotNull(handler, "ResilientHttpHandler should maintain backward compatibility");
+        // Then: Should work with factory method
+        assertNotNull(handler, "ResilientHttpHandler should work with withoutRetry factory method");
     }
 
     @Test

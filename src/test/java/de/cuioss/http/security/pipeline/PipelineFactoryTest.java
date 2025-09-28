@@ -126,12 +126,24 @@ class PipelineFactoryTest {
         }
 
         @Test
-        void shouldRejectUnsupportedValidationTypes() {
-            IllegalArgumentException paramNameException = assertThrows(IllegalArgumentException.class,
-                    () -> PipelineFactory.createPipeline(ValidationType.PARAMETER_NAME, config, eventCounter));
-            assertTrue(paramNameException.getMessage().contains("PARAMETER_NAME validation is not supported"));
-            assertTrue(paramNameException.getMessage().contains("Use PARAMETER_VALUE"));
+        void shouldCreateParameterNamePipeline() {
+            // Test that PARAMETER_NAME now creates a pipeline instead of throwing an exception
+            HttpSecurityValidator paramNameValidator = PipelineFactory.createPipeline(
+                    ValidationType.PARAMETER_NAME, config, eventCounter);
+            assertNotNull(paramNameValidator);
 
+            // Test factory method directly
+            HttpSecurityValidator directValidator = PipelineFactory.createParameterNamePipeline(config, eventCounter);
+            assertNotNull(directValidator);
+
+            // Verify it can validate a simple parameter name
+            Optional<String> result = directValidator.validate("page");
+            assertTrue(result.isPresent());
+            assertEquals("page", result.get());
+        }
+
+        @Test
+        void shouldRejectUnsupportedValidationTypes() {
             IllegalArgumentException cookieNameException = assertThrows(IllegalArgumentException.class,
                     () -> PipelineFactory.createPipeline(ValidationType.COOKIE_NAME, config, eventCounter));
             assertTrue(cookieNameException.getMessage().contains("Cookie validation pipelines are not yet implemented"));
