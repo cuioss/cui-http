@@ -1,0 +1,103 @@
+= HTTP Security Validation Framework
+:toc: left
+:toclevels: 2
+:toc-title: Table of Contents
+:source-highlighter: highlight.js
+
+toc::[]
+
+== Maven Coordinates
+
+[source, xml]
+----
+<dependency>
+    <groupId>de.cuioss</groupId>
+    <artifactId>cui-http</artifactId>
+</dependency>
+----
+
+== Overview
+
+Validation framework for HTTP components (paths, parameters, headers, bodies) with attack pattern detection.
+
+=== Core Interface
+
+xref:../src/main/java/de/cuioss/http/security/core/HttpSecurityValidator.java[HttpSecurityValidator]: Functional interface following "String in, String out, throws on violation" pattern.
+
+== Validation Pipelines
+
+=== xref:../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]
+
+For path-only attacks, directory traversal, CVE exploits. Sequential validation through configured stages.
+
+=== xref:../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline]
+
+For header injection, CRLF attacks.
+
+=== xref:../src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline]
+
+For query parameters, form data validation.
+
+== Validation Stages
+
+* xref:../src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage] - URL decoding, UTF-8 overlong detection
+* xref:../src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage] - Unicode normalization
+* xref:../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - Character validation
+* xref:../src/main/java/de/cuioss/http/security/validation/LengthValidationStage.java[LengthValidationStage] - Length limits
+* xref:../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Attack pattern detection
+
+== Configuration
+
+xref:../src/main/java/de/cuioss/http/security/config/SecurityConfigurationBuilder.java[SecurityConfigurationBuilder] provides configuration with sensible defaults:
+
+* Path length: 4096 characters
+* Parameter count: 100
+* Header count: 50
+* Cookie count: 20
+* Body size: 5MB
+
+== Usage Example
+
+[source,java]
+----
+// Create pipeline with configuration
+SecurityConfiguration config = SecurityConfiguration.builder()
+    .maxPathLength(2048)
+    .allowPathTraversal(false)
+    .build();
+
+SecurityEventCounter counter = new SecurityEventCounter();
+URLPathValidationPipeline pipeline = new URLPathValidationPipeline(
+    config,
+    counter
+);
+
+// Validate input
+try {
+    String validated = pipeline.validate("/api/users/123");
+    // Use validated path
+} catch (UrlSecurityException e) {
+    log.warn("Security violation: {}", e.getFailureType());
+}
+----
+
+[source,java]
+----
+// Use PipelineFactory for type-based selection
+SecurityConfiguration config = SecurityConfiguration.builder().build();
+SecurityEventCounter counter = new SecurityEventCounter();
+HttpSecurityValidator validator = PipelineFactory.createPipeline(
+    ValidationType.URL_PATH, config, counter);
+String validated = validator.validate(userInput);
+----
+
+
+== Pipeline Selection Rules
+
+See xref:../doc/http-security/specification/pipeline-architecture-standards.adoc[Pipeline Architecture Standards] for detailed selection criteria.
+
+== Related Documentation
+
+* xref:../doc/http-security/README.adoc[Complete HTTP Security Documentation]
+* xref:../doc/http-security/specification/specification.adoc[Architecture Specification]
+* xref:../doc/http-security/specification/testing.adoc[Testing Framework]

@@ -1,30 +1,138 @@
-= cui-http
+= CUI-HTTP
+:toc: left
+:toclevels: 2
+:toc-title: Table of Contents
+:source-highlighter: highlight.js
 
+[.discrete]
 == Status
 
 image:https://github.com/cuioss/cui-http/actions/workflows/maven.yml/badge.svg[Java CI with Maven,link=https://github.com/cuioss/cui-http/actions/workflows/maven.yml]
 image:http://img.shields.io/:license-apache-blue.svg[License,link=http://www.apache.org/licenses/LICENSE-2.0.html]
 image:https://img.shields.io/maven-central/v/de.cuioss/cui-http.svg?label=Maven%20Central["Maven Central", link="https://central.sonatype.com/artifact/de.cuioss/cui-http"]
 
-https://sonarcloud.io/summary/new_code?id=cuioss_cui-http[image:https://sonarcloud.io/api/project_badges/measure?project=cuioss_cui-http&metric=alert_status[Quality
-Gate Status]]
+https://sonarcloud.io/summary/new_code?id=cuioss_cui-http[image:https://sonarcloud.io/api/project_badges/measure?project=cuioss_cui-http&metric=alert_status[Quality Gate Status]]
 image:https://sonarcloud.io/api/project_badges/measure?project=cuioss_cui-http&metric=ncloc[Lines of Code,link=https://sonarcloud.io/summary/new_code?id=cuioss_cui-http]
 image:https://sonarcloud.io/api/project_badges/measure?project=cuioss_cui-http&metric=coverage[Coverage,link=https://sonarcloud.io/summary/new_code?id=cuioss_cui-http]
 
-
 https://cuioss.github.io/cui-java-module-template/about.html[Generated Documentation on github-pages]
 
+[.discrete]
 == What is it?
 
-CUI-HTTP is a library that provides a collection of utilities and abstractions to facilitate HTTP communication in Java applications. It aims to simplify the process of making HTTP requests and handling responses, while also providing features for common HTTP-related tasks.
+Security-focused HTTP utilities library providing validation pipelines, SSL/TLS context management, and HTTP client handlers with comprehensive attack pattern detection.
 
-=== Maven Coordinates
+toc::[]
 
-[source,xml]
+== Maven Coordinates
+
+[source, xml]
 ----
-    <dependency>
-        <groupId>de.cuioss</groupId>
-        <artifactId>cui-http</artifactId>
-    </dependency>
+<dependency>
+    <groupId>de.cuioss</groupId>
+    <artifactId>cui-http</artifactId>
+</dependency>
 ----
 
+Test artifact:
+[source, xml]
+----
+<dependency>
+    <groupId>de.cuioss</groupId>
+    <artifactId>cui-http</artifactId>
+    <classifier>generators</classifier>
+    <scope>test</scope>
+</dependency>
+----
+
+== Components
+
+=== HTTP Security Validation
+
+xref:doc/security-readme.adoc[Security Validation Framework]:
+
+* Validation pipelines for paths, parameters, headers, bodies
+* Attack pattern detection (path traversal, parameter injection, protocol violations)
+* Configuration via `SecurityConfigurationBuilder`
+
+=== HTTP Client Handlers
+
+xref:doc/client-handlers-readme.adoc[HTTP Client Handlers]:
+
+* `HttpHandler` - Builder-based HTTP client with SSL defaults
+* `SecureSSLContextProvider` - TLS 1.2+ SSL context
+* `HttpStatusFamily` - RFC 7231 status classification
+
+=== Security Testing
+
+xref:doc/test-generators-readme.adoc[Test Generators]:
+
+* Attack databases with CVE patterns and OWASP vectors
+* Test data generators for security validation
+* JUnit 5 integration with `ArgumentsProvider`
+
+== Usage Example
+
+[source,java]
+----
+// HTTP Client
+HttpHandler handler = HttpHandler.builder()
+    .uri("https://api.example.com/data")
+    .connectionTimeoutSeconds(10)
+    .build();
+
+HttpClient client = handler.createHttpClient();
+HttpRequest request = handler.requestBuilder()
+    .GET()
+    .build();
+HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+// Security Validation
+SecurityConfiguration config = SecurityConfiguration.builder()
+    .maxPathLength(2048)
+    .build();
+
+URLPathValidationPipeline pipeline = new URLPathValidationPipeline(
+    config, new SecurityEventCounter());
+
+String validated = pipeline.validate("/api/users/123").orElseThrow();
+----
+
+== Build Commands
+
+[source,bash]
+----
+./mvnw clean install          # Build and install
+./mvnw test                   # Run tests
+./mvnw -Ppre-commit clean verify  # Pre-commit checks (MANDATORY)
+./mvnw -Pcoverage clean verify    # Coverage report
+----
+
+== Documentation
+
+=== Component Documentation
+
+* xref:doc/client-handlers-readme.adoc[HTTP Client Handlers]
+* xref:doc/security-readme.adoc[Security Validation Framework]
+* xref:doc/test-generators-readme.adoc[Security Testing Framework]
+
+=== Specifications
+
+* xref:doc/http-security/README.adoc[HTTP Security Overview]
+* xref:doc/http-security/Requirements.adoc[Requirements Documentation]
+* xref:doc/http-security/specification/specification.adoc[Architecture Specification]
+* xref:doc/http-security/specification/pipeline-architecture-standards.adoc[Pipeline Standards]
+* xref:doc/http-security/specification/testing.adoc[Testing Framework]
+
+=== Analysis
+
+* xref:doc/http-security/analysis/owasp-best-practices.adoc[OWASP Best Practices]
+* xref:doc/http-security/analysis/cve-analysis.adoc[CVE Analysis]
+
+== Dependencies
+
+* Java 21+
+* cui-java-tools
+* JSpecify (null-safety)
+* Lombok (code generation)
+* JUnit 5 (test only)

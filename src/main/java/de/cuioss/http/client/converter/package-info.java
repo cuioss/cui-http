@@ -13,23 +13,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package de.cuioss.http;
-
-import lombok.ToString;
 
 /**
- * @author Oliver Wolff
+ * HTTP content converters for secure JSON processing.
+ * <p>
+ * This package contains converters that handle HTTP response content
+ * transformation with security-focused JSON parsing capabilities.
+ * <p>
+ * Key components:
+ * <ul>
+ *   <li>Secure JSON content converters using DSL-JSON</li>
+ * </ul>
+ * <p>
+ * The converters use DSL-JSON with configurable security limits to prevent
+ * JSON-based attacks such as excessive memory consumption and deeply nested
+ * structure attacks, while providing Jakarta JSON API compatibility through
+ * bridge adapters.
  *
+ * @author Oliver Wolff
+ * @since 1.0
  */
-@ToString
-public class Hello {
-
-    /**
-     * @param name to be greeted
-     * @return the greeted String
-     */
-    public String hello(String name) {
-        return "Hello " + name;
-    }
-
-}
+package de.cuioss.http.client.converter;

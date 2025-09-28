@@ -1,0 +1,347 @@
+/*
+ * Copyright © 2025 CUI-OpenSource-Software (info@cuioss.de)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package de.cuioss.http.security.validation;
+
+import de.cuioss.http.security.config.SecurityConfiguration;
+import de.cuioss.http.security.core.UrlSecurityFailureType;
+import de.cuioss.http.security.core.ValidationType;
+import de.cuioss.http.security.exceptions.UrlSecurityException;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class CharacterValidationStageTest {
+
+    private final SecurityConfiguration config = SecurityConfiguration.defaults();
+
+    @Test
+    void shouldAllowNullAndEmptyValues() throws UrlSecurityException {
+        CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.URL_PATH);
+
+        assertEquals(Optional.empty(), stage.validate(null));
+        var result = stage.validate("");
+        assertTrue(result.isPresent());
+        assertEquals("", result.get());
+    }
+
+    @Test
+    void shouldAllowValidPathCharacters() throws UrlSecurityException {
+        CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.URL_PATH);
+
+        String validPath = "/api/users/123";
+        var result = stage.validate(validPath);
+        assertTrue(result.isPresent());
+        assertEquals(validPath, result.get());
+
+        String complexPath = "/path/with-special_chars.txt~test!$&'()*+,;=:@";
+        var complexResult = stage.validate(complexPath);
+        assertTrue(complexResult.isPresent());
+        assertEquals(complexPath, complexResult.get());
+    }
+
+    @Test
+    void shouldAllowValidQueryCharacters() throws UrlSecurityException {
+        CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.PARAMETER_NAME);
+
+        String validParam = "userName123";
+        var result = stage.validate(validParam);
+        assertTrue(result.isPresent());
+        assertEquals(validParam, result.get());
+
+        String complexParam = "param_name-with.special~chars!$'()*+,;";
+        var complexResult = stage.validate(complexParam);
+        assertTrue(complexResult.isPresent());
+        assertEquals(complexParam, complexResult.get());
+    }
+
+    @Test
+    void shouldAllowValidHeaderCharacters() throws UrlSecurityException {
+        CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.HEADER_NAME);
+
+        String validHeader = "X-Custom-Header";
+        var result = stage.validate(validHeader);
+        assertTrue(result.isPresent());
+        assertEquals(validHeader, result.get());
+
+        String headerWithNumbers = "Header123";
+        var numbersResult = stage.validate(headerWithNumbers);
+        assertTrue(numbersResult.isPresent());
+        assertEquals(headerWithNumbers, numbersResult.get());
+    }
+
+    @Test
+    void shouldAllowSpaceInHeaderValues() throws UrlSecurityException {
+        CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.HEADER_VALUE);
+
+        String headerValue = "Mozilla/5.0 Chrome Safari";
+        var result = stage.validate(headerValue);
+        assertTrue(result.isPresent());
+        assertEquals(headerValue, result.get());
+    }
+
+    @Test
+    void shouldRejectNullByteInjection() {
+        CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.URL_PATH);
+
+        String maliciousPath = "/path/with\0null/byte";
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                stage.validate(maliciousPath));
+
+        assertEquals(UrlSecurityFailureType.NULL_BYTE_INJECTION, exception.getFailureType());
+        assertEquals(ValidationType.URL_PATH, exception.getValidationType());
+        assertTrue(exception.getDetail().isPresent());
+        assertTrue(exception.getDetail().get().contains("Null byte detected at position 10"));
+    }
+
+    @Test
+    void shouldRejectEncodedNullByte() {
+        CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.URL_PATH);
+
+        String maliciousPath = "/path/with%00null/byte";
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                stage.validate(maliciousPath));
+
+        assertEquals(UrlSecurityFailureType.NULL_BYTE_INJECTION, exception.getFailureType());
+        assertEquals(ValidationType.URL_PATH, exception.getValidationType());
+        assertTrue(exception.getDetail().isPresent());
+        assertTrue(exception.getDetail().get().contains("Encoded null byte (%00) detected at position 10"));
+    }
+
+    @Test
+    void shouldRejectInvalidCharacters() {
+        CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.URL_PATH);
+
+        String pathWithInvalidChar = "/path/with spaces/invalid";
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                stage.validate(pathWithInvalidChar));
+
+        assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
+        assertEquals(ValidationType.URL_PATH, exception.getValidationType());
+        assertTrue(exception.getDetail().isPresent());
+        assertTrue(exception.getDetail().get().contains("Invalid character ' ' (0x20) at position 10"));
+    }
+
+    @Test
+    void shouldRejectInvalidEncodingFormat() {
+        CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.URL_PATH);
+
+        // Incomplete percent encoding
+        String incompleteEncoding = "/path/with%2";
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                stage.validate(incompleteEncoding));
+
+        assertEquals(UrlSecurityFailureType.INVALID_ENCODING, exception.getFailureType());
+        assertTrue(exception.getDetail().isPresent());
+        assertTrue(exception.getDetail().get().contains("Incomplete percent encoding at position 10"));
+    }
+
+    @Test
+    void shouldRejectInvalidHexDigits() {
+        CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.URL_PATH);
+
+        String invalidHex = "/path/with%2G";
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                stage.validate(invalidHex));
+
+        assertEquals(UrlSecurityFailureType.INVALID_ENCODING, exception.getFailureType());
+        assertTrue(exception.getDetail().isPresent());
+        assertTrue(exception.getDetail().get().contains("Invalid hex digits in percent encoding at position 10"));
+    }
+
+    @Test
+    void shouldAllowValidPercentEncoding() throws UrlSecurityException {
+        CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.URL_PATH);
+
+        String encodedPath = "/path/with%20encoded%2Fchars";
+        var encodedResult = stage.validate(encodedPath);
+        assertTrue(encodedResult.isPresent());
+        assertEquals(encodedPath, encodedResult.get());
+
+        String upperCaseHex = "/path/with%2A%2B";
+        var upperResult = stage.validate(upperCaseHex);
+        assertTrue(upperResult.isPresent());
+        assertEquals(upperCaseHex, upperResult.get());
+
+        String lowerCaseHex = "/path/with%2a%2b";
+        var lowerResult = stage.validate(lowerCaseHex);
+        assertTrue(lowerResult.isPresent());
+        assertEquals(lowerCaseHex, lowerResult.get());
+    }
+
+    @Test
+    void shouldNotAllowPercentEncodingInHeaders() {
+        CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.HEADER_NAME);
+
+        // Headers should allow % character, but percent sequences are not decoded
+        // So %20 should be treated as literal characters, which is allowed
+        String headerWithEncoding = "Header%20Name";
+
+        // This should actually pass since % is allowed in headers
+        assertDoesNotThrow(() -> {
+            var result = stage.validate(headerWithEncoding);
+            assertTrue(result.isPresent());
+            return result.get();
+        });
+
+        // Test with a character that's actually not allowed in headers (control character)
+        String headerWithControlChar = "Header\u0001Name";
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                stage.validate(headerWithControlChar));
+
+        assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
+        assertTrue(exception.getDetail().isPresent());
+        assertTrue(exception.getDetail().get().contains("Invalid character"));
+    }
+
+    @ParameterizedTest
+    @EnumSource(ValidationType.class)
+    void shouldHandleAllValidationTypes(ValidationType type) {
+        CharacterValidationStage stage = new CharacterValidationStage(config, type);
+
+        // Should not throw for basic alphanumeric
+        assertDoesNotThrow(() -> {
+            var result = stage.validate("abc123");
+            assertTrue(result.isPresent());
+            return result.get();
+        });
+
+        // Should reject null byte for all types
+        assertThrows(UrlSecurityException.class, () -> stage.validate("test\0null"));
+    }
+
+    @Test
+    void shouldRejectHighUnicodeCharacters() {
+        CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.URL_PATH);
+
+        String unicodePath = "/path/with/unicode/字符";
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                stage.validate(unicodePath));
+
+        assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
+    }
+
+    @Test
+    void shouldHaveCorrectEqualsAndHashCode() {
+        CharacterValidationStage stage1 = new CharacterValidationStage(config, ValidationType.URL_PATH);
+        CharacterValidationStage stage2 = new CharacterValidationStage(config, ValidationType.URL_PATH);
+        CharacterValidationStage stage3 = new CharacterValidationStage(config, ValidationType.PARAMETER_NAME);
+
+        assertEquals(stage1, stage2);
+        assertEquals(stage1.hashCode(), stage2.hashCode());
+        assertNotEquals(stage1, stage3);
+    }
+
+    @Test
+    void shouldHaveCorrectToString() {
+        CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.URL_PATH);
+        String toString = stage.toString();
+
+        assertTrue(toString.contains("CharacterValidationStage"));
+        assertTrue(toString.contains("URL_PATH"));
+    }
+
+    @Test
+    void shouldRejectNonAsciiCharactersInHeaderNamesRegardlessOfConfig() {
+        // RFC 7230: Header field names are tokens consisting of ASCII characters 33-126
+        // This test reproduces the security issue where extended ASCII could be incorrectly allowed
+
+        // Test with allowExtendedAscii = true (this should NOT affect header names)
+        SecurityConfiguration configWithExtended = SecurityConfiguration.builder()
+                .allowExtendedAscii(true)
+                .build();
+
+        CharacterValidationStage headerNameStage = new CharacterValidationStage(
+                configWithExtended, ValidationType.HEADER_NAME);
+
+        // Extended ASCII characters (128-255) should ALWAYS be rejected in header names
+        String headerWithExtendedAscii = "X-Custom-Heäder"; // ä = U+00E4 (228)
+
+        // This test will FAIL if the bug exists (extended ASCII incorrectly allowed)
+        // and PASS if the bug is fixed (extended ASCII correctly rejected)
+        assertThrows(UrlSecurityException.class,
+                () -> headerNameStage.validate(headerWithExtendedAscii),
+                "SECURITY BUG: Header names must reject extended ASCII even when allowExtendedAscii=true");
+
+        // Test with Latin-1 supplement character
+        String headerWithLatin1 = "Content-Typé"; // é = U+00E9 (233)
+        assertThrows(UrlSecurityException.class,
+                () -> headerNameStage.validate(headerWithLatin1),
+                "Header names must reject Latin-1 supplement characters");
+
+        // Test with high-bit character
+        String headerWithHighBit = "X-Test\u00FF"; // ÿ = U+00FF (255)
+        assertThrows(UrlSecurityException.class,
+                () -> headerNameStage.validate(headerWithHighBit),
+                "Header names must reject all non-ASCII characters");
+
+        // Verify that regular ASCII header names still work
+        String validHeader = "X-Custom-Header";
+        var result = assertDoesNotThrow(() -> headerNameStage.validate(validHeader));
+        assertTrue(result.isPresent());
+        assertEquals(validHeader, result.get());
+    }
+
+    @Test
+    void shouldHandleUnicodeCharactersConsistentlyWithAllowHighBitCharacters() {
+        // Test with allowHighBitCharacters = true (default)
+        SecurityConfiguration configWithHighBit = SecurityConfiguration.builder()
+                .allowExtendedAscii(true)
+                .build();
+
+        CharacterValidationStage pathStage = new CharacterValidationStage(configWithHighBit, ValidationType.URL_PATH);
+        CharacterValidationStage paramNameStage = new CharacterValidationStage(configWithHighBit, ValidationType.PARAMETER_NAME);
+        CharacterValidationStage paramValueStage = new CharacterValidationStage(configWithHighBit, ValidationType.PARAMETER_VALUE);
+
+        // Test extended ASCII (128-255) - should be allowed with allowHighBitCharacters=true
+        String extendedAscii = "test\u00E9"; // é (U+00E9)
+        assertDoesNotThrow(() -> pathStage.validate(extendedAscii),
+                "Extended ASCII should be allowed in URL_PATH when allowHighBitCharacters=true");
+        assertDoesNotThrow(() -> paramNameStage.validate(extendedAscii),
+                "Extended ASCII should be allowed in PARAMETER_NAME when allowHighBitCharacters=true");
+        assertDoesNotThrow(() -> paramValueStage.validate(extendedAscii),
+                "Extended ASCII should be allowed in PARAMETER_VALUE when allowHighBitCharacters=true");
+
+        // Test Unicode above 255 - currently rejected even with allowHighBitCharacters=true
+        // This is the confusing behavior that needs clarification
+        String unicode = "test中文"; // Chinese characters
+
+        // Current behavior: Unicode > 255 is rejected for paths/parameters even with allowHighBitCharacters=true
+        // This is confusing because the name "allowHighBitCharacters" implies it would allow these
+        assertThrows(UrlSecurityException.class, () -> pathStage.validate(unicode),
+                "Unicode > 255 is currently rejected in URL_PATH even with allowHighBitCharacters=true");
+        assertThrows(UrlSecurityException.class, () -> paramNameStage.validate(unicode),
+                "Unicode > 255 is currently rejected in PARAMETER_NAME even with allowHighBitCharacters=true");
+        assertThrows(UrlSecurityException.class, () -> paramValueStage.validate(unicode),
+                "Unicode > 255 is currently rejected in PARAMETER_VALUE even with allowHighBitCharacters=true");
+
+        // Test with allowHighBitCharacters = false
+        SecurityConfiguration configWithoutHighBit = SecurityConfiguration.builder()
+                .allowExtendedAscii(false)
+                .build();
+
+        CharacterValidationStage restrictedStage = new CharacterValidationStage(configWithoutHighBit, ValidationType.URL_PATH);
+
+        // Both extended ASCII and Unicode should be rejected
+        assertThrows(UrlSecurityException.class, () -> restrictedStage.validate(extendedAscii),
+                "Extended ASCII should be rejected when allowHighBitCharacters=false");
+        assertThrows(UrlSecurityException.class, () -> restrictedStage.validate(unicode),
+                "Unicode should be rejected when allowHighBitCharacters=false");
+    }
+}
