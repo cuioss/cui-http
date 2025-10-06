@@ -20,13 +20,12 @@ import de.cuioss.http.client.handler.HttpHandler;
 import de.cuioss.http.client.retry.RetryStrategies;
 import de.cuioss.http.client.retry.RetryStrategy;
 import lombok.Builder;
-import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Test for ResilientHttpHandler with HttpHandlerProvider pattern.
@@ -43,8 +42,10 @@ class ResilientHttpHandlerProviderTest {
     @Builder
     @RequiredArgsConstructor
     static class TestHttpHandlerProvider implements HttpHandlerProvider {
-        @NonNull private final String wellKnownUrl;
-        @NonNull private final RetryStrategy retryStrategy;
+        @NonNull
+        private final String wellKnownUrl;
+        @NonNull
+        private final RetryStrategy retryStrategy;
 
         @Override
         public @NonNull HttpHandler getHttpHandler() {
@@ -71,8 +72,11 @@ class ResilientHttpHandlerProviderTest {
                 .retryStrategy(retryStrategy)
                 .build();
 
-        // When: Creating ResilientHttpHandler with HttpHandlerProvider
-        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(config, StringContentConverter.identity());
+        // When: Creating ResilientHttpHandler with separate HttpHandler and RetryStrategy
+        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                config.getHttpHandler(),
+                config.getRetryStrategy(),
+                StringContentConverter.identity());
 
         // Then: Should be created successfully
         assertNotNull(handler, "ResilientHttpHandler should be created");
@@ -97,37 +101,31 @@ class ResilientHttpHandlerProviderTest {
         };
 
         // When: Creating ResilientHttpHandler with custom provider
-        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(provider, StringContentConverter.identity());
+        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                provider.getHttpHandler(),
+                provider.getRetryStrategy(),
+                StringContentConverter.identity());
 
         // Then: Should be created successfully
         assertNotNull(handler, "ResilientHttpHandler should be created with custom provider");
     }
 
     @Test
-    @DisplayName("Should maintain backward compatibility with legacy constructor")
-    void shouldMaintainBackwardCompatibility() {
-        // Given: A direct HttpHandler (legacy usage)
+    @DisplayName("Should support creating handler without retry capability")
+    void shouldSupportWithoutRetry() {
+        // Given: A direct HttpHandler
         HttpHandler httpHandler = HttpHandler.builder()
                 .url(TEST_URL)
                 .build();
 
-        // When: Creating ResilientHttpHandler with the withoutRetry factory method
-        ResilientHttpHandler<String> handler = ResilientHttpHandler.withoutRetry(httpHandler, StringContentConverter.identity());
+        // When: Creating ResilientHttpHandler without retry using RetryStrategy.none()
+        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                httpHandler,
+                RetryStrategy.none(),
+                StringContentConverter.identity());
 
-        // Then: Should work with factory method
-        assertNotNull(handler, "ResilientHttpHandler should work with withoutRetry factory method");
+        // Then: Should work without retry
+        assertNotNull(handler, "ResilientHttpHandler should work without retry capability");
     }
 
-    @Test
-    @DisplayName("Should fail when HttpHandlerProvider is null")
-    @SuppressWarnings("ConstantConditions")
-    void shouldFailWhenProviderIsNull() {
-        // Given: A converter for the test
-        var converter = StringContentConverter.identity();
-
-        // When/Then: Should throw NullPointerException
-        assertThrows(NullPointerException.class,
-                () -> new ResilientHttpHandler<>((HttpHandlerProvider) null, converter),
-                "Should throw exception when provider is null");
-    }
 }

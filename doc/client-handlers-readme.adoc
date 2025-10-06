@@ -212,7 +212,8 @@ HttpHandlerProvider provider = new HttpHandlerProvider() {
 
 // Create resilient handler with string conversion
 ResilientHttpHandler<String> resilientHandler = new ResilientHttpHandler<>(
-    provider,
+    provider.getHttpHandler(),
+    provider.getRetryStrategy(),
     StringContentConverter.identity()
 );
 
@@ -266,7 +267,8 @@ HttpContentConverter<User> userConverter = new HttpContentConverter<User>() {
 
 // Use with resilient handler
 ResilientHttpHandler<User> userHandler = new ResilientHttpHandler<>(
-    httpHandlerProvider,
+    httpHandlerProvider.getHttpHandler(),
+    httpHandlerProvider.getRetryStrategy(),
     userConverter
 );
 ----

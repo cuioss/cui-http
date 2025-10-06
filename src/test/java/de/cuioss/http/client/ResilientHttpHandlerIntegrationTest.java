@@ -30,12 +30,12 @@ import de.cuioss.test.mockwebserver.URIBuilder;
 import de.cuioss.test.mockwebserver.dispatcher.HttpMethodMapper;
 import de.cuioss.test.mockwebserver.dispatcher.ModuleDispatcherElement;
 import lombok.Getter;
-import lombok.NonNull;
 import lombok.Setter;
 import mockwebserver3.MockResponse;
 import mockwebserver3.RecordedRequest;
 import okhttp3.Headers;
 import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -87,7 +87,8 @@ class ResilientHttpHandlerIntegrationTest {
     private static final String ETAG_V1 = "\"v1-etag-123\"";
     private static final String ETAG_V2 = "\"v2-etag-456\"";
 
-    @Getter private final TestContentDispatcher moduleDispatcher = new TestContentDispatcher();
+    @Getter
+    private final TestContentDispatcher moduleDispatcher = new TestContentDispatcher();
 
     private HttpHandlerProvider httpHandlerProvider;
 
@@ -129,10 +130,18 @@ class ResilientHttpHandlerIntegrationTest {
 
         public static final String LOCAL_PATH = "/test-content";
 
-        @Getter @Setter private int callCounter = 0;
-        @Getter @Setter private ResponseMode responseMode = ResponseMode.SUCCESS_V1;
-        @Getter @Setter private boolean simulateSlowResponse = false;
-        @Getter @Setter private int failureCount = 0; // For retry testing
+        @Getter
+        @Setter
+        private int callCounter = 0;
+        @Getter
+        @Setter
+        private ResponseMode responseMode = ResponseMode.SUCCESS_V1;
+        @Getter
+        @Setter
+        private boolean simulateSlowResponse = false;
+        @Getter
+        @Setter
+        private int failureCount = 0; // For retry testing
         private int currentFailures = 0;
 
         public enum ResponseMode {
@@ -232,7 +241,10 @@ class ResilientHttpHandlerIntegrationTest {
     @DisplayName("Should load fresh content on first request")
     void shouldLoadFreshContentOnFirstRequest() {
         // Given
-        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(httpHandlerProvider, StringContentConverter.identity());
+        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                httpHandlerProvider.getHttpHandler(),
+                httpHandlerProvider.getRetryStrategy(),
+                StringContentConverter.identity());
         moduleDispatcher.setResponseMode(TestContentDispatcher.ResponseMode.SUCCESS_V1);
 
         // When
@@ -250,7 +262,10 @@ class ResilientHttpHandlerIntegrationTest {
     @DisplayName("Should use cached content with 304 Not Modified")
     void shouldUseCachedContentWith304() {
         // Given
-        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(httpHandlerProvider, StringContentConverter.identity());
+        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                httpHandlerProvider.getHttpHandler(),
+                httpHandlerProvider.getRetryStrategy(),
+                StringContentConverter.identity());
 
         // First request to establish cache
         moduleDispatcher.setResponseMode(TestContentDispatcher.ResponseMode.SUCCESS_V1);
@@ -276,7 +291,10 @@ class ResilientHttpHandlerIntegrationTest {
     @DisplayName("Should detect content changes and update cache")
     void shouldDetectContentChangesAndUpdateCache() {
         // Given
-        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(httpHandlerProvider, StringContentConverter.identity());
+        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                httpHandlerProvider.getHttpHandler(),
+                httpHandlerProvider.getRetryStrategy(),
+                StringContentConverter.identity());
 
         // First request
         moduleDispatcher.setResponseMode(TestContentDispatcher.ResponseMode.SUCCESS_V1);
@@ -302,7 +320,10 @@ class ResilientHttpHandlerIntegrationTest {
     @DisplayName("Should retry on server errors with exponential backoff")
     void shouldRetryOnServerErrorsWithExponentialBackoff() {
         // Given
-        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(httpHandlerProvider, StringContentConverter.identity());
+        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                httpHandlerProvider.getHttpHandler(),
+                httpHandlerProvider.getRetryStrategy(),
+                StringContentConverter.identity());
         moduleDispatcher.configureForRetryTesting(2); // Fail 2 times, then succeed
 
         long startTime = System.currentTimeMillis();
@@ -327,7 +348,10 @@ class ResilientHttpHandlerIntegrationTest {
     @DisplayName("Should handle client errors appropriately")
     void shouldHandleClientErrorsAppropriately() {
         // Given
-        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(httpHandlerProvider, StringContentConverter.identity());
+        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                httpHandlerProvider.getHttpHandler(),
+                httpHandlerProvider.getRetryStrategy(),
+                StringContentConverter.identity());
         moduleDispatcher.setResponseMode(TestContentDispatcher.ResponseMode.CLIENT_ERROR);
 
         // When
@@ -348,7 +372,10 @@ class ResilientHttpHandlerIntegrationTest {
     @DisplayName("Should handle malformed JSON content gracefully")
     void shouldHandleMalformedJsonContentGracefully() {
         // Given
-        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(httpHandlerProvider, StringContentConverter.identity());
+        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                httpHandlerProvider.getHttpHandler(),
+                httpHandlerProvider.getRetryStrategy(),
+                StringContentConverter.identity());
         moduleDispatcher.setResponseMode(TestContentDispatcher.ResponseMode.MALFORMED_JSON);
 
         // When
@@ -364,7 +391,10 @@ class ResilientHttpHandlerIntegrationTest {
     @DisplayName("Should handle empty responses using emptyValue()")
     void shouldHandleEmptyResponsesUsingEmptyValue() {
         // Given
-        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(httpHandlerProvider, StringContentConverter.identity());
+        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                httpHandlerProvider.getHttpHandler(),
+                httpHandlerProvider.getRetryStrategy(),
+                StringContentConverter.identity());
         moduleDispatcher.setResponseMode(TestContentDispatcher.ResponseMode.EMPTY_RESPONSE);
 
         // When
@@ -380,7 +410,10 @@ class ResilientHttpHandlerIntegrationTest {
     @DisplayName("Should be thread-safe under concurrent access")
     void shouldBeThreadSafeUnderConcurrentAccess() throws InterruptedException {
         // Given
-        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(httpHandlerProvider, StringContentConverter.identity());
+        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                httpHandlerProvider.getHttpHandler(),
+                httpHandlerProvider.getRetryStrategy(),
+                StringContentConverter.identity());
         moduleDispatcher.setResponseMode(TestContentDispatcher.ResponseMode.SUCCESS_V1);
         moduleDispatcher.setSimulateSlowResponse(true);
 
@@ -430,7 +463,10 @@ class ResilientHttpHandlerIntegrationTest {
             }
         };
 
-        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(noRetryProvider, StringContentConverter.identity());
+        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                noRetryProvider.getHttpHandler(),
+                noRetryProvider.getRetryStrategy(),
+                StringContentConverter.identity());
         moduleDispatcher.setResponseMode(TestContentDispatcher.ResponseMode.SERVER_ERROR);
         moduleDispatcher.setFailureCount(3);
 
@@ -451,7 +487,10 @@ class ResilientHttpHandlerIntegrationTest {
     @DisplayName("Should handle cache state transitions correctly")
     void shouldHandleCacheStateTransitionsCorrectly() {
         // Given
-        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(httpHandlerProvider, StringContentConverter.identity());
+        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                httpHandlerProvider.getHttpHandler(),
+                httpHandlerProvider.getRetryStrategy(),
+                StringContentConverter.identity());
 
         // Phase 1: Initial successful load
         moduleDispatcher.setResponseMode(TestContentDispatcher.ResponseMode.SUCCESS_V1);
@@ -487,7 +526,10 @@ class ResilientHttpHandlerIntegrationTest {
     @DisplayName("Should track status transitions correctly")
     void shouldTrackStatusTransitionsCorrectly() {
         // Given
-        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(httpHandlerProvider, StringContentConverter.identity());
+        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                httpHandlerProvider.getHttpHandler(),
+                httpHandlerProvider.getRetryStrategy(),
+                StringContentConverter.identity());
 
         // Initially should be UNDEFINED
         assertEquals(LoaderStatus.UNDEFINED, handler.getLoaderStatus());
@@ -543,7 +585,10 @@ class ResilientHttpHandlerIntegrationTest {
         };
 
         // Setup handler with the failing converter
-        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(httpHandlerProvider, failingConverter);
+        ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                httpHandlerProvider.getHttpHandler(),
+                httpHandlerProvider.getRetryStrategy(),
+                failingConverter);
 
         // When loading content with successful HTTP response but failing conversion
         moduleDispatcher.setResponseMode(TestContentDispatcher.ResponseMode.SUCCESS_V1);

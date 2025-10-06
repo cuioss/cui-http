@@ -25,7 +25,8 @@ import java.io.Serial;
  */
 public class RetryException extends RuntimeException {
 
-    @Serial private static final long serialVersionUID = 1L;
+    @Serial
+    private static final long serialVersionUID = 1L;
 
     /**
      * Creates a new RetryException with the specified message.

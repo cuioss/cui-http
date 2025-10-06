@@ -88,7 +88,8 @@ import java.util.function.Function;
 @EqualsAndHashCode(callSuper = true, doNotUseGetters = true)
 public class HttpResultObject<T> extends ResultObject<T> {
 
-    @Serial private static final long serialVersionUID = 1L;
+    @Serial
+    private static final long serialVersionUID = 1L;
 
     /**
      * HTTP ETag from the response for caching optimization.

@@ -129,11 +129,16 @@ public final class HttpHandler {
     public static final int DEFAULT_CONNECTION_TIMEOUT_SECONDS = 10;
     public static final int DEFAULT_READ_TIMEOUT_SECONDS = 10;
 
-    @Getter private final URI uri;
-    @Getter private final URL url;
-    @Getter private final @Nullable SSLContext sslContext;
-    @Getter private final int connectionTimeoutSeconds;
-    @Getter private final int readTimeoutSeconds;
+    @Getter
+    private final URI uri;
+    @Getter
+    private final URL url;
+    @Getter
+    private final @Nullable SSLContext sslContext;
+    @Getter
+    private final int connectionTimeoutSeconds;
+    @Getter
+    private final int readTimeoutSeconds;
     private final HttpClient httpClient;
 
     // Constructor for HTTP URIs (no SSL context needed)

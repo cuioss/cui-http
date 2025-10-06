@@ -19,7 +19,7 @@ import de.cuioss.http.client.handler.HttpHandler;
 import de.cuioss.http.client.retry.RetryStrategies;
 import de.cuioss.http.client.retry.RetryStrategy;
 import lombok.Builder;
-import lombok.NonNull;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -39,8 +39,10 @@ class HttpHandlerProviderTest {
      */
     @Builder
     static class TestWellKnownConfig implements HttpHandlerProvider {
-        @NonNull private final String wellKnownUrl;
-        @Builder.Default private final RetryStrategy retryStrategy = RetryStrategies.exponentialBackoff();
+        @NonNull
+        private final String wellKnownUrl;
+        @Builder.Default
+        private final RetryStrategy retryStrategy = RetryStrategies.exponentialBackoff();
 
         @Override
         public @NonNull HttpHandler getHttpHandler() {
@@ -66,7 +68,8 @@ class HttpHandlerProviderTest {
         private final String wellKnownUrl;
         private final String jwksUrl;
         private final String issuerIdentifier;
-        @Builder.Default private final RetryStrategy retryStrategy = RetryStrategies.exponentialBackoff();
+        @Builder.Default
+        private final RetryStrategy retryStrategy = RetryStrategies.exponentialBackoff();
 
         @Override
         public @NonNull HttpHandler getHttpHandler() {

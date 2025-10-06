@@ -17,7 +17,7 @@ package de.cuioss.http.client;
 
 import de.cuioss.http.client.handler.HttpHandler;
 import de.cuioss.http.client.retry.RetryStrategy;
-import lombok.NonNull;
+import org.jspecify.annotations.NonNull;
 
 /**
  * Unified provider interface for HTTP operations requiring both HttpHandler and RetryStrategy.
@@ -27,11 +27,10 @@ import lombok.NonNull;
  * implementations provide both dependencies through a single provider interface.
  * <h2>Design Benefits</h2>
  * <ul>
- *   <li><strong>Unified Constructor</strong>: {@code new ResilientHttpHandler(provider)}
- *       instead of {@code new ResilientHttpHandler(handler, strategy)}</li>
+ *   <li><strong>Simplified Configuration</strong>: Configuration classes group HttpHandler and RetryStrategy together</li>
  *   <li><strong>Consistent Pattern</strong>: All HTTP configuration classes follow the same pattern</li>
  *   <li><strong>Reduced Breaking Changes</strong>: Internal provider evolution without API changes</li>
- *   <li><strong>Better Testability</strong>: Single interface to mock</li>
+ *   <li><strong>Better Testability</strong>: Single interface to mock for both HTTP and retry configuration</li>
  *   <li><strong>Future-Proof</strong>: Interface can evolve for HTTP-specific configuration needs</li>
  * </ul>
  * <h2>Implementation Pattern</h2>
@@ -46,14 +45,14 @@ import lombok.NonNull;
  * }
  * </pre>
  * <h2>Consumer Pattern</h2>
- * HTTP handler implementations consume this interface for unified dependency injection:
+ * Consumers extract HttpHandler and RetryStrategy from the provider:
  * <pre>
- * public class ResilientHttpHandler {
- *     public ResilientHttpHandler(HttpHandlerProvider provider) {
- *         this.httpHandler = provider.getHttpHandler();
- *         this.retryStrategy = provider.getRetryStrategy();
- *     }
- * }
+ * HttpHandlerProvider provider = ... // Your configuration
+ * ResilientHttpHandler handler = new ResilientHttpHandler(
+ *     provider.getHttpHandler(),
+ *     provider.getRetryStrategy(),
+ *     contentConverter
+ * );
  * </pre>
  *
  * @author Oliver Wolff

@@ -115,7 +115,8 @@ ValidationType validationType) implements HttpSecurityValidator {
      * Matches UTF-8 overlong encodings commonly used to bypass security filters.
      * Includes common overlong encodings for ASCII characters and path separators.
      */
-    @SuppressWarnings({"java:S5785", "java:S5855"}) private static final Pattern UTF8_OVERLONG_PATTERN = Pattern.compile(
+    @SuppressWarnings({"java:S5785", "java:S5855"})
+    private static final Pattern UTF8_OVERLONG_PATTERN = Pattern.compile(
             """
             %c[0-1][0-9a-f]|\
             %e0%[89][0-9a-f]%[89a-f]|\

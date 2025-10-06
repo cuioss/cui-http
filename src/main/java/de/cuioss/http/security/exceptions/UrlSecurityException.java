@@ -77,11 +77,16 @@ public class UrlSecurityException extends RuntimeException {
      */
     private static final Pattern CONTROL_CHARS_PATTERN = Pattern.compile("[\\x00-\\x1F\\x7F]");
 
-    @Getter private final UrlSecurityFailureType failureType;
-    @Getter private final ValidationType validationType;
-    @Getter private final String originalInput;
-    @Nullable private final String sanitizedInput;
-    @Nullable private final String detail;
+    @Getter
+    private final UrlSecurityFailureType failureType;
+    @Getter
+    private final ValidationType validationType;
+    @Getter
+    private final String originalInput;
+    @Nullable
+    private final String sanitizedInput;
+    @Nullable
+    private final String detail;
 
     /**
      * Creates a new UrlSecurityException with the specified parameters.

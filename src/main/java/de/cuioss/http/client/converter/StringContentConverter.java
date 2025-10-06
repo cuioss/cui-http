@@ -15,7 +15,7 @@
  */
 package de.cuioss.http.client.converter;
 
-import lombok.NonNull;
+import org.jspecify.annotations.NonNull;
 
 import java.net.http.HttpResponse;
 import java.nio.charset.Charset;

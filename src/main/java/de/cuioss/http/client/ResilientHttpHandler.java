@@ -27,7 +27,7 @@ import de.cuioss.uimodel.nameprovider.DisplayName;
 import de.cuioss.uimodel.result.ResultDetail;
 import de.cuioss.uimodel.result.ResultState;
 import lombok.Getter;
-import lombok.NonNull;
+import org.jspecify.annotations.NonNull;
 
 import java.io.IOException;
 import java.net.http.HttpClient;
@@ -61,42 +61,25 @@ public class ResilientHttpHandler<T> {
     private final ReentrantLock lock = new ReentrantLock();
 
     private HttpResultObject<T> cachedResult; // Guarded by lock, no volatile needed
-    @Getter private volatile LoaderStatus loaderStatus = LoaderStatus.UNDEFINED; // Explicitly tracked status
+    @Getter
+    private volatile LoaderStatus loaderStatus = LoaderStatus.UNDEFINED; // Explicitly tracked status
 
     /**
-     * Creates a new ETag-aware HTTP handler with unified provider for HTTP operations and retry strategy.
+     * Creates a new ETag-aware HTTP handler with retry logic and content conversion.
      * <p>
-     * This constructor implements the HttpHandlerProvider pattern for unified dependency injection,
-     * providing both HTTP handling capabilities and retry resilience in a single interface.
-     *
-     * @param provider the HTTP handler provider containing both HttpHandler and RetryStrategy
-     * @throws IllegalArgumentException if provider is null
-     */
-    public ResilientHttpHandler(@NonNull HttpHandlerProvider provider, @NonNull HttpContentConverter<T> contentConverter) {
-        this.httpHandler = provider.getHttpHandler();
-        this.retryStrategy = provider.getRetryStrategy();
-        this.contentConverter = contentConverter;
-    }
-
-    /**
-     * Creates a ResilientHttpHandler instance without retry capability.
+     * This constructor accepts HttpHandler, RetryStrategy, and HttpContentConverter as separate parameters,
+     * providing flexible configuration for HTTP operations with optional retry capabilities.
      * <p>
-     * This static factory method creates a ResilientHttpHandler that only provides ETag caching
-     * and content conversion functionality, without retry logic.
-     * For retry-capable HTTP operations, use {@link #ResilientHttpHandler(HttpHandlerProvider, HttpContentConverter)} instead.
+     * For operations without retry, use {@link RetryStrategy#none()} as the retry strategy parameter.
      *
-     * @param httpHandler the HTTP handler for making requests
-     * @param contentConverter the converter for HTTP content
-     * @param <T> the type of content to be converted
-     * @return a ResilientHttpHandler instance configured without retry capability
+     * @param httpHandler the HTTP handler for making requests, never null
+     * @param retryStrategy the retry strategy for handling transient failures, never null (use RetryStrategy.none() to disable)
+     * @param contentConverter the converter for HTTP content, never null
+     * @throws NullPointerException if any parameter is null
      */
-    public static <T> ResilientHttpHandler<T> withoutRetry(@NonNull HttpHandler httpHandler, @NonNull HttpContentConverter<T> contentConverter) {
-        return new ResilientHttpHandler<>(httpHandler, contentConverter);
-    }
-
-    private ResilientHttpHandler(@NonNull HttpHandler httpHandler, @NonNull HttpContentConverter<T> contentConverter) {
+    public ResilientHttpHandler(@NonNull HttpHandler httpHandler, @NonNull RetryStrategy retryStrategy, @NonNull HttpContentConverter<T> contentConverter) {
         this.httpHandler = httpHandler;
-        this.retryStrategy = RetryStrategy.none();
+        this.retryStrategy = retryStrategy;
         this.contentConverter = contentConverter;
     }
 
