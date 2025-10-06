@@ -18,7 +18,7 @@ package de.cuioss.http.client;
 import de.cuioss.http.client.converter.StringContentConverter;
 import de.cuioss.http.client.retry.RetryStrategies;
 import de.cuioss.http.client.retry.RetryStrategy;
-import de.cuioss.tools.net.http.HttpHandler;
+import de.cuioss.http.client.handler.HttpHandler;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;

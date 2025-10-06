@@ -16,13 +16,13 @@
 package de.cuioss.http.client;
 
 import de.cuioss.http.client.converter.HttpContentConverter;
+import de.cuioss.http.client.handler.HttpStatusFamily;
 import de.cuioss.http.client.result.HttpErrorCategory;
 import de.cuioss.http.client.result.HttpResultObject;
 import de.cuioss.http.client.retry.RetryContext;
 import de.cuioss.http.client.retry.RetryStrategy;
 import de.cuioss.tools.logging.CuiLogger;
-import de.cuioss.tools.net.http.HttpHandler;
-import de.cuioss.tools.net.http.HttpStatusFamily;
+import de.cuioss.http.client.handler.HttpHandler;
 import de.cuioss.uimodel.nameprovider.DisplayName;
 import de.cuioss.uimodel.result.ResultDetail;
 import de.cuioss.uimodel.result.ResultState;

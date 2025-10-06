@@ -28,7 +28,7 @@ import de.cuioss.test.mockwebserver.EnableMockWebServer;
 import de.cuioss.test.mockwebserver.URIBuilder;
 import de.cuioss.test.mockwebserver.dispatcher.HttpMethodMapper;
 import de.cuioss.test.mockwebserver.dispatcher.ModuleDispatcherElement;
-import de.cuioss.tools.net.http.HttpHandler;
+import de.cuioss.http.client.handler.HttpHandler;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
