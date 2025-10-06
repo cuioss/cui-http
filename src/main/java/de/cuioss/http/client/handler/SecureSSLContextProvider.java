@@ -204,7 +204,7 @@ public record SecureSSLContextProvider(String minimumTlsVersion) {
                 }
 
                 // If not secure, create a new secure context
-                LOGGER.warn(HttpLogMessages.WARN.SSL_INSECURE_PROTOCOL.format(protocol));
+                LOGGER.warn(HttpLogMessages.WARN.SSL_INSECURE_PROTOCOL, protocol);
                 SSLContext secureContext = createSecureSSLContext();
                 LOGGER.debug("Created secure SSL context with minimum TLS version: %s", minimumTlsVersion);
                 return secureContext;

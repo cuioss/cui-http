@@ -16,10 +16,10 @@
 package de.cuioss.http.client;
 
 import de.cuioss.http.client.converter.StringContentConverter;
+import de.cuioss.http.client.handler.HttpHandler;
 import de.cuioss.http.client.result.HttpErrorCategory;
 import de.cuioss.http.client.result.HttpResultObject;
 import de.cuioss.test.juli.junit5.EnableTestLogger;
-import de.cuioss.http.client.handler.HttpHandler;
 import de.cuioss.uimodel.nameprovider.DisplayName;
 import de.cuioss.uimodel.result.ResultDetail;
 import de.cuioss.uimodel.result.ResultState;

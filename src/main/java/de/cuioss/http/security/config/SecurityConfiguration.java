@@ -129,7 +129,7 @@ public final class SecurityConfiguration {
      * Creates a SecurityConfiguration with validation of constraints.
      */
     @SuppressWarnings({"java:S107", "java:S3776"}) // S107: Constructor has many parameters by design - using Builder pattern for construction
-                                                      // S3776: Cognitive complexity is from necessary validation in security-critical code
+    // S3776: Cognitive complexity is from necessary validation in security-critical code
     SecurityConfiguration(
             int maxPathLength,
             boolean allowPathTraversal,

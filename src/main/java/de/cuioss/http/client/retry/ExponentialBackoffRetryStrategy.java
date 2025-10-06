@@ -110,7 +110,7 @@ public class ExponentialBackoffRetryStrategy implements RetryStrategy {
                         retryMetrics.recordRetryComplete(context, totalDuration, true, attempt);
 
                         if (attempt > 1) {
-                            LOGGER.info(INFO.RETRY_OPERATION_SUCCEEDED_AFTER_ATTEMPTS.format(context.operationName(), attempt, maxAttempts));
+                            LOGGER.info(INFO.RETRY_OPERATION_SUCCEEDED_AFTER_ATTEMPTS, context.operationName(), attempt, maxAttempts);
                             // Operation succeeded after retries - just return the successful result
                             return CompletableFuture.completedFuture(result);
                         } else {
@@ -121,10 +121,10 @@ public class ExponentialBackoffRetryStrategy implements RetryStrategy {
                         // Operation failed
                         if (attempt >= maxAttempts) {
                             // Max attempts reached
-                            LOGGER.warn(WARN.RETRY_MAX_ATTEMPTS_REACHED.format(context.operationName(), maxAttempts, "Final attempt failed"));
+                            LOGGER.warn(WARN.RETRY_MAX_ATTEMPTS_REACHED, context.operationName(), maxAttempts, "Final attempt failed");
                             Duration totalDuration = Duration.ofNanos(System.nanoTime() - totalStartTime);
                             retryMetrics.recordRetryComplete(context, totalDuration, false, maxAttempts);
-                            LOGGER.warn(WARN.RETRY_OPERATION_FAILED.format(context.operationName(), maxAttempts, totalDuration.toMillis()));
+                            LOGGER.warn(WARN.RETRY_OPERATION_FAILED, context.operationName(), maxAttempts, totalDuration.toMillis());
                             return CompletableFuture.completedFuture(result);
                         }
 

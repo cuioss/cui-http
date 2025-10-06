@@ -16,7 +16,7 @@
 package de.cuioss.http.client;
 
 /**
- * Enum representing the status of a {@link de.cuioss.tools.net.http.HttpHandler} loader.
+ * Enum representing the status of a {@link de.cuioss.http.client.handler.HttpHandler} loader.
  * <p>
  * A loader status is:
  * <ul>

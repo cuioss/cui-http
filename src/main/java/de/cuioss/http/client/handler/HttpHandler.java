@@ -238,14 +238,14 @@ public final class HttpHandler {
             HttpResponse<Void> response = client.send(request, HttpResponse.BodyHandlers.discarding());
             return HttpStatusFamily.fromStatusCode(response.statusCode());
         } catch (IOException e) {
-            LOGGER.warn(e, HttpLogMessages.WARN.HTTP_PING_IO_ERROR.format(uri, e.getMessage()));
+            LOGGER.warn(e, HttpLogMessages.WARN.HTTP_PING_IO_ERROR, uri, e.getMessage());
             return HttpStatusFamily.UNKNOWN;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            LOGGER.warn(HttpLogMessages.WARN.HTTP_PING_INTERRUPTED.format(uri, e.getMessage()));
+            LOGGER.warn(HttpLogMessages.WARN.HTTP_PING_INTERRUPTED, uri, e.getMessage());
             return HttpStatusFamily.UNKNOWN;
         } catch (IllegalArgumentException | SecurityException e) {
-            LOGGER.warn(e, HttpLogMessages.WARN.HTTP_PING_ERROR.format(uri, e.getMessage()));
+            LOGGER.warn(e, HttpLogMessages.WARN.HTTP_PING_ERROR, uri, e.getMessage());
             return HttpStatusFamily.UNKNOWN;
         }
     }

@@ -16,13 +16,13 @@
 package de.cuioss.http.client;
 
 import de.cuioss.http.client.converter.HttpContentConverter;
+import de.cuioss.http.client.handler.HttpHandler;
 import de.cuioss.http.client.handler.HttpStatusFamily;
 import de.cuioss.http.client.result.HttpErrorCategory;
 import de.cuioss.http.client.result.HttpResultObject;
 import de.cuioss.http.client.retry.RetryContext;
 import de.cuioss.http.client.retry.RetryStrategy;
 import de.cuioss.tools.logging.CuiLogger;
-import de.cuioss.http.client.handler.HttpHandler;
 import de.cuioss.uimodel.nameprovider.DisplayName;
 import de.cuioss.uimodel.result.ResultDetail;
 import de.cuioss.uimodel.result.ResultState;
@@ -209,12 +209,12 @@ public class ResilientHttpHandler<T> {
             return processHttpResponse(response);
 
         } catch (IOException e) {
-            LOGGER.warn(e, HttpLogMessages.WARN.HTTP_FETCH_FAILED.format(httpHandler.getUrl()));
+            LOGGER.warn(e, HttpLogMessages.WARN.HTTP_FETCH_FAILED, httpHandler.getUrl());
             // Return error result for IOException - RetryStrategy will handle retry logic
             return handleErrorResult(HttpErrorCategory.NETWORK_ERROR);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            LOGGER.warn(HttpLogMessages.WARN.HTTP_FETCH_INTERRUPTED.format(httpHandler.getUrl()));
+            LOGGER.warn(HttpLogMessages.WARN.HTTP_FETCH_INTERRUPTED, httpHandler.getUrl());
             // InterruptedException should not be retried
             return handleErrorResult(HttpErrorCategory.NETWORK_ERROR);
         }
@@ -298,7 +298,7 @@ public class ResilientHttpHandler<T> {
             return result;
         } else {
             // Content conversion failed - return error with no cache update
-            LOGGER.warn(HttpLogMessages.WARN.CONTENT_CONVERSION_FAILED.format(httpHandler.getUrl()));
+            LOGGER.warn(HttpLogMessages.WARN.CONTENT_CONVERSION_FAILED, httpHandler.getUrl());
             return HttpResultObject.error(
                     getEmptyFallback(), // Safe empty fallback
                     HttpErrorCategory.INVALID_CONTENT,
@@ -316,7 +316,7 @@ public class ResilientHttpHandler<T> {
      * @return error result with appropriate category
      */
     private HttpResultObject<T> handleErrorResponse(int statusCode, HttpStatusFamily statusFamily) {
-        LOGGER.warn(HttpLogMessages.WARN.HTTP_STATUS_WARNING.format(statusCode, statusFamily, httpHandler.getUrl()));
+        LOGGER.warn(HttpLogMessages.WARN.HTTP_STATUS_WARNING, statusCode, statusFamily, httpHandler.getUrl());
 
         // For 4xx client errors, don't retry and return error with cache fallback if available
         if (statusFamily == HttpStatusFamily.CLIENT_ERROR) {
