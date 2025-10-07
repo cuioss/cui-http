@@ -428,10 +428,7 @@ public final class HttpHandler {
             // Convert the URI to a URL
             // Note: URI.toURL() is deprecated but all alternatives (URL constructors) are also deprecated.
             // We suppress the warning since we need to create a URL for backward compatibility.
-            if (uri == null) {
-                throw new IllegalArgumentException("URI cannot be null");
-            }
-
+            // At this point, uri is guaranteed to be non-null because resolveUri() was called above.
             URL verifiedUrl;
             try {
                 verifiedUrl = uri.toURL();
