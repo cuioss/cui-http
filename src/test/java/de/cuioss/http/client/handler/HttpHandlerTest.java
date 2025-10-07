@@ -15,11 +15,16 @@
  */
 package de.cuioss.http.client.handler;
 
+import mockwebserver3.MockResponse;
+import mockwebserver3.MockWebServer;
+import okhttp3.Headers;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import javax.net.ssl.SSLContext;
+import java.io.IOException;
+import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
 import java.net.http.HttpRequest;
@@ -252,6 +257,26 @@ class HttpHandlerTest {
             assertEquals(uri, handler.getUri());
             assertEquals("https://example.org", handler.getUrl().toString());
         }
+
+        @Test
+        @DisplayName("Should handle URL that cannot be converted to URI")
+        void shouldHandleUrlThatCannotBeConvertedToUri() throws MalformedURLException {
+            // Create a URL with characters that are invalid in URI syntax
+            // Using the deprecated URL constructor to create a URL that's valid as URL
+            // but cannot be converted to URI (contains unescaped space)
+            @SuppressWarnings("deprecation") URL malformedUrl = new URL("http", "example.com", "/path with spaces");
+
+            HttpHandler.HttpHandlerBuilder builder = HttpHandler.builder()
+                    .url(malformedUrl);
+
+            // Should throw IllegalArgumentException when trying to convert URL to URI
+            IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                    builder::build);
+            assertTrue(exception.getMessage().contains("Invalid URL"),
+                    "Exception message should indicate invalid URL");
+            assertTrue(exception.getMessage().contains(malformedUrl.toString()),
+                    "Exception message should contain the problematic URL");
+        }
     }
 
     @Nested
@@ -335,6 +360,82 @@ class HttpHandlerTest {
 
             assertNotNull(handler.getSslContext(),
                     "SSL context should be automatically created for HTTPS URLs to prevent exceptions in createHttpClient");
+        }
+
+        @Test
+        @DisplayName("pingHead should return success status for successful HTTP request")
+        void pingHeadShouldReturnSuccessStatusForSuccessfulRequest() throws IOException {
+            // Test the successful ping path with a real HTTP server
+            try (MockWebServer server = new MockWebServer()) {
+                server.enqueue(new MockResponse(200, Headers.of(), "OK"));
+                server.start();
+
+                String serverUrl = server.url("/").toString();
+                HttpHandler handler = HttpHandler.builder()
+                        .url(serverUrl)
+                        .build();
+
+                HttpStatusFamily status = handler.pingHead();
+                assertEquals(HttpStatusFamily.SUCCESS, status,
+                        "pingHead should return SUCCESS for 200 response");
+            }
+        }
+
+        @Test
+        @DisplayName("pingGet should return success status for successful HTTP request")
+        void pingGetShouldReturnSuccessStatusForSuccessfulRequest() throws IOException {
+            // Test the successful ping path with a real HTTP server
+            try (MockWebServer server = new MockWebServer()) {
+                server.enqueue(new MockResponse(200, Headers.of(), "OK"));
+                server.start();
+
+                String serverUrl = server.url("/").toString();
+                HttpHandler handler = HttpHandler.builder()
+                        .url(serverUrl)
+                        .build();
+
+                HttpStatusFamily status = handler.pingGet();
+                assertEquals(HttpStatusFamily.SUCCESS, status,
+                        "pingGet should return SUCCESS for 200 response");
+            }
+        }
+
+        @Test
+        @DisplayName("ping should handle different HTTP status codes correctly")
+        void pingShouldHandleDifferentStatusCodesCorrectly() throws IOException {
+            try (MockWebServer server = new MockWebServer()) {
+                // Test 404 Not Found
+                server.enqueue(new MockResponse(404, Headers.of(), "Not Found"));
+                server.start();
+
+                String serverUrl = server.url("/").toString();
+                HttpHandler handler = HttpHandler.builder()
+                        .url(serverUrl)
+                        .build();
+
+                HttpStatusFamily status = handler.pingHead();
+                assertEquals(HttpStatusFamily.CLIENT_ERROR, status,
+                        "ping should return CLIENT_ERROR for 404 response");
+            }
+        }
+
+        @Test
+        @DisplayName("ping should handle server errors correctly")
+        void pingShouldHandleServerErrorsCorrectly() throws IOException {
+            try (MockWebServer server = new MockWebServer()) {
+                // Test 500 Internal Server Error
+                server.enqueue(new MockResponse(500, Headers.of(), "Internal Server Error"));
+                server.start();
+
+                String serverUrl = server.url("/").toString();
+                HttpHandler handler = HttpHandler.builder()
+                        .url(serverUrl)
+                        .build();
+
+                HttpStatusFamily status = handler.pingGet();
+                assertEquals(HttpStatusFamily.SERVER_ERROR, status,
+                        "ping should return SERVER_ERROR for 500 response");
+            }
         }
     }
 
