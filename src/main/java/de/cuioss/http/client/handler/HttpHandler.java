@@ -249,9 +249,6 @@ public final class HttpHandler {
             Thread.currentThread().interrupt();
             LOGGER.warn(HttpLogMessages.WARN.HTTP_PING_INTERRUPTED, uri, e.getMessage());
             return HttpStatusFamily.UNKNOWN;
-        } catch (IllegalArgumentException | SecurityException e) {
-            LOGGER.warn(e, HttpLogMessages.WARN.HTTP_PING_ERROR, uri, e.getMessage());
-            return HttpStatusFamily.UNKNOWN;
         }
     }
 

@@ -101,12 +101,6 @@ public final class HttpLogMessages {
                 .template("Interrupted while pinging URI %s: %s")
                 .build();
 
-        public static final LogRecord HTTP_PING_ERROR = LogRecordModel.builder()
-                .prefix(PREFIX)
-                .identifier(108)
-                .template("Error while pinging URI %s: %s")
-                .build();
-
         public static final LogRecord SSL_INSECURE_PROTOCOL = LogRecordModel.builder()
                 .prefix(PREFIX)
                 .identifier(109)
