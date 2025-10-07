@@ -471,7 +471,7 @@ public final class HttpHandler {
                 // Check if the URL has a scheme, if not prepend https://
                 String urlToUse = urlString;
                 if (!URL_SCHEME_PATTERN.matcher(urlToUse).matches()) {
-                    LOGGER.debug(() -> "URL missing scheme, prepending https:// to %s".formatted(urlString));
+                    LOGGER.debug("URL missing scheme, prepending https:// to %s", urlString);
                     urlToUse = "https://" + urlToUse;
                 }
 
