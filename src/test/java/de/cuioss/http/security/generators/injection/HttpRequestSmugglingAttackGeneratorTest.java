@@ -37,7 +37,7 @@ class HttpRequestSmugglingAttackGeneratorTest {
 
     @ParameterizedTest
     @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.class, count = 10)
-    @DisplayName("Generator should produce valid non-null HTTP request smuggling attack patterns")
+    @DisplayName("Should generate valid request smuggling patterns")
     void shouldGenerateValidOutput(String generatedValue) {
         assertNotNull(generatedValue, "Generator must not produce null values");
         assertFalse(generatedValue.isEmpty(), "Generator should produce non-empty attack patterns");

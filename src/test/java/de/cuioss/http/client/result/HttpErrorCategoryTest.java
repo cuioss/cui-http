@@ -17,6 +17,9 @@ package de.cuioss.http.client.result;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
+import java.util.Set;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -68,24 +71,20 @@ class HttpErrorCategoryTest {
     }
 
     @Test
-    void shouldHaveConsistentRetrySemantics() {
-        // Network and server errors are the only transient/retryable conditions
-        int retryableCount = 0;
-        int nonRetryableCount = 0;
+    void shouldCorrectlyIdentifyRetryableErrors() {
+        var retryable = Arrays.stream(HttpErrorCategory.values())
+                .filter(HttpErrorCategory::isRetryable)
+                .collect(java.util.stream.Collectors.toSet());
+        assertEquals(Set.of(HttpErrorCategory.NETWORK_ERROR, HttpErrorCategory.SERVER_ERROR), retryable,
+                "Only NETWORK_ERROR and SERVER_ERROR should be retryable.");
+    }
 
-        for (HttpErrorCategory errorCode : HttpErrorCategory.values()) {
-            if (errorCode.isRetryable()) {
-                retryableCount++;
-                // Only these two should be retryable
-                assertTrue(errorCode == HttpErrorCategory.NETWORK_ERROR ||
-                        errorCode == HttpErrorCategory.SERVER_ERROR,
-                        "Only NETWORK_ERROR and SERVER_ERROR should be retryable");
-            } else {
-                nonRetryableCount++;
-            }
-        }
-
-        assertEquals(2, retryableCount, "Should have exactly 2 retryable error types");
-        assertEquals(3, nonRetryableCount, "Should have exactly 3 non-retryable error types");
+    @Test
+    void shouldCorrectlyIdentifyNonRetryableErrors() {
+        var nonRetryable = Arrays.stream(HttpErrorCategory.values())
+                .filter(c -> !c.isRetryable())
+                .collect(java.util.stream.Collectors.toSet());
+        assertEquals(Set.of(HttpErrorCategory.CLIENT_ERROR, HttpErrorCategory.INVALID_CONTENT, HttpErrorCategory.CONFIGURATION_ERROR), nonRetryable,
+                "CLIENT_ERROR, INVALID_CONTENT, and CONFIGURATION_ERROR should be non-retryable.");
     }
 }

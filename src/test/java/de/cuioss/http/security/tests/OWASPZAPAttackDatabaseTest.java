@@ -73,7 +73,7 @@ class OWASPZAPAttackDatabaseTest {
      */
     @ParameterizedTest
     @ArgumentsSource(OWASPZAPAttackDatabase.ArgumentsProvider.class)
-    @DisplayName("OWASP ZAP active scan patterns should be rejected with correct failure types")
+    @DisplayName("Should reject ZAP attacks with correct failure types")
     void shouldRejectZAPAttacksWithCorrectFailureTypes(AttackTestCase testCase) {
         // Given: A ZAP active scan attack test case with expected failure type
         long initialEventCount = eventCounter.getTotalCount();

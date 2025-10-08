@@ -37,25 +37,25 @@ class UrlSecurityFailureTypeTest {
     @Test
     void shouldHaveAllExpectedFailureTypes() {
         // Verify all expected failure types exist
-        assertNotNull(UrlSecurityFailureType.INVALID_ENCODING);
-        assertNotNull(UrlSecurityFailureType.DOUBLE_ENCODING);
-        assertNotNull(UrlSecurityFailureType.UNICODE_NORMALIZATION_CHANGED);
-        assertNotNull(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED);
-        assertNotNull(UrlSecurityFailureType.DIRECTORY_ESCAPE_ATTEMPT);
-        assertNotNull(UrlSecurityFailureType.INVALID_CHARACTER);
-        assertNotNull(UrlSecurityFailureType.NULL_BYTE_INJECTION);
-        assertNotNull(UrlSecurityFailureType.CONTROL_CHARACTERS);
-        assertNotNull(UrlSecurityFailureType.PATH_TOO_LONG);
-        assertNotNull(UrlSecurityFailureType.INPUT_TOO_LONG);
-        assertNotNull(UrlSecurityFailureType.EXCESSIVE_NESTING);
-        assertNotNull(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED);
-        assertNotNull(UrlSecurityFailureType.SUSPICIOUS_PARAMETER_NAME);
+        assertNotNull(UrlSecurityFailureType.INVALID_ENCODING, "INVALID_ENCODING failure type should exist");
+        assertNotNull(UrlSecurityFailureType.DOUBLE_ENCODING, "DOUBLE_ENCODING failure type should exist");
+        assertNotNull(UrlSecurityFailureType.UNICODE_NORMALIZATION_CHANGED, "UNICODE_NORMALIZATION_CHANGED failure type should exist");
+        assertNotNull(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, "PATH_TRAVERSAL_DETECTED failure type should exist");
+        assertNotNull(UrlSecurityFailureType.DIRECTORY_ESCAPE_ATTEMPT, "DIRECTORY_ESCAPE_ATTEMPT failure type should exist");
+        assertNotNull(UrlSecurityFailureType.INVALID_CHARACTER, "INVALID_CHARACTER failure type should exist");
+        assertNotNull(UrlSecurityFailureType.NULL_BYTE_INJECTION, "NULL_BYTE_INJECTION failure type should exist");
+        assertNotNull(UrlSecurityFailureType.CONTROL_CHARACTERS, "CONTROL_CHARACTERS failure type should exist");
+        assertNotNull(UrlSecurityFailureType.PATH_TOO_LONG, "PATH_TOO_LONG failure type should exist");
+        assertNotNull(UrlSecurityFailureType.INPUT_TOO_LONG, "INPUT_TOO_LONG failure type should exist");
+        assertNotNull(UrlSecurityFailureType.EXCESSIVE_NESTING, "EXCESSIVE_NESTING failure type should exist");
+        assertNotNull(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, "SUSPICIOUS_PATTERN_DETECTED failure type should exist");
+        assertNotNull(UrlSecurityFailureType.SUSPICIOUS_PARAMETER_NAME, "SUSPICIOUS_PARAMETER_NAME failure type should exist");
         // XSS_DETECTED removed - application layer responsibility
-        assertNotNull(UrlSecurityFailureType.KNOWN_ATTACK_SIGNATURE);
-        assertNotNull(UrlSecurityFailureType.MALFORMED_INPUT);
-        assertNotNull(UrlSecurityFailureType.INVALID_STRUCTURE);
-        assertNotNull(UrlSecurityFailureType.PROTOCOL_VIOLATION);
-        assertNotNull(UrlSecurityFailureType.RFC_VIOLATION);
+        assertNotNull(UrlSecurityFailureType.KNOWN_ATTACK_SIGNATURE, "KNOWN_ATTACK_SIGNATURE failure type should exist");
+        assertNotNull(UrlSecurityFailureType.MALFORMED_INPUT, "MALFORMED_INPUT failure type should exist");
+        assertNotNull(UrlSecurityFailureType.INVALID_STRUCTURE, "INVALID_STRUCTURE failure type should exist");
+        assertNotNull(UrlSecurityFailureType.PROTOCOL_VIOLATION, "PROTOCOL_VIOLATION failure type should exist");
+        assertNotNull(UrlSecurityFailureType.RFC_VIOLATION, "RFC_VIOLATION failure type should exist");
     }
 
     @Test
@@ -99,61 +99,61 @@ class UrlSecurityFailureTypeTest {
 
     @Test
     void shouldCorrectlyIdentifyEncodingIssues() {
-        assertTrue(UrlSecurityFailureType.INVALID_ENCODING.isEncodingIssue());
-        assertTrue(UrlSecurityFailureType.DOUBLE_ENCODING.isEncodingIssue());
-        assertTrue(UrlSecurityFailureType.UNICODE_NORMALIZATION_CHANGED.isEncodingIssue());
+        assertTrue(UrlSecurityFailureType.INVALID_ENCODING.isEncodingIssue(), "INVALID_ENCODING should be classified as encoding issue");
+        assertTrue(UrlSecurityFailureType.DOUBLE_ENCODING.isEncodingIssue(), "DOUBLE_ENCODING should be classified as encoding issue");
+        assertTrue(UrlSecurityFailureType.UNICODE_NORMALIZATION_CHANGED.isEncodingIssue(), "UNICODE_NORMALIZATION_CHANGED should be classified as encoding issue");
 
         // Non-encoding issues should return false
-        assertFalse(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED.isEncodingIssue());
-        assertFalse(UrlSecurityFailureType.NULL_BYTE_INJECTION.isEncodingIssue());
-        assertFalse(UrlSecurityFailureType.PATH_TOO_LONG.isEncodingIssue());
+        assertFalse(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED.isEncodingIssue(), "PATH_TRAVERSAL_DETECTED should not be classified as encoding issue");
+        assertFalse(UrlSecurityFailureType.NULL_BYTE_INJECTION.isEncodingIssue(), "NULL_BYTE_INJECTION should not be classified as encoding issue");
+        assertFalse(UrlSecurityFailureType.PATH_TOO_LONG.isEncodingIssue(), "PATH_TOO_LONG should not be classified as encoding issue");
     }
 
     @Test
     void shouldCorrectlyIdentifyPathTraversalAttacks() {
-        assertTrue(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED.isPathTraversalAttack());
-        assertTrue(UrlSecurityFailureType.DIRECTORY_ESCAPE_ATTEMPT.isPathTraversalAttack());
+        assertTrue(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED.isPathTraversalAttack(), "PATH_TRAVERSAL_DETECTED should be classified as path traversal attack");
+        assertTrue(UrlSecurityFailureType.DIRECTORY_ESCAPE_ATTEMPT.isPathTraversalAttack(), "DIRECTORY_ESCAPE_ATTEMPT should be classified as path traversal attack");
 
         // Non-path-traversal should return false
-        assertFalse(UrlSecurityFailureType.INVALID_ENCODING.isPathTraversalAttack());
-        assertFalse(UrlSecurityFailureType.NULL_BYTE_INJECTION.isPathTraversalAttack());
-        assertFalse(UrlSecurityFailureType.PATH_TOO_LONG.isPathTraversalAttack());
+        assertFalse(UrlSecurityFailureType.INVALID_ENCODING.isPathTraversalAttack(), "INVALID_ENCODING should not be classified as path traversal attack");
+        assertFalse(UrlSecurityFailureType.NULL_BYTE_INJECTION.isPathTraversalAttack(), "NULL_BYTE_INJECTION should not be classified as path traversal attack");
+        assertFalse(UrlSecurityFailureType.PATH_TOO_LONG.isPathTraversalAttack(), "PATH_TOO_LONG should not be classified as path traversal attack");
     }
 
     @Test
     void shouldCorrectlyIdentifyCharacterAttacks() {
-        assertTrue(UrlSecurityFailureType.INVALID_CHARACTER.isCharacterAttack());
-        assertTrue(UrlSecurityFailureType.NULL_BYTE_INJECTION.isCharacterAttack());
-        assertTrue(UrlSecurityFailureType.CONTROL_CHARACTERS.isCharacterAttack());
+        assertTrue(UrlSecurityFailureType.INVALID_CHARACTER.isCharacterAttack(), "INVALID_CHARACTER should be classified as character attack");
+        assertTrue(UrlSecurityFailureType.NULL_BYTE_INJECTION.isCharacterAttack(), "NULL_BYTE_INJECTION should be classified as character attack");
+        assertTrue(UrlSecurityFailureType.CONTROL_CHARACTERS.isCharacterAttack(), "CONTROL_CHARACTERS should be classified as character attack");
 
         // Non-character attacks should return false
-        assertFalse(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED.isCharacterAttack());
-        assertFalse(UrlSecurityFailureType.INVALID_ENCODING.isCharacterAttack());
-        assertFalse(UrlSecurityFailureType.PATH_TOO_LONG.isCharacterAttack());
+        assertFalse(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED.isCharacterAttack(), "PATH_TRAVERSAL_DETECTED should not be classified as character attack");
+        assertFalse(UrlSecurityFailureType.INVALID_ENCODING.isCharacterAttack(), "INVALID_ENCODING should not be classified as character attack");
+        assertFalse(UrlSecurityFailureType.PATH_TOO_LONG.isCharacterAttack(), "PATH_TOO_LONG should not be classified as character attack");
     }
 
     @Test
     void shouldCorrectlyIdentifySizeViolations() {
-        assertTrue(UrlSecurityFailureType.PATH_TOO_LONG.isSizeViolation());
-        assertTrue(UrlSecurityFailureType.INPUT_TOO_LONG.isSizeViolation());
-        assertTrue(UrlSecurityFailureType.EXCESSIVE_NESTING.isSizeViolation());
+        assertTrue(UrlSecurityFailureType.PATH_TOO_LONG.isSizeViolation(), "PATH_TOO_LONG should be classified as size violation");
+        assertTrue(UrlSecurityFailureType.INPUT_TOO_LONG.isSizeViolation(), "INPUT_TOO_LONG should be classified as size violation");
+        assertTrue(UrlSecurityFailureType.EXCESSIVE_NESTING.isSizeViolation(), "EXCESSIVE_NESTING should be classified as size violation");
 
         // Non-size violations should return false
-        assertFalse(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED.isSizeViolation());
-        assertFalse(UrlSecurityFailureType.INVALID_ENCODING.isSizeViolation());
-        assertFalse(UrlSecurityFailureType.NULL_BYTE_INJECTION.isSizeViolation());
+        assertFalse(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED.isSizeViolation(), "PATH_TRAVERSAL_DETECTED should not be classified as size violation");
+        assertFalse(UrlSecurityFailureType.INVALID_ENCODING.isSizeViolation(), "INVALID_ENCODING should not be classified as size violation");
+        assertFalse(UrlSecurityFailureType.NULL_BYTE_INJECTION.isSizeViolation(), "NULL_BYTE_INJECTION should not be classified as size violation");
     }
 
     @Test
     void shouldCorrectlyIdentifyPatternBased() {
-        assertTrue(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED.isPatternBased());
-        assertTrue(UrlSecurityFailureType.SUSPICIOUS_PARAMETER_NAME.isPatternBased());
-        assertTrue(UrlSecurityFailureType.KNOWN_ATTACK_SIGNATURE.isPatternBased());
+        assertTrue(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED.isPatternBased(), "SUSPICIOUS_PATTERN_DETECTED should be classified as pattern-based");
+        assertTrue(UrlSecurityFailureType.SUSPICIOUS_PARAMETER_NAME.isPatternBased(), "SUSPICIOUS_PARAMETER_NAME should be classified as pattern-based");
+        assertTrue(UrlSecurityFailureType.KNOWN_ATTACK_SIGNATURE.isPatternBased(), "KNOWN_ATTACK_SIGNATURE should be classified as pattern-based");
 
         // Non-pattern-based should return false
-        assertFalse(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED.isPatternBased());
-        assertFalse(UrlSecurityFailureType.INVALID_ENCODING.isPatternBased());
-        assertFalse(UrlSecurityFailureType.NULL_BYTE_INJECTION.isPatternBased());
+        assertFalse(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED.isPatternBased(), "PATH_TRAVERSAL_DETECTED should not be classified as pattern-based");
+        assertFalse(UrlSecurityFailureType.INVALID_ENCODING.isPatternBased(), "INVALID_ENCODING should not be classified as pattern-based");
+        assertFalse(UrlSecurityFailureType.NULL_BYTE_INJECTION.isPatternBased(), "NULL_BYTE_INJECTION should not be classified as pattern-based");
     }
 
     // XSS attack identification removed - application layer responsibility.
@@ -161,24 +161,24 @@ class UrlSecurityFailureTypeTest {
 
     @Test
     void shouldCorrectlyIdentifyStructuralIssues() {
-        assertTrue(UrlSecurityFailureType.MALFORMED_INPUT.isStructuralIssue());
-        assertTrue(UrlSecurityFailureType.INVALID_STRUCTURE.isStructuralIssue());
+        assertTrue(UrlSecurityFailureType.MALFORMED_INPUT.isStructuralIssue(), "MALFORMED_INPUT should be classified as structural issue");
+        assertTrue(UrlSecurityFailureType.INVALID_STRUCTURE.isStructuralIssue(), "INVALID_STRUCTURE should be classified as structural issue");
 
         // Non-structural issues should return false
-        assertFalse(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED.isStructuralIssue());
-        assertFalse(UrlSecurityFailureType.INVALID_ENCODING.isStructuralIssue());
-        assertFalse(UrlSecurityFailureType.NULL_BYTE_INJECTION.isStructuralIssue());
+        assertFalse(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED.isStructuralIssue(), "PATH_TRAVERSAL_DETECTED should not be classified as structural issue");
+        assertFalse(UrlSecurityFailureType.INVALID_ENCODING.isStructuralIssue(), "INVALID_ENCODING should not be classified as structural issue");
+        assertFalse(UrlSecurityFailureType.NULL_BYTE_INJECTION.isStructuralIssue(), "NULL_BYTE_INJECTION should not be classified as structural issue");
     }
 
     @Test
     void shouldCorrectlyIdentifyProtocolViolations() {
-        assertTrue(UrlSecurityFailureType.PROTOCOL_VIOLATION.isProtocolViolation());
-        assertTrue(UrlSecurityFailureType.RFC_VIOLATION.isProtocolViolation());
+        assertTrue(UrlSecurityFailureType.PROTOCOL_VIOLATION.isProtocolViolation(), "PROTOCOL_VIOLATION should be classified as protocol violation");
+        assertTrue(UrlSecurityFailureType.RFC_VIOLATION.isProtocolViolation(), "RFC_VIOLATION should be classified as protocol violation");
 
         // Non-protocol violations should return false
-        assertFalse(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED.isProtocolViolation());
-        assertFalse(UrlSecurityFailureType.INVALID_ENCODING.isProtocolViolation());
-        assertFalse(UrlSecurityFailureType.NULL_BYTE_INJECTION.isProtocolViolation());
+        assertFalse(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED.isProtocolViolation(), "PATH_TRAVERSAL_DETECTED should not be classified as protocol violation");
+        assertFalse(UrlSecurityFailureType.INVALID_ENCODING.isProtocolViolation(), "INVALID_ENCODING should not be classified as protocol violation");
+        assertFalse(UrlSecurityFailureType.NULL_BYTE_INJECTION.isProtocolViolation(), "NULL_BYTE_INJECTION should not be classified as protocol violation");
     }
 
     @ParameterizedTest

@@ -1,0 +1,87 @@
+= Log Messages for cui-http
+:toc: left
+:toclevels: 2
+
+== Overview
+
+All messages follow the format: HTTP-[identifier]: [message]
+
+Module: `de.cuioss.http`
+
+LogMessages Classes:
+- `de.cuioss.http.client.HttpLogMessages` - HTTP client operations
+
+== INFO Level (001-099)
+
+[cols="1,2,3,3", options="header"]
+|===
+|ID |Component |Message |Description
+
+|HTTP-010
+|Retry
+|Operation '%s' succeeded on attempt %s/%s
+|Logged when a retry operation succeeds after one or more failed attempts. Parameters: operation name, successful attempt number, maximum attempts.
+|===
+
+== WARN Level (100-199)
+
+[cols="1,2,3,3", options="header"]
+|===
+|ID |Component |Message |Description
+
+|HTTP-100
+|Client
+|Content conversion failed for response from %s
+|Logged when converting HTTP response content to the target type fails. Parameters: URL of the request.
+
+|HTTP-101
+|Client
+|HTTP %s (%s) from %s
+|Logged for non-success HTTP status codes (4xx, 5xx). Parameters: HTTP status code, status family, URL.
+
+|HTTP-102
+|Client
+|Failed to fetch HTTP content from %s
+|Logged when IOException occurs during HTTP request execution. Parameters: URL of the request.
+
+|HTTP-103
+|Client
+|Interrupted while fetching HTTP content from %s
+|Logged when thread is interrupted during HTTP request execution. Parameters: URL of the request. Note: Not tested due to complexity of reliably triggering InterruptedException.
+
+|HTTP-104
+|Retry
+|Operation '%s' failed after %s attempts. Final exception: %s
+|Logged when all retry attempts are exhausted without success. Parameters: operation name, maximum attempts, final exception message.
+
+|HTTP-105
+|Retry
+|Retry operation '%s' failed after %s attempts in %sms
+|Logged when retry operation fails after all attempts. Parameters: operation name, maximum attempts, total duration in milliseconds.
+
+|HTTP-106
+|Handler
+|IO error while pinging URI %s: %s
+|Logged when IOException occurs during HTTP ping operation. Parameters: URI being pinged, error message.
+
+|HTTP-107
+|Handler
+|Interrupted while pinging URI %s: %s
+|Logged when thread is interrupted during HTTP ping operation. Parameters: URI being pinged, error message. Note: Not tested due to complexity of reliably triggering InterruptedException.
+
+|HTTP-109
+|SSL
+|Provided SSL context uses insecure protocol: %s. Creating a secure context instead.
+|Logged when a provided SSL context uses an insecure protocol and is replaced with a secure one. Parameters: insecure protocol name (e.g., TLSv1.0, TLSv1.1, SSLv3).
+|===
+
+== Notes
+
+=== Test Coverage
+
+All LogRecords at INFO and WARN levels have test coverage except for:
+
+- HTTP-103 (HTTP_FETCH_INTERRUPTED) - InterruptedException scenarios
+- HTTP-107 (HTTP_PING_INTERRUPTED) - InterruptedException scenarios
+
+These are documented in the LogRecord Javadoc but not tested due to the complexity of reliably triggering InterruptedException in unit tests.

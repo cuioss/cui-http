@@ -37,11 +37,11 @@ class HttpResultObjectTest {
         HttpResultObject<String> result = HttpResultObject.success(content, etag, 200);
 
         // Then
-        assertTrue(result.isValid());
-        assertEquals(content, result.getResult());
-        assertEquals(etag, result.getETag().orElse(null));
-        assertEquals(Integer.valueOf(200), result.getHttpStatus().orElse(null));
-        assertEquals(ResultState.VALID, result.getState());
+        assertTrue(result.isValid(), "Fresh result should be valid");
+        assertEquals(content, result.getResult(), "Result should contain fresh content");
+        assertEquals(etag, result.getETag().orElse(null), "Result should have ETag");
+        assertEquals(Integer.valueOf(200), result.getHttpStatus().orElse(null), "Result should have 200 status");
+        assertEquals(ResultState.VALID, result.getState(), "Fresh result should have VALID state");
     }
 
     @Test
@@ -54,10 +54,10 @@ class HttpResultObjectTest {
         HttpResultObject<String> result = HttpResultObject.success(content, etag, 304);
 
         // Then
-        assertTrue(result.isValid());
-        assertEquals(content, result.getResult());
-        assertEquals(etag, result.getETag().orElse(null));
-        assertEquals(Integer.valueOf(304), result.getHttpStatus().orElse(null));
+        assertTrue(result.isValid(), "Cached result should be valid");
+        assertEquals(content, result.getResult(), "Result should contain cached content");
+        assertEquals(etag, result.getETag().orElse(null), "Result should have ETag");
+        assertEquals(Integer.valueOf(304), result.getHttpStatus().orElse(null), "Result should have 304 Not Modified status");
     }
 
     @Test
@@ -81,11 +81,11 @@ class HttpResultObjectTest {
 
         // Then
         // WARNING state is not considered "valid" in CUI pattern - only VALID state is valid
-        assertFalse(result.isValid());
-        assertEquals(staleContent, result.getResult());
-        assertEquals(ResultState.WARNING, result.getState());
-        assertEquals(errorCode, result.getErrorCode().orElse(null));
-        assertTrue(result.getResultDetail().isPresent());
+        assertFalse(result.isValid(), "Stale result with WARNING state should not be valid");
+        assertEquals(staleContent, result.getResult(), "Result should contain stale content");
+        assertEquals(ResultState.WARNING, result.getState(), "Stale result should have WARNING state");
+        assertEquals(errorCode, result.getErrorCode().orElse(null), "Result should have error category");
+        assertTrue(result.getResultDetail().isPresent(), "Stale result should have result detail");
     }
 
     @Test
@@ -101,18 +101,18 @@ class HttpResultObjectTest {
         HttpResultObject<String> result = HttpResultObject.error(fallbackContent, errorCode, detail);
 
         // Then
-        assertFalse(result.isValid());
-        assertEquals(ResultState.ERROR, result.getState());
-        assertEquals(errorCode, result.getErrorCode().orElse(null));
-        assertTrue(result.getResultDetail().isPresent());
+        assertFalse(result.isValid(), "Error result should not be valid");
+        assertEquals(ResultState.ERROR, result.getState(), "Error result should have ERROR state");
+        assertEquals(errorCode, result.getErrorCode().orElse(null), "Result should have error category");
+        assertTrue(result.getResultDetail().isPresent(), "Error result should have result detail");
 
         // CUI ResultObject allows access to result even in ERROR state if we provide a fallback
         // The error handling mechanism is different - it's about acknowledging the details
-        assertEquals(fallbackContent, result.getResult());
+        assertEquals(fallbackContent, result.getResult(), "Result should contain fallback content");
 
         // But we can check that error details are available
-        assertTrue(result.getErrorCode().isPresent());
-        assertTrue(result.getResultDetail().isPresent());
+        assertTrue(result.getErrorCode().isPresent(), "Error result should have error code");
+        assertTrue(result.getResultDetail().isPresent(), "Error result should have result detail for acknowledgment");
     }
 
     @Test
@@ -134,9 +134,9 @@ class HttpResultObjectTest {
         );
 
         // Then
-        assertFalse(result.isValid()); // WARNING state is not valid
-        assertEquals(content, result.getResult());
-        assertTrue(result.getResultDetail().isPresent());
+        assertFalse(result.isValid(), "Recovered result with WARNING state should not be valid");
+        assertEquals(content, result.getResult(), "Result should contain recovered content");
+        assertTrue(result.getResultDetail().isPresent(), "Recovered result should have result detail");
     }
 
     @Test
@@ -148,10 +148,10 @@ class HttpResultObjectTest {
         HttpResultObject<Integer> copied = original.copyStateAndDetails(42);
 
         // Then
-        assertEquals(Integer.valueOf(42), copied.getResult());
-        assertEquals(original.getState(), copied.getState());
-        assertEquals(original.getETag(), copied.getETag());
-        assertEquals(original.getHttpStatus(), copied.getHttpStatus());
+        assertEquals(Integer.valueOf(42), copied.getResult(), "Copied result should contain new value");
+        assertEquals(original.getState(), copied.getState(), "Copied result should preserve state");
+        assertEquals(original.getETag(), copied.getETag(), "Copied result should preserve ETag");
+        assertEquals(original.getHttpStatus(), copied.getHttpStatus(), "Copied result should preserve HTTP status");
     }
 
     @Test
@@ -163,10 +163,10 @@ class HttpResultObjectTest {
         HttpResultObject<Integer> transformed = original.map(Integer::parseInt, 0);
 
         // Then
-        assertEquals(Integer.valueOf(123), transformed.getResult());
-        assertEquals(original.getState(), transformed.getState());
-        assertEquals(original.getETag(), transformed.getETag());
-        assertEquals(original.getHttpStatus(), transformed.getHttpStatus());
+        assertEquals(Integer.valueOf(123), transformed.getResult(), "Transformed result should contain mapped value");
+        assertEquals(original.getState(), transformed.getState(), "Transformed result should preserve state");
+        assertEquals(original.getETag(), transformed.getETag(), "Transformed result should preserve ETag");
+        assertEquals(original.getHttpStatus(), transformed.getHttpStatus(), "Transformed result should preserve HTTP status");
     }
 
     @Test
@@ -185,9 +185,9 @@ class HttpResultObjectTest {
         );
 
         // Then
-        assertTrue(result.isValid());
-        assertEquals(content, result.getResult());
-        assertEquals("builder-etag", result.getETag().orElse(null));
-        assertEquals(Integer.valueOf(200), result.getHttpStatus().orElse(null));
+        assertTrue(result.isValid(), "Builder-created result should be valid");
+        assertEquals(content, result.getResult(), "Result should contain builder content");
+        assertEquals("builder-etag", result.getETag().orElse(null), "Result should have builder ETag");
+        assertEquals(Integer.valueOf(200), result.getHttpStatus().orElse(null), "Result should have 200 status");
     }
 }

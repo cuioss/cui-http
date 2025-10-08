@@ -203,7 +203,7 @@ class UnicodeNormalizationAttackTest {
     }
 
     /**
-     * Test normalization consistency detection.
+     * Test normalization consistency detection - should reject patterns that change after normalization.
      *
      * <p>
      * Tests that the system can detect when input changes after Unicode
@@ -211,8 +211,8 @@ class UnicodeNormalizationAttackTest {
      * </p>
      */
     @Test
-    @DisplayName("Should detect normalization changes")
-    void shouldDetectNormalizationChanges() {
+    @DisplayName("Should reject normalization-changing patterns")
+    void shouldRejectNormalizationChangingPatterns() {
         String[] normalizationTests = {
                 // Decomposed to composed normalization changes
                 "file\u0300",              // file + combining grave (changes after NFC)
@@ -236,39 +236,36 @@ class UnicodeNormalizationAttackTest {
             if (!test.equals(normalized)) {
                 long initialEventCount = eventCounter.getTotalCount();
 
-                try {
-                    var result = pipeline.validate(test);
-                    assertTrue(result.isPresent(), "Unicode test validation should return result if successful: " + test);
-                    // If it passes, the normalized result should be recorded/checked
-                    assertNotNull(result, "Result should not be null for: " + test);
+                // When: Validating normalization-changing input
+                var exception = assertThrows(UrlSecurityException.class,
+                        () -> pipeline.validate(test),
+                        "Normalization-changing pattern should be rejected: " + test);
 
-                } catch (UrlSecurityException e) {
-                    // Expected for normalization-changing input
-                    assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                            "Security event should be recorded for normalization change: " + test);
+                // Then: Should specifically detect normalization changes
+                assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
+                        "Should detect normalization as invalid character for: " + test);
 
-                    // Should specifically detect normalization changes
-                    assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, e.getFailureType(),
-                            "Should detect normalization as invalid character for: " + test);
-                }
+                // And: Security event should be recorded
+                assertTrue(eventCounter.getTotalCount() > initialEventCount,
+                        "Security event should be recorded for normalization change: " + test);
             }
         }
     }
 
     /**
-     * Test edge cases in Unicode normalization detection.
+     * Test edge cases in Unicode normalization detection - malicious patterns.
      *
      * <p>
      * Tests various edge cases that might cause issues in Unicode normalization
      * detection logic, including complex combining sequences and boundary conditions.
+     * These patterns should be rejected for security reasons.
      * </p>
      */
     @Test
-    @DisplayName("Should handle edge cases in Unicode normalization")
-    void shouldHandleEdgeCasesInUnicodeNormalization() {
-        String[] edgeCases = {
-                // Empty and minimal cases
-                "",                                    // Empty string
+    @DisplayName("Should reject malicious Unicode edge cases")
+    void shouldRejectMaliciousUnicodeEdgeCases() {
+        String[] maliciousEdgeCases = {
+                // Lone combining character
                 "\u0300",                             // Lone combining character
                 "\u200B",                             // Lone zero-width space
 
@@ -293,50 +290,60 @@ class UnicodeNormalizationAttackTest {
                 "\uFFFF",                             // Invalid Unicode codepoint
         };
 
-        for (String edgeCase : edgeCases) {
+        for (String edgeCase : maliciousEdgeCases) {
             long initialEventCount = eventCounter.getTotalCount();
 
-            try {
-                var result = pipeline.validate(edgeCase);
-                assertTrue(result.isPresent(), "Edge case validation should return result if successful: " + edgeCase);
-                // If validation passes, result should not be null
-                assertNotNull(result, "Validated result should not be null for: " +
-                        edgeCase.codePoints().mapToObj("U+%04X"::formatted).toList());
+            // When: Validating malicious Unicode edge case
+            var exception = assertThrows(UrlSecurityException.class,
+                    () -> pipeline.validate(edgeCase),
+                    "Malicious Unicode edge case should be rejected: " +
+                            edgeCase.codePoints().mapToObj("U+%04X"::formatted).toList());
 
-            } catch (UrlSecurityException e) {
-                // Edge cases might be rejected for various reasons
-                assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                        "Security event should be recorded when rejecting: " +
-                                edgeCase.codePoints().mapToObj("U+%04X"::formatted).toList());
+            // Then: Security event should be recorded
+            assertTrue(eventCounter.getTotalCount() > initialEventCount,
+                    "Security event should be recorded when rejecting: " +
+                            edgeCase.codePoints().mapToObj("U+%04X"::formatted).toList());
 
-                assertNotNull(e.getFailureType(),
-                        "Exception should have failure type for: " + edgeCase);
-
-            } catch (IllegalArgumentException | IllegalStateException e) {
-                // Some edge cases might cause encoding or Unicode processing issues
-                // This is acceptable - the system should handle them gracefully
-                assertNotNull(e, "Exception should be properly formed");
-            }
+            // And: Exception should have failure type
+            assertNotNull(exception.getFailureType(),
+                    "Exception should have failure type for: " + edgeCase);
         }
     }
 
     /**
-     * Test legitimate Unicode content handling.
+     * Test legitimate empty string edge case.
      *
      * <p>
-     * Tests that legitimate Unicode content (like internationalized domain names,
-     * multilingual text, etc.) is handled appropriately without excessive false positives.
+     * Tests that empty strings are handled gracefully without security exceptions.
      * </p>
      */
     @Test
-    @DisplayName("Legitimate Unicode content should be handled appropriately")
-    void shouldHandleLegitimateUnicodeContent() {
+    @DisplayName("Should handle empty string without security exception")
+    void shouldHandleEmptyString() {
+        // When: Validating empty string
+        var result = pipeline.validate("");
+
+        // Then: Should return valid result
+        assertTrue(result.isPresent(), "Empty string validation should return result");
+        assertNotNull(result, "Result should not be null for empty string");
+    }
+
+    /**
+     * Test legitimate Unicode content that should be rejected by security-focused system.
+     *
+     * <p>
+     * Tests that even legitimate Unicode content is rejected in URL security context.
+     * This is acceptable for a security-first approach.
+     * </p>
+     */
+    @Test
+    @DisplayName("Legitimate Unicode content should be rejected by security-focused system")
+    void shouldRejectLegitimateUnicodeContentForSecurity() {
         String[] legitimateContent = {
                 // Common international characters
                 "café",                                // French
                 "naïve",                              // French with diaeresis
                 "Zürich",                             // German
-                "Tokyo",                              // English/Latin
                 "münchen",                            // German umlaut
 
                 // Properly composed Unicode
@@ -344,27 +351,25 @@ class UnicodeNormalizationAttackTest {
                 "piñata",                             // Spanish ñ
                 "jalapeño",                           // Spanish ñ
 
-                // Note: Even legitimate Unicode might be blocked in URL security context
+                // Note: Even legitimate Unicode is blocked in URL security context
                 // This is acceptable for a security-focused system
         };
 
         for (String content : legitimateContent) {
             long initialEventCount = eventCounter.getTotalCount();
 
-            try {
-                var result = pipeline.validate(content);
-                assertTrue(result.isPresent(), "Content validation should return result if successful: " + content);
-                assertNotNull(result, "Legitimate Unicode content should be processable: " + content);
+            // When: Validating legitimate Unicode content
+            var exception = assertThrows(UrlSecurityException.class,
+                    () -> pipeline.validate(content),
+                    "Legitimate Unicode content should be rejected for security: " + content);
 
-                // In a URL security context, even legitimate Unicode might be blocked
-                // This is acceptable for a security-first approach
+            // Then: Security event should be recorded
+            assertTrue(eventCounter.getTotalCount() > initialEventCount,
+                    "Security event should be recorded when blocking Unicode: " + content);
 
-            } catch (UrlSecurityException e) {
-                // Legitimate Unicode content might still be blocked in URL security context
-                // This is acceptable for a security-focused validation system
-                assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                        "If content is blocked, security event should be recorded: " + content);
-            }
+            // And: Exception should be properly formed
+            assertNotNull(exception.getFailureType(),
+                    "Exception should have failure type for: " + content);
         }
     }
 
@@ -386,66 +391,81 @@ class UnicodeNormalizationAttackTest {
         long initialEventCount = eventCounter.getTotalCount();
 
         // When: Validating the legitimate path
-        try {
-            var result = pipeline.validate(validPath);
-            assertTrue(result.isPresent(), "Valid path should return validated result: " + validPath);
-            // Then: Should return validated result
-            assertNotNull(result, "Valid path should return validated result: " + validPath);
+        var result = pipeline.validate(validPath);
 
-            // And: No security events should be recorded for valid paths
-            assertEquals(initialEventCount, eventCounter.getTotalCount(),
-                    "No security events should be recorded for valid path: " + validPath);
+        // Then: Should return validated result
+        assertTrue(result.isPresent(), "Valid path should return validated result: " + validPath);
+        assertNotNull(result, "Valid path should return validated result: " + validPath);
 
-        } catch (UrlSecurityException e) {
-            // Some paths might still be blocked by other security rules
-            // This is acceptable for a security-first approach
-            assertTrue(initialEventCount < eventCounter.getTotalCount(),
-                    "If path is blocked, security event should be recorded: " + validPath);
-        }
+        // And: No security events should be recorded for valid paths
+        assertEquals(initialEventCount, eventCounter.getTotalCount(),
+                "No security events should be recorded for valid path: " + validPath);
     }
 
     /**
-     * Test normalization form consistency.
+     * Test normalization-changing forms should be rejected.
      *
      * <p>
-     * Tests that the system consistently handles different normalization forms
-     * and can detect when input would change under different normalization approaches.
+     * Tests that the system consistently detects when input would change
+     * under different normalization approaches.
      * </p>
      */
     @Test
-    @DisplayName("Should consistently handle different normalization forms")
-    void shouldConsistentlyHandleNormalizationForms() {
-        String[] testCases = {
-                "café",           // Should be same in NFC and NFD after normalization
+    @DisplayName("Should reject normalization-changing forms")
+    void shouldRejectNormalizationChangingForms() {
+        String[] normalizationChangingCases = {
                 ".\u0301/",       // Should change under NFC normalization
                 "\uFF0E\uFF0E",   // Should change under NFKC normalization
         };
 
-        for (String testCase : testCases) {
+        for (String testCase : normalizationChangingCases) {
             String nfc = Normalizer.normalize(testCase, Normalizer.Form.NFC);
-
-            // Test that the validation system handles normalization consistently
             long initialEventCount = eventCounter.getTotalCount();
 
-            try {
-                var result = pipeline.validate(testCase);
-                assertTrue(result.isPresent(), "Test case validation should return result if successful: " + testCase);
+            // Only test if normalization changes the input
+            if (!testCase.equals(nfc)) {
+                // When: Validating normalization-changing input
+                var exception = assertThrows(UrlSecurityException.class,
+                        () -> pipeline.validate(testCase),
+                        "Normalization-changing input should be rejected: " + testCase);
 
-                // If the original passes, the normalized versions should be handled consistently
-                // (though they might still fail for other security reasons)
+                // Then: Should detect normalization as invalid character
+                assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
+                        "Should detect normalization as invalid character for: " + testCase);
 
-            } catch (UrlSecurityException e) {
-                // If original fails, should record security event
+                // And: Security event should be recorded
                 assertTrue(eventCounter.getTotalCount() > initialEventCount,
                         "Security event should be recorded for: " + testCase);
-
-                // Should detect if normalization would change the input
-                if (!testCase.equals(nfc)) {
-                    assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, e.getFailureType(),
-                            "Should detect normalization as invalid character for: " + testCase);
-                }
             }
         }
+    }
+
+    /**
+     * Test already-normalized content should be rejected due to Unicode.
+     *
+     * <p>
+     * Tests that even already-normalized Unicode content is rejected
+     * in URL security context due to security-first approach.
+     * </p>
+     */
+    @Test
+    @DisplayName("Should reject already-normalized Unicode content")
+    void shouldRejectAlreadyNormalizedUnicodeContent() {
+        String testCase = "café"; // Should be same in NFC and NFD after normalization
+        long initialEventCount = eventCounter.getTotalCount();
+
+        // When: Validating already-normalized Unicode
+        var exception = assertThrows(UrlSecurityException.class,
+                () -> pipeline.validate(testCase),
+                "Already-normalized Unicode should be rejected for security: " + testCase);
+
+        // Then: Security event should be recorded
+        assertTrue(eventCounter.getTotalCount() > initialEventCount,
+                "Security event should be recorded for: " + testCase);
+
+        // And: Exception should be properly formed
+        assertNotNull(exception.getFailureType(),
+                "Exception should have failure type for: " + testCase);
     }
 
     /**

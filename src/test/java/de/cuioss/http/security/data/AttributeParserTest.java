@@ -147,7 +147,7 @@ class AttributeParserTest {
                 "'user-id=abc; id=xyz', 'id', 'xyz'",
                 "'prefix_name=first; name=second', 'name', 'second'"
         })
-        @DisplayName("Should handle quoted values, case preservation, and exact attribute matching")
+        @DisplayName("Should handle quoted values and exact matching")
         @SuppressWarnings("java:S4144")
         void shouldHandleQuotedValuesAndExactMatching(String attributes, String attributeName, String expected) {
             Optional<String> result = AttributeParser.extractAttributeValue(attributes, attributeName);
