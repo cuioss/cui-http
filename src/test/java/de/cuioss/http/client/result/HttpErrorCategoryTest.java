@@ -68,24 +68,34 @@ class HttpErrorCategoryTest {
     }
 
     @Test
-    void shouldHaveConsistentRetrySemantics() {
-        // Network and server errors are the only transient/retryable conditions
-        int retryableCount = 0;
-        int nonRetryableCount = 0;
-
-        for (HttpErrorCategory errorCode : HttpErrorCategory.values()) {
-            if (errorCode.isRetryable()) {
-                retryableCount++;
-                // Only these two should be retryable
-                assertTrue(errorCode == HttpErrorCategory.NETWORK_ERROR ||
-                        errorCode == HttpErrorCategory.SERVER_ERROR,
-                        "Only NETWORK_ERROR and SERVER_ERROR should be retryable");
-            } else {
-                nonRetryableCount++;
-            }
-        }
+    void shouldHaveExactlyTwoRetryableErrorTypes() {
+        // Count retryable error types
+        long retryableCount = java.util.Arrays.stream(HttpErrorCategory.values())
+                .filter(HttpErrorCategory::isRetryable)
+                .count();
 
         assertEquals(2, retryableCount, "Should have exactly 2 retryable error types");
+    }
+
+    @Test
+    void shouldHaveExactlyThreeNonRetryableErrorTypes() {
+        // Count non-retryable error types
+        long nonRetryableCount = java.util.Arrays.stream(HttpErrorCategory.values())
+                .filter(errorCode -> !errorCode.isRetryable())
+                .count();
+
         assertEquals(3, nonRetryableCount, "Should have exactly 3 non-retryable error types");
+    }
+
+    @Test
+    void shouldOnlyMarkNetworkAndServerErrorsAsRetryable() {
+        // Verify that only NETWORK_ERROR and SERVER_ERROR are retryable
+        java.util.Arrays.stream(HttpErrorCategory.values())
+                .filter(HttpErrorCategory::isRetryable)
+                .forEach(errorCode -> assertTrue(
+                        errorCode == HttpErrorCategory.NETWORK_ERROR ||
+                                errorCode == HttpErrorCategory.SERVER_ERROR,
+                        "Only NETWORK_ERROR and SERVER_ERROR should be retryable, but found: " + errorCode
+                ));
     }
 }
