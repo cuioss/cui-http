@@ -562,7 +562,7 @@ class ResilientHttpHandlerIntegrationTest {
     }
 
     @Test
-    @DisplayName("Should log CONTENT_CONVERSION_FAILED when content converter returns empty Optional")
+    @DisplayName("Should log CONTENT_CONVERSION_FAILED on empty Optional")
     void shouldLogContentConversionFailedWhenConverterReturnsEmpty() {
         // Given a content converter that always returns empty Optional
         HttpContentConverter<String> failingConverter = new HttpContentConverter<String>() {

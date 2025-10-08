@@ -77,7 +77,7 @@ class LegitimateSpecialCharactersDatabaseTest {
      */
     @ParameterizedTest
     @ArgumentsSource(LegitimateSpecialCharactersDatabase.ArgumentsProvider.class)
-    @DisplayName("Legitimate special character patterns should be accepted without false positives")
+    @DisplayName("Should accept special characters without false positives")
     void shouldAcceptLegitimateSpecialCharacters(LegitimateTestCase testCase) {
         // Given: A legitimate pattern with special characters
         long initialEventCount = eventCounter.getTotalCount();

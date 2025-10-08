@@ -75,7 +75,7 @@ class HomographAttackDatabaseTest {
      */
     @ParameterizedTest
     @ArgumentsSource(HomographAttackDatabase.ArgumentsProvider.class)
-    @DisplayName("Unicode homograph attack patterns should be rejected with correct failure types")
+    @DisplayName("Should reject homograph attacks with correct types")
     void shouldRejectHomographAttacksWithCorrectFailureTypes(AttackTestCase testCase) {
         // Given: A Unicode homograph attack test case with expected failure type
         long initialEventCount = eventCounter.getTotalCount();

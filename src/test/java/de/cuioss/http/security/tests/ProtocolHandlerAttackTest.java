@@ -368,7 +368,7 @@ class ProtocolHandlerAttackTest {
      * Test that security events are properly categorized for different protocol attack types.
      */
     @Test
-    @DisplayName("Different protocol attack types should generate appropriate security events")
+    @DisplayName("Should categorize protocol security events correctly")
     void shouldCategorizeProtocolSecurityEventsCorrectly() {
         // Test JavaScript protocol
         assertThrows(UrlSecurityException.class, () -> pipeline.validate("javascript:alert('XSS')/../etc/passwd"));

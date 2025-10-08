@@ -35,7 +35,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class HttpContentConverterTest {
 
     @Test
-    @DisplayName("HttpContentConverter contract - convert method should handle null input gracefully")
+    @DisplayName("Contract: convert() should handle null input gracefully")
     void contractConvertShouldHandleNullInputGracefully() {
         HttpContentConverter<String> converter = createTestConverter();
 
@@ -105,7 +105,7 @@ class HttpContentConverterTest {
     }
 
     @Test
-    @DisplayName("HttpContentConverter contract - should handle conversion failures gracefully")
+    @DisplayName("Contract: should handle conversion failures gracefully")
     void contractShouldHandleConversionFailuresGracefully() {
         HttpContentConverter<Integer> converter = new HttpContentConverter<Integer>() {
             @Override

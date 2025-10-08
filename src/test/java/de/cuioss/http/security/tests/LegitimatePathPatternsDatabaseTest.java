@@ -103,7 +103,7 @@ class LegitimatePathPatternsDatabaseTest {
      */
     @ParameterizedTest
     @ArgumentsSource(LegitimatePathPatternsDatabase.ArgumentsProvider.class)
-    @DisplayName("Legitimate patterns should be consistently accepted on multiple validations")
+    @DisplayName("Should consistently accept legitimate patterns")
     void shouldConsistentlyAcceptLegitimatePatterns(LegitimateTestCase testCase) {
         // Validate the same pattern multiple times to ensure consistency
         for (int i = 0; i < 3; i++) {
