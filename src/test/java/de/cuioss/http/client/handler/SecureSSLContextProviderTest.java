@@ -160,8 +160,8 @@ class SecureSSLContextProviderTest {
     @Test
     @DisplayName("Should replace insecure SSL context and log warning")
     void shouldReplaceInsecureSSLContextAndLogWarning() throws NoSuchAlgorithmException, KeyManagementException, KeyStoreException {
-        // Given: An insecure SSL context that reports TLS_V1_0 as its protocol
-        // Since TLSv1.0 may not be available in modern Java, we create a context and override its protocol
+        // Given: An insecure SSL context is provided to a stricter provider.
+        // To simulate this, we'll create a TLSv1.2 context and test it against a provider that requires TLSv1.3.
         SecureSSLContextProvider provider = new SecureSSLContextProvider();
 
         // Create a context with TLS 1.2 first

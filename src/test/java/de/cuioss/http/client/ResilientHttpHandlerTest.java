@@ -89,45 +89,6 @@ class ResilientHttpHandlerTest {
             assertEquals(LoaderStatus.UNDEFINED, handler.getLoaderStatus(),
                     "Initial status should be UNDEFINED");
         }
-
-        // Note: The constructor uses @NonNull annotations from JSpecify, but these are
-        // compile-time checks only. Runtime null-pointer checking is not enforced by annotations.
-        // The actual null-pointer protection comes from the first usage of the parameters.
-        // These tests are commented out as they document expected behavior but don't match
-        // the current implementation which relies on @NonNull compile-time checking.
-
-        /*
-        @Test
-        @DisplayName("Should reject null HttpHandler")
-        void shouldRejectNullHttpHandler() {
-            // @NonNull provides compile-time checking, not runtime NPE
-            assertThrows(NullPointerException.class, () ->
-                    new ResilientHttpHandler<>(null, RetryStrategy.none(), StringContentConverter.identity()),
-                    "Constructor should reject null HttpHandler");
-        }
-
-        @Test
-        @DisplayName("Should reject null RetryStrategy")
-        void shouldRejectNullRetryStrategy() {
-            HttpHandler httpHandler = HttpHandler.builder().url(TEST_URL).build();
-
-            // @NonNull provides compile-time checking, not runtime NPE
-            assertThrows(NullPointerException.class, () ->
-                    new ResilientHttpHandler<>(httpHandler, null, StringContentConverter.identity()),
-                    "Constructor should reject null RetryStrategy");
-        }
-
-        @Test
-        @DisplayName("Should reject null HttpContentConverter")
-        void shouldRejectNullConverter() {
-            HttpHandler httpHandler = HttpHandler.builder().url(TEST_URL).build();
-
-            // @NonNull provides compile-time checking, not runtime NPE
-            assertThrows(NullPointerException.class, () ->
-                    new ResilientHttpHandler<String>(httpHandler, RetryStrategy.none(), null),
-                    "Constructor should reject null HttpContentConverter");
-        }
-        */
     }
 
     @Nested
