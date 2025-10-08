@@ -161,7 +161,7 @@ class MixedEncodingAttackTest {
 
 
     /**
-     * Test that legitimate mixed format URLs are handled correctly.
+     * Test that legitimate mixed format URLs pass validation.
      *
      * <p>
      * Ensures that legitimate uses of different encoding formats
@@ -171,27 +171,21 @@ class MixedEncodingAttackTest {
      */
     @ParameterizedTest
     @TypeGeneratorSource(value = ValidURLPathGenerator.class, count = 15)
-    @DisplayName("Legitimate mixed format URLs should be handled correctly")
+    @DisplayName("Legitimate mixed format URLs should pass validation")
     void shouldHandleLegitimatesMixedFormatUrls(String path) {
         // Given: A legitimate URL path from ValidURLPathGenerator
         long initialEventCount = eventCounter.getTotalCount();
 
-        // When: Attempting to validate the legitimate path
-        try {
-            var result = pipeline.validate(path);
-            assertTrue(result.isPresent(), "Path validation should return result if successful: " + path);
-            // Then: Legitimate path should be validated
-            assertNotNull(result, "Legitimate path should be validated: " + path);
+        // When: Validating the legitimate path
+        var result = pipeline.validate(path);
 
-            // And: Legitimate paths should generally not trigger security events
-            // (though some might still be blocked if they contain suspicious patterns)
+        // Then: Legitimate path should be validated
+        assertTrue(result.isPresent(), "Path validation should return result if successful: " + path);
+        assertNotNull(result, "Legitimate path should be validated: " + path);
 
-        } catch (UrlSecurityException e) {
-            // Then: Some legitimate paths might still be blocked by conservative security rules
-            // This is acceptable in a security-first approach
-            assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                    "If legitimate path is blocked, security event should be recorded: " + path);
-        }
+        // And: No security events should be recorded for legitimate paths
+        assertEquals(initialEventCount, eventCounter.getTotalCount(),
+                "No security events should be recorded for legitimate path: " + path);
     }
 
     /**
@@ -212,22 +206,15 @@ class MixedEncodingAttackTest {
         long initialEventCount = eventCounter.getTotalCount();
 
         // When: Validating the legitimate path
-        try {
-            var result = pipeline.validate(validPath);
-            assertTrue(result.isPresent(), "Valid path should return validated result: " + validPath);
-            // Then: Should return validated result
-            assertNotNull(result, "Valid path should return validated result: " + validPath);
+        var result = pipeline.validate(validPath);
 
-            // And: No security events should be recorded for valid paths
-            assertEquals(initialEventCount, eventCounter.getTotalCount(),
-                    "No security events should be recorded for valid path: " + validPath);
+        // Then: Should return validated result
+        assertTrue(result.isPresent(), "Valid path should return validated result: " + validPath);
+        assertNotNull(result, "Valid path should return validated result: " + validPath);
 
-        } catch (UrlSecurityException e) {
-            // Some paths might still be blocked by other security rules
-            // This is acceptable for a security-first approach
-            assertTrue(initialEventCount < eventCounter.getTotalCount(),
-                    "If path is blocked, security event should be recorded: " + validPath);
-        }
+        // And: No security events should be recorded for valid paths
+        assertEquals(initialEventCount, eventCounter.getTotalCount(),
+                "No security events should be recorded for valid path: " + validPath);
     }
 
     /**

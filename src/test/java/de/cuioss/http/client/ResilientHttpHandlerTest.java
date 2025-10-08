@@ -22,12 +22,14 @@ import de.cuioss.http.client.result.HttpErrorCategory;
 import de.cuioss.http.client.result.HttpResultObject;
 import de.cuioss.http.client.retry.RetryStrategy;
 import de.cuioss.test.juli.junit5.EnableTestLogger;
+import de.cuioss.uimodel.result.ResultDetail;
 import de.cuioss.uimodel.result.ResultState;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.net.http.HttpResponse;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -189,8 +191,8 @@ class ResilientHttpHandlerTest {
             // Custom converter that always returns "CUSTOM_EMPTY"
             HttpContentConverter<String> customConverter = new HttpContentConverter<String>() {
                 @Override
-                public java.net.http.HttpResponse.BodyHandler<?> getBodyHandler() {
-                    return java.net.http.HttpResponse.BodyHandlers.ofString();
+                public HttpResponse.BodyHandler<?> getBodyHandler() {
+                    return HttpResponse.BodyHandlers.ofString();
                 }
 
                 @Override
@@ -254,8 +256,8 @@ class ResilientHttpHandlerTest {
         @Test
         @DisplayName("Should create error results with proper categories")
         void shouldCreateErrorResultsWithCategories() {
-            de.cuioss.uimodel.result.ResultDetail detail =
-                    new de.cuioss.uimodel.result.ResultDetail(
+            ResultDetail detail =
+                    new ResultDetail(
                             new de.cuioss.uimodel.nameprovider.DisplayName("Network error occurred"));
 
             HttpResultObject<String> networkError = HttpResultObject.error(
@@ -319,8 +321,8 @@ class ResilientHttpHandlerTest {
         @Test
         @DisplayName("Should create error result with fallback content")
         void shouldCreateErrorResultWithFallback() {
-            de.cuioss.uimodel.result.ResultDetail detail =
-                    new de.cuioss.uimodel.result.ResultDetail(
+            ResultDetail detail =
+                    new ResultDetail(
                             new de.cuioss.uimodel.nameprovider.DisplayName("Error with fallback"));
 
             HttpResultObject<String> result = HttpResultObject.error(

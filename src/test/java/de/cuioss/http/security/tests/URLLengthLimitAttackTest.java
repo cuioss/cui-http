@@ -100,79 +100,79 @@ class URLLengthLimitAttackTest {
     }
 
     /**
-     * Test comprehensive URL length limit attack patterns.
+     * Test path-based URL length limit attack patterns.
      *
      * <p>
-     * Uses URLLengthLimitAttackGenerator which provides 15 different types
-     * of URL length limit attacks including basic overflow, path component overflow,
-     * query parameter overflow, fragment overflow, hostname overflow, repeated
-     * parameters, deep nesting, and various resource exhaustion techniques.
+     * Uses URLLengthLimitAttackGenerator to test path-based length attacks.
+     * These should always be rejected by URL path validation.
      * </p>
      *
      * @param lengthAttackPattern A URL length limit attack pattern
      */
     @ParameterizedTest
     @TypeGeneratorSource(value = URLLengthLimitAttackGenerator.class, count = 30)
-    @DisplayName("All URL length limit attacks should be rejected")
-    void shouldRejectAllURLLengthLimitAttacks(String lengthAttackPattern) {
+    @DisplayName("Path-based URL length limit attacks should be rejected")
+    void shouldRejectPathBasedURLLengthLimitAttacks(String lengthAttackPattern) {
         // Given: A URL length limit attack pattern from the generator
+        //  Only test path-based attacks (skip hostname-based attacks for this pipeline)
+        if (!isPathBasedLengthAttack(lengthAttackPattern)) {
+            return; // Skip hostname-based attacks
+        }
+
         long initialEventCount = eventCounter.getTotalCount();
 
-        // When: Attempting to validate the length attack
-        try {
-            pipeline.validate(lengthAttackPattern);
-            // If validation passes, check if this is expected
-            // URLs with long hostnames but short paths may pass URL path validation
-            if (isPathBasedLengthAttack(lengthAttackPattern)) {
-                fail("Expected path-based length attack to be rejected: " + lengthAttackPattern);
-            }
-            // Otherwise, this is expected (e.g., long hostname with short path)
-            assertFalse(lengthAttackPattern.isEmpty(), "Pattern should not be empty: " + lengthAttackPattern);
-        } catch (UrlSecurityException exception) {
-            // Then: If an exception is thrown, it should be length-related
-            assertNotNull(exception, "Exception should not be null");
-            assertTrue(isURLLengthLimitSpecificFailure(exception.getFailureType()),
-                    "Failure type should be length limit related: " + exception.getFailureType() +
-                            " for pattern: " + lengthAttackPattern);
+        // When: Attempting to validate the path-based length attack
+        var exception = assertThrows(UrlSecurityException.class,
+                () -> pipeline.validate(lengthAttackPattern),
+                "Path-based length attack should be rejected: " + lengthAttackPattern);
 
-            // And: Original malicious input should be preserved
-            assertEquals(lengthAttackPattern, exception.getOriginalInput(),
-                    "Original input should be preserved in exception");
+        // Then: Exception should be length-related
+        assertNotNull(exception, "Exception should not be null");
+        assertTrue(isURLLengthLimitSpecificFailure(exception.getFailureType()),
+                "Failure type should be length limit related: " + exception.getFailureType() +
+                        " for pattern: " + lengthAttackPattern);
 
-            // And: Security event should be recorded when exception is thrown
-            assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                    "Security event should be recorded when exception is thrown for: " + lengthAttackPattern);
-        }
+        // And: Original malicious input should be preserved
+        assertEquals(lengthAttackPattern, exception.getOriginalInput(),
+                "Original input should be preserved in exception");
+
+        // And: Security event should be recorded
+        assertTrue(eventCounter.getTotalCount() > initialEventCount,
+                "Security event should be recorded for: " + lengthAttackPattern);
     }
 
     /**
-     * Test basic URL length overflow attacks.
+     * Test basic path-based URL length overflow attacks.
      *
      * <p>
-     * Tests attacks that exceed standard URL length limits through
-     * various components of the URL. Uses generator for dynamic patterns.
+     * Tests path-based attacks that exceed standard URL length limits.
+     * Uses generator for dynamic patterns, filtering to path-based attacks only.
      * </p>
      */
     @ParameterizedTest
     @TypeGeneratorSource(value = URLLengthLimitAttackGenerator.class, count = 40)
-    @DisplayName("Basic URL length overflow attacks must be blocked")
-    void shouldBlockBasicLengthOverflowAttacks(String basicLengthAttack) {
-        // Test all generator patterns for basic length overflow behaviors
+    @DisplayName("Basic path-based length overflow attacks must be blocked")
+    void shouldBlockBasicPathBasedLengthOverflowAttacks(String basicLengthAttack) {
+        // Only test path-based attacks (skip hostname-based attacks for this pipeline)
+        if (!isPathBasedLengthAttack(basicLengthAttack)) {
+            return; // Skip hostname-based attacks
+        }
+
         long initialEventCount = eventCounter.getTotalCount();
 
-        try {
-            pipeline.validate(basicLengthAttack);
-            // If validation passes, check if this is expected (e.g., hostname-based attack with short path)
-            if (isPathBasedLengthAttack(basicLengthAttack)) {
-                fail("Expected path-based length attack to be rejected: " + basicLengthAttack);
-            }
-        } catch (UrlSecurityException exception) {
-            assertNotNull(exception);
-            assertTrue(isURLLengthLimitSpecificFailure(exception.getFailureType()),
-                    "Should detect length overflow: " + exception.getFailureType() + " for: " + basicLengthAttack);
-            assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                    "Security event should be recorded for length overflow");
-        }
+        // When: Validating path-based length attack
+        var exception = assertThrows(UrlSecurityException.class,
+                () -> pipeline.validate(basicLengthAttack),
+                "Path-based length overflow should be rejected: " + basicLengthAttack);
+
+        // Then: Should detect length overflow
+        assertNotNull(exception);
+        assertTrue(isURLLengthLimitSpecificFailure(exception.getFailureType()),
+                "Should detect length overflow: " + exception.getFailureType() + " for: " + basicLengthAttack);
+
+        // And: Security event should be recorded
+        assertTrue(eventCounter.getTotalCount() > initialEventCount,
+                "Security event should be recorded for length overflow");
     }
 
     /**
