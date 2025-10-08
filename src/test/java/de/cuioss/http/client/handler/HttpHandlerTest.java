@@ -15,6 +15,10 @@
  */
 package de.cuioss.http.client.handler;
 
+import de.cuioss.http.client.HttpLogMessages;
+import de.cuioss.test.juli.LogAsserts;
+import de.cuioss.test.juli.TestLogLevel;
+import de.cuioss.test.juli.junit5.EnableTestLogger;
 import mockwebserver3.MockResponse;
 import mockwebserver3.MockWebServer;
 import okhttp3.Headers;
@@ -35,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Test for {@link HttpHandler}
  */
+@EnableTestLogger
 class HttpHandlerTest {
 
     private static final String VALID_URL = "https://example.com";
@@ -335,6 +340,8 @@ class HttpHandlerTest {
 
             HttpStatusFamily statusCode = handler.pingHead();
             assertEquals(HttpStatusFamily.UNKNOWN, statusCode);
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN,
+                    HttpLogMessages.WARN.HTTP_PING_IO_ERROR.resolveIdentifierString());
         }
 
         @Test
@@ -346,6 +353,8 @@ class HttpHandlerTest {
 
             HttpStatusFamily statusCode = handler.pingGet();
             assertEquals(HttpStatusFamily.UNKNOWN, statusCode);
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN,
+                    HttpLogMessages.WARN.HTTP_PING_IO_ERROR.resolveIdentifierString());
         }
 
         @Test

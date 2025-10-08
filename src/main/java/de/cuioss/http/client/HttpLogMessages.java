@@ -71,6 +71,11 @@ public final class HttpLogMessages {
                 .template("Failed to fetch HTTP content from %s")
                 .build();
 
+        /**
+         * Logged when thread is interrupted while fetching HTTP content.
+         * Note: Not tested due to complexity of reliably triggering InterruptedException in unit tests.
+         * Used in: ResilientHttpHandler.loadInternal (catch InterruptedException)
+         */
         public static final LogRecord HTTP_FETCH_INTERRUPTED = LogRecordModel.builder()
                 .prefix(PREFIX)
                 .identifier(103)
@@ -95,6 +100,11 @@ public final class HttpLogMessages {
                 .template("IO error while pinging URI %s: %s")
                 .build();
 
+        /**
+         * Logged when thread is interrupted while pinging a URI.
+         * Note: Not tested due to complexity of reliably triggering InterruptedException in unit tests.
+         * Used in: HttpHandler.pingWithMethod (catch InterruptedException)
+         */
         public static final LogRecord HTTP_PING_INTERRUPTED = LogRecordModel.builder()
                 .prefix(PREFIX)
                 .identifier(107)

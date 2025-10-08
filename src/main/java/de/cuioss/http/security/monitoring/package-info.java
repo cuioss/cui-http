@@ -15,16 +15,15 @@
  */
 
 /**
- * Security event monitoring and logging for HTTP validation.
+ * Security event monitoring for HTTP validation.
  *
- * <p>This package provides comprehensive monitoring capabilities for security events,
- * including attack pattern detection, event counting, and structured logging for
- * security information and event management (SIEM) integration.</p>
+ * <p>This package provides event counting capabilities for security monitoring,
+ * tracking attack pattern detection and validation failures for security information
+ * and event management (SIEM) integration.</p>
  *
  * <h3>Monitoring Components</h3>
  * <ul>
  *   <li>{@link de.cuioss.http.security.monitoring.SecurityEventCounter} - Thread-safe counting of security events by type</li>
- *   <li>{@link de.cuioss.http.security.monitoring.URLSecurityLogMessages} - Structured log messages for security events</li>
  * </ul>
  *
  * <h3>Event Tracking</h3>
@@ -32,8 +31,6 @@
  * <ul>
  *   <li><strong>Attack Attempts</strong> - Path traversal, injection, encoding attacks</li>
  *   <li><strong>Validation Failures</strong> - Character set violations, length limit breaches</li>
- *   <li><strong>Configuration Changes</strong> - Security policy modifications</li>
- *   <li><strong>Performance Metrics</strong> - Validation timing and resource usage</li>
  * </ul>
  *
  * <h3>Usage Example</h3>
@@ -47,24 +44,11 @@
  * } catch (UrlSecurityException e) {
  *     // Increment counter for this failure type
  *     eventCounter.increment(e.getFailureType());
- *
- *     // Log structured security event
- *     CuiLogger logger = new CuiLogger(MyClass.class);
- *     logger.warn(URLSecurityLogMessages.WARN.PATH_TRAVERSAL_DETECTED, input);
  * }
  *
  * // Query event statistics
  * long pathTraversalCount = eventCounter.getCount(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED);
  * </code></pre>
- *
- * <h3>SIEM Integration</h3>
- * <p>The monitoring system is designed for enterprise security monitoring:</p>
- * <ul>
- *   <li>Structured log messages with consistent identifiers</li>
- *   <li>Configurable log levels for different event types</li>
- *   <li>Thread-safe counters for metrics collection</li>
- *   <li>Support for real-time alerting based on event patterns</li>
- * </ul>
  *
  * <h3>Package Nullability</h3>
  * <p>This package follows strict nullability conventions using JSpecify annotations:</p>

@@ -15,6 +15,10 @@
  */
 package de.cuioss.http.client.handler;
 
+import de.cuioss.http.client.HttpLogMessages;
+import de.cuioss.test.juli.LogAsserts;
+import de.cuioss.test.juli.TestLogLevel;
+import de.cuioss.test.juli.junit5.EnableTestLogger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -30,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Tests for {@link SecureSSLContextProvider} class.
  */
+@EnableTestLogger
 @DisplayName("Tests SecureSSLContextProvider functionality")
 class SecureSSLContextProviderTest {
 
@@ -150,6 +155,32 @@ class SecureSSLContextProviderTest {
     @DisplayName("Should throw exception for invalid minimum TLS version")
     void shouldThrowExceptionForInvalidMinimumTlsVersion() {
         assertThrows(IllegalArgumentException.class, () -> new SecureSSLContextProvider("invalid"));
+    }
+
+    @Test
+    @DisplayName("Should replace insecure SSL context and log warning")
+    void shouldReplaceInsecureSSLContextAndLogWarning() throws NoSuchAlgorithmException, KeyManagementException, KeyStoreException {
+        // Given: An insecure SSL context that reports TLS_V1_0 as its protocol
+        // Since TLSv1.0 may not be available in modern Java, we create a context and override its protocol
+        SecureSSLContextProvider provider = new SecureSSLContextProvider();
+
+        // Create a context with TLS 1.2 first
+        SSLContext baseContext = provider.createSecureSSLContext();
+
+        // Now test with a provider configured with TLS 1.3 minimum (making TLS 1.2 insecure for this test)
+        SecureSSLContextProvider strictProvider = new SecureSSLContextProvider(SecureSSLContextProvider.TLS_V1_3);
+
+        // When: Attempting to use the "insecure" TLS 1.2 context with strict provider
+        SSLContext result = strictProvider.getOrCreateSecureSSLContext(baseContext);
+
+        // Then: Should return a secure context
+        assertNotNull(result, "Result should not be null");
+        assertEquals(SecureSSLContextProvider.TLS_V1_3, result.getProtocol(),
+                "Should replace insecure context with secure TLS 1.3");
+
+        // And: Should log a warning about the insecure protocol
+        LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN,
+                HttpLogMessages.WARN.SSL_INSECURE_PROTOCOL.resolveIdentifierString());
     }
 
     @Test
