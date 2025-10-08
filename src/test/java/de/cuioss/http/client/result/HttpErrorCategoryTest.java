@@ -17,6 +17,8 @@ package de.cuioss.http.client.result;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -70,7 +72,7 @@ class HttpErrorCategoryTest {
     @Test
     void shouldHaveExactlyTwoRetryableErrorTypes() {
         // Count retryable error types
-        long retryableCount = java.util.Arrays.stream(HttpErrorCategory.values())
+        long retryableCount = Arrays.stream(HttpErrorCategory.values())
                 .filter(HttpErrorCategory::isRetryable)
                 .count();
 
@@ -80,7 +82,7 @@ class HttpErrorCategoryTest {
     @Test
     void shouldHaveExactlyThreeNonRetryableErrorTypes() {
         // Count non-retryable error types
-        long nonRetryableCount = java.util.Arrays.stream(HttpErrorCategory.values())
+        long nonRetryableCount = Arrays.stream(HttpErrorCategory.values())
                 .filter(errorCode -> !errorCode.isRetryable())
                 .count();
 
@@ -90,7 +92,7 @@ class HttpErrorCategoryTest {
     @Test
     void shouldOnlyMarkNetworkAndServerErrorsAsRetryable() {
         // Verify that only NETWORK_ERROR and SERVER_ERROR are retryable
-        java.util.Arrays.stream(HttpErrorCategory.values())
+        Arrays.stream(HttpErrorCategory.values())
                 .filter(HttpErrorCategory::isRetryable)
                 .forEach(errorCode -> assertTrue(
                         errorCode == HttpErrorCategory.NETWORK_ERROR ||
