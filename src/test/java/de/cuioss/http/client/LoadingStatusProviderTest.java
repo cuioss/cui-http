@@ -37,8 +37,8 @@ class LoadingStatusProviderTest {
         LoadingStatusProvider provider = new TestHealthyProvider();
 
         LoaderStatus status = provider.getLoaderStatus();
-        assertNotNull(status);
-        assertEquals(LoaderStatus.OK, status);
+        assertNotNull(status, "Healthy provider should return non-null status");
+        assertEquals(LoaderStatus.OK, status, "Healthy provider should return OK status");
     }
 
     @Test
@@ -47,8 +47,8 @@ class LoadingStatusProviderTest {
         LoadingStatusProvider provider = new TestErrorProvider();
 
         LoaderStatus status = provider.getLoaderStatus();
-        assertNotNull(status);
-        assertEquals(LoaderStatus.ERROR, status);
+        assertNotNull(status, "Error provider should return non-null status");
+        assertEquals(LoaderStatus.ERROR, status, "Error provider should return ERROR status");
     }
 
     @Test
@@ -57,8 +57,8 @@ class LoadingStatusProviderTest {
         LoadingStatusProvider provider = new TestUndefinedProvider();
 
         LoaderStatus status = provider.getLoaderStatus();
-        assertNotNull(status);
-        assertEquals(LoaderStatus.UNDEFINED, status);
+        assertNotNull(status, "Undefined provider should return non-null status");
+        assertEquals(LoaderStatus.UNDEFINED, status, "Undefined provider should return UNDEFINED status");
     }
 
     @Test
@@ -69,7 +69,7 @@ class LoadingStatusProviderTest {
         LoaderStatus firstCall = provider.getLoaderStatus();
         LoaderStatus secondCall = provider.getLoaderStatus();
 
-        assertEquals(firstCall, secondCall);
+        assertEquals(firstCall, secondCall, "Status should be consistent across multiple calls");
     }
 
     @Test
@@ -95,8 +95,8 @@ class LoadingStatusProviderTest {
 
         // All results should be the same and non-null
         for (LoaderStatus result : results) {
-            assertNotNull(result);
-            assertEquals(LoaderStatus.OK, result);
+            assertNotNull(result, "Concurrent access should return non-null status");
+            assertEquals(LoaderStatus.OK, result, "All concurrent calls should return same OK status");
         }
     }
 
@@ -106,19 +106,19 @@ class LoadingStatusProviderTest {
         TestTransitionProvider provider = new TestTransitionProvider();
 
         // Initially undefined
-        assertEquals(LoaderStatus.UNDEFINED, provider.getLoaderStatus());
+        assertEquals(LoaderStatus.UNDEFINED, provider.getLoaderStatus(), "Provider should start in UNDEFINED state");
 
         // Transition to healthy
         provider.transitionToHealthy();
-        assertEquals(LoaderStatus.OK, provider.getLoaderStatus());
+        assertEquals(LoaderStatus.OK, provider.getLoaderStatus(), "Provider should transition to OK state");
 
         // Transition to error
         provider.transitionToError();
-        assertEquals(LoaderStatus.ERROR, provider.getLoaderStatus());
+        assertEquals(LoaderStatus.ERROR, provider.getLoaderStatus(), "Provider should transition to ERROR state");
 
         // Transition back to healthy
         provider.transitionToHealthy();
-        assertEquals(LoaderStatus.OK, provider.getLoaderStatus());
+        assertEquals(LoaderStatus.OK, provider.getLoaderStatus(), "Provider should transition back to OK state");
     }
 
     @Test
