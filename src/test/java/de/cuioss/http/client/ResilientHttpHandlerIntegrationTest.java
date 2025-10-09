@@ -32,6 +32,7 @@ import de.cuioss.test.mockwebserver.EnableMockWebServer;
 import de.cuioss.test.mockwebserver.URIBuilder;
 import de.cuioss.test.mockwebserver.dispatcher.ModuleDispatcher;
 import de.cuioss.test.mockwebserver.dispatcher.ModuleDispatcherElement;
+import org.awaitility.Awaitility;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -162,6 +163,45 @@ class ResilientHttpHandlerIntegrationTest {
             assertTrue(result.getETag().isPresent());
             assertEquals(etagValue, result.getETag().get());
             assertEquals(200, result.getHttpStatus().orElseThrow());
+        }
+
+        @Test
+        @DisplayName("Should return cached content on subsequent error")
+        @ModuleDispatcher
+        void shouldReturnCachedContentOnSubsequentError(URIBuilder uriBuilder) {
+            String content = strings.next();
+            // Use safe string for ETag (HTTP header values cannot contain control characters)
+            String etag = "\"cached-" + System.nanoTime() + "\"";
+
+            // Configure dispatcher to succeed on first call, then fail
+            dispatcher.withSuccessThenError(content, etag);
+
+            String url = uriBuilder.addPathSegments("api", "data").build().toString();
+            HttpHandler httpHandler = HttpHandler.builder().url(url).build();
+            ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                    httpHandler, RetryStrategy.none(), StringContentConverter.identity());
+
+            // First load - success populates cache
+            HttpResult<String> firstResult = handler.load();
+            assertTrue(firstResult.isSuccess());
+            assertEquals(content, firstResult.getContent().orElseThrow());
+            assertEquals(etag, firstResult.getETag().orElseThrow());
+
+            // Wait for first request to complete
+            Awaitility.await()
+                    .atMost(Duration.ofSeconds(2))
+                    .pollDelay(Duration.ofMillis(10))
+                    .until(() -> dispatcher.getCallCounter() >= 1);
+
+            // Second load - error with cached fallback
+            HttpResult<String> secondResult = handler.load();
+
+            assertFalse(secondResult.isSuccess());
+            assertTrue(secondResult.getContent().isPresent(), "Should have cached content");
+            assertEquals(content, secondResult.getContent().get());
+            assertEquals(etag, secondResult.getETag().orElseThrow());
+            assertEquals(HttpErrorCategory.SERVER_ERROR, secondResult.getErrorCategory().orElseThrow());
+            assertEquals(2, dispatcher.getCallCounter(), "Should have made two requests");
         }
 
         @Test

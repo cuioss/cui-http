@@ -66,6 +66,18 @@ public class TestContentDispatcher implements ModuleDispatcherElement {
     @Getter
     private int callCounter = 0;
 
+    @Getter
+    @Setter
+    private boolean successThenErrorMode = false;
+
+    @Getter
+    @Setter
+    private String successContent = "";
+
+    @Getter
+    @Setter
+    private String successEtag = null;
+
     /**
      * Create dispatcher with default base path.
      */
@@ -93,6 +105,22 @@ public class TestContentDispatcher implements ModuleDispatcherElement {
     private Optional<MockResponse> handleRequest() {
         callCounter++;
 
+        // Special mode: first call succeeds, subsequent calls fail
+        if (successThenErrorMode) {
+            if (callCounter == 1) {
+                Headers.Builder headersBuilder = new Headers.Builder()
+                        .add("Content-Type", "text/plain");
+                if (successEtag != null) {
+                    headersBuilder.add("ETag", successEtag);
+                }
+                return Optional.of(new MockResponse(200, headersBuilder.build(), successContent));
+            } else {
+                return Optional.of(new MockResponse(503, new Headers.Builder()
+                        .add("Content-Type", "text/plain").build(), ""));
+            }
+        }
+
+        // Normal mode: use configured status/content
         Headers.Builder headersBuilder = new Headers.Builder()
                 .add("Content-Type", "text/plain");
 
@@ -101,6 +129,18 @@ public class TestContentDispatcher implements ModuleDispatcherElement {
         }
 
         return Optional.of(new MockResponse(statusCode, headersBuilder.build(), responseContent));
+    }
+
+    /**
+     * Configure dispatcher to succeed on first call, then fail with server error on subsequent calls.
+     * Useful for testing cache fallback scenarios.
+     */
+    public TestContentDispatcher withSuccessThenError(String initialContent, String etagValue) {
+        this.successContent = initialContent;
+        this.successEtag = etagValue;
+        this.successThenErrorMode = true;
+        this.callCounter = 0;
+        return this;
     }
 
     @Override
@@ -120,6 +160,7 @@ public class TestContentDispatcher implements ModuleDispatcherElement {
         this.statusCode = 200;
         this.responseContent = content;
         this.etag = etagValue;
+        this.successThenErrorMode = false;
         return this;
     }
 
@@ -130,6 +171,7 @@ public class TestContentDispatcher implements ModuleDispatcherElement {
         this.statusCode = 304;
         this.responseContent = "";
         this.etag = null;
+        this.successThenErrorMode = false;
         return this;
     }
 
@@ -140,6 +182,7 @@ public class TestContentDispatcher implements ModuleDispatcherElement {
         this.statusCode = 503;
         this.responseContent = "";
         this.etag = null;
+        this.successThenErrorMode = false;
         return this;
     }
 
@@ -150,6 +193,7 @@ public class TestContentDispatcher implements ModuleDispatcherElement {
         this.statusCode = 404;
         this.responseContent = "";
         this.etag = null;
+        this.successThenErrorMode = false;
         return this;
     }
 
@@ -161,6 +205,7 @@ public class TestContentDispatcher implements ModuleDispatcherElement {
         this.responseContent = content;
         this.etag = null;
         this.callCounter = 0;
+        this.successThenErrorMode = false;
         return this;
     }
 }
