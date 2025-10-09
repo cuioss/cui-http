@@ -19,15 +19,11 @@ import de.cuioss.http.client.HttpLogMessages;
 import de.cuioss.test.juli.LogAsserts;
 import de.cuioss.test.juli.TestLogLevel;
 import de.cuioss.test.juli.junit5.EnableTestLogger;
-import mockwebserver3.MockResponse;
-import mockwebserver3.MockWebServer;
-import okhttp3.Headers;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import javax.net.ssl.SSLContext;
-import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
@@ -37,7 +33,22 @@ import java.time.Duration;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Test for {@link HttpHandler}
+ * Unit test for {@link HttpHandler} focusing on non-HTTP integration scenarios.
+ * <p>
+ * This test class covers:
+ * <ul>
+ *   <li>Builder validation and URL/URI handling</li>
+ *   <li>Request builder configuration</li>
+ *   <li>Ping operation error handling (unreachable URLs)</li>
+ *   <li>SSL context management</li>
+ *   <li>URL/URI conversion and validation</li>
+ *   <li>Builder cloning (asBuilder)</li>
+ * </ul>
+ * <p>
+ * HTTP integration tests with MockWebServer are in {@link HttpHandlerIntegrationTest}.
+ *
+ * @author Oliver Wolff
+ * @since 1.0
  */
 @EnableTestLogger
 class HttpHandlerTest {
@@ -327,10 +338,6 @@ class HttpHandlerTest {
     @DisplayName("Ping Tests")
     class PingTests {
 
-        // Note: These tests don't actually make HTTP requests
-        // They just verify the method signatures and error handling
-        // Real HTTP requests would require mocking or integration tests
-
         @Test
         @DisplayName("pingHead should return UNKNOWN for unreachable URL")
         void pingHeadShouldReturnUnknownForUnreachableUrl() {
@@ -369,82 +376,6 @@ class HttpHandlerTest {
 
             assertNotNull(handler.getSslContext(),
                     "SSL context should be automatically created for HTTPS URLs to prevent exceptions in createHttpClient");
-        }
-
-        @Test
-        @DisplayName("pingHead should return success status for successful HTTP request")
-        void pingHeadShouldReturnSuccessStatusForSuccessfulRequest() throws IOException {
-            // Test the successful ping path with a real HTTP server
-            try (MockWebServer server = new MockWebServer()) {
-                server.enqueue(new MockResponse(200, Headers.of(), "OK"));
-                server.start();
-
-                String serverUrl = server.url("/").toString();
-                HttpHandler handler = HttpHandler.builder()
-                        .url(serverUrl)
-                        .build();
-
-                HttpStatusFamily status = handler.pingHead();
-                assertEquals(HttpStatusFamily.SUCCESS, status,
-                        "pingHead should return SUCCESS for 200 response");
-            }
-        }
-
-        @Test
-        @DisplayName("pingGet should return success status for successful HTTP request")
-        void pingGetShouldReturnSuccessStatusForSuccessfulRequest() throws IOException {
-            // Test the successful ping path with a real HTTP server
-            try (MockWebServer server = new MockWebServer()) {
-                server.enqueue(new MockResponse(200, Headers.of(), "OK"));
-                server.start();
-
-                String serverUrl = server.url("/").toString();
-                HttpHandler handler = HttpHandler.builder()
-                        .url(serverUrl)
-                        .build();
-
-                HttpStatusFamily status = handler.pingGet();
-                assertEquals(HttpStatusFamily.SUCCESS, status,
-                        "pingGet should return SUCCESS for 200 response");
-            }
-        }
-
-        @Test
-        @DisplayName("ping should handle different HTTP status codes correctly")
-        void pingShouldHandleDifferentStatusCodesCorrectly() throws IOException {
-            try (MockWebServer server = new MockWebServer()) {
-                // Test 404 Not Found
-                server.enqueue(new MockResponse(404, Headers.of(), "Not Found"));
-                server.start();
-
-                String serverUrl = server.url("/").toString();
-                HttpHandler handler = HttpHandler.builder()
-                        .url(serverUrl)
-                        .build();
-
-                HttpStatusFamily status = handler.pingHead();
-                assertEquals(HttpStatusFamily.CLIENT_ERROR, status,
-                        "ping should return CLIENT_ERROR for 404 response");
-            }
-        }
-
-        @Test
-        @DisplayName("ping should handle server errors correctly")
-        void pingShouldHandleServerErrorsCorrectly() throws IOException {
-            try (MockWebServer server = new MockWebServer()) {
-                // Test 500 Internal Server Error
-                server.enqueue(new MockResponse(500, Headers.of(), "Internal Server Error"));
-                server.start();
-
-                String serverUrl = server.url("/").toString();
-                HttpHandler handler = HttpHandler.builder()
-                        .url(serverUrl)
-                        .build();
-
-                HttpStatusFamily status = handler.pingGet();
-                assertEquals(HttpStatusFamily.SERVER_ERROR, status,
-                        "ping should return SERVER_ERROR for 500 response");
-            }
         }
     }
 
