@@ -144,7 +144,8 @@ class ResilientHttpHandlerIntegrationTest {
         @ModuleDispatcher
         void shouldHandleSuccessAndUpdateCache(URIBuilder uriBuilder) {
             String responseContent = strings.next();
-            String etagValue = strings.next();
+            // Use safe string for ETag (HTTP header values cannot contain control characters)
+            String etagValue = "\"etag-" + System.nanoTime() + "\"";
 
             dispatcher.withSuccess(responseContent, etagValue);
 
