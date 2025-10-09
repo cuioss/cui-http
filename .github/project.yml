@@ -2,5 +2,5 @@ name: cui-http
 pages-reference: cui-http
 sonar-project-key: cuioss_cui-http
 release:
-  current-version: 0.1.1
+  current-version: 0.2.0
   next-version: 1.0-SNAPSHOT

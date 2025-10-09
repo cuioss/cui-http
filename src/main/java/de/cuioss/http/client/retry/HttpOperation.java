@@ -15,12 +15,12 @@
  */
 package de.cuioss.http.client.retry;
 
-import de.cuioss.http.client.result.HttpResultObject;
+import de.cuioss.http.client.result.HttpResult;
 
 /**
  * Functional interface for HTTP operations that can be retried using the result pattern.
  *
- * <p>Operations return HttpResultObject which encapsulates both success and failure states,
+ * <p>Operations return HttpResult which encapsulates both success and failure states,
  * eliminating the need for exception-based error handling in the retry infrastructure.</p>
  */
 @FunctionalInterface
@@ -29,7 +29,7 @@ public interface HttpOperation<T> {
     /**
      * Executes the HTTP operation using the result pattern.
      *
-     * @return HttpResultObject containing the operation result or error details
+     * @return HttpResult containing the operation result or error details
      */
-    HttpResultObject<T> execute();
+    HttpResult<T> execute();
 }

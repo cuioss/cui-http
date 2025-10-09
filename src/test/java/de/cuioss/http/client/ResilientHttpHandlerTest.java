@@ -19,11 +19,9 @@ import de.cuioss.http.client.converter.HttpContentConverter;
 import de.cuioss.http.client.converter.StringContentConverter;
 import de.cuioss.http.client.handler.HttpHandler;
 import de.cuioss.http.client.result.HttpErrorCategory;
-import de.cuioss.http.client.result.HttpResultObject;
+import de.cuioss.http.client.result.HttpResult;
 import de.cuioss.http.client.retry.RetryStrategy;
 import de.cuioss.test.juli.junit5.EnableTestLogger;
-import de.cuioss.uimodel.result.ResultDetail;
-import de.cuioss.uimodel.result.ResultState;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -217,17 +215,15 @@ class ResilientHttpHandlerTest {
         @Test
         @DisplayName("Should create error results with proper categories")
         void shouldCreateErrorResultsWithCategories() {
-            ResultDetail detail =
-                    new ResultDetail(
-                            new de.cuioss.uimodel.nameprovider.DisplayName("Network error occurred"));
+            HttpResult<String> networkError = HttpResult.failure(
+                    "Network error occurred",
+                    null,
+                    HttpErrorCategory.NETWORK_ERROR);
 
-            HttpResultObject<String> networkError = HttpResultObject.error(
-                    "", HttpErrorCategory.NETWORK_ERROR, detail);
-
-            assertEquals(ResultState.ERROR, networkError.getState(),
-                    "Result should have ERROR state");
+            assertFalse(networkError.isSuccess(),
+                    "Result should not be successful");
             assertEquals(HttpErrorCategory.NETWORK_ERROR,
-                    networkError.getHttpErrorCategory().orElse(null),
+                    networkError.getErrorCategory().orElse(null),
                     "Result should have NETWORK_ERROR category");
             assertTrue(networkError.isRetryable(),
                     "Network error should be retryable");
@@ -241,26 +237,30 @@ class ResilientHttpHandlerTest {
         @Test
         @DisplayName("Should create success result with ETag")
         void shouldCreateSuccessResultWithETag() {
-            HttpResultObject<String> result = HttpResultObject.success(
+            HttpResult<String> result = HttpResult.success(
                     "test-content", "etag-123", 200);
 
-            assertTrue(result.isValid(), "Success result should be valid");
-            assertEquals("test-content", result.getResult(),
+            assertTrue(result.isSuccess(), "Success result should be successful");
+            assertTrue(result.getContent().isPresent(), "Content must be present");
+            assertEquals("test-content", result.getContent().get(),
                     "Result should contain correct content");
-            assertEquals("etag-123", result.getETag().orElse(null),
+            assertTrue(result.getETag().isPresent(), "ETag must be present");
+            assertEquals("etag-123", result.getETag().get(),
                     "Result should contain ETag");
-            assertEquals(200, result.getHttpStatus().orElse(0),
+            assertTrue(result.getHttpStatus().isPresent(), "HTTP status must be present");
+            assertEquals(200, result.getHttpStatus().get(),
                     "Result should contain HTTP status 200");
         }
 
         @Test
         @DisplayName("Should create success result without ETag")
         void shouldCreateSuccessResultWithoutETag() {
-            HttpResultObject<String> result = HttpResultObject.success(
+            HttpResult<String> result = HttpResult.success(
                     "test-content", null, 200);
 
-            assertTrue(result.isValid(), "Success result should be valid");
-            assertEquals("test-content", result.getResult(),
+            assertTrue(result.isSuccess(), "Success result should be successful");
+            assertTrue(result.getContent().isPresent(), "Content must be present");
+            assertEquals("test-content", result.getContent().get(),
                     "Result should contain content");
             assertFalse(result.getETag().isPresent(),
                     "Result should not have ETag when null provided");
@@ -269,36 +269,33 @@ class ResilientHttpHandlerTest {
         @Test
         @DisplayName("Should create cached result with 304 status")
         void shouldCreateCachedResult() {
-            HttpResultObject<String> result = HttpResultObject.success(
+            HttpResult<String> result = HttpResult.success(
                     "cached-content", "etag-456", 304);
 
-            assertTrue(result.isValid(), "Cached result should be valid");
-            assertEquals("cached-content", result.getResult(),
+            assertTrue(result.isSuccess(), "Cached result should be successful");
+            assertTrue(result.getContent().isPresent(), "Content must be present");
+            assertEquals("cached-content", result.getContent().get(),
                     "Result should contain cached content");
-            assertEquals(304, result.getHttpStatus().orElse(0),
+            assertTrue(result.getHttpStatus().isPresent(), "HTTP status must be present");
+            assertEquals(304, result.getHttpStatus().get(),
                     "Result should have 304 Not Modified status");
         }
 
         @Test
         @DisplayName("Should create error result with fallback content")
         void shouldCreateErrorResultWithFallback() {
-            ResultDetail detail =
-                    new ResultDetail(
-                            new de.cuioss.uimodel.nameprovider.DisplayName("Error with fallback"));
+            HttpResult<String> result = HttpResult.failureWithFallback(
+                    "Error with fallback",
+                    null,
+                    "fallback-content",
+                    HttpErrorCategory.NETWORK_ERROR,
+                    null,
+                    null);
 
-            HttpResultObject<String> result = HttpResultObject.error(
-                    "fallback-content", HttpErrorCategory.NETWORK_ERROR, detail);
-
-            assertFalse(result.isValid(), "Error result should not be valid");
-            assertEquals(ResultState.ERROR, result.getState(),
-                    "Result should have ERROR state");
-
-            // Must acknowledge error detail before accessing result (ResultObject pattern)
-            assertTrue(result.getResultDetail().isPresent(),
-                    "Error result should have ResultDetail");
-
-            // Now we can access the fallback content
-            assertEquals("fallback-content", result.getResult(),
+            assertFalse(result.isSuccess(), "Error result should not be successful");
+            assertEquals("Error with fallback", result.getErrorMessage().orElseThrow(),
+                    "Result should have error message");
+            assertEquals("fallback-content", result.getContent().orElseThrow(),
                     "Result should contain fallback content");
         }
     }

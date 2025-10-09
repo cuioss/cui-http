@@ -123,17 +123,17 @@
  *   <li>HttpErrorCategory for retry decision making</li>
  * </ul>
  *
- * <h2>Integration with CUI Result Pattern</h2>
+ * <h2>Modern Result Pattern</h2>
  * <p>
- * This package extends the proven result framework from cui-core-ui-model,
- * adding HTTP-specific semantics while maintaining full compatibility:
+ * This package provides a modern result pattern using sealed interfaces,
+ * adding HTTP-specific semantics with type safety:
  * </p>
  * <ul>
- *   <li>Extends {@link de.cuioss.uimodel.result.ResultObject} for HTTP operations</li>
- *   <li>Uses standard {@link de.cuioss.uimodel.result.ResultState} values</li>
- *   <li>Uses {@link de.cuioss.uimodel.result.ResultDetail} for error information</li>
- *   <li>Preserves thread safety and serialization support</li>
- *   <li>Maintains copy and transformation semantics</li>
+ *   <li>Uses {@link HttpResult} sealed interface for type-safe pattern matching</li>
+ *   <li>Success and Failure records for immutable results</li>
+ *   <li>Optional pattern for explicit content absence</li>
+ *   <li>Plain string error messages without i18n coupling</li>
+ *   <li>Thread-safe by design (immutable records)</li>
  * </ul>
  *
  * <h2>Migration from Legacy Patterns</h2>

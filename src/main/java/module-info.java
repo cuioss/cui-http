@@ -19,7 +19,6 @@ module de.cuioss.http {
     requires org.jspecify;
     requires de.cuioss.java.tools;
     requires java.net.http;
-    requires de.cuioss.uimodel;
 
     // Client HTTP utilities
     exports de.cuioss.http.client;
