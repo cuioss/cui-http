@@ -22,11 +22,16 @@ import de.cuioss.http.client.result.HttpErrorCategory;
 import de.cuioss.http.client.result.HttpResult;
 import de.cuioss.http.client.retry.RetryStrategy;
 import de.cuioss.test.juli.junit5.EnableTestLogger;
+import mockwebserver3.MockResponse;
+import mockwebserver3.MockWebServer;
 import org.jspecify.annotations.NonNull;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.net.http.HttpResponse;
 import java.util.Optional;
 
@@ -397,6 +402,210 @@ class ResilientHttpHandlerTest {
                     httpHandler, RetryStrategy.none(), StringContentConverter.identity());
 
             assertNotNull(handler, "Handler should handle long URLs");
+        }
+    }
+
+    @Nested
+    @DisplayName("HTTP Error Handling with MockWebServer")
+    class HttpErrorHandlingTests {
+
+        private MockWebServer server;
+
+        @BeforeEach
+        void setUp() throws IOException {
+            server = new MockWebServer();
+            server.start();
+        }
+
+        @AfterEach
+        void tearDown() throws IOException {
+            server.shutdown();
+        }
+
+        @Test
+        @DisplayName("Should handle 304 Not Modified without cached content")
+        void shouldHandle304WithoutCachedContent() {
+            server.enqueue(new MockResponse(304, okhttp3.Headers.of(), ""));
+
+            String url = server.url("/api/data").toString();
+            HttpHandler httpHandler = HttpHandler.builder().url(url).build();
+            ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                    httpHandler, RetryStrategy.none(), StringContentConverter.identity());
+
+            HttpResult<String> result = handler.load();
+
+            // 304 response with no cached content should fail
+            assertFalse(result.isSuccess(), "304 without prior cache should fail");
+            assertTrue(result.getErrorMessage().isPresent());
+            assertTrue(result.getErrorMessage().get().contains("no cached content"),
+                    "Error message should mention missing cache");
+            assertEquals(LoaderStatus.ERROR, handler.getLoaderStatus());
+        }
+
+        @Test
+        @DisplayName("Should handle server error (5xx) without cached content")
+        void shouldHandleServerErrorWithoutCache() {
+            server.enqueue(new MockResponse(503, okhttp3.Headers.of(), "Service Unavailable"));
+
+            String url = server.url("/api/data").toString();
+            HttpHandler httpHandler = HttpHandler.builder().url(url).build();
+            ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                    httpHandler, RetryStrategy.none(), StringContentConverter.identity());
+
+            HttpResult<String> result = handler.load();
+
+            assertFalse(result.isSuccess(), "Server error should result in failure");
+            assertEquals(LoaderStatus.ERROR, handler.getLoaderStatus(),
+                    "Status should be ERROR after failure");
+            assertTrue(result.getErrorMessage().isPresent());
+            assertTrue(result.getErrorMessage().get().contains("no cached content"),
+                    "Error message should mention no cache available");
+            assertEquals(HttpErrorCategory.SERVER_ERROR, result.getErrorCategory().orElseThrow());
+            assertTrue(result.isRetryable(), "Server errors should be retryable");
+        }
+
+        @Test
+        @DisplayName("Should handle client error (4xx) without cached content")
+        void shouldHandleClientErrorWithoutCache() {
+            server.enqueue(new MockResponse(404, okhttp3.Headers.of(), "Not Found"));
+
+            String url = server.url("/api/data").toString();
+            HttpHandler httpHandler = HttpHandler.builder().url(url).build();
+            ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                    httpHandler, RetryStrategy.none(), StringContentConverter.identity());
+
+            HttpResult<String> result = handler.load();
+
+            assertFalse(result.isSuccess(), "Client error should result in failure");
+            assertEquals(LoaderStatus.ERROR, handler.getLoaderStatus(),
+                    "Status should be ERROR after client error");
+            assertTrue(result.getErrorMessage().isPresent());
+            assertTrue(result.getErrorMessage().get().contains("no cached content"));
+            assertEquals(HttpErrorCategory.CLIENT_ERROR, result.getErrorCategory().orElseThrow());
+            assertFalse(result.isRetryable(), "Client errors should not be retryable");
+        }
+
+        @Test
+        @DisplayName("Should handle successful response and update cache")
+        void shouldHandleSuccessAndUpdateCache() {
+            server.enqueue(new MockResponse(200,
+                    okhttp3.Headers.of("ETag", "etag-456"),
+                    "response-content"));
+
+            String url = server.url("/api/data").toString();
+            HttpHandler httpHandler = HttpHandler.builder().url(url).build();
+            ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                    httpHandler, RetryStrategy.none(), StringContentConverter.identity());
+
+            HttpResult<String> result = handler.load();
+
+            assertTrue(result.isSuccess(), "Successful response should succeed");
+            assertEquals(LoaderStatus.OK, handler.getLoaderStatus(),
+                    "Status should be OK after success");
+            assertTrue(result.getContent().isPresent());
+            assertEquals("response-content", result.getContent().get());
+            assertTrue(result.getETag().isPresent());
+            assertEquals("etag-456", result.getETag().get());
+            assertEquals(200, result.getHttpStatus().orElseThrow());
+        }
+
+        @Test
+        @DisplayName("Should use cached content as fallback after error")
+        void shouldUseCachedContentAsFallback() {
+            // First request succeeds and populates cache
+            server.enqueue(new MockResponse(200,
+                    okhttp3.Headers.of("ETag", "etag-initial"),
+                    "initial-content"));
+
+            // Second request returns server error
+            server.enqueue(new MockResponse(503, okhttp3.Headers.of(), "Service Unavailable"));
+
+            String url = server.url("/api/data").toString();
+            HttpHandler httpHandler = HttpHandler.builder().url(url).build();
+            ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                    httpHandler, RetryStrategy.none(), StringContentConverter.identity());
+
+            // First load populates cache
+            HttpResult<String> firstResult = handler.load();
+            assertTrue(firstResult.isSuccess());
+            assertEquals("initial-content", firstResult.getContent().orElseThrow());
+            assertEquals(LoaderStatus.OK, handler.getLoaderStatus());
+
+            // Second load encounters error, should use cached content as fallback
+            HttpResult<String> secondResult = handler.load();
+            assertFalse(secondResult.isSuccess(), "Server error should result in failure state");
+            assertTrue(secondResult.getContent().isPresent(),
+                    "Cached content should be available as fallback");
+            assertEquals("initial-content", secondResult.getContent().get(),
+                    "Should use cached content from first successful load");
+            assertEquals("etag-initial", secondResult.getETag().orElseThrow(),
+                    "Should preserve ETag from cached content");
+            assertEquals(LoaderStatus.ERROR, handler.getLoaderStatus(),
+                    "Status should be ERROR even with fallback content");
+        }
+    }
+
+    @Nested
+    @DisplayName("Retry Strategy Integration")
+    class RetryStrategyTests {
+
+        private MockWebServer server;
+
+        @BeforeEach
+        void setUp() throws IOException {
+            server = new MockWebServer();
+            server.start();
+        }
+
+        @AfterEach
+        void tearDown() throws IOException {
+            server.shutdown();
+        }
+
+        @Test
+        @DisplayName("Should complete without retry on successful response")
+        void shouldCompleteWithoutRetryOnSuccess() {
+            server.enqueue(new MockResponse(200, okhttp3.Headers.of(), "success-data"));
+
+            String url = server.url("/api/data").toString();
+            HttpHandler httpHandler = HttpHandler.builder().url(url).build();
+
+            // Use retry strategy (but should not retry on success)
+            RetryStrategy retryStrategy = new de.cuioss.http.client.retry.ExponentialBackoffRetryStrategy.Builder()
+                    .maxAttempts(3)
+                    .initialDelay(java.time.Duration.ofMillis(100))
+                    .build();
+            ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                    httpHandler, retryStrategy, StringContentConverter.identity());
+
+            HttpResult<String> result = handler.load();
+
+            assertTrue(result.isSuccess(), "Should succeed without retry");
+            assertEquals("success-data", result.getContent().orElseThrow());
+            assertEquals(LoaderStatus.OK, handler.getLoaderStatus());
+        }
+
+        @Test
+        @DisplayName("Should not retry on client error (4xx)")
+        void shouldNotRetryOnClientError() {
+            server.enqueue(new MockResponse(400, okhttp3.Headers.of(), "Bad Request"));
+
+            String url = server.url("/api/data").toString();
+            HttpHandler httpHandler = HttpHandler.builder().url(url).build();
+
+            RetryStrategy retryStrategy = new de.cuioss.http.client.retry.ExponentialBackoffRetryStrategy.Builder()
+                    .maxAttempts(3)
+                    .initialDelay(java.time.Duration.ofMillis(100))
+                    .build();
+            ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                    httpHandler, retryStrategy, StringContentConverter.identity());
+
+            HttpResult<String> result = handler.load();
+
+            assertFalse(result.isSuccess(), "Client error should fail");
+            assertEquals(HttpErrorCategory.CLIENT_ERROR, result.getErrorCategory().orElseThrow());
+            assertFalse(result.isRetryable(), "Client errors are not retryable");
+            assertEquals(LoaderStatus.ERROR, handler.getLoaderStatus());
         }
     }
 
