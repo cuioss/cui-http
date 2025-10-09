@@ -129,6 +129,7 @@ public class TestContentDispatcher implements ModuleDispatcherElement {
     public TestContentDispatcher with304() {
         this.statusCode = 304;
         this.responseContent = "";
+        this.etag = null;
         return this;
     }
 

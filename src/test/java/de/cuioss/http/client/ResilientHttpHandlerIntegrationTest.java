@@ -64,12 +64,9 @@ class ResilientHttpHandlerIntegrationTest {
     @EnableMockWebServer(useHttps = false)
     class HttpErrorHandlingTests {
 
-        private TestContentDispatcher dispatcher;
+        private final TestContentDispatcher dispatcher = new TestContentDispatcher();
 
         public ModuleDispatcherElement getModuleDispatcher() {
-            if (dispatcher == null) {
-                dispatcher = new TestContentDispatcher();
-            }
             return dispatcher;
         }
 
@@ -170,12 +167,9 @@ class ResilientHttpHandlerIntegrationTest {
     @EnableMockWebServer(useHttps = false)
     class RetryStrategyTests {
 
-        private TestContentDispatcher dispatcher;
+        private final TestContentDispatcher dispatcher = new TestContentDispatcher();
 
         public ModuleDispatcherElement getModuleDispatcher() {
-            if (dispatcher == null) {
-                dispatcher = new TestContentDispatcher();
-            }
             return dispatcher;
         }
 
