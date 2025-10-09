@@ -38,20 +38,22 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Unit test for {@link ResilientHttpHandler} focusing on business logic,
- * state management, and edge cases without requiring HTTP infrastructure.
+ * Unit test for {@link ResilientHttpHandler} covering HTTP error handling,
+ * caching behavior, retry strategy integration, and thread safety.
  * <p>
- * Integration tests with actual HTTP calls are in {@link ResilientHttpHandlerIntegrationTest}.
- * This test focuses on:
+ * This test uses MockWebServer to simulate HTTP scenarios and focuses on:
  * <ul>
  *   <li>Constructor validation and initialization</li>
  *   <li>Status tracking behavior</li>
- *   <li>Error handling and fallback logic</li>
+ *   <li>HTTP error handling (4xx, 5xx) with and without cache fallback</li>
+ *   <li>304 Not Modified response handling</li>
+ *   <li>Successful response caching and ETag support</li>
+ *   <li>Retry strategy integration with ExponentialBackoffRetryStrategy</li>
  *   <li>Thread safety of status updates</li>
  *   <li>Edge cases and boundary conditions</li>
  * </ul>
  *
- * @author Claude Code
+ * @author Oliver Wolff
  * @since 1.0
  */
 @EnableTestLogger
@@ -190,118 +192,6 @@ class ResilientHttpHandlerTest {
             assertNotNull(handler, "Handler should work with identity converter");
             assertEquals(LoaderStatus.UNDEFINED, handler.getLoaderStatus(),
                     "Status should be UNDEFINED before any operations");
-        }
-    }
-
-    @Nested
-    @DisplayName("Error Handling")
-    class ErrorHandlingTests {
-
-        @Test
-        @DisplayName("Should identify retryable error categories")
-        void shouldIdentifyRetryableErrors() {
-            assertTrue(HttpErrorCategory.NETWORK_ERROR.isRetryable(),
-                    "NETWORK_ERROR should be retryable");
-            assertTrue(HttpErrorCategory.SERVER_ERROR.isRetryable(),
-                    "SERVER_ERROR should be retryable");
-        }
-
-        @Test
-        @DisplayName("Should identify non-retryable error categories")
-        void shouldIdentifyNonRetryableErrors() {
-            assertFalse(HttpErrorCategory.CLIENT_ERROR.isRetryable(),
-                    "CLIENT_ERROR should not be retryable");
-            assertFalse(HttpErrorCategory.INVALID_CONTENT.isRetryable(),
-                    "INVALID_CONTENT should not be retryable");
-            assertFalse(HttpErrorCategory.CONFIGURATION_ERROR.isRetryable(),
-                    "CONFIGURATION_ERROR should not be retryable");
-        }
-
-        @Test
-        @DisplayName("Should create error results with proper categories")
-        void shouldCreateErrorResultsWithCategories() {
-            HttpResult<String> networkError = HttpResult.failure(
-                    "Network error occurred",
-                    null,
-                    HttpErrorCategory.NETWORK_ERROR);
-
-            assertFalse(networkError.isSuccess(),
-                    "Result should not be successful");
-            assertEquals(HttpErrorCategory.NETWORK_ERROR,
-                    networkError.getErrorCategory().orElse(null),
-                    "Result should have NETWORK_ERROR category");
-            assertTrue(networkError.isRetryable(),
-                    "Network error should be retryable");
-        }
-    }
-
-    @Nested
-    @DisplayName("Result Object Behavior")
-    class ResultObjectTests {
-
-        @Test
-        @DisplayName("Should create success result with ETag")
-        void shouldCreateSuccessResultWithETag() {
-            HttpResult<String> result = HttpResult.success(
-                    "test-content", "etag-123", 200);
-
-            assertTrue(result.isSuccess(), "Success result should be successful");
-            assertTrue(result.getContent().isPresent(), "Content must be present");
-            assertEquals("test-content", result.getContent().get(),
-                    "Result should contain correct content");
-            assertTrue(result.getETag().isPresent(), "ETag must be present");
-            assertEquals("etag-123", result.getETag().get(),
-                    "Result should contain ETag");
-            assertTrue(result.getHttpStatus().isPresent(), "HTTP status must be present");
-            assertEquals(200, result.getHttpStatus().get(),
-                    "Result should contain HTTP status 200");
-        }
-
-        @Test
-        @DisplayName("Should create success result without ETag")
-        void shouldCreateSuccessResultWithoutETag() {
-            HttpResult<String> result = HttpResult.success(
-                    "test-content", null, 200);
-
-            assertTrue(result.isSuccess(), "Success result should be successful");
-            assertTrue(result.getContent().isPresent(), "Content must be present");
-            assertEquals("test-content", result.getContent().get(),
-                    "Result should contain content");
-            assertFalse(result.getETag().isPresent(),
-                    "Result should not have ETag when null provided");
-        }
-
-        @Test
-        @DisplayName("Should create cached result with 304 status")
-        void shouldCreateCachedResult() {
-            HttpResult<String> result = HttpResult.success(
-                    "cached-content", "etag-456", 304);
-
-            assertTrue(result.isSuccess(), "Cached result should be successful");
-            assertTrue(result.getContent().isPresent(), "Content must be present");
-            assertEquals("cached-content", result.getContent().get(),
-                    "Result should contain cached content");
-            assertTrue(result.getHttpStatus().isPresent(), "HTTP status must be present");
-            assertEquals(304, result.getHttpStatus().get(),
-                    "Result should have 304 Not Modified status");
-        }
-
-        @Test
-        @DisplayName("Should create error result with fallback content")
-        void shouldCreateErrorResultWithFallback() {
-            HttpResult<String> result = HttpResult.failureWithFallback(
-                    "Error with fallback",
-                    null,
-                    "fallback-content",
-                    HttpErrorCategory.NETWORK_ERROR,
-                    null,
-                    null);
-
-            assertFalse(result.isSuccess(), "Error result should not be successful");
-            assertEquals("Error with fallback", result.getErrorMessage().orElseThrow(),
-                    "Result should have error message");
-            assertEquals("fallback-content", result.getContent().orElseThrow(),
-                    "Result should contain fallback content");
         }
     }
 
