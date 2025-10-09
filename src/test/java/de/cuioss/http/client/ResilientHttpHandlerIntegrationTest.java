@@ -21,6 +21,7 @@ import de.cuioss.http.client.handler.HttpHandler;
 import de.cuioss.http.client.result.HttpErrorCategory;
 import de.cuioss.http.client.result.HttpResult;
 import de.cuioss.http.client.retry.ExponentialBackoffRetryStrategy;
+import de.cuioss.http.client.retry.RetryMetrics;
 import de.cuioss.http.client.retry.RetryStrategy;
 import de.cuioss.test.generator.Generators;
 import de.cuioss.test.generator.TypedGenerator;
@@ -219,6 +220,57 @@ class ResilientHttpHandlerIntegrationTest {
             assertEquals(HttpErrorCategory.CLIENT_ERROR, result.getErrorCategory().orElseThrow());
             assertFalse(result.isRetryable(), "Client errors are not retryable");
             assertEquals(LoaderStatus.ERROR, handler.getLoaderStatus());
+        }
+
+        @Test
+        @DisplayName("Should respect custom backoff multiplier and max delay")
+        @ModuleDispatcher
+        void shouldRespectBackoffMultiplierAndMaxDelay(URIBuilder uriBuilder) {
+            dispatcher.withServerError();
+
+            String url = uriBuilder.addPathSegments("api", "data").build().toString();
+            HttpHandler httpHandler = HttpHandler.builder().url(url).build();
+
+            RetryStrategy retryStrategy = new ExponentialBackoffRetryStrategy.Builder()
+                    .maxAttempts(3)
+                    .initialDelay(Duration.ofMillis(10))
+                    .backoffMultiplier(2.5)
+                    .maxDelay(Duration.ofMillis(50))
+                    .jitterFactor(0.0)
+                    .build();
+            ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                    httpHandler, retryStrategy, StringContentConverter.identity());
+
+            long startTime = System.currentTimeMillis();
+            HttpResult<String> result = handler.load();
+            long duration = System.currentTimeMillis() - startTime;
+
+            assertFalse(result.isSuccess(), "Should fail after retries");
+            assertTrue(duration < 200, "Max delay cap should prevent long waits");
+            assertEquals(LoaderStatus.ERROR, handler.getLoaderStatus());
+        }
+
+        @Test
+        @DisplayName("Should work with custom retry metrics")
+        @ModuleDispatcher
+        void shouldWorkWithCustomRetryMetrics(URIBuilder uriBuilder) {
+            String successData = strings.next();
+            dispatcher.withSuccess(successData, null);
+
+            String url = uriBuilder.addPathSegments("api", "data").build().toString();
+            HttpHandler httpHandler = HttpHandler.builder().url(url).build();
+
+            RetryStrategy retryStrategy = new ExponentialBackoffRetryStrategy.Builder()
+                    .maxAttempts(2)
+                    .retryMetrics(RetryMetrics.noOp())
+                    .build();
+            ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                    httpHandler, retryStrategy, StringContentConverter.identity());
+
+            HttpResult<String> result = handler.load();
+
+            assertTrue(result.isSuccess());
+            assertEquals(successData, result.getContent().orElseThrow());
         }
     }
 }
