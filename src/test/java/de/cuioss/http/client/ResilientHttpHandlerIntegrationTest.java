@@ -15,6 +15,7 @@
  */
 package de.cuioss.http.client;
 
+import de.cuioss.http.client.converter.HttpContentConverter;
 import de.cuioss.http.client.converter.StringContentConverter;
 import de.cuioss.http.client.dispatcher.TestContentDispatcher;
 import de.cuioss.http.client.handler.HttpHandler;
@@ -35,7 +36,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -159,6 +162,113 @@ class ResilientHttpHandlerIntegrationTest {
             assertTrue(result.getETag().isPresent());
             assertEquals(etagValue, result.getETag().get());
             assertEquals(200, result.getHttpStatus().orElseThrow());
+        }
+
+        @Test
+        @DisplayName("Should fallback to cached content after server error")
+        @ModuleDispatcher
+        void shouldFallbackToCacheAfterServerError(URIBuilder uriBuilder) {
+            String initialContent = strings.next();
+            String initialEtag = strings.next();
+
+            // First load succeeds and populates cache
+            dispatcher.withSuccess(initialContent, initialEtag);
+
+            String url = uriBuilder.addPathSegments("api", "data").build().toString();
+            HttpHandler httpHandler = HttpHandler.builder().url(url).build();
+            ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                    httpHandler, RetryStrategy.none(), StringContentConverter.identity());
+
+            HttpResult<String> firstResult = handler.load();
+            assertTrue(firstResult.isSuccess(), "Initial load should succeed");
+            assertEquals(initialContent, firstResult.getContent().orElseThrow());
+
+            // Second load fails with server error but returns cached content as fallback
+            dispatcher.withServerError();
+
+            HttpResult<String> secondResult = handler.load();
+
+            assertFalse(secondResult.isSuccess(), "Server error should mark result as failure");
+            assertTrue(secondResult.getContent().isPresent(), "Should have cached content as fallback");
+            assertEquals(initialContent, secondResult.getContent().get(), "Should return cached content");
+            assertEquals(HttpErrorCategory.SERVER_ERROR, secondResult.getErrorCategory().orElseThrow());
+            assertTrue(secondResult.getErrorMessage().isPresent());
+            assertTrue(secondResult.getErrorMessage().get().contains("using cached content"),
+                    "Error message should indicate cached content fallback");
+            assertEquals(LoaderStatus.ERROR, handler.getLoaderStatus());
+        }
+
+        @Test
+        @DisplayName("Should fallback to cached content after client error")
+        @ModuleDispatcher
+        void shouldFallbackToCacheAfterClientError(URIBuilder uriBuilder) {
+            String initialContent = strings.next();
+            String initialEtag = strings.next();
+
+            // First load succeeds and populates cache
+            dispatcher.withSuccess(initialContent, initialEtag);
+
+            String url = uriBuilder.addPathSegments("api", "data").build().toString();
+            HttpHandler httpHandler = HttpHandler.builder().url(url).build();
+            ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                    httpHandler, RetryStrategy.none(), StringContentConverter.identity());
+
+            HttpResult<String> firstResult = handler.load();
+            assertTrue(firstResult.isSuccess(), "Initial load should succeed");
+
+            // Second load fails with client error but returns cached content as fallback
+            dispatcher.withClientError();
+
+            HttpResult<String> secondResult = handler.load();
+
+            assertFalse(secondResult.isSuccess(), "Client error should mark result as failure");
+            assertTrue(secondResult.getContent().isPresent(), "Should have cached content as fallback");
+            assertEquals(initialContent, secondResult.getContent().get(), "Should return cached content");
+            assertEquals(HttpErrorCategory.CLIENT_ERROR, secondResult.getErrorCategory().orElseThrow());
+            assertTrue(secondResult.getErrorMessage().get().contains("using cached content"));
+            assertFalse(secondResult.isRetryable(), "Client errors should not be retryable");
+        }
+
+        @Test
+        @DisplayName("Should handle content conversion failure")
+        @ModuleDispatcher
+        void shouldHandleContentConversionFailure(URIBuilder uriBuilder) {
+            String responseContent = strings.next();
+
+            dispatcher.withSuccess(responseContent, null);
+
+            String url = uriBuilder.addPathSegments("api", "data").build().toString();
+            HttpHandler httpHandler = HttpHandler.builder().url(url).build();
+
+            // Converter that always returns empty Optional to simulate conversion failure
+            HttpContentConverter<String> failingConverter = new HttpContentConverter<>() {
+                @Override
+                public Optional<String> convert(Object rawContent) {
+                    return Optional.empty();
+                }
+
+                @Override
+                public HttpResponse.BodyHandler<?> getBodyHandler() {
+                    return HttpResponse.BodyHandlers.ofString();
+                }
+
+                @Override
+                public String emptyValue() {
+                    return "";
+                }
+            };
+
+            ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                    httpHandler, RetryStrategy.none(), failingConverter);
+
+            HttpResult<String> result = handler.load();
+
+            assertFalse(result.isSuccess(), "Content conversion failure should result in failure");
+            assertEquals(LoaderStatus.ERROR, handler.getLoaderStatus());
+            assertTrue(result.getErrorMessage().isPresent());
+            assertTrue(result.getErrorMessage().get().contains("Content conversion failed"));
+            assertEquals(HttpErrorCategory.INVALID_CONTENT, result.getErrorCategory().orElseThrow());
+            assertFalse(result.getContent().isPresent(), "No content should be present after conversion failure");
         }
     }
 
