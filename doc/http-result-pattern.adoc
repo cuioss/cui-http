@@ -1,0 +1,524 @@
+= HTTP Result Pattern: Modern Result Handling
+:toc: left
+:toclevels: 3
+:source-highlighter: highlightjs
+
+== Overview
+
+The `HttpResult<T>` sealed interface provides a modern, type-safe pattern for handling HTTP operation results in the cui-http library. It replaces the legacy `HttpResultObject` class and eliminates the dependency on `cui-core-ui-model`.
+
+=== Key Design Principles
+
+* **Sealed Types**: Exhaustive pattern matching with compile-time guarantees
+* **Optional Pattern**: Explicit content absence instead of mandatory defaults
+* **Plain Strings**: Simple error messages without i18n framework coupling
+* **HTTP Semantics**: Native support for ETag, status codes, and retry classification
+* **Immutability**: Records ensure thread-safe, immutable results
+
+== Architecture
+
+=== Sealed Interface Hierarchy
+
+[source,java]
+----
+public sealed interface HttpResult<T>
+    permits HttpResult.Success, HttpResult.Failure {
+
+    // Success: HTTP operation completed successfully
+    record Success<T>(T content, String etag, int httpStatus) { }
+
+    // Failure: HTTP operation failed (with optional fallback)
+    record Failure<T>(
+        String errorMessage,
+        Throwable cause,
+        T fallbackContent,
+        HttpErrorCategory category,
+        String etag,
+        Integer httpStatus
+    ) { }
+}
+----
+
+=== Result States
+
+[cols="1,2,3"]
+|===
+|Type |State |Description
+
+|`Success<T>`
+|Fresh content
+|HTTP 200 OK with newly loaded content and ETag
+
+|`Success<T>`
+|Cached content
+|HTTP 304 Not Modified, using cached content with ETag
+
+|`Failure<T>`
+|Error with fallback
+|HTTP error occurred but cached content available for graceful degradation
+
+|`Failure<T>`
+|Error without fallback
+|HTTP error occurred with no cached content available
+|===
+
+== Usage Patterns
+
+=== Traditional Style (Recommended for Simple Cases)
+
+[source,java]
+----
+HttpResult<Jwks> result = handler.load();
+
+// Check success
+if (result.isSuccess()) {
+    // Access content (Optional)
+    result.getContent().ifPresent(jwks -> {
+        processKeys(jwks);
+        logger.info("Loaded {} keys", jwks.keys().size());
+    });
+
+    // Access metadata
+    result.getETag().ifPresent(etag ->
+        logger.debug("Content ETag: {}", etag));
+
+    result.getHttpStatus().ifPresent(status ->
+        logger.debug("HTTP Status: {}", status));
+}
+
+// Handle errors
+if (!result.isSuccess()) {
+    result.getErrorMessage().ifPresent(logger::error);
+    result.getCause().ifPresent(ex ->
+        logger.error("Underlying cause", ex));
+
+    // Check if retryable
+    if (result.isRetryable()) {
+        scheduleRetry();
+    }
+
+    // Use fallback if available
+    result.getContent().ifPresent(fallback ->
+        logger.warn("Using cached fallback content"));
+}
+----
+
+=== Pattern Matching Style (Recommended for Complex Logic)
+
+[source,java]
+----
+HttpResult<WellKnownResult> result = resolver.load();
+
+return switch (result) {
+    case HttpResult.Success<WellKnownResult>(var config, var etag, var status) -> {
+        logger.info("Loaded well-known configuration from {}", config.issuer());
+        updateCache(config, etag);
+        yield LoaderStatus.OK;
+    }
+
+    case HttpResult.Failure<WellKnownResult> failure -> {
+        logger.error(failure.errorMessage(), failure.cause());
+
+        // Graceful degradation with fallback
+        if (failure.fallbackContent() != null) {
+            logger.warn("Using cached well-known configuration");
+            yield LoaderStatus.OK; // Degraded but functional
+        }
+
+        // Determine if retry should be attempted
+        yield failure.isRetryable() ?
+            LoaderStatus.UNDEFINED : LoaderStatus.ERROR;
+    }
+};
+----
+
+=== Error Category Based Handling
+
+[source,java]
+----
+HttpResult<String> result = handler.load();
+
+result.getErrorCategory().ifPresent(category -> {
+    switch (category) {
+        case NETWORK_ERROR -> {
+            // Transient network issues - retry with backoff
+            logger.warn("Network error, will retry");
+            retryStrategy.scheduleRetry();
+        }
+        case SERVER_ERROR -> {
+            // Server 5xx errors - may be transient
+            logger.warn("Server error (5xx), will retry");
+            retryStrategy.scheduleRetry();
+        }
+        case CLIENT_ERROR -> {
+            // Client 4xx errors - permanent, fix configuration
+            logger.error("Client error (4xx), check request configuration");
+            alertOperations("Invalid HTTP request configuration");
+        }
+        case INVALID_CONTENT -> {
+            // Content validation failed - permanent
+            logger.error("Response content invalid");
+            useFallbackSource();
+        }
+        case CONFIGURATION_ERROR -> {
+            // Setup/config issue - needs human intervention
+            logger.error("Configuration error, check SSL/URL settings");
+            alertOperations("HTTP handler misconfigured");
+        }
+    }
+});
+----
+
+== Creating Results
+
+=== Producer Pattern (ResilientHttpHandler)
+
+[source,java]
+----
+public class ResilientHttpHandler<T> {
+
+    public HttpResult<T> load() {
+        try {
+            HttpResponse<?> response = client.send(request, bodyHandler);
+
+            return switch (response.statusCode()) {
+                case 200 -> {
+                    T content = converter.convert(response.body()).orElseThrow();
+                    String etag = response.headers()
+                        .firstValue("ETag").orElse(null);
+                    yield HttpResult.success(content, etag, 200);
+                }
+
+                case 304 -> {
+                    // Not Modified - use cached content
+                    yield HttpResult.success(
+                        cachedContent, cachedEtag, 304);
+                }
+
+                case int code when code >= 500 -> {
+                    // Server error with fallback
+                    yield HttpResult.failureWithFallback(
+                        "Server error: " + code,
+                        null,
+                        cachedContent,
+                        HttpErrorCategory.SERVER_ERROR,
+                        cachedEtag,
+                        code
+                    );
+                }
+
+                default -> {
+                    // Client error without fallback
+                    yield HttpResult.failure(
+                        "Unexpected status: " + response.statusCode(),
+                        null,
+                        HttpErrorCategory.CLIENT_ERROR
+                    );
+                }
+            };
+
+        } catch (IOException e) {
+            return handleNetworkError(e);
+        }
+    }
+
+    private HttpResult<T> handleNetworkError(IOException e) {
+        if (cachedContent != null) {
+            return HttpResult.failureWithFallback(
+                "Network error: " + e.getMessage(),
+                e,
+                cachedContent,
+                HttpErrorCategory.NETWORK_ERROR,
+                cachedEtag,
+                null
+            );
+        } else {
+            return HttpResult.failure(
+                "Network error with no cache: " + e.getMessage(),
+                e,
+                HttpErrorCategory.NETWORK_ERROR
+            );
+        }
+    }
+}
+----
+
+=== Factory Method Reference
+
+[cols="2,3,2"]
+|===
+|Method |Use Case |Example
+
+|`success(content, etag, status)`
+|Successful HTTP operation
+|200 OK with fresh content
+
+|`failure(message, cause, category)`
+|Error without fallback
+|Network timeout, no cache
+
+|`failureWithFallback(message, cause, fallback, category, etag, status)`
+|Error with cached fallback
+|Server error, using stale cache
+|===
+
+== API Reference
+
+=== Common Methods
+
+[source,java]
+----
+interface HttpResult<T> {
+    // State checks
+    boolean isSuccess();
+    boolean isRetryable();
+
+    // Content access
+    Optional<T> getContent();           // Always present for Success, optional for Failure
+    Optional<String> getETag();         // HTTP ETag header
+    Optional<Integer> getHttpStatus();  // HTTP status code
+
+    // Error information (Failure only)
+    Optional<String> getErrorMessage();      // Human-readable error
+    Optional<Throwable> getCause();          // Underlying exception
+    Optional<HttpErrorCategory> getErrorCategory(); // Error classification
+
+    // Transformation
+    <U> HttpResult<U> map(Function<T, U> mapper);
+}
+----
+
+=== Transformation Example
+
+[source,java]
+----
+// Transform content while preserving metadata
+HttpResult<String> jsonResult = handler.load();
+
+HttpResult<Config> configResult = jsonResult.map(json -> {
+    return parseConfig(json);
+});
+
+// Metadata (ETag, status, error info) automatically preserved
+configResult.getETag().ifPresent(cache::updateETag);
+----
+
+== Integration Examples
+
+=== JWKS Loader Pattern
+
+[source,java]
+----
+public class HttpJwksLoader {
+
+    public CompletableFuture<LoaderStatus> initJWKSLoader() {
+        return CompletableFuture.supplyAsync(() -> {
+            HttpResult<Jwks> result = resilientHandler.load();
+
+            return switch (result) {
+                case HttpResult.Success<Jwks>(var jwks, _, var status) -> {
+                    updateKeys(jwks);
+                    logger.info("Loaded JWKS with {} keys", jwks.keys().size());
+
+                    if (status == 304) {
+                        logger.debug("JWKS unchanged (304 Not Modified)");
+                    }
+
+                    yield LoaderStatus.OK;
+                }
+
+                case HttpResult.Failure<Jwks> failure -> {
+                    logger.error(failure.errorMessage(), failure.cause());
+
+                    // Use fallback if available
+                    if (failure.fallbackContent() != null) {
+                        updateKeys(failure.fallbackContent());
+                        logger.warn("Using cached JWKS as fallback");
+                        yield LoaderStatus.OK; // Degraded
+                    }
+
+                    // Retry if transient error
+                    if (failure.isRetryable() && backgroundRefreshEnabled) {
+                        yield LoaderStatus.UNDEFINED; // Will retry
+                    }
+
+                    yield LoaderStatus.ERROR;
+                }
+            };
+        });
+    }
+}
+----
+
+=== Well-Known Resolver Pattern
+
+[source,java]
+----
+public class HttpWellKnownResolver {
+
+    private HttpResult<WellKnownResult> cachedResult;
+
+    public Optional<String> getJwksUri() {
+        return ensureLoaded().flatMap(WellKnownResult::getJwksUri);
+    }
+
+    private Optional<WellKnownResult> ensureLoaded() {
+        if (cachedResult == null) {
+            cachedResult = wellKnownHandler.load();
+        }
+
+        // Return content if successful, empty otherwise
+        return cachedResult.isSuccess() ?
+            cachedResult.getContent() : Optional.empty();
+    }
+}
+----
+
+== Migration from HttpResultObject
+
+=== Quick Reference
+
+[cols="2,2,1"]
+|===
+|Old API |New API |Change Type
+
+|`result.isValid()`
+|`result.isSuccess()`
+|Rename
+
+|`result.getResult()`
+|`result.getContent().orElseThrow()`
+|Optional
+
+|`result.getETag()`
+|`result.getETag()`
+|Same
+
+|`result.getResultDetail().get().getDetail()`
+|`result.getErrorMessage().orElse("")`
+|Simplified
+
+|`result.getErrorCode()`
+|`result.getErrorCategory()`
+|Rename
+
+|`result.isRetryable()`
+|`result.isRetryable()`
+|Same
+
+|`result.getState()`
+|Pattern match or `isSuccess()`
+|Type-based
+|===
+
+=== Migration Example
+
+.Before (HttpResultObject)
+[source,java]
+----
+HttpResultObject<Jwks> result = handler.load();
+
+if (result.isValid()) {
+    Jwks jwks = result.getResult();
+    processKeys(jwks);
+}
+
+result.getResultDetail().ifPresent(detail ->
+    logger.error(detail.getDetail().getDisplayName()));
+----
+
+.After (HttpResult)
+[source,java]
+----
+HttpResult<Jwks> result = handler.load();
+
+if (result.isSuccess()) {
+    result.getContent().ifPresent(this::processKeys);
+}
+
+result.getErrorMessage().ifPresent(logger::error);
+----
+
+== Best Practices
+
+=== Do's ✅
+
+* **Use pattern matching** for complex success/failure branching logic
+* **Check isSuccess()** before accessing content in traditional style
+* **Handle Optional** - content is not always present
+* **Use isRetryable()** to determine retry strategy
+* **Log error messages** - they're already human-readable
+* **Provide fallback content** when using cached data during errors
+* **Use map()** for content transformations to preserve metadata
+
+=== Don'ts ❌
+
+* **Don't call getContent().get()** without checking - use `orElseThrow()` with message
+* **Don't ignore error messages** - they provide valuable debugging information
+* **Don't assume Failure has content** - fallback content is optional, check before using
+* **Don't mix state checking styles** - choose pattern matching OR traditional, not both
+* **Don't retry non-retryable errors** - check `isRetryable()` first
+* **Don't discard error causes** - propagate exceptions for debugging
+
+== Performance Considerations
+
+* **Records are efficient**: Minimal memory overhead compared to classes
+* **No i18n overhead**: Plain strings eliminate runtime message resolution
+* **Sealed types enable optimizations**: JVM can optimize switch expressions
+* **Optional overhead is minimal**: Modern JVMs optimize Optional well
+* **Immutability enables sharing**: Safe to cache and reuse results
+
+== Thread Safety
+
+* **Immutable by design**: Records with final fields are inherently thread-safe
+* **Safe to cache**: Results can be stored and accessed from multiple threads
+* **No synchronization needed**: For reading result state and content
+* **Atomic operations**: Use AtomicReference for cached result storage
+
+== Troubleshooting
+
+=== Common Issues
+
+.Content is empty even though isSuccess() returns true
+[source,java]
+----
+// Wrong: Assuming content is always present
+result.getContent().get(); // May throw NoSuchElementException
+
+// Right: Handle Optional properly
+result.getContent().orElseThrow(() ->
+    new IllegalStateException("Expected content not present"));
+----
+
+.Pattern matching not exhaustive
+[source,java]
+----
+// Wrong: Missing case
+return switch (result) {
+    case Success<T> success -> handleSuccess(success);
+    // Compiler error: missing Failure case
+};
+
+// Right: All cases covered
+return switch (result) {
+    case Success<T> success -> handleSuccess(success);
+    case Failure<T> failure -> handleFailure(failure);
+};
+----
+
+.Error message is null
+[source,java]
+----
+// Wrong: Not handling Optional
+String msg = result.getErrorMessage().get(); // May throw
+
+// Right: Provide default
+String msg = result.getErrorMessage().orElse("Unknown error");
+----
+
+== See Also
+
+* link:client-handlers-readme.adoc[HTTP Client Handlers]
+* `de.cuioss.http.client.result.HttpResult` - API documentation
+* `de.cuioss.http.client.result.HttpErrorCategory` - Error categories
+* `de.cuioss.http.client.ResilientHttpHandler` - Primary producer

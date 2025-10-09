@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -74,7 +75,7 @@ class HttpErrorCategoryTest {
     void shouldCorrectlyIdentifyRetryableErrors() {
         var retryable = Arrays.stream(HttpErrorCategory.values())
                 .filter(HttpErrorCategory::isRetryable)
-                .collect(java.util.stream.Collectors.toSet());
+                .collect(Collectors.toSet());
         assertEquals(Set.of(HttpErrorCategory.NETWORK_ERROR, HttpErrorCategory.SERVER_ERROR), retryable,
                 "Only NETWORK_ERROR and SERVER_ERROR should be retryable.");
     }
@@ -83,7 +84,7 @@ class HttpErrorCategoryTest {
     void shouldCorrectlyIdentifyNonRetryableErrors() {
         var nonRetryable = Arrays.stream(HttpErrorCategory.values())
                 .filter(c -> !c.isRetryable())
-                .collect(java.util.stream.Collectors.toSet());
+                .collect(Collectors.toSet());
         assertEquals(Set.of(HttpErrorCategory.CLIENT_ERROR, HttpErrorCategory.INVALID_CONTENT, HttpErrorCategory.CONFIGURATION_ERROR), nonRetryable,
                 "CLIENT_ERROR, INVALID_CONTENT, and CONFIGURATION_ERROR should be non-retryable.");
     }

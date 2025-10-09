@@ -15,7 +15,7 @@
  */
 package de.cuioss.http.client.retry;
 
-import de.cuioss.http.client.result.HttpResultObject;
+import de.cuioss.http.client.result.HttpResult;
 import de.cuioss.tools.logging.CuiLogger;
 
 import java.time.Duration;
@@ -61,7 +61,7 @@ public class ExponentialBackoffRetryStrategy implements RetryStrategy {
     }
 
     @Override
-    public <T> CompletableFuture<HttpResultObject<T>> execute(HttpOperation<T> operation, RetryContext context) {
+    public <T> CompletableFuture<HttpResult<T>> execute(HttpOperation<T> operation, RetryContext context) {
         Objects.requireNonNull(operation, "operation");
         Objects.requireNonNull(context, "context");
 
@@ -80,7 +80,7 @@ public class ExponentialBackoffRetryStrategy implements RetryStrategy {
      * @param totalStartTime start time for total retry operation timing
      * @return CompletableFuture containing the result of this attempt or recursive retry
      */
-    private <T> CompletableFuture<HttpResultObject<T>> executeAttempt(
+    private <T> CompletableFuture<HttpResult<T>> executeAttempt(
             HttpOperation<T> operation, RetryContext context, int attempt, long totalStartTime) {
 
         // Execute operation on virtual thread
@@ -90,17 +90,17 @@ public class ExponentialBackoffRetryStrategy implements RetryStrategy {
                     LOGGER.debug("Starting retry attempt %s for operation %s", attempt, context.operationName());
 
                     // Execute operation - no exceptions to catch, using result pattern
-                    HttpResultObject<T> result = operation.execute();
+                    HttpResult<T> result = operation.execute();
                     Duration attemptDuration = Duration.ofNanos(System.nanoTime() - attemptStartTime);
 
                     // Record attempt metrics
-                    boolean success = result.isValid();
+                    boolean success = result.isSuccess();
                     retryMetrics.recordRetryAttempt(context, attempt, attemptDuration, success);
 
                     return new AttemptResult<>(result, attemptDuration, success);
                 }, Executors.newVirtualThreadPerTaskExecutor())
                 .thenCompose(attemptResult -> {
-                    HttpResultObject<T> result = attemptResult.result();
+                    HttpResult<T> result = attemptResult.result();
                     Duration attemptDuration = attemptResult.attemptDuration();
                     boolean success = attemptResult.success();
 
@@ -161,7 +161,7 @@ public class ExponentialBackoffRetryStrategy implements RetryStrategy {
     /**
      * Record for holding attempt result data.
      */
-    private record AttemptResult<T>(HttpResultObject<T> result, Duration attemptDuration, boolean success) {
+    private record AttemptResult<T>(HttpResult<T> result, Duration attemptDuration, boolean success) {
     }
 
 

@@ -19,13 +19,10 @@ import de.cuioss.http.client.converter.HttpContentConverter;
 import de.cuioss.http.client.handler.HttpHandler;
 import de.cuioss.http.client.handler.HttpStatusFamily;
 import de.cuioss.http.client.result.HttpErrorCategory;
-import de.cuioss.http.client.result.HttpResultObject;
+import de.cuioss.http.client.result.HttpResult;
 import de.cuioss.http.client.retry.RetryContext;
 import de.cuioss.http.client.retry.RetryStrategy;
 import de.cuioss.tools.logging.CuiLogger;
-import de.cuioss.uimodel.nameprovider.DisplayName;
-import de.cuioss.uimodel.result.ResultDetail;
-import de.cuioss.uimodel.result.ResultState;
 import lombok.Getter;
 import org.jspecify.annotations.NonNull;
 
@@ -60,7 +57,7 @@ public class ResilientHttpHandler<T> {
     private final HttpContentConverter<T> contentConverter;
     private final ReentrantLock lock = new ReentrantLock();
 
-    private HttpResultObject<T> cachedResult; // Guarded by lock, no volatile needed
+    private HttpResult<T> cachedResult; // Guarded by lock, no volatile needed
     @Getter
     private volatile LoaderStatus loaderStatus = LoaderStatus.UNDEFINED; // Explicitly tracked status
 
@@ -105,11 +102,10 @@ public class ResilientHttpHandler<T> {
      *
      * <h2>Result States</h2>
      * <ul>
-     *   <li><strong>VALID + 200</strong>: Content freshly loaded from server (equivalent to LOADED_FROM_SERVER)</li>
-     *   <li><strong>VALID + 304</strong>: Content unchanged, using cached version (equivalent to CACHE_ETAG)</li>
-     *   <li><strong>VALID + no HTTP status</strong>: Content unchanged, using local cache (equivalent to CACHE_CONTENT)</li>
-     *   <li><strong>WARNING + cached content</strong>: Error occurred but using cached data (equivalent to ERROR_WITH_CACHE)</li>
-     *   <li><strong>ERROR + no content</strong>: Error occurred with no fallback (equivalent to ERROR_NO_CACHE)</li>
+     *   <li><strong>Success + 200</strong>: Content freshly loaded from server</li>
+     *   <li><strong>Success + 304</strong>: Content unchanged, using cached version</li>
+     *   <li><strong>Failure + fallback</strong>: Error occurred but using cached data for graceful degradation</li>
+     *   <li><strong>Failure + no fallback</strong>: Error occurred with no cached content available</li>
      * </ul>
      *
      * <h2>Retry Integration</h2>
@@ -121,9 +117,9 @@ public class ResilientHttpHandler<T> {
      *   <li>Cache responses (304 Not Modified) are not subject to retry</li>
      * </ul>
      *
-     * @return HttpResultObject containing content and detailed state information, never null
+     * @return HttpResult containing content and detailed state information, never null
      */
-    public HttpResultObject<T> load() {
+    public HttpResult<T> load() {
         lock.lock();
         try {
             // Set status to LOADING before starting the operation
@@ -133,7 +129,7 @@ public class ResilientHttpHandler<T> {
             RetryContext retryContext = new RetryContext("ETag-HTTP-Load:" + httpHandler.getUri().toString(), 1);
 
             // Execute async retry strategy and block for result (maintains existing synchronous API)
-            HttpResultObject<T> result = retryStrategy.execute(this::fetchContentWithCache, retryContext).join();
+            HttpResult<T> result = retryStrategy.execute(this::fetchContentWithCache, retryContext).join();
 
             // Update status based on the result
             updateStatusFromResult(result);
@@ -150,38 +146,36 @@ public class ResilientHttpHandler<T> {
      *
      * @param category the error category to use for the result
      */
-    private HttpResultObject<T> handleErrorResult(HttpErrorCategory category) {
-        if (cachedResult != null && cachedResult.getResult() != null) {
-            return new HttpResultObject<>(
-                    cachedResult.getResult(),
-                    ResultState.WARNING, // Using cached content but with error condition
-                    new ResultDetail(
-                            new DisplayName("HTTP request failed, using cached content from " + httpHandler.getUrl())),
+    private HttpResult<T> handleErrorResult(HttpErrorCategory category) {
+        if (cachedResult != null && cachedResult.getContent().isPresent()) {
+            return HttpResult.failureWithFallback(
+                    "HTTP request failed, using cached content from " + httpHandler.getUrl(),
+                    null,  // cause
+                    cachedResult.getContent().orElse(null),
                     category,
                     cachedResult.getETag().orElse(null),
                     cachedResult.getHttpStatus().orElse(null)
             );
         } else {
-            return HttpResultObject.error(
-                    getEmptyFallback(), // Safe empty fallback
-                    category,
-                    new ResultDetail(
-                            new DisplayName("HTTP request failed with no cached content available from " + httpHandler.getUrl()))
+            return HttpResult.failure(
+                    "HTTP request failed with no cached content available from " + httpHandler.getUrl(),
+                    null,  // cause
+                    category
             );
         }
     }
 
 
     /**
-     * Executes HTTP request with ETag validation support and direct HttpResultObject return.
+     * Executes HTTP request with ETag validation support and direct HttpResult return.
      * <p>
-     * This method now returns HttpResultObject directly to support RetryStrategy.execute(),
+     * This method now returns HttpResult directly to support RetryStrategy.execute(),
      * implementing the HttpOperation<String> pattern for resilient HTTP operations.
      *
-     * @return HttpResultObject containing content and state information, never null
+     * @return HttpResult containing content and state information, never null
      */
     @SuppressWarnings("java:S2095")
-    private HttpResultObject<T> fetchContentWithCache() {
+    private HttpResult<T> fetchContentWithCache() {
         // Build request with conditional headers
         HttpRequest request = buildRequestWithConditionalHeaders();
 
@@ -224,9 +218,9 @@ public class ResilientHttpHandler<T> {
      * Processes the HTTP response and returns appropriate result based on status code.
      *
      * @param response the HTTP response to process
-     * @return HttpResultObject representing the processed response
+     * @return HttpResult representing the processed response
      */
-    private HttpResultObject<T> processHttpResponse(HttpResponse<?> response) {
+    private HttpResult<T> processHttpResponse(HttpResponse<?> response) {
         HttpStatusFamily statusFamily = HttpStatusFamily.fromStatusCode(response.statusCode());
 
         if (response.statusCode() == 304) {
@@ -243,16 +237,20 @@ public class ResilientHttpHandler<T> {
      *
      * @return cached content result if available
      */
-    private HttpResultObject<T> handleNotModifiedResponse() {
+    @SuppressWarnings("java:S3655") // False positive - isPresent() checked on same line
+    private HttpResult<T> handleNotModifiedResponse() {
         LOGGER.debug("HTTP content not modified (304) for %s", httpHandler.getUrl());
-        if (cachedResult != null) {
-            return HttpResultObject.success(cachedResult.getResult(), cachedResult.getETag().orElse(null), 304);
+        if (cachedResult != null && cachedResult.getContent().isPresent()) {
+            return HttpResult.success(
+                    cachedResult.getContent().get(),
+                    cachedResult.getETag().orElse(null),
+                    304
+            );
         } else {
-            return HttpResultObject.error(
-                    getEmptyFallback(), // Safe empty fallback
-                    HttpErrorCategory.SERVER_ERROR,
-                    new ResultDetail(
-                            new DisplayName("304 Not Modified but no cached content available"))
+            return HttpResult.failure(
+                    "304 Not Modified but no cached content available",
+                    null,
+                    HttpErrorCategory.SERVER_ERROR
             );
         }
     }
@@ -263,7 +261,7 @@ public class ResilientHttpHandler<T> {
      * @param response the successful HTTP response
      * @return success result with converted content or error if conversion fails
      */
-    private HttpResultObject<T> handleSuccessResponse(HttpResponse<?> response) {
+    private HttpResult<T> handleSuccessResponse(HttpResponse<?> response) {
         Object rawContent = response.body();
         String etag = response.headers().firstValue("ETag").orElse(null);
 
@@ -276,17 +274,16 @@ public class ResilientHttpHandler<T> {
         if (contentOpt.isPresent()) {
             // Successful conversion - update cache with new result
             T content = contentOpt.get();
-            HttpResultObject<T> result = HttpResultObject.success(content, etag, response.statusCode());
+            HttpResult<T> result = HttpResult.success(content, etag, response.statusCode());
             this.cachedResult = result;
             return result;
         } else {
             // Content conversion failed - return error with no cache update
             LOGGER.warn(HttpLogMessages.WARN.CONTENT_CONVERSION_FAILED, httpHandler.getUrl());
-            return HttpResultObject.error(
-                    getEmptyFallback(), // Safe empty fallback
-                    HttpErrorCategory.INVALID_CONTENT,
-                    new ResultDetail(
-                            new DisplayName("Content conversion failed for %s".formatted(httpHandler.getUrl())))
+            return HttpResult.failure(
+                    "Content conversion failed for " + httpHandler.getUrl(),
+                    null,
+                    HttpErrorCategory.INVALID_CONTENT
             );
         }
     }
@@ -298,7 +295,7 @@ public class ResilientHttpHandler<T> {
      * @param statusFamily the HTTP status family
      * @return error result with appropriate category
      */
-    private HttpResultObject<T> handleErrorResponse(int statusCode, HttpStatusFamily statusFamily) {
+    private HttpResult<T> handleErrorResponse(int statusCode, HttpStatusFamily statusFamily) {
         LOGGER.warn(HttpLogMessages.WARN.HTTP_STATUS_WARNING, statusCode, statusFamily, httpHandler.getUrl());
 
         // For 4xx client errors, don't retry and return error with cache fallback if available
@@ -312,30 +309,13 @@ public class ResilientHttpHandler<T> {
     }
 
     /**
-     * Provides a safe empty fallback result for error cases.
-     * Uses semantically correct empty value from content converter.
-     * If no cached result available, uses converter's empty value.
-     *
-     * @return empty fallback result, never null
-     */
-    private T getEmptyFallback() {
-        // Try to get cached result first
-        if (cachedResult != null && cachedResult.getResult() != null) {
-            return cachedResult.getResult();
-        }
-        // Use semantically correct empty value from converter
-        // This ensures CUI ResultObject never gets null result
-        return contentConverter.emptyValue();
-    }
-
-    /**
-     * Updates the status based on the HttpResultObject result.
+     * Updates the status based on the HttpResult result.
      * This method assumes the lock is already held.
      *
-     * @param result the HttpResultObject to evaluate for status update
+     * @param result the HttpResult to evaluate for status update
      */
-    private void updateStatusFromResult(HttpResultObject<T> result) {
-        if (result.isValid()) {
+    private void updateStatusFromResult(HttpResult<T> result) {
+        if (result.isSuccess()) {
             loaderStatus = LoaderStatus.OK;
         } else {
             loaderStatus = LoaderStatus.ERROR;

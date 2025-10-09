@@ -18,12 +18,8 @@ package de.cuioss.http.client;
 import de.cuioss.http.client.converter.HttpContentConverter;
 import de.cuioss.http.client.converter.StringContentConverter;
 import de.cuioss.http.client.handler.HttpHandler;
-import de.cuioss.http.client.result.HttpErrorCategory;
-import de.cuioss.http.client.result.HttpResultObject;
 import de.cuioss.http.client.retry.RetryStrategy;
 import de.cuioss.test.juli.junit5.EnableTestLogger;
-import de.cuioss.uimodel.result.ResultDetail;
-import de.cuioss.uimodel.result.ResultState;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -32,23 +28,24 @@ import org.junit.jupiter.api.Test;
 import java.net.http.HttpResponse;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
- * Unit test for {@link ResilientHttpHandler} focusing on business logic,
- * state management, and edge cases without requiring HTTP infrastructure.
+ * Unit test for {@link ResilientHttpHandler} focusing on non-HTTP integration scenarios.
  * <p>
- * Integration tests with actual HTTP calls are in {@link ResilientHttpHandlerIntegrationTest}.
- * This test focuses on:
+ * This test class covers:
  * <ul>
  *   <li>Constructor validation and initialization</li>
  *   <li>Status tracking behavior</li>
- *   <li>Error handling and fallback logic</li>
+ *   <li>Content converter behavior</li>
  *   <li>Thread safety of status updates</li>
  *   <li>Edge cases and boundary conditions</li>
  * </ul>
+ * <p>
+ * HTTP integration tests with MockWebServer are in {@link ResilientHttpHandlerIntegrationTest}.
  *
- * @author Claude Code
+ * @author Oliver Wolff
  * @since 1.0
  */
 @EnableTestLogger
@@ -187,119 +184,6 @@ class ResilientHttpHandlerTest {
             assertNotNull(handler, "Handler should work with identity converter");
             assertEquals(LoaderStatus.UNDEFINED, handler.getLoaderStatus(),
                     "Status should be UNDEFINED before any operations");
-        }
-    }
-
-    @Nested
-    @DisplayName("Error Handling")
-    class ErrorHandlingTests {
-
-        @Test
-        @DisplayName("Should identify retryable error categories")
-        void shouldIdentifyRetryableErrors() {
-            assertTrue(HttpErrorCategory.NETWORK_ERROR.isRetryable(),
-                    "NETWORK_ERROR should be retryable");
-            assertTrue(HttpErrorCategory.SERVER_ERROR.isRetryable(),
-                    "SERVER_ERROR should be retryable");
-        }
-
-        @Test
-        @DisplayName("Should identify non-retryable error categories")
-        void shouldIdentifyNonRetryableErrors() {
-            assertFalse(HttpErrorCategory.CLIENT_ERROR.isRetryable(),
-                    "CLIENT_ERROR should not be retryable");
-            assertFalse(HttpErrorCategory.INVALID_CONTENT.isRetryable(),
-                    "INVALID_CONTENT should not be retryable");
-            assertFalse(HttpErrorCategory.CONFIGURATION_ERROR.isRetryable(),
-                    "CONFIGURATION_ERROR should not be retryable");
-        }
-
-        @Test
-        @DisplayName("Should create error results with proper categories")
-        void shouldCreateErrorResultsWithCategories() {
-            ResultDetail detail =
-                    new ResultDetail(
-                            new de.cuioss.uimodel.nameprovider.DisplayName("Network error occurred"));
-
-            HttpResultObject<String> networkError = HttpResultObject.error(
-                    "", HttpErrorCategory.NETWORK_ERROR, detail);
-
-            assertEquals(ResultState.ERROR, networkError.getState(),
-                    "Result should have ERROR state");
-            assertEquals(HttpErrorCategory.NETWORK_ERROR,
-                    networkError.getHttpErrorCategory().orElse(null),
-                    "Result should have NETWORK_ERROR category");
-            assertTrue(networkError.isRetryable(),
-                    "Network error should be retryable");
-        }
-    }
-
-    @Nested
-    @DisplayName("Result Object Behavior")
-    class ResultObjectTests {
-
-        @Test
-        @DisplayName("Should create success result with ETag")
-        void shouldCreateSuccessResultWithETag() {
-            HttpResultObject<String> result = HttpResultObject.success(
-                    "test-content", "etag-123", 200);
-
-            assertTrue(result.isValid(), "Success result should be valid");
-            assertEquals("test-content", result.getResult(),
-                    "Result should contain correct content");
-            assertEquals("etag-123", result.getETag().orElse(null),
-                    "Result should contain ETag");
-            assertEquals(200, result.getHttpStatus().orElse(0),
-                    "Result should contain HTTP status 200");
-        }
-
-        @Test
-        @DisplayName("Should create success result without ETag")
-        void shouldCreateSuccessResultWithoutETag() {
-            HttpResultObject<String> result = HttpResultObject.success(
-                    "test-content", null, 200);
-
-            assertTrue(result.isValid(), "Success result should be valid");
-            assertEquals("test-content", result.getResult(),
-                    "Result should contain content");
-            assertFalse(result.getETag().isPresent(),
-                    "Result should not have ETag when null provided");
-        }
-
-        @Test
-        @DisplayName("Should create cached result with 304 status")
-        void shouldCreateCachedResult() {
-            HttpResultObject<String> result = HttpResultObject.success(
-                    "cached-content", "etag-456", 304);
-
-            assertTrue(result.isValid(), "Cached result should be valid");
-            assertEquals("cached-content", result.getResult(),
-                    "Result should contain cached content");
-            assertEquals(304, result.getHttpStatus().orElse(0),
-                    "Result should have 304 Not Modified status");
-        }
-
-        @Test
-        @DisplayName("Should create error result with fallback content")
-        void shouldCreateErrorResultWithFallback() {
-            ResultDetail detail =
-                    new ResultDetail(
-                            new de.cuioss.uimodel.nameprovider.DisplayName("Error with fallback"));
-
-            HttpResultObject<String> result = HttpResultObject.error(
-                    "fallback-content", HttpErrorCategory.NETWORK_ERROR, detail);
-
-            assertFalse(result.isValid(), "Error result should not be valid");
-            assertEquals(ResultState.ERROR, result.getState(),
-                    "Result should have ERROR state");
-
-            // Must acknowledge error detail before accessing result (ResultObject pattern)
-            assertTrue(result.getResultDetail().isPresent(),
-                    "Error result should have ResultDetail");
-
-            // Now we can access the fallback content
-            assertEquals("fallback-content", result.getResult(),
-                    "Result should contain fallback content");
         }
     }
 

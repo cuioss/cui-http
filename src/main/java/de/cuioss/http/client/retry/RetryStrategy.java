@@ -15,7 +15,7 @@
  */
 package de.cuioss.http.client.retry;
 
-import de.cuioss.http.client.result.HttpResultObject;
+import de.cuioss.http.client.result.HttpResult;
 
 import java.util.concurrent.CompletableFuture;
 
@@ -38,23 +38,23 @@ import java.util.concurrent.CompletableFuture;
  *
  * <ul>
  *   <li><strong>No exceptions for flow control</strong> - All error states become result states</li>
- *   <li><strong>Rich error context</strong> - HttpResultObject contains retry metrics, error codes, and details</li>
+ *   <li><strong>Rich error context</strong> - HttpResult contains error category, messages, and retry capability</li>
  *   <li><strong>Forced error handling</strong> - Cannot access result without checking state</li>
- *   <li><strong>Graceful degradation</strong> - Built-in fallback support with default results</li>
- *   <li><strong>State-based flow</strong> - FRESH, CACHED, STALE, RECOVERED, ERROR states</li>
+ *   <li><strong>Graceful degradation</strong> - Built-in fallback support with optional cached content</li>
+ *   <li><strong>Type-safe states</strong> - Sealed interface with Success and Failure records</li>
  * </ul>
  *
  * <h2>Usage Patterns</h2>
  * <h3>Blocking Usage (Legacy Compatibility)</h3>
  * <pre>
  * RetryStrategy strategy = RetryStrategies.exponentialBackoff();
- * HttpResultObject&lt;String&gt; result = strategy.execute(operation, context).get();
+ * HttpResult&lt;String&gt; result = strategy.execute(operation, context).get();
  *
- * if (!result.isValid()) {
+ * if (!result.isSuccess()) {
  *     // Handle error cases
- *     useFallbackContent(result.getResult());
+ *     result.getContent().ifPresent(this::useFallbackContent);
  * } else {
- *     processResult(result.getResult());
+ *     result.getContent().ifPresent(this::processResult);
  * }
  * </pre>
  *
@@ -62,8 +62,10 @@ import java.util.concurrent.CompletableFuture;
  * <pre>
  * strategy.execute(operation, context)
  *     .thenCompose(result -> {
- *         if (result.isValid()) {
- *             return processResult(result.getResult());
+ *         if (result.isSuccess()) {
+ *             return result.getContent()
+ *                 .map(this::processResult)
+ *                 .orElse(CompletableFuture.completedFuture(null));
  *         } else {
  *             return handleError(result);
  *         }
@@ -85,9 +87,9 @@ public interface RetryStrategy {
      * @param <T> the type of result returned by the operation
      * @param operation the HTTP operation to retry
      * @param context retry context with operation name and attempt info
-     * @return CompletableFuture containing HttpResultObject with result and comprehensive error/retry information
+     * @return CompletableFuture containing HttpResult with result and comprehensive error/retry information
      */
-    <T> CompletableFuture<HttpResultObject<T>> execute(HttpOperation<T> operation, RetryContext context);
+    <T> CompletableFuture<HttpResult<T>> execute(HttpOperation<T> operation, RetryContext context);
 
     /**
      * Creates a no-op retry strategy (single attempt only).
@@ -98,7 +100,7 @@ public interface RetryStrategy {
     static RetryStrategy none() {
         return new RetryStrategy() {
             @Override
-            public <T> CompletableFuture<HttpResultObject<T>> execute(HttpOperation<T> operation, RetryContext context) {
+            public <T> CompletableFuture<HttpResult<T>> execute(HttpOperation<T> operation, RetryContext context) {
                 // No retry - just execute once on virtual thread and return completed future
                 return CompletableFuture.completedFuture(operation.execute());
             }
