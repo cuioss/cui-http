@@ -274,7 +274,7 @@ interface HttpResult<T> {
     boolean isRetryable();
 
     // Content access
-    Optional<T> getContent();           // Present for Success, Optional for Failure
+    Optional<T> getContent();           // Always present for Success, optional for Failure
     Optional<String> getETag();         // HTTP ETag header
     Optional<Integer> getHttpStatus();  // HTTP status code
 
@@ -455,7 +455,7 @@ result.getErrorMessage().ifPresent(logger::error);
 
 * **Don't call getContent().get()** without checking - use `orElseThrow()` with message
 * **Don't ignore error messages** - they provide valuable debugging information
-* **Don't assume content is always present** - even Success can have Optional.empty() in edge cases
+* **Don't assume Failure has content** - fallback content is optional, check before using
 * **Don't mix state checking styles** - choose pattern matching OR traditional, not both
 * **Don't retry non-retryable errors** - check `isRetryable()` first
 * **Don't discard error causes** - propagate exceptions for debugging
