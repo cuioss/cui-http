@@ -35,7 +35,6 @@ import static org.junit.jupiter.api.Assertions.*;
 class HttpResultTest {
 
     private final TypedGenerator<String> strings = Generators.nonEmptyStrings();
-    private final TypedGenerator<Integer> httpStatus = Generators.integers(100, 599);
     private final HttpResultSuccessGenerator successGen = new HttpResultSuccessGenerator();
     private final HttpResultFailureGenerator failureGen = new HttpResultFailureGenerator();
 

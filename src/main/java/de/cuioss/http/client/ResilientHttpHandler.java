@@ -237,6 +237,7 @@ public class ResilientHttpHandler<T> {
      *
      * @return cached content result if available
      */
+    @SuppressWarnings("java:S3655") // False positive - isPresent() checked on same line
     private HttpResult<T> handleNotModifiedResponse() {
         LOGGER.debug("HTTP content not modified (304) for %s", httpHandler.getUrl());
         if (cachedResult != null && cachedResult.getContent().isPresent()) {
