@@ -24,7 +24,7 @@ import java.util.BitSet;
  *
  * <p>This utility class provides pre-computed BitSet instances containing allowed characters
  * for different HTTP components according to RFC 3986 (URI) and RFC 7230 (HTTP) specifications.
- * All character sets are optimized for high-performance validation with O(1) character lookups.</p>
+ * All character sets provide O(1) character lookups.</p>
  *
  * <h3>Design Principles</h3>
  * <ul>

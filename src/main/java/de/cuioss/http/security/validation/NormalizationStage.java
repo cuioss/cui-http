@@ -177,7 +177,7 @@ ValidationType validationType) implements HttpSecurityValidator {
      * Pattern to detect internal slash-dotdot patterns.
      * Matches "/" followed by ".." only when it's a directory traversal (followed by "/" or end of string).
      * This avoids false positives for filenames starting with ".." like "a/..c"
-     * Optimized for .find() usage without unnecessary .* wrappers.
+     * Uses .find() without unnecessary .* wrappers.
      */
     static final Pattern CONTAINS_SLASH_DOTDOT_PATTERN = Pattern.compile("/\\.\\.(?:/|$)");
 
@@ -185,7 +185,7 @@ ValidationType validationType) implements HttpSecurityValidator {
      * Pattern to detect internal dotdot-backslash patterns.
      * Matches ".." followed by "\\" anywhere in the path.
      * Used in conjunction with STARTS_WITH_DOTDOT_BACKSLASH_PATTERN to exclude initial "..\\".
-     * Optimized for .find() usage without unnecessary .* wrappers.
+     * Uses .find() without unnecessary .* wrappers.
      */
     static final Pattern CONTAINS_DOTDOT_BACKSLASH_PATTERN = Pattern.compile("\\.\\.\\\\");
 
