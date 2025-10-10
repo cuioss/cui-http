@@ -38,27 +38,13 @@ import java.time.Duration;
 import java.util.regex.Pattern;
 
 /**
- * Secure HTTP client wrapper providing simplified HTTP request execution with robust SSL handling.
- *
- * <p>This class provides a builder-based wrapper around Java's {@link HttpClient} that simplifies
- * HTTP request configuration and execution while ensuring secure defaults for SSL/TLS connections.
- * It handles common HTTP client setup patterns and provides consistent timeout and SSL management.</p>
- *
- * <h3>Design Principles</h3>
- * <ul>
- *   <li><strong>Security First</strong> - Automatic secure SSL context creation for HTTPS</li>
- *   <li><strong>Builder Pattern</strong> - Fluent API for easy configuration</li>
- *   <li><strong>Immutable</strong> - Thread-safe after construction</li>
- *   <li><strong>Fail Fast</strong> - Validates configuration at build time</li>
- * </ul>
- *
- * <h3>Security Features</h3>
- * <ul>
- *   <li><strong>Automatic SSL Context</strong> - Creates secure SSL contexts when not provided</li>
- *   <li><strong>TLS Version Control</strong> - Uses {@link SecureSSLContextProvider} for modern TLS versions</li>
- *   <li><strong>URL Validation</strong> - Validates URI format and convertibility at build time</li>
- *   <li><strong>Timeout Protection</strong> - Configurable timeouts prevent resource exhaustion</li>
- * </ul>
+ * HTTP client wrapper with builder API and SSL support.
+ * <p>
+ * Wraps Java's {@link HttpClient} with builder-based configuration.
+ * Creates secure SSL contexts automatically for HTTPS URLs.
+ * Validates URIs and configures timeouts at build time.
+ * <p>
+ * Thread-safe and immutable after construction.
  *
  * <h3>Usage Examples</h3>
  * <pre>
@@ -90,22 +76,12 @@ import java.util.regex.Pattern;
  *     .build();
  * </pre>
  *
- * <h3>Configuration Contract</h3>
+ * <h3>Configuration</h3>
  * <ul>
- *   <li><strong>URI Validation</strong> - URI must be valid and convertible to URL (checked at build time)</li>
- *   <li><strong>HTTPS SSL Context</strong> - Automatically created if not provided for HTTPS URIs</li>
- *   <li><strong>Timeout Defaults</strong> - Uses 10 seconds for both connection and read timeouts if not specified</li>
- *   <li><strong>URL Scheme Detection</strong> - Automatically handles URLs with or without explicit schemes</li>
- * </ul>
- *
- * <h3>Thread Safety</h3>
- * <p>HttpHandler instances are immutable and thread-safe after construction. The underlying
- * {@link HttpClient} is also thread-safe and can be used concurrently from multiple threads.</p>
- *
- * <h3>Error Handling</h3>
- * <ul>
- *   <li><strong>Build-time Validation</strong> - {@link IllegalStateException} for invalid URIs or configuration</li>
- *   <li><strong>Runtime Exceptions</strong> - {@link IOException} for network errors, {@link InterruptedException} for thread interruption</li>
+ *   <li>URI must be valid and convertible to URL (validated at build time)</li>
+ *   <li>SSL context created automatically for HTTPS if not provided</li>
+ *   <li>Default timeout: 10 seconds for both connection and read</li>
+ *   <li>URLs without scheme prefix default to HTTPS</li>
  * </ul>
  *
  * @since 1.0
@@ -253,11 +229,10 @@ public final class HttpHandler {
     }
 
     /**
-     * Gets the configured {@link HttpClient} for making HTTP requests.
-     * The HttpClient is created once during construction and reused for all requests,
-     * improving performance by leveraging connection pooling.
+     * Returns the configured {@link HttpClient} for making HTTP requests.
+     * Client is created once during construction and reused for all requests.
      *
-     * @return A configured {@link HttpClient} with the SSL context and connection timeout
+     * @return configured {@link HttpClient} with SSL context and connection timeout
      */
     public HttpClient createHttpClient() {
         return httpClient;

@@ -1,19 +1,20 @@
-= HTTP Result Pattern: Modern Result Handling
+= HTTP Result Pattern
 :toc: left
 :toclevels: 3
 :source-highlighter: highlightjs
 
 == Overview
 
-The `HttpResult<T>` sealed interface provides a modern, type-safe pattern for handling HTTP operation results in the cui-http library. It replaces the legacy `HttpResultObject` class and eliminates the dependency on `cui-core-ui-model`.
+`HttpResult<T>` is a sealed interface for HTTP operation results.
+Replaces `HttpResultObject` and removes the `cui-core-ui-model` dependency.
 
-=== Key Design Principles
+=== Design Principles
 
 * **Sealed Types**: Exhaustive pattern matching with compile-time guarantees
 * **Optional Pattern**: Explicit content absence instead of mandatory defaults
-* **Plain Strings**: Simple error messages without i18n framework coupling
-* **HTTP Semantics**: Native support for ETag, status codes, and retry classification
-* **Immutability**: Records ensure thread-safe, immutable results
+* **Plain Strings**: Error messages without i18n framework dependencies
+* **HTTP Semantics**: Native support for ETag, status codes, retry classification
+* **Immutability**: Records ensure thread-safe results
 
 == Architecture
 
@@ -460,20 +461,19 @@ result.getErrorMessage().ifPresent(logger::error);
 * **Don't retry non-retryable errors** - check `isRetryable()` first
 * **Don't discard error causes** - propagate exceptions for debugging
 
-== Performance Considerations
+== Performance
 
-* **Records are efficient**: Minimal memory overhead compared to classes
-* **No i18n overhead**: Plain strings eliminate runtime message resolution
-* **Sealed types enable optimizations**: JVM can optimize switch expressions
-* **Optional overhead is minimal**: Modern JVMs optimize Optional well
-* **Immutability enables sharing**: Safe to cache and reuse results
+* Records have minimal memory overhead
+* No i18n runtime message resolution
+* JVM can optimize sealed type switch expressions
+* Immutable results can be cached and reused
 
 == Thread Safety
 
-* **Immutable by design**: Records with final fields are inherently thread-safe
-* **Safe to cache**: Results can be stored and accessed from multiple threads
-* **No synchronization needed**: For reading result state and content
-* **Atomic operations**: Use AtomicReference for cached result storage
+* Records with final fields are thread-safe
+* Results can be accessed from multiple threads
+* No synchronization needed for reading state and content
+* Use AtomicReference for cached result storage
 
 == Troubleshooting
 

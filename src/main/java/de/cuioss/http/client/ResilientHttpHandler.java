@@ -34,16 +34,13 @@ import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * ETag-aware HTTP handler with stateful caching capabilities and built-in retry logic.
+ * HTTP handler with ETag caching and retry support.
  * <p>
- * This component provides HTTP-based caching using ETags and "If-None-Match" headers,
- * with resilient HTTP operations through configurable retry strategies.
- * It tracks whether content was loaded from cache (304 Not Modified) or freshly fetched (200 OK).
+ * Performs HTTP requests with conditional ETag headers ("If-None-Match") to support
+ * HTTP caching. Uses {@link RetryStrategy} to retry transient failures.
+ * Tracks whether content was loaded from cache (304 Not Modified) or server (200 OK).
  * <p>
- * Thread-safe implementation using ReentrantLock for virtual thread compatibility.
- * <h2>Retry Integration</h2>
- * The handler integrates with {@link RetryStrategy} to provide resilient HTTP operations,
- * solving permanent failure issues in well-known endpoint discovery and JWKS loading.
+ * Thread-safe using ReentrantLock.
  *
  * @param <T> the target type for content conversion
  * @author Oliver Wolff
@@ -62,15 +59,12 @@ public class ResilientHttpHandler<T> {
     private volatile LoaderStatus loaderStatus = LoaderStatus.UNDEFINED; // Explicitly tracked status
 
     /**
-     * Creates a new ETag-aware HTTP handler with retry logic and content conversion.
+     * Creates HTTP handler with ETag caching and retry support.
      * <p>
-     * This constructor accepts HttpHandler, RetryStrategy, and HttpContentConverter as separate parameters,
-     * providing flexible configuration for HTTP operations with optional retry capabilities.
-     * <p>
-     * For operations without retry, use {@link RetryStrategy#none()} as the retry strategy parameter.
+     * Use {@link RetryStrategy#none()} to disable retry behavior.
      *
      * @param httpHandler the HTTP handler for making requests, never null
-     * @param retryStrategy the retry strategy for handling transient failures, never null (use RetryStrategy.none() to disable)
+     * @param retryStrategy the retry strategy for transient failures, never null (use RetryStrategy.none() to disable)
      * @param contentConverter the converter for HTTP content, never null
      * @throws NullPointerException if any parameter is null
      */
@@ -81,43 +75,29 @@ public class ResilientHttpHandler<T> {
     }
 
     /**
-     * Loads HTTP content with resilient retry logic and ETag-based HTTP caching.
+     * Loads HTTP content with ETag caching and retry support.
      * <p>
-     * This method integrates {@link RetryStrategy} to provide resilient HTTP operations,
-     * automatically retrying transient failures and preventing permanent failure states
-     * that previously affected WellKnownResolver and JWKS loading.
-     *
-     * <h2>Virtual Threads Integration</h2>
-     * <p>
-     * The retry strategy now uses Java 21 virtual threads with non-blocking delays for efficient
-     * resource utilization. While this method maintains a synchronous API for compatibility,
-     * the internal retry operations run asynchronously on virtual threads, providing:
-     * </p>
-     * <ul>
-     *   <li><strong>Non-blocking delays</strong>: Uses CompletableFuture.delayedExecutor() instead of Thread.sleep()</li>
-     *   <li><strong>Resource efficiency</strong>: No blocked threads during retry delays</li>
-     *   <li><strong>High scalability</strong>: Supports thousands of concurrent retry operations</li>
-     *   <li><strong>Better composition</strong>: Internal async operations can be composed efficiently</li>
-     * </ul>
+     * Sends HTTP request with conditional ETag header if cached content exists.
+     * Uses configured {@link RetryStrategy} to retry transient failures.
+     * Updates {@link #loaderStatus} based on result.
      *
      * <h2>Result States</h2>
      * <ul>
-     *   <li><strong>Success + 200</strong>: Content freshly loaded from server</li>
+     *   <li><strong>Success + 200</strong>: Content loaded from server</li>
      *   <li><strong>Success + 304</strong>: Content unchanged, using cached version</li>
-     *   <li><strong>Failure + fallback</strong>: Error occurred but using cached data for graceful degradation</li>
-     *   <li><strong>Failure + no fallback</strong>: Error occurred with no cached content available</li>
+     *   <li><strong>Failure + fallback</strong>: Error occurred, using cached data</li>
+     *   <li><strong>Failure + no fallback</strong>: Error occurred with no cached content</li>
      * </ul>
      *
-     * <h2>Retry Integration</h2>
-     * The method uses the configured {@link RetryStrategy} to handle transient failures:
+     * <h2>Retry Behavior</h2>
      * <ul>
-     *   <li>Network timeouts and connection errors are retried with exponential backoff</li>
-     *   <li>HTTP 5xx server errors are retried as they're often transient</li>
-     *   <li>HTTP 4xx client errors are not retried as they're typically permanent</li>
-     *   <li>Cache responses (304 Not Modified) are not subject to retry</li>
+     *   <li>Network errors: retried per {@link RetryStrategy}</li>
+     *   <li>HTTP 5xx errors: retried per {@link RetryStrategy}</li>
+     *   <li>HTTP 4xx errors: not retried</li>
+     *   <li>HTTP 304 responses: not retried</li>
      * </ul>
      *
-     * @return HttpResult containing content and detailed state information, never null
+     * @return HttpResult containing content and state information, never null
      */
     public HttpResult<T> load() {
         lock.lock();
@@ -167,10 +147,7 @@ public class ResilientHttpHandler<T> {
 
 
     /**
-     * Executes HTTP request with ETag validation support and direct HttpResult return.
-     * <p>
-     * This method now returns HttpResult directly to support RetryStrategy.execute(),
-     * implementing the HttpOperation<String> pattern for resilient HTTP operations.
+     * Executes HTTP request with ETag validation support.
      *
      * @return HttpResult containing content and state information, never null
      */

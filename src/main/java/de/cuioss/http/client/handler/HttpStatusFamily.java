@@ -19,19 +19,10 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
 /**
- * HTTP status code classification enum based on RFC 7231 status code families.
- *
- * <p>This enum provides a type-safe way to classify HTTP status codes into their standard
- * families as defined by RFC 7231. It includes utility methods for checking status code
- * categories and determining appropriate response handling strategies.</p>
- *
- * <h3>Design Principles</h3>
- * <ul>
- *   <li><strong>RFC Compliance</strong> - Follows RFC 7231 HTTP status code definitions</li>
- *   <li><strong>Type Safety</strong> - Enum-based classification prevents invalid categories</li>
- *   <li><strong>Utility Methods</strong> - Convenient static methods for common checks</li>
- *   <li><strong>Range Validation</strong> - Validates status codes against standard ranges</li>
- * </ul>
+ * HTTP status code classification based on RFC 7231.
+ * <p>
+ * Classifies HTTP status codes into standard families with utility methods
+ * for status code category checking.
  *
  * <h3>Status Code Families</h3>
  * <ul>
