@@ -20,16 +20,16 @@ import java.util.Set;
 import static de.cuioss.tools.collect.CollectionLiterals.immutableSet;
 
 /**
- * HTTP-specific result states that extend the basic CUI result pattern with semantics
- * tailored for HTTP operations, particularly ETag-aware caching and retry scenarios.
+ * Result states for HTTP operations with ETag-aware caching.
+ * Extends the basic CUI result pattern with HTTP-specific semantics.
  *
- * <h2>State Overview</h2>
+ * <h2>States</h2>
  * <ul>
- *   <li>{@link #FRESH} - Successfully loaded new content from server</li>
- *   <li>{@link #CACHED} - Using cached content (ETag indicates not modified)</li>
- *   <li>{@link #STALE} - Using cached content but it may be outdated</li>
- *   <li>{@link #RECOVERED} - Succeeded after retry attempts</li>
- *   <li>{@link #ERROR} - All attempts failed, using fallback if available</li>
+ *   <li>{@link #FRESH} - New content loaded from server</li>
+ *   <li>{@link #CACHED} - Cached content validated as current (HTTP 304)</li>
+ *   <li>{@link #STALE} - Cached content used due to error, may be outdated</li>
+ *   <li>{@link #RECOVERED} - Operation succeeded after retry attempts</li>
+ *   <li>{@link #ERROR} - All attempts failed, fallback content if available</li>
  * </ul>
  *
  * <h2>Usage Patterns</h2>
@@ -58,16 +58,7 @@ import static de.cuioss.tools.collect.CollectionLiterals.immutableSet;
  * }
  * </pre>
  *
- * <h2>State Semantics</h2>
- * <ul>
- *   <li><strong>FRESH</strong>: Content was loaded from server, ETag updated</li>
- *   <li><strong>CACHED</strong>: Server returned 304 Not Modified, content unchanged</li>
- *   <li><strong>STALE</strong>: Using cached content due to error, may be outdated</li>
- *   <li><strong>RECOVERED</strong>: Succeeded after 1+ retry attempts</li>
- *   <li><strong>ERROR</strong>: All retry attempts failed, using default/fallback result</li>
- * </ul>
- *
- * @author Implementation based on CUI result pattern
+ * @author Oliver Wolff
  * @see HttpResultObject
  * @see de.cuioss.uimodel.result.ResultState
  * @since 1.0
@@ -75,63 +66,52 @@ import static de.cuioss.tools.collect.CollectionLiterals.immutableSet;
 public enum HttpResultState {
 
     /**
-     * Successfully loaded fresh content from the server.
-     * This indicates the content is new or has been updated since the last request.
-     * ETag has been updated to reflect the current content version.
+     * Fresh content loaded from server.
+     * Content is new or updated, ETag reflects current version.
      */
     FRESH,
 
     /**
-     * Using cached content because server indicated it hasn't changed.
-     * This is the optimal case for ETag-aware operations where the server
-     * returned HTTP 304 Not Modified, confirming cached content is current.
+     * Cached content validated as current.
+     * Server returned HTTP 304 Not Modified, cached content remains valid.
      */
     CACHED,
 
     /**
-     * Using cached/fallback content because fresh content couldn't be retrieved.
-     * The cached content may be outdated but provides graceful degradation.
-     * This state indicates potential service degradation that should be monitored.
+     * Cached content used due to error.
+     * Content may be outdated, indicates degraded operation.
      */
     STALE,
 
     /**
-     * Operation succeeded but only after retry attempts.
-     * This indicates temporary network/server issues that were successfully overcome.
-     * Retry metrics should be available for observability.
+     * Operation succeeded after retry attempts.
+     * Indicates temporary failures were overcome.
      */
     RECOVERED,
 
     /**
      * All retry attempts failed.
-     * A default or cached result may be available for graceful degradation,
-     * but the primary operation could not be completed successfully.
+     * Fallback or default content may be available.
      */
     ERROR;
 
     /**
-     * States that indicate successful content retrieval from cache.
-     * These states mean the result can be used reliably for business logic.
+     * States using cached content: {@link #CACHED}, {@link #STALE}.
      */
     public static final Set<HttpResultState> CACHE_STATES = immutableSet(CACHED, STALE);
 
     /**
-     * States that indicate successful operation completion.
-     * Content is available and can be used, though STALE and RECOVERED
-     * may warrant logging for monitoring purposes.
+     * States indicating successful operations: {@link #FRESH}, {@link #CACHED}, {@link #RECOVERED}.
      */
     public static final Set<HttpResultState> SUCCESS_STATES = immutableSet(FRESH, CACHED, RECOVERED);
 
     /**
-     * States that indicate content freshness concerns.
-     * These states suggest monitoring or validation may be appropriate.
+     * States indicating degraded operation: {@link #STALE}, {@link #RECOVERED}.
      */
     public static final Set<HttpResultState> DEGRADED_STATES = immutableSet(STALE, RECOVERED);
 
     /**
-     * States that must be handled before accessing the result.
-     * Overrides the base ResultState behavior to include STALE state
-     * as it may require special handling in some contexts.
+     * States requiring explicit handling: {@link #ERROR}, {@link #STALE}.
      */
     public static final Set<HttpResultState> MUST_BE_HANDLED = immutableSet(ERROR, STALE);
 }

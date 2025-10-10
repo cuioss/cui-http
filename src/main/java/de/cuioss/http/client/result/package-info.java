@@ -14,23 +14,14 @@
  * limitations under the License.
  */
 /**
- * HTTP-specific result pattern implementation that extends the CUI result framework
- * with semantics tailored for HTTP operations and ETag caching.
+ * Result patterns for HTTP operations with ETag caching support.
  *
- * <h2>Core Components</h2>
+ * <h2>Core Types</h2>
  * <ul>
- *   <li>{@link de.cuioss.http.client.result.HttpResultObject} - HTTP-specialized result wrapper</li>
- *   <li>{@link de.cuioss.http.client.result.HttpResultState} - HTTP-specific state constants</li>
- *   <li>{@link de.cuioss.uimodel.result.ResultDetail} - CUI error details with user messages</li>
- *   <li>{@link de.cuioss.http.client.result.HttpErrorCategory} - HTTP error classifications with retry logic</li>
- * </ul>
- *
- * <h2>Key Benefits</h2>
- * <ul>
- *   <li><strong>Unified API</strong> - Single result type across all HTTP operations</li>
- *   <li><strong>HTTP Semantics</strong> - Built-in support for ETag caching and HTTP status codes</li>
- *   <li><strong>Error Classification</strong> - Standardized error codes for consistent handling</li>
- *   <li><strong>CUI Integration</strong> - Full compatibility with existing CUI result patterns</li>
+ *   <li>{@link de.cuioss.http.client.result.HttpResult} - Sealed interface for HTTP operation results</li>
+ *   <li>{@link de.cuioss.http.client.result.HttpResultObject} - Legacy CUI result wrapper (deprecated)</li>
+ *   <li>{@link de.cuioss.http.client.result.HttpErrorCategory} - Error classification for retry decisions</li>
+ *   <li>{@link de.cuioss.http.client.result.HttpResultState} - State constants for legacy result objects</li>
  * </ul>
  *
  * <h2>Usage Examples</h2>
@@ -104,67 +95,29 @@
  * );
  * </pre>
  *
- * <h2>Result States</h2>
- * <p>
- * HttpResultObject uses the standard CUI result states:
- * </p>
+ * <h2>Pattern Comparison</h2>
+ *
+ * <h3>HttpResult (Recommended)</h3>
  * <ul>
- *   <li><strong>VALID</strong> - HTTP operation succeeded (status 200, 304, etc.)</li>
- *   <li><strong>WARNING</strong> - Degraded state (fallback content, recovery scenarios)</li>
- *   <li><strong>ERROR</strong> - Operation failed (with optional fallback content)</li>
+ *   <li>Sealed interface with Success/Failure records</li>
+ *   <li>Type-safe pattern matching</li>
+ *   <li>Immutable records</li>
+ *   <li>Optional-based content access</li>
+ *   <li>No external dependencies</li>
  * </ul>
  *
- * <p>
- * HTTP-specific context is provided through:
- * </p>
+ * <h3>HttpResultObject (Legacy)</h3>
  * <ul>
- *   <li>ETag for caching optimization</li>
- *   <li>HTTP status code for protocol semantics</li>
- *   <li>HttpErrorCategory for retry decision making</li>
+ *   <li>Extends CUI ResultObject</li>
+ *   <li>State-based checking (VALID/WARNING/ERROR)</li>
+ *   <li>Integrates with CUI i18n framework</li>
+ *   <li>Direct content access (non-Optional)</li>
+ *   <li>Requires cui-core-ui-model dependency</li>
  * </ul>
  *
- * <h2>Modern Result Pattern</h2>
- * <p>
- * This package provides a modern result pattern using sealed interfaces,
- * adding HTTP-specific semantics with type safety:
- * </p>
- * <ul>
- *   <li>Uses {@link HttpResult} sealed interface for type-safe pattern matching</li>
- *   <li>Success and Failure records for immutable results</li>
- *   <li>Optional pattern for explicit content absence</li>
- *   <li>Plain string error messages without i18n coupling</li>
- *   <li>Thread-safe by design (immutable records)</li>
- * </ul>
- *
- * <h2>Migration from Legacy Patterns</h2>
- * <p>
- * This framework replaces custom result types like {@code LoadResult} and {@code HttpFetchResult}
- * with a unified approach:
- * </p>
- *
- * <h3>Before (Legacy)</h3>
- * <pre>
- * LoadResult result = httpHandler.load();
- * if (result.content() == null) {
- *     // Handle error with exceptions
- *     throw new HttpException("Failed to load");
- * }
- * String content = result.content();
- * </pre>
- *
- * <h3>After (Result Pattern)</h3>
- * <pre>
- * HttpResultObject&lt;String&gt; result = httpHandler.load();
- * if (!result.isValid()) {
- *     // Handle error with structured details
- *     result.getResultDetail().ifPresent(this::logError);
- *     return result.copyStateAndDetails(defaultContent);
- * }
- * String content = result.getResult();
- * </pre>
- *
- * @author Implementation for JWT HTTP operations
- * @see de.cuioss.uimodel.result.ResultObject
+ * @author Oliver Wolff
+ * @see de.cuioss.http.client.result.HttpResult
+ * @see de.cuioss.http.client.result.HttpResultObject
  * @since 1.0
  */
 package de.cuioss.http.client.result;

@@ -22,17 +22,8 @@ import java.util.Optional;
 import java.util.function.Function;
 
 /**
- * Modern HTTP result type using sealed interface pattern for type-safe result handling.
- * Represents either a successful HTTP operation or a failure with optional fallback content.
- *
- * <h2>Key Features</h2>
- * <ul>
- *   <li>Sealed interface for exhaustive pattern matching</li>
- *   <li>Optional-based content (no mandatory defaults)</li>
- *   <li>Plain string error messages (no i18n coupling)</li>
- *   <li>HTTP metadata (ETag, status code)</li>
- *   <li>Retry capability classification</li>
- * </ul>
+ * Sealed interface representing HTTP operation results as either success or failure.
+ * Replaces {@code HttpResultObject} as the result pattern for HTTP operations.
  *
  * <h2>Design Principles</h2>
  * <ul>
@@ -40,7 +31,7 @@ import java.util.function.Function;
  *   <li><strong>Explicit absence</strong>: Optional pattern instead of mandatory defaults</li>
  *   <li><strong>Immutable</strong>: Records ensure thread-safe, immutable results</li>
  *   <li><strong>HTTP-aware</strong>: Native support for ETag, status codes, retry logic</li>
- *   <li><strong>Simple errors</strong>: Plain strings, no i18n framework coupling</li>
+ *   <li><strong>Simple errors</strong>: Plain string messages without framework dependencies</li>
  * </ul>
  *
  * <h2>Usage Patterns</h2>
@@ -129,10 +120,10 @@ import java.util.function.Function;
  *
  * <h2>Result States</h2>
  * <ul>
- *   <li><strong>Success (fresh)</strong>: HTTP 200 OK with newly loaded content and ETag</li>
- *   <li><strong>Success (cached)</strong>: HTTP 304 Not Modified, using cached content</li>
- *   <li><strong>Failure (with fallback)</strong>: Error occurred but cached content available</li>
- *   <li><strong>Failure (no fallback)</strong>: Error occurred with no cached content</li>
+ *   <li><strong>Success with fresh content</strong>: HTTP 200 OK with newly loaded content and ETag</li>
+ *   <li><strong>Success with cached content</strong>: HTTP 304 Not Modified, using existing cached content</li>
+ *   <li><strong>Failure with fallback</strong>: Operation failed but cached content available for degraded operation</li>
+ *   <li><strong>Failure without fallback</strong>: Operation failed with no cached content available</li>
  * </ul>
  *
  * @param <T> the content type
@@ -226,12 +217,9 @@ permits HttpResult.Success, HttpResult.Failure {
     // === Transformations ===
 
     /**
-     * Maps the content to a different type while preserving metadata.
-     * <ul>
-     *   <li>For Success: transforms the content using the mapper</li>
-     *   <li>For Failure: transforms the fallback content if present</li>
-     * </ul>
-     * All metadata (ETag, status, error info) is preserved in the result.
+     * Transforms content to a different type while preserving metadata.
+     * Applies mapper to success content or fallback content if present.
+     * Metadata (ETag, status, error info) is preserved.
      *
      * @param mapper function to transform content
      * @param <U> target type
@@ -327,8 +315,7 @@ permits HttpResult.Success, HttpResult.Failure {
 
     /**
      * Successful HTTP operation with content.
-     * Represents a completed HTTP request that successfully loaded content,
-     * either freshly from the server (200 OK) or from cache (304 Not Modified).
+     * Contains content loaded from server (HTTP 200) or validated from cache (HTTP 304).
      *
      * @param content the response content, never null
      * @param etag optional ETag header value for caching
@@ -373,23 +360,12 @@ permits HttpResult.Success, HttpResult.Failure {
     }
 
     /**
-     * Failed HTTP operation with optional fallback content.
-     * Represents a failed HTTP request with detailed error information.
-     * May include fallback content from cache for graceful degradation.
-     *
-     * <h3>Field Semantics</h3>
-     * <ul>
-     *   <li><strong>errorMessage</strong>: Human-readable error description (never null)</li>
-     *   <li><strong>cause</strong>: Underlying exception if available</li>
-     *   <li><strong>fallbackContent</strong>: Cached content for graceful degradation</li>
-     *   <li><strong>category</strong>: Error classification for retry decisions (never null)</li>
-     *   <li><strong>etag</strong>: ETag from cached content if fallback is used</li>
-     *   <li><strong>httpStatus</strong>: HTTP status code if request reached server</li>
-     * </ul>
+     * Failed HTTP operation with error details and optional fallback content.
+     * Contains error information and may include cached content for degraded operation.
      *
      * @param errorMessage human-readable error description
      * @param cause underlying exception if available
-     * @param fallbackContent optional cached/fallback content
+     * @param fallbackContent optional cached content for degraded operation
      * @param category error classification for retry decisions
      * @param etag optional ETag from cached content
      * @param httpStatus optional HTTP status code
