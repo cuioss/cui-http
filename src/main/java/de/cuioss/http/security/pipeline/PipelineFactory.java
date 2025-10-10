@@ -60,14 +60,6 @@ import java.util.Objects;
  * HttpSecurityValidator validator = PipelineFactory.createPipeline(ValidationType.URL_PATH, config, counter);
  * </pre>
  *
- * <h3>Factory Method Benefits</h3>
- * <ul>
- *   <li><strong>Type Safety</strong> - Prevents incorrect ValidationType for header pipelines</li>
- *   <li><strong>Simplified API</strong> - Clear method names for common use cases</li>
- *   <li><strong>Future Extensibility</strong> - Easy to add new pipeline types</li>
- *   <li><strong>Configuration Validation</strong> - Ensures proper pipeline setup</li>
- * </ul>
- *
  * <h3>Thread Safety</h3>
  * <p>This factory class is stateless and thread-safe. All factory methods can be called
  * concurrently from multiple threads. The created pipelines are also thread-safe and
