@@ -133,7 +133,7 @@ public class UrlSecurityException extends RuntimeException {
     }
 
     /**
-     * Builds a comprehensive error message from the exception components.
+     * Builds an error message from the exception components.
      *
      * @param failureType The type of failure
      * @param validationType The type of validation

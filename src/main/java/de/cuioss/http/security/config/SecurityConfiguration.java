@@ -228,7 +228,7 @@ public final class SecurityConfiguration {
         // Pre-process sets for case-insensitive comparison if needed
         // This optimization changes lookups from O(n) to O(1) average case
         if (!caseSensitiveComparison) {
-            // Convert all strings to lowercase for efficient case-insensitive lookups
+            // Convert all strings to lowercase for case-insensitive lookups
             this.allowedHeaderNamesLowercase = this.allowedHeaderNames != null ?
                     this.allowedHeaderNames.stream()
                             .map(String::toLowerCase)
@@ -387,7 +387,7 @@ public final class SecurityConfiguration {
     }
 
     /**
-     * Optimized helper method to check if a value is allowed based on allow and block lists.
+     * Helper method to check if a value is allowed based on allow and block lists.
      * For case-insensitive comparison, uses pre-processed lowercase sets for O(1) lookups
      * instead of O(n) stream operations.
      *

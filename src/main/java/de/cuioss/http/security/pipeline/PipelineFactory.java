@@ -27,8 +27,8 @@ import java.util.Objects;
  *
  * <p>This factory provides centralized creation of all HTTP security validation pipelines
  * with consistent configuration and monitoring. It ensures proper pipeline selection
- * based on the type of HTTP component being validated and provides convenient factory
- * methods for common use cases.</p>
+ * based on the type of HTTP component being validated with factory methods for
+ * common use cases.</p>
  *
  * <h3>Design Principles</h3>
  * <ul>
@@ -264,7 +264,7 @@ public final class PipelineFactory {
     /**
      * A record containing commonly used HTTP validation pipelines.
      *
-     * <p>This immutable record provides convenient access to all the main pipeline types
+     * <p>This immutable record provides access to all the main pipeline types
      * with consistent configuration and monitoring.</p>
      *
      * @param urlPathPipeline Pipeline for validating URL path components
