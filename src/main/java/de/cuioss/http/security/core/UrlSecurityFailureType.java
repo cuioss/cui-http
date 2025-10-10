@@ -16,13 +16,13 @@
 package de.cuioss.http.security.core;
 
 /**
- * Comprehensive enumeration of security failure types for URL validation.
+ * Enumeration of security failure types for URL validation.
  * Each failure type represents a specific class of security violation that
  * can occur during URL processing and validation.
  *
  * <h3>Design Principles</h3>
  * <ul>
- *   <li><strong>Comprehensive Coverage</strong> - Covers all major URL security attack vectors</li>
+ *   <li><strong>Attack Coverage</strong> - Covers all major URL security attack vectors</li>
  *   <li><strong>Clear Categorization</strong> - Groups related failure types for easier handling</li>
  *   <li><strong>Descriptive Names</strong> - Self-documenting enum values</li>
  *   <li><strong>Immutable Design</strong> - Thread-safe for concurrent validation</li>

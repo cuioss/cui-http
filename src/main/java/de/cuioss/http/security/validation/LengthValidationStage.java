@@ -44,7 +44,7 @@ import java.util.function.Predicate;
  * <ul>
  *   <li><strong>DoS Protection</strong> - Prevents resource exhaustion through size limits</li>
  *   <li><strong>Context-Sensitive</strong> - Different limits for different HTTP components</li>
- *   <li><strong>Performance Optimized</strong> - Simple length checks with O(1) complexity</li>
+ *   <li><strong>Performance</strong> - Simple length checks with O(1) complexity</li>
  *   <li><strong>RFC Compliant</strong> - Follows HTTP specification recommendations</li>
  * </ul>
  *

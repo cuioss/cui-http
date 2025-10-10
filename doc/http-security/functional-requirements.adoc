@@ -7,7 +7,7 @@
 
 == Overview
 
-This document defines the functional requirements for the HTTP Security Validation system. The system provides comprehensive validation and sanitization of HTTP input components (URLs, paths, parameters, headers) to prevent security vulnerabilities, with a primary focus on path traversal attacks.
+This document defines the functional requirements for the HTTP Security Validation system. The system validates and sanitizes HTTP input components (URLs, paths, parameters, headers) to prevent security vulnerabilities, with a primary focus on path traversal attacks.
 
 These requirements are derived from:
 

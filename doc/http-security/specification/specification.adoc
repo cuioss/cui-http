@@ -67,7 +67,7 @@ The following classes implement the core security validation components:
 ==== Core Interfaces
 * link:../../../src/main/java/de/cuioss/http/security/core/HttpSecurityValidator.java[HttpSecurityValidator] - Core functional interface for validation
 * link:../../../src/main/java/de/cuioss/http/security/core/ValidationType.java[ValidationType] - Enumeration of input types for validation
-* link:../../../src/main/java/de/cuioss/http/security/core/UrlSecurityFailureType.java[UrlSecurityFailureType] - Comprehensive failure type enumeration
+* link:../../../src/main/java/de/cuioss/http/security/core/UrlSecurityFailureType.java[UrlSecurityFailureType] - Failure type enumeration
 
 ==== Exception Handling
 * link:../../../src/main/java/de/cuioss/http/security/exceptions/UrlSecurityException.java[UrlSecurityException] - Main exception for security violations

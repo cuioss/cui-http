@@ -27,8 +27,8 @@ import java.util.Objects;
  *
  * <p>This factory provides centralized creation of all HTTP security validation pipelines
  * with consistent configuration and monitoring. It ensures proper pipeline selection
- * based on the type of HTTP component being validated and provides convenient factory
- * methods for common use cases.</p>
+ * based on the type of HTTP component being validated with factory methods for
+ * common use cases.</p>
  *
  * <h3>Design Principles</h3>
  * <ul>
@@ -59,14 +59,6 @@ import java.util.Objects;
  * // Generic factory method based on validation type
  * HttpSecurityValidator validator = PipelineFactory.createPipeline(ValidationType.URL_PATH, config, counter);
  * </pre>
- *
- * <h3>Factory Method Benefits</h3>
- * <ul>
- *   <li><strong>Type Safety</strong> - Prevents incorrect ValidationType for header pipelines</li>
- *   <li><strong>Simplified API</strong> - Clear method names for common use cases</li>
- *   <li><strong>Future Extensibility</strong> - Easy to add new pipeline types</li>
- *   <li><strong>Configuration Validation</strong> - Ensures proper pipeline setup</li>
- * </ul>
  *
  * <h3>Thread Safety</h3>
  * <p>This factory class is stateless and thread-safe. All factory methods can be called
@@ -272,7 +264,7 @@ public final class PipelineFactory {
     /**
      * A record containing commonly used HTTP validation pipelines.
      *
-     * <p>This immutable record provides convenient access to all the main pipeline types
+     * <p>This immutable record provides access to all the main pipeline types
      * with consistent configuration and monitoring.</p>
      *
      * @param urlPathPipeline Pipeline for validating URL path components

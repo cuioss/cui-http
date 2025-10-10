@@ -11,7 +11,7 @@ This document serves as the main index for all requirements related to the HTTP 
 
 == Purpose
 
-The HTTP Security Validation system provides comprehensive validation and sanitization of HTTP input components to prevent security vulnerabilities, particularly path traversal attacks. This requirements documentation ensures:
+The HTTP Security Validation system validates and sanitizes HTTP input components to prevent security vulnerabilities, particularly path traversal attacks. This requirements documentation ensures:
 
 * Complete coverage of security concerns identified in OWASP Top 10
 * Prevention of vulnerabilities found in CVE analysis

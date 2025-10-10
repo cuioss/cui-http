@@ -24,7 +24,7 @@
  * <h3>Configuration Components</h3>
  * <ul>
  *   <li>{@link de.cuioss.http.security.config.SecurityConfiguration} - Main immutable configuration record</li>
- *   <li>{@link de.cuioss.http.security.config.SecurityConfigurationBuilder} - Builder for flexible configuration creation</li>
+ *   <li>{@link de.cuioss.http.security.config.SecurityConfigurationBuilder} - Builder for configuration creation</li>
  *   <li>{@link de.cuioss.http.security.config.SecurityDefaults} - Default values and constants</li>
  * </ul>
  *

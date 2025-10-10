@@ -17,9 +17,9 @@
 /**
  * Exception handling for HTTP security validation failures.
  *
- * <p>This package provides comprehensive exception types for representing security
- * validation failures with detailed context information. All exceptions follow the
- * fail-fast principle and provide rich information for debugging and monitoring.</p>
+ * <p>This package provides exception types for representing security validation failures
+ * with detailed context information. All exceptions follow the fail-fast principle and
+ * provide rich information for debugging and monitoring.</p>
  *
  * <h3>Exception Types</h3>
  * <ul>

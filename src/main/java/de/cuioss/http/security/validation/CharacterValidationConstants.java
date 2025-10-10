@@ -24,14 +24,14 @@ import java.util.BitSet;
  *
  * <p>This utility class provides pre-computed BitSet instances containing allowed characters
  * for different HTTP components according to RFC 3986 (URI) and RFC 7230 (HTTP) specifications.
- * All character sets are optimized for high-performance validation with O(1) character lookups.</p>
+ * All character sets provide O(1) character lookups.</p>
  *
  * <h3>Design Principles</h3>
  * <ul>
  *   <li><strong>RFC Compliance</strong> - Strict adherence to HTTP and URI specifications</li>
- *   <li><strong>Performance Optimized</strong> - Pre-computed BitSets for O(1) character validation</li>
+ *   <li><strong>Performance</strong> - Pre-computed BitSets for O(1) character validation</li>
  *   <li><strong>Thread Safety</strong> - Immutable after initialization, safe for concurrent access</li>
- *   <li><strong>Memory Efficient</strong> - Shared instances reduce memory overhead</li>
+ *   <li><strong>Memory</strong> - Shared instances reduce memory overhead</li>
  * </ul>
  *
  * <h3>Character Set Categories</h3>

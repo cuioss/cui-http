@@ -29,7 +29,7 @@ import java.util.Optional;
  * <h3>Design Principles</h3>
  * <ul>
  *   <li><strong>Case Insensitive</strong> - Attribute name matching is case-insensitive</li>
- *   <li><strong>Robust Parsing</strong> - Handles edge cases like missing values and whitespace</li>
+ *   <li><strong>Parsing</strong> - Handles edge cases like missing values and whitespace</li>
  *   <li><strong>Stateless</strong> - All methods are static and thread-safe</li>
  *   <li><strong>Utility Class</strong> - Cannot be instantiated</li>
  * </ul>

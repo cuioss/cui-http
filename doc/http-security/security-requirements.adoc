@@ -44,7 +44,7 @@ These requirements are derived from:
 == Path Traversal Security Requirements
 
 [#SEC-3]
-=== SEC-3: Comprehensive Traversal Pattern Detection
+=== SEC-3: Traversal Pattern Detection
 
 * The system must detect all known path traversal patterns
 * Must detect patterns from CVE database including:

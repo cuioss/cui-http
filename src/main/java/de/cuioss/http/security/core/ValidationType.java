@@ -23,7 +23,7 @@ package de.cuioss.http.security.core;
  * <ul>
  *   <li><strong>Type Safety</strong> - Provides compile-time safety for validation contexts</li>
  *   <li><strong>Context Awareness</strong> - Different validation rules per component type</li>
- *   <li><strong>Performance</strong> - Enables optimized validation strategies per type</li>
+ *   <li><strong>Performance</strong> - Enables validation strategies per type</li>
  *   <li><strong>Extensibility</strong> - Easy to add new HTTP component types</li>
  * </ul>
  *

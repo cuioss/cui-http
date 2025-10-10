@@ -5,7 +5,7 @@
 
 == Overview
 
-This documentation suite provides comprehensive analysis and design specifications for HTTP/URL path traversal security validation in cui-http.
+Documentation for HTTP/URL path traversal security validation in cui-http.
 
 
 == Document Index
@@ -30,7 +30,7 @@ Detailed standards for validation pipeline selection, configuration, and impleme
 === Security Analysis
 
 xref:analysis/owasp-best-practices.adoc[OWASP Best Practices]::
-Comprehensive guide to OWASP-recommended prevention strategies, validation techniques, and security patterns for path traversal prevention.
+OWASP-recommended prevention strategies, validation techniques, and security patterns for path traversal prevention.
 
 xref:analysis/cve-analysis.adoc[CVE Analysis and Breach Studies]::
 Detailed analysis of critical CVEs from 2019-2024 and real-world breach case studies demonstrating exploitation patterns and impacts.

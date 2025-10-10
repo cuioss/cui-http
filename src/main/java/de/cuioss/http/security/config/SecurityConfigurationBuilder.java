@@ -24,14 +24,13 @@ import java.util.Set;
 /**
  * Builder class for constructing {@link SecurityConfiguration} instances with fluent API.
  *
- * <p>This builder provides a convenient way to construct SecurityConfiguration objects
- * with sensible defaults while allowing fine-grained control over all security settings.
- * The builder follows the standard builder pattern with method chaining.</p>
+ * <p>Constructs SecurityConfiguration objects with defaults while allowing fine-grained control
+ * over all security settings. Follows the standard builder pattern with method chaining.</p>
  *
  * <h3>Design Principles</h3>
  * <ul>
  *   <li><strong>Fluent API</strong> - All setter methods return the builder for chaining</li>
- *   <li><strong>Sensible Defaults</strong> - Pre-configured with reasonable security defaults</li>
+ *   <li><strong>Secure Defaults</strong> - Pre-configured with reasonable security defaults</li>
  *   <li><strong>Validation</strong> - Input validation on all parameters</li>
  *   <li><strong>Immutability</strong> - Produces immutable SecurityConfiguration instances</li>
  * </ul>
