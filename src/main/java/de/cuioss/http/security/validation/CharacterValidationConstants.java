@@ -29,9 +29,9 @@ import java.util.BitSet;
  * <h3>Design Principles</h3>
  * <ul>
  *   <li><strong>RFC Compliance</strong> - Strict adherence to HTTP and URI specifications</li>
- *   <li><strong>Performance Optimized</strong> - Pre-computed BitSets for O(1) character validation</li>
+ *   <li><strong>Performance</strong> - Pre-computed BitSets for O(1) character validation</li>
  *   <li><strong>Thread Safety</strong> - Immutable after initialization, safe for concurrent access</li>
- *   <li><strong>Memory Efficient</strong> - Shared instances reduce memory overhead</li>
+ *   <li><strong>Memory</strong> - Shared instances reduce memory overhead</li>
  * </ul>
  *
  * <h3>Character Set Categories</h3>

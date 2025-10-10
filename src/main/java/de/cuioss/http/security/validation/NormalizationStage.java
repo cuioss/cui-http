@@ -191,7 +191,7 @@ ValidationType validationType) implements HttpSecurityValidator {
 
 
     /**
-     * Validates and normalizes a path with comprehensive security checks.
+     * Validates and normalizes a path with security checks.
      *
      * <p>Processing stages:</p>
      * <ol>
@@ -451,8 +451,8 @@ ValidationType validationType) implements HttpSecurityValidator {
      *
      * <p>After proper normalization, there should be no remaining .. segments
      * except at the beginning for relative paths (which is handled by escapesRoot).
-     * This method performs comprehensive checks for any remaining traversal patterns
-     * that could indicate incomplete normalization or sophisticated attacks.</p>
+     * This method checks for any remaining traversal patterns
+     * that could indicate incomplete normalization or attacks.</p>
      *
      * @param path The normalized path to check
      * @return true if path contains internal traversal patterns
