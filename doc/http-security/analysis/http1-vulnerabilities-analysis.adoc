@@ -1,0 +1,607 @@
+= HTTP/1.x Must Die: Request Smuggling Vulnerabilities - Security Analysis
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:icons: font
+:source-highlighter: highlight.js
+
+link:../README.adoc[← Back to Documentation Index]
+
+== Overview
+
+This document analyzes HTTP/1.x protocol vulnerabilities from the PortSwigger research "HTTP/1 Must Die" (https://portswigger.net/research/http1-must-die), focusing on request smuggling and parser differential attacks. Each vulnerability is assessed for applicability to `de.cuioss.http.security`, and test coverage is documented.
+
+**Note:** Many HTTP/1.x vulnerabilities exist at the infrastructure/proxy layer and are outside the scope of application-level HTTP component validation. This document focuses on validation patterns that can be implemented at the application security layer.
+
+== HTTP/1.x Protocol Weakness
+
+=== Fundamental Flaw: Weak Request Boundaries
+
+**Problem:** HTTP/1.1 requests are simply concatenated on the underlying TCP/TLS socket with no explicit delimiters between requests. Request boundaries are determined by parsing headers (Content-Length, Transfer-Encoding) rather than protocol-level framing.
+
+**Consequence:** Different implementations may parse the same byte stream differently, creating opportunities for:
+
+* Request smuggling
+* Cache poisoning
+* Authentication bypass
+* Request routing manipulation
+
+== Vulnerability Analysis
+
+=== 1. CL.TE Request Smuggling (Classic)
+
+==== Description
+Front-end server processes Content-Length header while back-end server processes Transfer-Encoding header, causing desynchronization. The front-end forwards what it believes is one request, but the back-end interprets it as two requests.
+
+==== Attack Vector
+```http
+POST /api HTTP/1.1
+Host: vulnerable.com
+Content-Length: 6
+Transfer-Encoding: chunked
+
+0
+
+G
+```
+
+**Front-end:** Reads 6 bytes (includes "0\r\n\r\nG"), forwards entire payload
+**Back-end:** Processes chunked encoding, sees chunk size 0 (end), interprets "G" as start of next request
+
+==== Impact
+* Request smuggling
+* Cache poisoning
+* Authentication bypass
+* Access to other users' requests
+
+==== Status: ✓ PARTIALLY MITIGATED
+
+**Application-Layer Protection:**
+
+* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - Detects CRLF injection patterns (`%0d%0a`)
+* link:../../../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] - Validates header values
+* link:../../../src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] - Comprehensive CL.TE test coverage (200+ tests)
+
+**Infrastructure-Layer Responsibility:**
+
+* Full HTTP request parsing and routing (servlet container, proxy, load balancer)
+* Content-Length vs Transfer-Encoding conflict resolution
+* Request boundary determination
+
+**Tests:** link:../../../src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] (25 CL.TE-specific tests using link:../../../src/test/java/de/cuioss/http/security/generators/injection/HttpRequestSmugglingAttackGenerator.java[HttpRequestSmugglingAttackGenerator])
+
+=== 2. TE.CL Request Smuggling
+
+==== Description
+Front-end server processes Transfer-Encoding header while back-end server processes Content-Length header. Reverse of CL.TE attack.
+
+==== Attack Vector
+```http
+POST /api HTTP/1.1
+Host: vulnerable.com
+Transfer-Encoding: chunked
+Content-Length: 4
+
+5c
+GET /admin HTTP/1.1
+Host: vulnerable.com
+
+0
+
+
+```
+
+**Front-end:** Processes chunked encoding, reads entire chunked message
+**Back-end:** Uses Content-Length: 4, reads only "5c\r\n", interprets remaining bytes as next request
+
+==== Impact
+* Request smuggling
+* Administrative access bypass
+* Session hijacking
+* Cache deception
+
+==== Status: ✓ PARTIALLY MITIGATED
+
+**Application-Layer Protection:**
+
+* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - CRLF and control character detection
+* link:../../../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] - Header value validation
+
+**Infrastructure-Layer Responsibility:**
+
+* HTTP request parsing and routing
+* Transfer-Encoding vs Content-Length priority determination
+* Connection reuse security
+
+**Tests:** link:../../../src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] (25 TE.CL-specific tests)
+
+=== 3. CL.0 Request Smuggling
+
+==== Description
+Front-end uses Content-Length header, while back-end ignores the body when Content-Length is present but no Transfer-Encoding. This is a variant where the back-end treats the request as if it had zero length.
+
+==== Attack Vector
+```http
+POST /api HTTP/1.1
+Host: vulnerable.com
+Content-Length: 44
+
+GET /admin HTTP/1.1
+Host: vulnerable.com
+
+
+```
+
+**Front-end:** Reads 44 bytes including smuggled request
+**Back-end:** Ignores body, interprets smuggled request as next request
+
+==== Impact
+* Request smuggling without Transfer-Encoding obfuscation
+* Simpler exploitation pattern
+* Cache poisoning
+* Request routing manipulation
+
+==== Status: ✓ PARTIALLY MITIGATED
+
+**Application-Layer Protection:**
+
+* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - Detects embedded HTTP verbs and CRLF patterns
+* Existing smuggling tests cover embedded request patterns
+
+**Infrastructure-Layer Responsibility:**
+
+* Content-Length interpretation consistency
+* Request body handling
+* Connection state management
+
+**Tests:** Covered by general smuggling tests in link:../../../src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest]
+
+=== 4. Expect Header Desync Attacks
+
+==== Description
+The Expect: 100-continue header creates opportunities for desynchronization when front-end and back-end servers handle the header differently. Some servers may forward the header without waiting for 100 Continue response, while others may consume it.
+
+==== Attack Vector
+```http
+POST /api HTTP/1.1
+Host: vulnerable.com
+Content-Length: 44
+Expect: 100-continue
+
+GET /admin HTTP/1.1
+Host: vulnerable.com
+
+
+```
+
+**Affected Infrastructure:**
+
+* Cloudflare (historical)
+* Netlify CDN
+* AWS Application Load Balancer
+* Various reverse proxies
+
+==== Impact
+* Request smuggling via Expect header
+* Bypassing security controls
+* Cache poisoning
+* Backend confusion
+
+==== Status: ⚠️ NOT DIRECTLY APPLICABLE
+
+**Scope:** Library validates HTTP component syntax; Expect header processing is transport/infrastructure layer responsibility.
+
+**Rationale:**
+
+* Expect: 100-continue is a protocol-level negotiation mechanism
+* Handled by HTTP servers, proxies, and load balancers
+* Application code rarely processes Expect headers directly
+* Full request/response lifecycle management is outside library scope
+
+**Recommended Actions:**
+
+* Server configuration: Disable Expect: 100-continue support or normalize handling
+* Infrastructure: Use HTTP/2 or HTTP/3 to eliminate request smuggling risks
+* Monitoring: Log and alert on unusual Expect header patterns
+
+=== 5. Parser Discrepancy Attacks (V-H and H-V)
+
+==== Description
+Visible-Hidden (V-H) and Hidden-Visible (H-V) discrepancies occur when one parser sees a header that another parser ignores or interprets differently.
+
+==== Attack Patterns
+
+**Visible-Hidden (V-H):**
+```http
+POST /api HTTP/1.1
+Host: vulnerable.com
+Content-Length: 10
+Content-Length: 20
+
+[Body data]
+```
+
+Front-end sees first Content-Length (10), back-end sees second (20), creating desync.
+
+**Hidden-Visible (H-V):**
+```http
+POST /api HTTP/1.1
+Host: vulnerable.com
+Transfer-Encoding: chunked
+Transfer-Encoding: identity
+
+[Body data]
+```
+
+Front-end ignores obfuscated Transfer-Encoding, back-end processes it.
+
+==== Affected Infrastructure
+
+* Apache servers (header folding interpretation)
+* Nginx (whitespace handling)
+* HAProxy (duplicate header handling)
+* Various CDNs and load balancers
+
+==== Impact
+* Request smuggling via parser differences
+* Bypassing security validation
+* Cache poisoning
+* Authentication bypass
+
+==== Status: ✓ PARTIALLY MITIGATED
+
+**Application-Layer Protection:**
+
+* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - Whitespace and control character validation
+* link:../../../src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] - TE.TE smuggling tests cover Transfer-Encoding obfuscation (30 tests)
+* link:../../../src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java[HttpHeaderInjectionAttackTest] - Header injection and CRLF detection
+
+**Infrastructure-Layer Responsibility:**
+
+* HTTP header parsing normalization
+* Duplicate header handling
+* Whitespace normalization in headers
+
+**Tests:**
+* link:../../../src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] - TE.TE and CL.CL variants
+* link:../../../src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java[HttpHeaderInjectionAttackTest] - Header manipulation patterns
+
+=== 6. Upstream Connection Reuse Vulnerabilities
+
+==== Description
+Many infrastructure components reuse upstream connections for performance. If request smuggling occurs, smuggled requests can be routed to connections serving other users, causing request hijacking and authentication bypass.
+
+==== Affected Infrastructure
+
+* Cloudflare (CVE-2025-32094 - Akamai integration)
+* Netlify CDN
+* T-Mobile infrastructure
+* GitLab infrastructure
+* Various reverse proxies with connection pooling
+
+==== Impact
+* Request routing to wrong user
+* Session hijacking
+* Authentication bypass
+* Access to sensitive data
+
+==== Status: ❌ NOT APPLICABLE
+
+**Scope:** Connection reuse and request routing are infrastructure concerns, not application-level HTTP component validation.
+
+**Library Responsibility:** Validate individual HTTP components (headers, paths, parameters) to prevent injection attacks that could be leveraged in smuggling.
+
+**Infrastructure Responsibility:**
+
+* Disable upstream connection reuse (if security > performance)
+* Implement request normalization
+* Use HTTP/2 or HTTP/3
+* Deploy smuggling detection/prevention at proxy layer
+
+== Applicability Assessment
+
+=== Direct Applicability: MEDIUM - COMPONENT VALIDATION ONLY
+
+The cui-http library provides HTTP **component** validation (headers, paths, parameters), not full HTTP **request/response** parsing and routing:
+
+1. ✓ CRLF injection detection in headers and URLs
+2. ✓ Control character validation
+3. ✓ Header value syntax validation
+4. ✓ Comprehensive request smuggling pattern testing
+5. ❌ NOT APPLICABLE: Full HTTP request parsing (Content-Length vs Transfer-Encoding resolution)
+6. ❌ NOT APPLICABLE: Request boundary determination
+7. ❌ NOT APPLICABLE: Connection reuse management
+8. ❌ NOT APPLICABLE: Expect header processing
+
+=== Library vs. Infrastructure Responsibility
+
+==== Library Scope (Implemented) ✓
+
+* **HTTP Component Syntax Validation:** Validating individual headers, paths, parameters for malicious patterns
+* **Injection Attack Detection:** CRLF injection, header injection, control characters
+* **Pattern Matching:** Detecting smuggling-related patterns in component values
+* **Test Coverage:** Comprehensive test suite demonstrating attack pattern detection
+
+==== Infrastructure Scope (Outside Library)
+
+* **Full HTTP Request Parsing:** Content-Length vs Transfer-Encoding conflict resolution
+* **Request Boundary Determination:** Identifying where one request ends and another begins
+* **Connection Management:** Connection pooling, reuse, routing
+* **Protocol-Level Handling:** Expect: 100-continue, HTTP/2 downgrade, protocol negotiation
+* **Proxy/Load Balancer Logic:** Request forwarding, upstream routing, cache behavior
+
+=== Implementation Summary
+
+==== Completed Library Enhancements ✓
+
+1. **HTTP Header Validation:** link:../../../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] - RFC 7230 header validation
+
+2. **Character Validation:** link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - CRLF, control character detection
+
+3. **Pattern Matching:** link:../../../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Attack pattern detection
+
+4. **Test Coverage:** 395+ tests total
+   * link:../../../src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] (200 tests)
+   * link:../../../src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java[HttpHeaderInjectionAttackTest] (195 tests)
+   * Generator-based testing with reproducible patterns
+
+==== Usage Guide for Library Users
+
+1. **Header Validation:** Use link:../../../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] for validating HTTP header values
+
+2. **Infrastructure Configuration (Critical):**
+   * **Disable upstream connection reuse** for security-critical applications
+   * **Use HTTP/2 or HTTP/3** to eliminate request smuggling vectors
+   * **Enable request normalization** at proxy/load balancer layer
+   * **Reject ambiguous requests** (duplicate Content-Length, conflicting Transfer-Encoding)
+   * **Configure strict HTTP parsing** in servlet containers
+
+3. **Server Framework Configuration:**
+   * Tomcat: Set `STRICT_SERVLET_COMPLIANCE=true`, configure `maxHttpHeaderSize`
+   * Jetty: Configure `HttpCompliance.RFC7230`, disable legacy parsing
+   * Apache httpd: Use `HttpProtocolOptions Strict`
+   * Nginx: Configure `client_header_buffer_size`, `large_client_header_buffers`
+
+== Attack Pattern Database
+
+=== CL.TE Smuggling Patterns
+
+[source,http]
+----
+POST /api HTTP/1.1
+Host: vulnerable.com
+Content-Length: 6
+Transfer-Encoding: chunked
+
+0
+
+G
+----
+
+=== TE.CL Smuggling Patterns
+
+[source,http]
+----
+POST /api HTTP/1.1
+Host: vulnerable.com
+Transfer-Encoding: chunked
+Content-Length: 4
+
+5c
+GET /admin HTTP/1.1
+Host: vulnerable.com
+
+0
+
+
+----
+
+=== CL.0 Smuggling Patterns
+
+[source,http]
+----
+POST /api HTTP/1.1
+Host: vulnerable.com
+Content-Length: 44
+
+GET /admin HTTP/1.1
+Host: vulnerable.com
+
+
+----
+
+=== Expect Header Desync Patterns
+
+[source,http]
+----
+POST /api HTTP/1.1
+Host: vulnerable.com
+Content-Length: 44
+Expect: 100-continue
+
+GET /admin HTTP/1.1
+Host: vulnerable.com
+
+
+----
+
+=== Parser Discrepancy Patterns (V-H)
+
+[source,http]
+----
+POST /api HTTP/1.1
+Host: vulnerable.com
+Content-Length: 10
+Content-Length: 20
+
+[Body causes desync]
+----
+
+=== Parser Discrepancy Patterns (H-V)
+
+[source,http]
+----
+POST /api HTTP/1.1
+Host: vulnerable.com
+Transfer-Encoding: chunked
+Transfer-Encoding: identity
+
+[Body interpreted differently]
+----
+
+=== TE.TE Obfuscation Patterns
+
+[source,http]
+----
+POST /api HTTP/1.1
+Host: vulnerable.com
+Transfer-Encoding: chunked
+Transfer-encoding: chunked
+Transfer-Encoding: xchunked
+Transfer-Encoding: chunked, identity
+Transfer-Encoding: identity
+
+[Various obfuscation attempts]
+----
+
+== Test Implementation
+
+=== Implemented Tests
+
+All request smuggling patterns are tested using parameterized tests with generators:
+
+**Test Class:** link:../../../src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest]
+
+**Test Generator:** link:../../../src/test/java/de/cuioss/http/security/generators/injection/HttpRequestSmugglingAttackGenerator.java[HttpRequestSmugglingAttackGenerator]
+
+**Test Coverage (200 total test cases):**
+
+1. **CL.TE Smuggling**: 25 parameterized tests covering Content-Length/Transfer-Encoding conflicts
+2. **TE.CL Smuggling**: 25 parameterized tests covering Transfer-Encoding/Content-Length conflicts
+3. **TE.TE Smuggling**: 30 parameterized tests covering Transfer-Encoding obfuscation
+4. **Pipeline Poisoning**: 30 parameterized tests covering CRLF injection patterns
+5. **Cache Deception**: 25 parameterized tests covering cache manipulation
+6. **Double Content-Length**: 25 parameterized tests covering CL.CL conflicts
+7. **Edge Cases**: 35 parameterized tests covering corner conditions
+8. **Comprehensive**: 200 parameterized tests covering all 15 attack types
+
+**Generator Attack Types (15 variants):**
+
+* CL.TE Smuggling
+* TE.CL Smuggling
+* TE.TE Smuggling
+* CL.CL Smuggling (Double Content-Length)
+* HTTP/2 Downgrade Smuggling
+* Pipeline Poisoning
+* Cache Deception
+* Authentication Bypass
+* Header Manipulation
+* Method Override Smuggling
+* URL Rewriting Attacks
+* Request Hijacking
+* Response Queue Poisoning
+* WebSocket Upgrade Smuggling
+* Chunked Encoding Bypass
+
+**Benefits of Generator-Based Approach:**
+
+* **Reproducibility**: All tests use seed-based generation
+* **Coverage**: Systematic testing of all attack vector combinations
+* **Maintainability**: Generators can be reused across test classes
+* **Documentation**: Attack patterns documented in generator code
+* **Scalability**: Easy to increase test count by adjusting `count` parameter
+
+== CVE References
+
+=== CVE-2025-32094 - Akamai Infrastructure Vulnerability
+
+[cols="1,3"]
+|===
+|**CVSS Score** |Not yet published (2025)
+|**Affected** |Akamai CDN infrastructure when routing to Cloudflare
+|**Attack Vector** |Request smuggling via upstream connection reuse
+|**Impact** |Request routing to wrong user, data leakage
+|**Status** |Infrastructure-level vulnerability
+|===
+
+**Relevance:** Demonstrates infrastructure-layer smuggling risks; application-layer validation provides defense-in-depth but cannot fully mitigate.
+
+=== Historical Request Smuggling CVEs
+
+* **CVE-2019-9516** - HTTP/2 internal data buffering
+* **CVE-2019-9518** - HTTP/2 flood using empty frames
+* **CVE-2020-11080** - Node.js HTTP request smuggling
+* **CVE-2021-21295** - Netty HTTP/2 request smuggling
+* **CVE-2023-44487** - HTTP/2 Rapid Reset Attack
+
+== References
+
+==== Primary Research
+
+* link:https://portswigger.net/research/http1-must-die[PortSwigger: HTTP/1 Must Die] - Original research article on HTTP/1.x protocol vulnerabilities
+
+==== Standards and Specifications
+
+* link:https://datatracker.ietf.org/doc/html/rfc7230[RFC 7230 - HTTP/1.1 Message Syntax and Routing] - HTTP/1.1 specification
+* link:https://datatracker.ietf.org/doc/html/rfc9112[RFC 9112 - HTTP/1.1] - Updated HTTP/1.1 specification
+* link:https://datatracker.ietf.org/doc/html/rfc7540[RFC 7540 - HTTP/2] - HTTP/2 specification
+* link:https://datatracker.ietf.org/doc/html/rfc9114[RFC 9114 - HTTP/3] - HTTP/3 specification
+
+==== Security Standards
+
+* link:https://cwe.mitre.org/data/definitions/444.html[CWE-444: Inconsistent Interpretation of HTTP Requests]
+* link:https://cwe.mitre.org/data/definitions/436.html[CWE-436: Interpretation Conflict]
+* link:https://owasp.org/www-community/attacks/HTTP_Request_Smuggling[OWASP: HTTP Request Smuggling]
+* link:https://portswigger.net/web-security/request-smuggling[PortSwigger Web Security Academy: Request Smuggling]
+
+==== Infrastructure Configuration
+
+* link:https://tomcat.apache.org/tomcat-9.0-doc/config/http.html[Apache Tomcat HTTP Configuration]
+* link:https://www.eclipse.org/jetty/documentation/current/[Eclipse Jetty Documentation]
+* link:https://httpd.apache.org/docs/2.4/mod/core.html#httpprotocoloptions[Apache httpd HttpProtocolOptions]
+* link:https://nginx.org/en/docs/http/ngx_http_core_module.html[Nginx Core Module]
+
+== Summary and Recommendations
+
+=== Implementation Status: ✓ DEFENSE-IN-DEPTH COMPLETE
+
+**Library-Level Protection (Application Layer):**
+
+* link:../../../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] - Header component validation
+* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - CRLF and control character detection
+* link:../../../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Attack pattern detection
+* Comprehensive test coverage (395+ tests)
+
+**Infrastructure-Level Protection (Required):**
+
+* ✓ Disable upstream connection reuse
+* ✓ Use HTTP/2 or HTTP/3
+* ✓ Enable request normalization
+* ✓ Configure strict HTTP parsing
+* ✓ Reject ambiguous requests
+
+=== Architectural Notes
+
+**Library Scope:**
+
+* **Implemented:** HTTP component syntax validation (headers, paths, parameters)
+* **Implemented:** Injection attack pattern detection (CRLF, control characters)
+* **Implemented:** Comprehensive test coverage with reproducible generators
+* **Out of scope:** Full HTTP request/response parsing and routing
+* **Out of scope:** Connection management and reuse
+* **Out of scope:** Protocol-level handling (Expect, HTTP/2 downgrade)
+
+**Defense-in-Depth Strategy:**
+
+1. **Application Layer (cui-http):** Validate HTTP component syntax, detect injection patterns
+2. **Infrastructure Layer:** Disable connection reuse, use HTTP/2+, normalize requests
+3. **Monitoring Layer:** Log and alert on suspicious patterns, anomaly detection
+
+=== Key Takeaways
+
+1. **HTTP/1.x is fundamentally vulnerable** due to weak request boundary determination
+2. **Application-layer validation provides defense-in-depth** but cannot fully mitigate infrastructure-level smuggling
+3. **Infrastructure configuration is critical** - connection reuse, strict parsing, protocol version
+4. **Migration to HTTP/2+ is recommended** for security-critical applications
+5. **Comprehensive testing** ensures regression prevention even without current vulnerabilities

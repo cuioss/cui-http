@@ -35,6 +35,12 @@ OWASP-recommended prevention strategies, validation techniques, and security pat
 xref:analysis/cve-analysis.adoc[CVE Analysis and Breach Studies]::
 Detailed analysis of critical CVEs from 2019-2024 and real-world breach case studies demonstrating exploitation patterns and impacts.
 
+xref:analysis/http1-vulnerabilities-analysis.adoc[HTTP/1.x Protocol Vulnerabilities]::
+Comprehensive analysis of HTTP/1.x protocol vulnerabilities including request smuggling (CL.TE, TE.CL, CL.0), Expect header desync attacks, parser differentials, and upstream connection reuse exploits. Based on PortSwigger research "HTTP/1 Must Die".
+
+xref:analysis/cookie-chaos-analysis.adoc[Cookie Security Analysis]::
+In-depth analysis of RFC 6265bis Cookie Chaos vulnerabilities, prefix validation issues, domain security, and cookie injection attacks. Includes defense strategies and validation requirements.
+
 === Testing and Validation
 
 xref:specification/testing.adoc[Testing Framework]::
