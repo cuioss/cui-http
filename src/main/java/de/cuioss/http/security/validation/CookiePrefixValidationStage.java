@@ -166,7 +166,7 @@ public record CookiePrefixValidationStage() implements HttpSecurityValidator {
             throw UrlSecurityException.builder()
                     .failureType(UrlSecurityFailureType.INVALID_INPUT)
                     .validationType(ValidationType.COOKIE_NAME)
-                    .originalInput(null)
+                    .originalInput(cookie.name())
                     .detail("Cookie must have a name")
                     .build();
         }

@@ -15,7 +15,9 @@
  */
 package de.cuioss.http.security.data;
 
+import de.cuioss.http.security.config.SecurityConfiguration;
 import de.cuioss.http.security.core.ValidationType;
+import de.cuioss.http.security.validation.CharacterValidationStage;
 import org.jspecify.annotations.Nullable;
 
 import java.util.Arrays;
@@ -129,6 +131,10 @@ public record Cookie(@Nullable String name, @Nullable String value, @Nullable St
      * @since 1.0
      */
     public static Cookie hostPrefix(String suffix, String value) {
+        // Validate suffix to prevent injection of invalid characters
+        new CharacterValidationStage(
+                SecurityConfiguration.builder().build(),
+                ValidationType.COOKIE_NAME).validate(suffix);
         return new Cookie("__Host-" + suffix, value, "Secure; Path=/; HttpOnly; SameSite=Strict");
     }
 
@@ -167,6 +173,10 @@ public record Cookie(@Nullable String name, @Nullable String value, @Nullable St
      * @since 1.0
      */
     public static Cookie securePrefix(String suffix, String value) {
+        // Validate suffix to prevent injection of invalid characters
+        new CharacterValidationStage(
+                SecurityConfiguration.builder().build(),
+                ValidationType.COOKIE_NAME).validate(suffix);
         return new Cookie("__Secure-" + suffix, value, "Secure; HttpOnly; SameSite=Lax");
     }
 
