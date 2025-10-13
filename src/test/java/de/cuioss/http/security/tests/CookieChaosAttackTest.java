@@ -354,7 +354,7 @@ class CookieChaosAttackTest {
             try {
                 cookieNameValidator.validate(name);
                 // If validation passes, the attack is at semantic level (not character level)
-                assertTrue(name != null, "Attack cookie name processed");
+                assertNotNull(name, "Attack cookie name processed");
             } catch (UrlSecurityException e) {
                 // Expected for many attack patterns
                 assertNotNull(e.getOriginalInput());
@@ -398,14 +398,21 @@ class CookieChaosAttackTest {
         assertNotNull(withLegacy.name());
 
         // But validation should reject them
-        assertThrows(UrlSecurityException.class,
+        var ex1 = assertThrows(UrlSecurityException.class,
                 () -> cookieNameValidator.validate(withUnicodeSpace.name()));
-        assertThrows(UrlSecurityException.class,
+        assertNotNull(ex1);
+
+        var ex2 = assertThrows(UrlSecurityException.class,
                 () -> cookieNameValidator.validate(withZeroWidth.name()));
-        assertThrows(UrlSecurityException.class,
+        assertNotNull(ex2);
+
+        var ex3 = assertThrows(UrlSecurityException.class,
                 () -> cookieNameValidator.validate(withWhitespace.name()));
-        assertThrows(UrlSecurityException.class,
+        assertNotNull(ex3);
+
+        var ex4 = assertThrows(UrlSecurityException.class,
                 () -> cookieNameValidator.validate(withLegacy.name()));
+        assertNotNull(ex4);
     }
 
     /**
