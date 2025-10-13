@@ -56,13 +56,16 @@ class UrlSecurityFailureTypeTest {
         assertNotNull(UrlSecurityFailureType.INVALID_STRUCTURE, "INVALID_STRUCTURE failure type should exist");
         assertNotNull(UrlSecurityFailureType.PROTOCOL_VIOLATION, "PROTOCOL_VIOLATION failure type should exist");
         assertNotNull(UrlSecurityFailureType.RFC_VIOLATION, "RFC_VIOLATION failure type should exist");
+        assertNotNull(UrlSecurityFailureType.COOKIE_PREFIX_VIOLATION, "COOKIE_PREFIX_VIOLATION failure type should exist");
+        assertNotNull(UrlSecurityFailureType.INVALID_INPUT, "INVALID_INPUT failure type should exist");
     }
 
     @Test
-    void shouldHave22FailureTypes() {
-        // Verify we have the expected number of failure types (removed 3 application-layer types: SQL, Command, XSS)
+    void shouldHave24FailureTypes() {
+        // Verify we have the expected number of failure types
+        // Original 22 (after removing SQL, Command, XSS) + 2 cookie security types
         UrlSecurityFailureType[] values = UrlSecurityFailureType.values();
-        assertEquals(22, values.length, "Should have 22 failure types after removing SQL, Command, and XSS injection");
+        assertEquals(24, values.length, "Should have 24 failure types (22 + cookie security)");
     }
 
     @ParameterizedTest
@@ -195,6 +198,7 @@ class UrlSecurityFailureTypeTest {
         if (type.isStructuralIssue()) categoryCount++;
         if (type.isProtocolViolation()) categoryCount++;
         if (type.isIPv6HostAttack()) categoryCount++;
+        if (type.isCookieSecurityIssue()) categoryCount++;
 
         assertEquals(1, categoryCount,
                 "Failure type " + type + " should belong to exactly one category, but belongs to " + categoryCount);

@@ -127,7 +127,15 @@ public enum UrlSecurityFailureType {
     INVALID_HOST_FORMAT("Invalid host format"),
 
     /** Invalid URL format detected */
-    INVALID_URL_FORMAT("Invalid URL format");
+    INVALID_URL_FORMAT("Invalid URL format"),
+
+    // === Cookie Security ===
+
+    /** Cookie prefix requirements violation (__Host-, __Secure-) */
+    COOKIE_PREFIX_VIOLATION("Cookie prefix requirements violated"),
+
+    /** Invalid input that cannot be validated */
+    INVALID_INPUT("Invalid input");
 
     private final String description;
 
@@ -236,5 +244,15 @@ public enum UrlSecurityFailureType {
                 this == MALFORMED_URL ||
                 this == INVALID_HOST_FORMAT ||
                 this == INVALID_URL_FORMAT;
+    }
+
+    /**
+     * Indicates whether this failure type represents a cookie security issue.
+     *
+     * @return true if this is a cookie-related failure type
+     */
+    public boolean isCookieSecurityIssue() {
+        return this == COOKIE_PREFIX_VIOLATION ||
+                this == INVALID_INPUT;
     }
 }
