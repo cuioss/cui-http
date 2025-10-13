@@ -36,13 +36,14 @@ import static de.cuioss.tools.collect.CollectionLiterals.immutableSet;
  *
  * <h3>1. ETag-Aware Caching</h3>
  * <pre>
- * HttpResultObject&lt;String&gt; result = etagHandler.load();
- * if (result.isFresh()) {
+ * HttpResult&lt;String&gt; result = etagHandler.load();
+ * if (result.isSuccess() &amp;&amp; result.getHttpStatus().orElse(0) == 304) {
+ *     // Content unchanged (304 Not Modified), use existing cache
+ *     result.getContent().ifPresent(this::useExistingContent);
+ * } else if (result.isSuccess()) {
  *     // New content loaded, update cache
- *     updateCache(result.getResult(), result.getETag());
- * } else if (result.isCached()) {
- *     // Content unchanged, use existing cache
- *     useExistingContent(result.getResult());
+ *     result.getContent().ifPresent(content -&gt;
+ *         updateCache(content, result.getETag().orElse("")));
  * }
  * </pre>
  *
@@ -59,8 +60,7 @@ import static de.cuioss.tools.collect.CollectionLiterals.immutableSet;
  * </pre>
  *
  * @author Oliver Wolff
- * @see HttpResultObject
- * @see de.cuioss.uimodel.result.ResultState
+ * @see HttpResult
  * @since 1.0
  */
 public enum HttpResultState {

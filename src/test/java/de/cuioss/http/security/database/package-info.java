@@ -155,29 +155,6 @@
  *   <li><strong>Version Control Friendly</strong>: Individual test cases easy to track and modify</li>
  * </ul>
  *
- * <h2>Migration from Generators</h2>
- *
- * <p>This database approach replaces the previous generator-based testing for fixed attack patterns.
- * The migration provides several advantages:</p>
- *
- * <h3>Before (Generator-Based)</h3>
- * <pre>
- * private final TypedGenerator&lt;String&gt; patterns = Generators.fixedValues(
- *     "/cgi-bin/.%2e/%2e%2e/etc/passwd",  // No context or expected outcome
- *     "/another/attack/pattern"            // Hard to understand purpose
- * );
- * </pre>
- *
- * <h3>After (Database-Based)</h3>
- * <pre>
- * public static final AttackTestCase CVE_2021_41773_PATH_TRAVERSAL = new AttackTestCase(
- *     "/cgi-bin/.%2e/%2e%2e/etc/passwd",
- *     UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
- *     "CVE-2021-41773: Apache HTTP Server path traversal vulnerability...",
- *     "PATH_TRAVERSAL_DETECTED is expected because..."
- * );
- * </pre>
- *
  * <h2>Quality Assurance</h2>
  *
  * <h3>1. Attack Pattern Validation</h3>

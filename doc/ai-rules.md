@@ -22,7 +22,6 @@ When conflicting information exists, AI systems must follow this priority order:
 
 ### Context-Aware Response Patterns
 - **New Project Context**: Emphasize architecture decisions and initial setup standards
-- **Legacy Code Context**: Prioritize compatibility, incremental changes, and migration paths
 - **Testing Context**: Focus on coverage requirements and quality standards
 - **Documentation Context**: Emphasize clarity, completeness, and AsciiDoc standards
 - **Security Context**: Apply strictest security standards without compromise

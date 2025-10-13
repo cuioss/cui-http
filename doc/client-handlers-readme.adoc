@@ -83,11 +83,11 @@ Built-in content converter for String responses.
 
 === Result Handling
 
-==== xref:../src/main/java/de/cuioss/http/client/result/HttpResultObject.java[HttpResultObject]
+==== xref:../src/main/java/de/cuioss/http/client/result/HttpResult.java[HttpResult]
 
-HTTP-specific result pattern implementation with ETag support.
+Sealed interface for HTTP operation results with type-safe pattern matching.
 
-* Extends CUI result framework for HTTP operations
+* Success/Failure record types
 * ETag support for cache optimization
 * HTTP status code tracking
 * Error categorization via HttpErrorCategory
@@ -218,21 +218,19 @@ ResilientHttpHandler<String> resilientHandler = new ResilientHttpHandler<>(
 );
 
 // Load with automatic retry and caching
-HttpResultObject<String> result = resilientHandler.load();
+HttpResult<String> result = resilientHandler.load();
 
-if (result.isValid()) {
-    String content = result.getResult();
-    Optional<String> etag = result.getETag();
-
-    // Process successful result
-    processContent(content);
+if (result.isSuccess()) {
+    result.getContent().ifPresent(content -> {
+        processContent(content);
+        result.getETag().ifPresent(etag -> logger.debug("ETag: {}", etag));
+    });
 } else {
     // Handle error with detailed information
-    result.getHttpErrorCategory().ifPresent(category -> {
-        if (category.isRetryable()) {
-            scheduleRetry();
-        }
-    });
+    result.getErrorMessage().ifPresent(logger::error);
+    if (result.isRetryable()) {
+        scheduleRetry();
+    }
 }
 ----
 

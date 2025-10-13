@@ -15,7 +15,9 @@
  */
 package de.cuioss.http.security.data;
 
+import de.cuioss.http.security.config.SecurityConfiguration;
 import de.cuioss.http.security.core.ValidationType;
+import de.cuioss.http.security.validation.CharacterValidationStage;
 import org.jspecify.annotations.Nullable;
 
 import java.util.Arrays;
@@ -84,6 +86,15 @@ import java.util.Optional;
 public record Cookie(@Nullable String name, @Nullable String value, @Nullable String attributes) {
 
     /**
+     * Shared validator for cookie name suffixes using default security configuration.
+     * Validates cookie name characters to prevent injection attacks in factory methods.
+     */
+    private static final CharacterValidationStage COOKIE_NAME_VALIDATOR =
+            new CharacterValidationStage(
+                    SecurityConfiguration.builder().build(),
+                    ValidationType.COOKIE_NAME);
+
+    /**
      * Creates a simple cookie with no attributes.
      *
      * @param name The cookie name
@@ -92,6 +103,90 @@ public record Cookie(@Nullable String name, @Nullable String value, @Nullable St
      */
     public static Cookie simple(String name, String value) {
         return new Cookie(name, value, "");
+    }
+
+    /**
+     * Creates a __Host- prefix cookie with RFC 6265bis compliant attributes.
+     *
+     * <p>Creates a cookie with the __Host- prefix that meets all RFC requirements:</p>
+     * <ul>
+     *   <li>Name starts with __Host-</li>
+     *   <li>Has Secure attribute</li>
+     *   <li>Has Path=/ attribute</li>
+     *   <li>No Domain attribute (bound to exact host)</li>
+     *   <li>SameSite=Strict (strongest CSRF protection for single-host cookies)</li>
+     * </ul>
+     *
+     * <p><strong>Security Note:</strong> The returned cookie structure is valid, but applications
+     * should validate it using {@link de.cuioss.http.security.validation.CookiePrefixValidationStage}
+     * to ensure all prefix requirements are met.</p>
+     *
+     * <h3>Usage Example</h3>
+     * <pre>
+     * // Create a __Host- cookie
+     * Cookie sessionCookie = Cookie.hostPrefix("session", "abc123xyz");
+     *
+     * // Validate the cookie (recommended)
+     * CookiePrefixValidationStage validator = new CookiePrefixValidationStage();
+     * validator.validateCookie(sessionCookie);
+     *
+     * // Use in HTTP response
+     * response.setHeader("Set-Cookie", sessionCookie.toCookieString());
+     * </pre>
+     *
+     * @param suffix The cookie name suffix (will be prefixed with __Host-)
+     * @param value The cookie value
+     * @return A Cookie with __Host- prefix and compliant attributes
+     * @see <a href="https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-rfc6265bis">RFC 6265bis</a>
+     * @since 1.0
+     */
+    public static Cookie hostPrefix(String suffix, String value) {
+        // Validate suffix to prevent injection of invalid characters
+        COOKIE_NAME_VALIDATOR.validate(suffix);
+        return new Cookie("__Host-" + suffix, value, "Secure; Path=/; HttpOnly; SameSite=Strict");
+    }
+
+    /**
+     * Creates a __Secure- prefix cookie with RFC 6265bis compliant attributes.
+     *
+     * <p>Creates a cookie with the __Secure- prefix that meets RFC requirements:</p>
+     * <ul>
+     *   <li>Name starts with __Secure-</li>
+     *   <li>Has Secure attribute</li>
+     *   <li>SameSite=Lax (CSRF protection with cross-subdomain navigation support)</li>
+     * </ul>
+     *
+     * <p>Unlike __Host- cookies, __Secure- cookies may have Domain and Path attributes,
+     * making them suitable for cross-subdomain scenarios where SameSite=Lax prevents
+     * breaking top-level navigation while maintaining CSRF protection.</p>
+     *
+     * <p><strong>Security Note:</strong> The returned cookie structure is valid, but applications
+     * should validate it using {@link de.cuioss.http.security.validation.CookiePrefixValidationStage}
+     * to ensure all prefix requirements are met.</p>
+     *
+     * <h3>Usage Example</h3>
+     * <pre>
+     * // Create a __Secure- cookie
+     * Cookie tokenCookie = Cookie.securePrefix("token", "xyz789");
+     *
+     * // Validate the cookie (recommended)
+     * CookiePrefixValidationStage validator = new CookiePrefixValidationStage();
+     * validator.validateCookie(tokenCookie);
+     *
+     * // Use in HTTP response
+     * response.setHeader("Set-Cookie", tokenCookie.toCookieString());
+     * </pre>
+     *
+     * @param suffix The cookie name suffix (will be prefixed with __Secure-)
+     * @param value The cookie value
+     * @return A Cookie with __Secure- prefix and compliant attributes
+     * @see <a href="https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-rfc6265bis">RFC 6265bis</a>
+     * @since 1.0
+     */
+    public static Cookie securePrefix(String suffix, String value) {
+        // Validate suffix to prevent injection of invalid characters
+        COOKIE_NAME_VALIDATOR.validate(suffix);
+        return new Cookie("__Secure-" + suffix, value, "Secure; HttpOnly; SameSite=Lax");
     }
 
     /**

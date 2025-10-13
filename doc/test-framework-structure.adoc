@@ -85,7 +85,6 @@ The test framework is organized in the following structure under `src/test/java/
 * link:../../../src/test/java/de/cuioss/http/security/generators/url/PathTraversalParameterGenerator.java[PathTraversalParameterGenerator]
 * link:../../../src/test/java/de/cuioss/http/security/generators/url/PathTraversalURLGenerator.java[PathTraversalURLGenerator]
 * link:../../../src/test/java/de/cuioss/http/security/generators/url/URLLengthLimitAttackGenerator.java[URLLengthLimitAttackGenerator]
-* link:../../../src/test/java/de/cuioss/http/security/generators/url/URLParameterGenerator.java[URLParameterGenerator]
 * link:../../../src/test/java/de/cuioss/http/security/generators/url/ValidURLGenerator.java[ValidURLGenerator]
 * link:../../../src/test/java/de/cuioss/http/security/generators/url/ValidURLParameterGenerator.java[ValidURLParameterGenerator]
 * link:../../../src/test/java/de/cuioss/http/security/generators/url/ValidURLParameterStringGenerator.java[ValidURLParameterStringGenerator]
