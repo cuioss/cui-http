@@ -16,6 +16,7 @@
 package de.cuioss.http.security.data;
 
 import de.cuioss.http.security.generators.cookie.ValidCookieGenerator;
+import de.cuioss.http.security.validation.CookiePrefixValidationStage;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.Test;
@@ -441,6 +442,54 @@ class CookieTest {
         assertEquals("value with spaces", cookie.value(), "Cookie should accept spaces in value");
         assertEquals("exam-ple.com", cookie.getDomain().orElse(null), "Cookie should extract domain with hyphens");
         assertEquals("/path with spaces", cookie.getPath().orElse(null), "Cookie should extract path with spaces");
+    }
+
+    @Test
+    void shouldCreateHostPrefixCookie() {
+        Cookie cookie = Cookie.hostPrefix("session", "abc123");
+
+        assertEquals("__Host-session", cookie.name(), "hostPrefix() should create cookie with __Host- prefix");
+        assertEquals("abc123", cookie.value(), "hostPrefix() should preserve the provided value");
+        assertTrue(cookie.isSecure(), "hostPrefix() cookie should have Secure attribute");
+        assertTrue(cookie.isHttpOnly(), "hostPrefix() cookie should have HttpOnly attribute");
+        assertEquals("/", cookie.getPath().orElse(null), "hostPrefix() cookie should have Path=/");
+        assertTrue(cookie.getDomain().isEmpty(), "hostPrefix() cookie should not have Domain attribute");
+        assertEquals("Strict", cookie.getSameSite().orElse(null), "hostPrefix() cookie should have SameSite=Strict");
+    }
+
+    @Test
+    void shouldCreateSecurePrefixCookie() {
+        Cookie cookie = Cookie.securePrefix("token", "xyz789");
+
+        assertEquals("__Secure-token", cookie.name(), "securePrefix() should create cookie with __Secure- prefix");
+        assertEquals("xyz789", cookie.value(), "securePrefix() should preserve the provided value");
+        assertTrue(cookie.isSecure(), "securePrefix() cookie should have Secure attribute");
+        assertTrue(cookie.isHttpOnly(), "securePrefix() cookie should have HttpOnly attribute");
+        assertEquals("Lax", cookie.getSameSite().orElse(null), "securePrefix() cookie should have SameSite=Lax");
+    }
+
+    @Test
+    void shouldValidateHostPrefixCookieWithValidator() {
+        Cookie cookie = Cookie.hostPrefix("session", "abc123");
+
+        // This would pass validation with CookiePrefixValidationStage
+        assertDoesNotThrow(() -> {
+            CookiePrefixValidationStage validator =
+                    new CookiePrefixValidationStage();
+            validator.validateCookie(cookie);
+        }, "Cookie created with hostPrefix() should pass prefix validation");
+    }
+
+    @Test
+    void shouldValidateSecurePrefixCookieWithValidator() {
+        Cookie cookie = Cookie.securePrefix("token", "xyz789");
+
+        // This would pass validation with CookiePrefixValidationStage
+        assertDoesNotThrow(() -> {
+            CookiePrefixValidationStage validator =
+                    new CookiePrefixValidationStage();
+            validator.validateCookie(cookie);
+        }, "Cookie created with securePrefix() should pass prefix validation");
     }
 
 
