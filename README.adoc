@@ -128,6 +128,8 @@ String validated = pipeline.validate("/api/users/123").orElseThrow();
 
 * xref:doc/http-security/analysis/owasp-best-practices.adoc[OWASP Best Practices]
 * xref:doc/http-security/analysis/cve-analysis.adoc[CVE Analysis]
+* xref:doc/http-security/analysis/http1-vulnerabilities-analysis.adoc[HTTP/1.x Protocol Vulnerabilities]
+* xref:doc/http-security/analysis/cookie-chaos-analysis.adoc[Cookie Security Analysis]
 
 == Dependencies
 
