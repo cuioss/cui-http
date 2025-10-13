@@ -74,7 +74,6 @@ src/test/java/de/cuioss/http/security/
 │       ├── PathTraversalParameterGenerator.java
 │       ├── PathTraversalURLGenerator.java
 │       ├── URLLengthLimitAttackGenerator.java
-│       ├── URLParameterGenerator.java
 │       ├── ValidURLGenerator.java
 │       ├── ValidURLParameterGenerator.java
 │       ├── ValidURLParameterStringGenerator.java
