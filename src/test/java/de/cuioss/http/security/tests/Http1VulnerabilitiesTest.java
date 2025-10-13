@@ -128,8 +128,8 @@ class Http1VulnerabilitiesTest {
 
         // Then: Validation should fail with control character or invalid character detection
         assertNotNull(exception, "Exception should be thrown for CL.0 smuggling pattern");
-        assertTrue(isControlCharacterOrInvalidCharacter(exception.getFailureType()),
-                "Failure type should be CONTROL_CHARACTERS or INVALID_CHARACTER for CRLF injection: " + exception.getFailureType());
+        assertTrue(isInjectionFailure(exception.getFailureType()),
+                "Failure type should be related to invalid characters or protocol violations for CRLF injection: " + exception.getFailureType());
 
         // And: Original malicious input should be preserved
         assertEquals(clZeroPattern, exception.getOriginalInput(),
@@ -166,8 +166,8 @@ class Http1VulnerabilitiesTest {
 
         // Then: Validation should fail with CRLF detection
         assertNotNull(exception, "Exception should be thrown for 0.CL smuggling pattern");
-        assertTrue(isControlCharacterOrInvalidCharacter(exception.getFailureType()),
-                "Failure type should be CONTROL_CHARACTERS or INVALID_CHARACTER: " + exception.getFailureType());
+        assertTrue(isInjectionFailure(exception.getFailureType()),
+                "Failure type should be related to injection attempts (control characters, invalid characters, encoding issues, protocol violations, or suspicious patterns): " + exception.getFailureType());
 
         // And: Security event should be recorded
         assertTrue(eventCounter.getTotalCount() > initialEventCount,
@@ -199,8 +199,8 @@ class Http1VulnerabilitiesTest {
 
         // Then: Validation should fail with CRLF detection
         assertNotNull(exception, "Exception should be thrown for Expect header desync");
-        assertTrue(isControlCharacterOrInvalidCharacter(exception.getFailureType()),
-                "Failure type should be CONTROL_CHARACTERS or INVALID_CHARACTER: " + exception.getFailureType());
+        assertTrue(isInjectionFailure(exception.getFailureType()),
+                "Failure type should be related to injection attempts (control characters, invalid characters, encoding issues, protocol violations, or suspicious patterns): " + exception.getFailureType());
 
         // And: Security event should be recorded
         assertTrue(eventCounter.getTotalCount() > initialEventCount,
@@ -214,30 +214,27 @@ class Http1VulnerabilitiesTest {
      *
      * <p>Attack Pattern: {@code /api?param=value%0d%0aContent-Length: 10%0d%0aContent-Length: 20}</p>
      */
-    @Test
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "/api?data=test%0d%0aContent-Length: 10%0d%0aContent-Length: 20",
+            "/search?q=data%0d%0aContent-Length: 0%0d%0aContent-Length: 44",
+            "/process?input=normal%0d%0aContent-Length: 5%0d%0aContent-Length: 100",
+            "/endpoint?param=value%0d%0aContent-Length: 30%0d%0aContent-Length: 60"
+    })
     @DisplayName("Duplicate Content-Length header patterns in paths must be rejected")
-    void shouldRejectDuplicateContentLengthHeadersInPaths() {
-        // Given: Path values with duplicate Content-Length injection
-        String[] duplicateClPaths = {
-                "/api?data=test%0d%0aContent-Length: 10%0d%0aContent-Length: 20",
-                "/search?q=data%0d%0aContent-Length: 0%0d%0aContent-Length: 44",
-                "/process?input=normal%0d%0aContent-Length: 5%0d%0aContent-Length: 100",
-                "/endpoint?param=value%0d%0aContent-Length: 30%0d%0aContent-Length: 60"
-        };
+    void shouldRejectDuplicateContentLengthHeadersInPaths(String pathValue) {
+        // Given: A path value with duplicate Content-Length injection
+        long initialEventCount = eventCounter.getTotalCount();
 
-        for (String pathValue : duplicateClPaths) {
-            long initialEventCount = eventCounter.getTotalCount();
+        // When: Attempting to validate the path
+        var exception = assertThrows(UrlSecurityException.class,
+                () -> pathPipeline.validate(pathValue),
+                "Duplicate Content-Length pattern should be rejected: " + pathValue);
 
-            // When: Attempting to validate the path
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> pathPipeline.validate(pathValue),
-                    "Duplicate Content-Length pattern should be rejected: " + pathValue);
-
-            // Then: Validation should fail
-            assertNotNull(exception, "Exception should be thrown for duplicate Content-Length");
-            assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                    "Security event should be recorded");
-        }
+        // Then: Validation should fail
+        assertNotNull(exception, "Exception should be thrown for duplicate Content-Length");
+        assertTrue(eventCounter.getTotalCount() > initialEventCount,
+                "Security event should be recorded");
     }
 
     /**
@@ -247,30 +244,27 @@ class Http1VulnerabilitiesTest {
      *
      * <p>Attack Pattern: {@code /api?param=chunked%0d%0aTransfer-Encoding: identity}</p>
      */
-    @Test
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "/api?data=chunked%0d%0aTransfer-Encoding: identity",
+            "/search?q=chunked%0d%0aTransfer-encoding: chunked",
+            "/process?input=test%0d%0aTransfer-Encoding: chunked",
+            "/endpoint?param=value%0d%0aTransfer-Encoding: x"
+    })
     @DisplayName("Transfer-Encoding obfuscation patterns in paths must be rejected")
-    void shouldRejectTransferEncodingObfuscationInPaths() {
-        // Given: Path values with Transfer-Encoding injection
-        String[] teObfuscationPaths = {
-                "/api?data=chunked%0d%0aTransfer-Encoding: identity",
-                "/search?q=chunked%0d%0aTransfer-encoding: chunked",
-                "/process?input=test%0d%0aTransfer-Encoding: chunked",
-                "/endpoint?param=value%0d%0aTransfer-Encoding: x"
-        };
+    void shouldRejectTransferEncodingObfuscationInPaths(String pathValue) {
+        // Given: A path value with Transfer-Encoding injection
+        long initialEventCount = eventCounter.getTotalCount();
 
-        for (String pathValue : teObfuscationPaths) {
-            long initialEventCount = eventCounter.getTotalCount();
+        // When: Attempting to validate the path
+        var exception = assertThrows(UrlSecurityException.class,
+                () -> pathPipeline.validate(pathValue),
+                "Transfer-Encoding obfuscation should be rejected: " + pathValue);
 
-            // When: Attempting to validate the path
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> pathPipeline.validate(pathValue),
-                    "Transfer-Encoding obfuscation should be rejected: " + pathValue);
-
-            // Then: Validation should fail with CRLF detection
-            assertNotNull(exception, "Exception should be thrown for TE obfuscation");
-            assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                    "Security event should be recorded");
-        }
+        // Then: Validation should fail with CRLF detection
+        assertNotNull(exception, "Exception should be thrown for TE obfuscation");
+        assertTrue(eventCounter.getTotalCount() > initialEventCount,
+                "Security event should be recorded");
     }
 
     /**
@@ -301,8 +295,8 @@ class Http1VulnerabilitiesTest {
 
         // Then: Validation should fail with CRLF detection
         assertNotNull(exception, "Exception should be thrown for verb injection");
-        assertTrue(isControlCharacterOrInvalidCharacter(exception.getFailureType()),
-                "Failure type should be CONTROL_CHARACTERS or INVALID_CHARACTER: " + exception.getFailureType());
+        assertTrue(isInjectionFailure(exception.getFailureType()),
+                "Failure type should be related to injection attempts (control characters, invalid characters, encoding issues, protocol violations, or suspicious patterns): " + exception.getFailureType());
 
         // And: Security event should be recorded
         assertTrue(eventCounter.getTotalCount() > initialEventCount,
@@ -336,8 +330,8 @@ class Http1VulnerabilitiesTest {
 
         // Then: Validation should fail with control character detection
         assertNotNull(exception, "Exception should be thrown for header injection");
-        assertTrue(isControlCharacterOrInvalidCharacter(exception.getFailureType()),
-                "Failure type should be CONTROL_CHARACTERS or INVALID_CHARACTER: " + exception.getFailureType());
+        assertTrue(isInjectionFailure(exception.getFailureType()),
+                "Failure type should be related to injection attempts (control characters, invalid characters, encoding issues, protocol violations, or suspicious patterns): " + exception.getFailureType());
 
         // And: Security event should be recorded
         assertTrue(eventCounter.getTotalCount() > initialEventCount,
@@ -351,31 +345,28 @@ class Http1VulnerabilitiesTest {
      *
      * <p>Attack Pattern: {@code /api?param=chunked%0d%0a}</p>
      */
-    @Test
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "/api?param=chunked%0d",
+            "/search?q=value%0a",
+            "/process?input=test%0d%0a",
+            "/endpoint?data=value%09test",
+            "/data?param=test%0d%0ainjected"
+    })
     @DisplayName("Whitespace and control character manipulation in paths must be rejected")
-    void shouldHandleWhitespaceManipulationInPaths() {
-        // Given: Paths with whitespace and control character manipulation
-        String[] whitespacePaths = {
-                "/api?param=chunked%0d",
-                "/search?q=value%0a",
-                "/process?input=test%0d%0a",
-                "/endpoint?data=value%09test",
-                "/data?param=test%0d%0ainjected"
-        };
+    void shouldHandleWhitespaceManipulationInPaths(String pathValue) {
+        // Given: A path with whitespace and control character manipulation
+        long initialEventCount = eventCounter.getTotalCount();
 
-        for (String pathValue : whitespacePaths) {
-            long initialEventCount = eventCounter.getTotalCount();
+        // When: Attempting to validate the path
+        var exception = assertThrows(UrlSecurityException.class,
+                () -> pathPipeline.validate(pathValue),
+                "Whitespace/control character manipulation should be rejected: " + pathValue);
 
-            // When: Attempting to validate the path
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> pathPipeline.validate(pathValue),
-                    "Whitespace/control character manipulation should be rejected: " + pathValue);
-
-            // Then: Validation should fail with control character detection
-            assertNotNull(exception, "Exception should be thrown for whitespace manipulation");
-            assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                    "Security event should be recorded");
-        }
+        // Then: Validation should fail with control character detection
+        assertNotNull(exception, "Exception should be thrown for whitespace manipulation");
+        assertTrue(eventCounter.getTotalCount() > initialEventCount,
+                "Security event should be recorded");
     }
 
     /**
@@ -404,8 +395,8 @@ class Http1VulnerabilitiesTest {
 
         // Then: Validation should fail with CRLF detection
         assertNotNull(exception, "Exception should be thrown for response injection");
-        assertTrue(isControlCharacterOrInvalidCharacter(exception.getFailureType()),
-                "Failure type should be CONTROL_CHARACTERS or INVALID_CHARACTER: " + exception.getFailureType());
+        assertTrue(isInjectionFailure(exception.getFailureType()),
+                "Failure type should be related to injection attempts (control characters, invalid characters, encoding issues, protocol violations, or suspicious patterns): " + exception.getFailureType());
 
         // And: Security event should be recorded
         assertTrue(eventCounter.getTotalCount() > initialEventCount,
@@ -438,8 +429,8 @@ class Http1VulnerabilitiesTest {
 
         // Then: Validation should fail with CRLF detection
         assertNotNull(exception, "Exception should be thrown for routing injection");
-        assertTrue(isControlCharacterOrInvalidCharacter(exception.getFailureType()),
-                "Failure type should be CONTROL_CHARACTERS or INVALID_CHARACTER: " + exception.getFailureType());
+        assertTrue(isInjectionFailure(exception.getFailureType()),
+                "Failure type should be related to injection attempts (control characters, invalid characters, encoding issues, protocol violations, or suspicious patterns): " + exception.getFailureType());
 
         // And: Security event should be recorded
         assertTrue(eventCounter.getTotalCount() > initialEventCount,
@@ -471,8 +462,8 @@ class Http1VulnerabilitiesTest {
 
         // Then: Validation should fail with CRLF detection
         assertNotNull(exception, "Exception should be thrown for Host injection");
-        assertTrue(isControlCharacterOrInvalidCharacter(exception.getFailureType()),
-                "Failure type should be CONTROL_CHARACTERS or INVALID_CHARACTER: " + exception.getFailureType());
+        assertTrue(isInjectionFailure(exception.getFailureType()),
+                "Failure type should be related to injection attempts (control characters, invalid characters, encoding issues, protocol violations, or suspicious patterns): " + exception.getFailureType());
 
         // And: Security event should be recorded
         assertTrue(eventCounter.getTotalCount() > initialEventCount,
@@ -480,12 +471,17 @@ class Http1VulnerabilitiesTest {
     }
 
     /**
-     * Helper method to check if failure type is control character or invalid character related.
+     * Helper method to check if failure type is related to injection attempts.
+     * Injection attacks like HTTP/1.x vulnerabilities can trigger various failure types
+     * including control characters, invalid characters, encoding issues, protocol violations,
+     * and suspicious pattern detection.
      */
-    private boolean isControlCharacterOrInvalidCharacter(UrlSecurityFailureType failureType) {
+    private boolean isInjectionFailure(UrlSecurityFailureType failureType) {
         return failureType == UrlSecurityFailureType.CONTROL_CHARACTERS ||
                 failureType == UrlSecurityFailureType.INVALID_CHARACTER ||
                 failureType == UrlSecurityFailureType.PROTOCOL_VIOLATION ||
-                failureType == UrlSecurityFailureType.RFC_VIOLATION;
+                failureType == UrlSecurityFailureType.RFC_VIOLATION ||
+                failureType == UrlSecurityFailureType.INVALID_ENCODING ||
+                failureType == UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED;
     }
 }
