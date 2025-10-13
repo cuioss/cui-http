@@ -105,6 +105,7 @@ public record Cookie(@Nullable String name, @Nullable String value, @Nullable St
      *   <li>Has Secure attribute</li>
      *   <li>Has Path=/ attribute</li>
      *   <li>No Domain attribute (bound to exact host)</li>
+     *   <li>SameSite=Strict (strongest CSRF protection for single-host cookies)</li>
      * </ul>
      *
      * <p><strong>Security Note:</strong> The returned cookie structure is valid, but applications
@@ -145,9 +146,12 @@ public record Cookie(@Nullable String name, @Nullable String value, @Nullable St
      * <ul>
      *   <li>Name starts with __Secure-</li>
      *   <li>Has Secure attribute</li>
+     *   <li>SameSite=Lax (CSRF protection with cross-subdomain navigation support)</li>
      * </ul>
      *
-     * <p>Unlike __Host- cookies, __Secure- cookies may have Domain and Path attributes.</p>
+     * <p>Unlike __Host- cookies, __Secure- cookies may have Domain and Path attributes,
+     * making them suitable for cross-subdomain scenarios where SameSite=Lax prevents
+     * breaking top-level navigation while maintaining CSRF protection.</p>
      *
      * <p><strong>Security Note:</strong> The returned cookie structure is valid, but applications
      * should validate it using {@link de.cuioss.http.security.validation.CookiePrefixValidationStage}
