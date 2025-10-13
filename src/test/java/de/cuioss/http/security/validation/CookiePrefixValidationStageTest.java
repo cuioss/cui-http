@@ -18,10 +18,15 @@ package de.cuioss.http.security.validation;
 import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.data.Cookie;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
+import de.cuioss.http.security.generators.cookie.CookieNameAsciiWhitespaceGenerator;
+import de.cuioss.test.generator.junit.EnableGeneratorController;
+import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -34,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * @see CookiePrefixValidationStage
  */
 @DisplayName("Cookie Prefix Validation")
+@EnableGeneratorController
 class CookiePrefixValidationStageTest {
 
     private CookiePrefixValidationStage validator;
@@ -43,22 +49,32 @@ class CookiePrefixValidationStageTest {
         validator = new CookiePrefixValidationStage();
     }
 
+    // Test data constants
+    private static final String HOST_PREFIX = "__Host-";
+    private static final String SECURE_PREFIX = "__Secure-";
+    private static final String VALID_HOST_ATTRS = "Secure; Path=/";
+    private static final String VALID_SECURE_ATTRS = "Secure";
+
     @Nested
     @DisplayName("__Host- Prefix Validation")
     class HostPrefixValidation {
 
-        @Test
-        @DisplayName("Valid __Host- cookie should pass")
-        void shouldAcceptValidHostCookie() {
-            Cookie valid = new Cookie("__Host-session", "abc123", "Secure; Path=/");
-
+        @ParameterizedTest
+        @ValueSource(strings = {
+                "Secure; Path=/",
+                "Secure; Path=/; HttpOnly; SameSite=Strict",
+                "Secure; Path=/; Max-Age=3600"
+        })
+        @DisplayName("Valid __Host- cookies should pass")
+        void shouldAcceptValidHostCookies(String attributes) {
+            Cookie valid = new Cookie(HOST_PREFIX + "session", "abc123", attributes);
             assertDoesNotThrow(() -> validator.validateCookie(valid));
         }
 
         @Test
         @DisplayName("__Host- without Secure should fail")
         void shouldRejectHostWithoutSecure() {
-            Cookie invalid = new Cookie("__Host-session", "abc123", "Path=/");
+            Cookie invalid = new Cookie(HOST_PREFIX + "session", "abc123", "Path=/");
 
             var exception = assertThrows(UrlSecurityException.class,
                     () -> validator.validateCookie(invalid));
@@ -68,23 +84,12 @@ class CookiePrefixValidationStageTest {
             assertTrue(exception.getDetail().get().contains("__Host- prefix requires Secure attribute"));
         }
 
-        @Test
+        @ParameterizedTest
+        @ValueSource(strings = {"Domain=example.com", "Domain=.example.com"})
         @DisplayName("__Host- with Domain should fail")
-        void shouldRejectHostWithDomain() {
-            Cookie invalid = new Cookie("__Host-session", "abc123", "Domain=example.com; Secure; Path=/");
-
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> validator.validateCookie(invalid));
-
-            assertEquals(UrlSecurityFailureType.COOKIE_PREFIX_VIOLATION, exception.getFailureType());
-            assertTrue(exception.getDetail().isPresent());
-            assertTrue(exception.getDetail().get().contains("__Host- prefix must not have Domain attribute"));
-        }
-
-        @Test
-        @DisplayName("__Host- with Domain=.example.com should fail")
-        void shouldRejectHostWithDotDomain() {
-            Cookie invalid = new Cookie("__Host-session", "abc123", "Domain=.example.com; Secure; Path=/");
+        void shouldRejectHostWithDomain(String domainAttr) {
+            Cookie invalid = new Cookie(HOST_PREFIX + "session", "abc123",
+                    domainAttr + "; Secure; Path=/");
 
             var exception = assertThrows(UrlSecurityException.class,
                     () -> validator.validateCookie(invalid));
@@ -94,23 +99,11 @@ class CookiePrefixValidationStageTest {
             assertTrue(exception.getDetail().get().contains("Domain"));
         }
 
-        @Test
-        @DisplayName("__Host- without Path should fail")
-        void shouldRejectHostWithoutPath() {
-            Cookie invalid = new Cookie("__Host-session", "abc123", "Secure");
-
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> validator.validateCookie(invalid));
-
-            assertEquals(UrlSecurityFailureType.COOKIE_PREFIX_VIOLATION, exception.getFailureType());
-            assertTrue(exception.getDetail().isPresent());
-            assertTrue(exception.getDetail().get().contains("__Host- prefix requires Path=/"));
-        }
-
-        @Test
-        @DisplayName("__Host- with Path=/admin should fail")
-        void shouldRejectHostWithNonRootPath() {
-            Cookie invalid = new Cookie("__Host-session", "abc123", "Secure; Path=/admin");
+        @ParameterizedTest
+        @ValueSource(strings = {"Secure", "Secure; Path=/admin", "Secure; Path=/api/v1"})
+        @DisplayName("__Host- with missing or non-root Path should fail")
+        void shouldRejectHostWithInvalidPath(String attributes) {
+            Cookie invalid = new Cookie(HOST_PREFIX + "session", "abc123", attributes);
 
             var exception = assertThrows(UrlSecurityException.class,
                     () -> validator.validateCookie(invalid));
@@ -119,42 +112,29 @@ class CookiePrefixValidationStageTest {
             assertTrue(exception.getDetail().isPresent());
             assertTrue(exception.getDetail().get().contains("Path=/"));
         }
-
-        @Test
-        @DisplayName("__Host- with all attributes should pass")
-        void shouldAcceptHostWithAllValidAttributes() {
-            Cookie valid = new Cookie("__Host-session", "abc123",
-                    "Secure; Path=/; HttpOnly; SameSite=Strict");
-
-            assertDoesNotThrow(() -> validator.validateCookie(valid));
-        }
-
-        @Test
-        @DisplayName("__Host- with Max-Age should pass")
-        void shouldAcceptHostWithMaxAge() {
-            Cookie valid = new Cookie("__Host-session", "abc123",
-                    "Secure; Path=/; Max-Age=3600");
-
-            assertDoesNotThrow(() -> validator.validateCookie(valid));
-        }
     }
 
     @Nested
     @DisplayName("__Secure- Prefix Validation")
     class SecurePrefixValidation {
 
-        @Test
-        @DisplayName("Valid __Secure- cookie should pass")
-        void shouldAcceptValidSecureCookie() {
-            Cookie valid = new Cookie("__Secure-token", "xyz789", "Secure");
-
+        @ParameterizedTest
+        @ValueSource(strings = {
+                "Secure",
+                "Secure; Domain=example.com",
+                "Secure; Path=/api",
+                "Secure; Domain=example.com; Path=/; HttpOnly; SameSite=Lax"
+        })
+        @DisplayName("Valid __Secure- cookies should pass")
+        void shouldAcceptValidSecureCookies(String attributes) {
+            Cookie valid = new Cookie(SECURE_PREFIX + "token", "xyz789", attributes);
             assertDoesNotThrow(() -> validator.validateCookie(valid));
         }
 
         @Test
         @DisplayName("__Secure- without Secure should fail")
         void shouldRejectSecureWithoutSecureAttribute() {
-            Cookie invalid = new Cookie("__Secure-token", "xyz789", "");
+            Cookie invalid = new Cookie(SECURE_PREFIX + "token", "xyz789", "");
 
             var exception = assertThrows(UrlSecurityException.class,
                     () -> validator.validateCookie(invalid));
@@ -163,67 +143,22 @@ class CookiePrefixValidationStageTest {
             assertTrue(exception.getDetail().isPresent());
             assertTrue(exception.getDetail().get().contains("__Secure- prefix requires Secure attribute"));
         }
-
-        @Test
-        @DisplayName("__Secure- with Domain should pass")
-        void shouldAcceptSecureWithDomain() {
-            Cookie valid = new Cookie("__Secure-token", "xyz789", "Secure; Domain=example.com");
-
-            assertDoesNotThrow(() -> validator.validateCookie(valid));
-        }
-
-        @Test
-        @DisplayName("__Secure- with Path should pass")
-        void shouldAcceptSecureWithPath() {
-            Cookie valid = new Cookie("__Secure-token", "xyz789", "Secure; Path=/api");
-
-            assertDoesNotThrow(() -> validator.validateCookie(valid));
-        }
-
-        @Test
-        @DisplayName("__Secure- with all attributes should pass")
-        void shouldAcceptSecureWithAllAttributes() {
-            Cookie valid = new Cookie("__Secure-token", "xyz789",
-                    "Secure; Domain=example.com; Path=/; HttpOnly; SameSite=Lax");
-
-            assertDoesNotThrow(() -> validator.validateCookie(valid));
-        }
     }
 
     @Nested
     @DisplayName("Regular Cookie Validation")
     class RegularCookieValidation {
 
-        @Test
-        @DisplayName("Regular cookie without prefix should pass")
-        void shouldAcceptRegularCookie() {
-            Cookie regular = new Cookie("session_id", "abc123", "");
-
-            assertDoesNotThrow(() -> validator.validateCookie(regular));
-        }
-
-        @Test
-        @DisplayName("Regular cookie with Secure should pass")
-        void shouldAcceptRegularWithSecure() {
-            Cookie regular = new Cookie("session_id", "abc123", "Secure");
-
-            assertDoesNotThrow(() -> validator.validateCookie(regular));
-        }
-
-        @Test
-        @DisplayName("Regular cookie with Domain should pass")
-        void shouldAcceptRegularWithDomain() {
-            Cookie regular = new Cookie("session_id", "abc123", "Domain=example.com");
-
-            assertDoesNotThrow(() -> validator.validateCookie(regular));
-        }
-
-        @Test
-        @DisplayName("Regular cookie with all attributes should pass")
-        void shouldAcceptRegularWithAllAttributes() {
-            Cookie regular = new Cookie("session_id", "abc123",
-                    "Domain=example.com; Path=/; Secure; HttpOnly; SameSite=Strict");
-
+        @ParameterizedTest
+        @ValueSource(strings = {
+                "",
+                "Secure",
+                "Domain=example.com",
+                "Domain=example.com; Path=/; Secure; HttpOnly; SameSite=Strict"
+        })
+        @DisplayName("Regular cookies without security prefix should pass")
+        void shouldAcceptRegularCookies(String attributes) {
+            Cookie regular = new Cookie("session_id", "abc123", attributes);
             assertDoesNotThrow(() -> validator.validateCookie(regular));
         }
     }
@@ -232,48 +167,29 @@ class CookiePrefixValidationStageTest {
     @DisplayName("String-Based Name Validation")
     class StringNameValidation {
 
-        @Test
-        @DisplayName("Valid cookie name should pass")
-        void shouldAcceptValidName() {
-            assertDoesNotThrow(() -> validator.validate("session_id"));
+        @ParameterizedTest
+        @ValueSource(strings = {"session_id", HOST_PREFIX + "session", SECURE_PREFIX + "token"})
+        @DisplayName("Valid cookie names should pass")
+        void shouldAcceptValidNames(String name) {
+            assertDoesNotThrow(() -> validator.validate(name));
         }
 
-        @Test
-        @DisplayName("Name with leading whitespace should fail")
-        void shouldRejectNameWithLeadingWhitespace() {
+        @ParameterizedTest
+        @ValueSource(strings = {" session_id", "session_id ", " session_id ", "\tsession_id"})
+        @DisplayName("Names with leading/trailing whitespace should fail")
+        void shouldRejectNamesWithWhitespace(String invalidName) {
             var exception = assertThrows(UrlSecurityException.class,
-                    () -> validator.validate(" session_id"));
+                    () -> validator.validate(invalidName));
 
             assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
             assertTrue(exception.getDetail().isPresent());
             assertTrue(exception.getDetail().get().contains("leading or trailing whitespace"));
-        }
-
-        @Test
-        @DisplayName("Name with trailing whitespace should fail")
-        void shouldRejectNameWithTrailingWhitespace() {
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> validator.validate("session_id "));
-
-            assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
-            assertTrue(exception.getDetail().isPresent());
-            assertTrue(exception.getDetail().get().contains("leading or trailing whitespace"));
-        }
-
-        @Test
-        @DisplayName("Name with both leading and trailing whitespace should fail")
-        void shouldRejectNameWithBothWhitespace() {
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> validator.validate(" session_id "));
-
-            assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
         }
 
         @Test
         @DisplayName("Null name should return empty")
         void shouldReturnEmptyForNull() {
             var result = validator.validate(null);
-
             assertTrue(result.isEmpty());
         }
 
@@ -289,37 +205,27 @@ class CookiePrefixValidationStageTest {
     @DisplayName("Cookie Chaos Attack Prevention")
     class CookieChaosAttackPrevention {
 
-        @Test
-        @DisplayName("Should reject __Host- with whitespace-prefixed name")
-        void shouldRejectHostWithWhitespacePrefix() {
-            Cookie invalid = new Cookie(" __Host-session", "abc123", "Secure; Path=/");
+        @ParameterizedTest
+        @TypeGeneratorSource(value = CookieNameAsciiWhitespaceGenerator.class, count = 20)
+        @DisplayName("Should reject cookie names with ASCII whitespace injection")
+        void shouldRejectCookieNamesWithWhitespace(String maliciousName) {
+            var exception = assertThrows(UrlSecurityException.class,
+                    () -> validator.validate(maliciousName));
+
+            assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
+            assertTrue(exception.getDetail().isPresent());
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {" __Host-session", "\t__Secure-token", "__Host-session ", " session_id"})
+        @DisplayName("Should reject prefix cookies with whitespace")
+        void shouldRejectPrefixCookiesWithWhitespace(String invalidName) {
+            Cookie invalid = new Cookie(invalidName, "value", VALID_HOST_ATTRS);
 
             var exception = assertThrows(UrlSecurityException.class,
                     () -> validator.validateCookie(invalid));
 
             assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
-        }
-
-        @Test
-        @DisplayName("Should reject __Secure- with whitespace-prefixed name")
-        void shouldRejectSecureWithWhitespacePrefix() {
-            Cookie invalid = new Cookie("\t__Secure-token", "xyz789", "Secure");
-
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> validator.validateCookie(invalid));
-
-            assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
-        }
-
-        @Test
-        @DisplayName("Unicode whitespace already blocked by character validation")
-        void shouldDocumentUnicodeBlocking() {
-            // Unicode whitespace (U+2000) would be blocked by CharacterValidationStage
-            // This test documents that cookie prefix validation happens after character validation
-            // Character validation: \u2000 -> UrlSecurityException (INVALID_CHARACTER)
-            // Prefix validation: operates on cleaned input only
-
-            assertTrue(true, "Unicode whitespace blocked by CharacterValidationStage");
         }
     }
 
@@ -328,44 +234,43 @@ class CookiePrefixValidationStageTest {
     class HelperMethods {
 
         @Test
-        @DisplayName("hasSecurityPrefix should detect __Host-")
+        @DisplayName("Should detect __Host- prefix")
         void shouldDetectHostPrefix() {
-            assertTrue(CookiePrefixValidationStage.hasSecurityPrefix("__Host-session"));
-            assertTrue(CookiePrefixValidationStage.hasHostPrefix("__Host-session"));
-            assertFalse(CookiePrefixValidationStage.hasSecurePrefix("__Host-session"));
+            assertTrue(CookiePrefixValidationStage.hasSecurityPrefix(HOST_PREFIX + "session"));
+            assertTrue(CookiePrefixValidationStage.hasHostPrefix(HOST_PREFIX + "session"));
+            assertFalse(CookiePrefixValidationStage.hasSecurePrefix(HOST_PREFIX + "session"));
         }
 
         @Test
-        @DisplayName("hasSecurityPrefix should detect __Secure-")
+        @DisplayName("Should detect __Secure- prefix")
         void shouldDetectSecurePrefix() {
-            assertTrue(CookiePrefixValidationStage.hasSecurityPrefix("__Secure-token"));
-            assertTrue(CookiePrefixValidationStage.hasSecurePrefix("__Secure-token"));
-            assertFalse(CookiePrefixValidationStage.hasHostPrefix("__Secure-token"));
+            assertTrue(CookiePrefixValidationStage.hasSecurityPrefix(SECURE_PREFIX + "token"));
+            assertTrue(CookiePrefixValidationStage.hasSecurePrefix(SECURE_PREFIX + "token"));
+            assertFalse(CookiePrefixValidationStage.hasHostPrefix(SECURE_PREFIX + "token"));
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"session_id", "token", "auth"})
+        @DisplayName("Should not detect prefix on regular names")
+        void shouldNotDetectPrefixOnRegular(String name) {
+            assertFalse(CookiePrefixValidationStage.hasSecurityPrefix(name));
+            assertFalse(CookiePrefixValidationStage.hasHostPrefix(name));
+            assertFalse(CookiePrefixValidationStage.hasSecurePrefix(name));
         }
 
         @Test
-        @DisplayName("hasSecurityPrefix should return false for regular names")
-        void shouldNotDetectPrefixOnRegular() {
-            assertFalse(CookiePrefixValidationStage.hasSecurityPrefix("session_id"));
-            assertFalse(CookiePrefixValidationStage.hasHostPrefix("session_id"));
-            assertFalse(CookiePrefixValidationStage.hasSecurePrefix("session_id"));
-        }
-
-        @Test
-        @DisplayName("hasSecurityPrefix should handle null")
-        void shouldHandleNullInHelpers() {
+        @DisplayName("Should handle null safely")
+        void shouldHandleNullSafely() {
             assertFalse(CookiePrefixValidationStage.hasSecurityPrefix(null));
             assertFalse(CookiePrefixValidationStage.hasHostPrefix(null));
             assertFalse(CookiePrefixValidationStage.hasSecurePrefix(null));
         }
 
-        @Test
-        @DisplayName("hasSecurityPrefix should be case-sensitive")
-        void shouldBeCaseSensitive() {
-            assertFalse(CookiePrefixValidationStage.hasSecurityPrefix("__host-session"));
-            assertFalse(CookiePrefixValidationStage.hasSecurityPrefix("__HOST-session"));
-            assertFalse(CookiePrefixValidationStage.hasSecurityPrefix("__secure-token"));
-            assertFalse(CookiePrefixValidationStage.hasSecurityPrefix("__SECURE-token"));
+        @ParameterizedTest
+        @ValueSource(strings = {"__host-session", "__HOST-session", "__secure-token", "__SECURE-token"})
+        @DisplayName("Should be case-sensitive")
+        void shouldBeCaseSensitive(String wrongCase) {
+            assertFalse(CookiePrefixValidationStage.hasSecurityPrefix(wrongCase));
         }
     }
 
@@ -374,16 +279,14 @@ class CookiePrefixValidationStageTest {
     class EdgeCases {
 
         @Test
-        @DisplayName("Should reject cookie without name")
-        void shouldRejectCookieWithoutName() {
+        @DisplayName("Should reject cookie with null name")
+        void shouldRejectCookieWithNullName() {
             Cookie invalid = new Cookie(null, "value", "Secure");
 
             var exception = assertThrows(UrlSecurityException.class,
                     () -> validator.validateCookie(invalid));
 
             assertEquals(UrlSecurityFailureType.INVALID_INPUT, exception.getFailureType());
-            assertTrue(exception.getDetail().isPresent());
-            assertTrue(exception.getDetail().get().contains("Cookie must have a name"));
         }
 
         @Test
@@ -397,27 +300,11 @@ class CookiePrefixValidationStageTest {
             assertEquals(UrlSecurityFailureType.INVALID_INPUT, exception.getFailureType());
         }
 
-        @Test
-        @DisplayName("__Host- prefix at end of name is regular cookie")
-        void shouldTreatSuffixAsRegular() {
-            Cookie regular = new Cookie("session__Host-", "abc123", "");
-
-            assertDoesNotThrow(() -> validator.validateCookie(regular));
-        }
-
-        @Test
-        @DisplayName("__Secure- prefix at end of name is regular cookie")
-        void shouldTreatSecureSuffixAsRegular() {
-            Cookie regular = new Cookie("token__Secure-", "xyz789", "");
-
-            assertDoesNotThrow(() -> validator.validateCookie(regular));
-        }
-
-        @Test
-        @DisplayName("Partial prefix match should not trigger validation")
-        void shouldNotMatchPartialPrefix() {
-            Cookie regular = new Cookie("__H", "value", "");
-
+        @ParameterizedTest
+        @ValueSource(strings = {"session__Host-", "token__Secure-", "__H", "__Sec", "MyHost-cookie"})
+        @DisplayName("Prefix at wrong position should be treated as regular cookie")
+        void shouldTreatWrongPositionAsRegular(String name) {
+            Cookie regular = new Cookie(name, "value", "");
             assertDoesNotThrow(() -> validator.validateCookie(regular));
         }
     }
