@@ -5,8 +5,7 @@
 
 == Overview
 
-`HttpResult<T>` is a sealed interface for HTTP operation results.
-Replaces `HttpResultObject` and removes the `cui-core-ui-model` dependency.
+`HttpResult<T>` is a sealed interface for HTTP operation results with type-safe pattern matching.
 
 === Design Principles
 
@@ -373,71 +372,6 @@ public class HttpWellKnownResolver {
             cachedResult.getContent() : Optional.empty();
     }
 }
-----
-
-== Migration from HttpResultObject
-
-=== Quick Reference
-
-[cols="2,2,1"]
-|===
-|Old API |New API |Change Type
-
-|`result.isValid()`
-|`result.isSuccess()`
-|Rename
-
-|`result.getResult()`
-|`result.getContent().orElseThrow()`
-|Optional
-
-|`result.getETag()`
-|`result.getETag()`
-|Same
-
-|`result.getResultDetail().get().getDetail()`
-|`result.getErrorMessage().orElse("")`
-|Simplified
-
-|`result.getErrorCode()`
-|`result.getErrorCategory()`
-|Rename
-
-|`result.isRetryable()`
-|`result.isRetryable()`
-|Same
-
-|`result.getState()`
-|Pattern match or `isSuccess()`
-|Type-based
-|===
-
-=== Migration Example
-
-.Before (HttpResultObject)
-[source,java]
-----
-HttpResultObject<Jwks> result = handler.load();
-
-if (result.isValid()) {
-    Jwks jwks = result.getResult();
-    processKeys(jwks);
-}
-
-result.getResultDetail().ifPresent(detail ->
-    logger.error(detail.getDetail().getDisplayName()));
-----
-
-.After (HttpResult)
-[source,java]
-----
-HttpResult<Jwks> result = handler.load();
-
-if (result.isSuccess()) {
-    result.getContent().ifPresent(this::processKeys);
-}
-
-result.getErrorMessage().ifPresent(logger::error);
 ----
 
 == Best Practices

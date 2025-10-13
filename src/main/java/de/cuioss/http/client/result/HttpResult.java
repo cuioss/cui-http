@@ -23,7 +23,7 @@ import java.util.function.Function;
 
 /**
  * Sealed interface representing HTTP operation results as either success or failure.
- * Replaces {@code HttpResultObject} as the result pattern for HTTP operations.
+ * Modern result pattern for HTTP operations with type-safe pattern matching.
  *
  * <h2>Design Principles</h2>
  * <ul>

@@ -19,9 +19,8 @@
  * <h2>Core Types</h2>
  * <ul>
  *   <li>{@link de.cuioss.http.client.result.HttpResult} - Sealed interface for HTTP operation results</li>
- *   <li>{@link de.cuioss.http.client.result.HttpResultObject} - Legacy CUI result wrapper (deprecated)</li>
  *   <li>{@link de.cuioss.http.client.result.HttpErrorCategory} - Error classification for retry decisions</li>
- *   <li>{@link de.cuioss.http.client.result.HttpResultState} - State constants for legacy result objects</li>
+ *   <li>{@link de.cuioss.http.client.result.HttpResultState} - State constants for HTTP result tracking</li>
  * </ul>
  *
  * <h2>Usage Examples</h2>
@@ -29,24 +28,24 @@
  * <h3>1. Basic HTTP Operations</h3>
  * <pre>
  * // HTTP operation with result pattern
- * HttpResultObject&lt;String&gt; result = httpClient.get("https://api.example.com/data");
+ * HttpResult&lt;String&gt; result = httpClient.get("https://api.example.com/data");
  *
- * if (result.isValid()) {
- *     String content = result.getResult();
- *     processContent(content);
+ * if (result.isSuccess()) {
+ *     result.getContent().ifPresent(this::processContent);
  * } else {
- *     handleError(result);
+ *     result.getErrorMessage().ifPresent(logger::error);
  * }
  * </pre>
  *
  * <h3>2. ETag-Aware Caching</h3>
  * <pre>
  * // ETag-aware HTTP loading
- * HttpResultObject&lt;JwksKeys&gt; result = jwksLoader.loadWithETag(previousETag);
+ * HttpResult&lt;JwksKeys&gt; result = jwksLoader.loadWithETag(previousETag);
  *
- * if (result.isValid()) {
+ * if (result.isSuccess()) {
  *     // Process successful result
- *     updateCache(result.getResult(), result.getETag().orElse(""));
+ *     result.getContent().ifPresent(keys ->
+ *         updateCache(keys, result.getETag().orElse("")));
  *
  *     // Check HTTP status for caching behavior
  *     if (result.getHttpStatus().orElse(0) == 304) {
@@ -56,25 +55,25 @@
  *     }
  * } else {
  *     // Handle error case with fallback
- *     result.getResultDetail().ifPresent(detail ->
- *         logger.warn("JWKS loading failed: {}", detail.getDetail().getDisplayName()));
+ *     result.getErrorMessage().ifPresent(msg ->
+ *         logger.warn("JWKS loading failed: {}", msg));
  * }
  * </pre>
  *
  * <h3>3. Error Handling with Retry Logic</h3>
  * <pre>
  * // HTTP operation with error handling
- * HttpResultObject&lt;Config&gt; result = httpHandler.loadConfig();
+ * HttpResult&lt;Config&gt; result = httpHandler.loadConfig();
  *
- * if (!result.isValid()) {
+ * if (!result.isSuccess()) {
  *     // Check if error is retryable
  *     if (result.isRetryable()) {
  *         logger.info("Retryable error, scheduling retry");
  *         scheduleRetry();
  *     } else {
  *         // Handle non-retryable error
- *         result.getHttpErrorCategory().ifPresent(code -> {
- *             if (code == HttpErrorCategory.INVALID_CONTENT) {
+ *         result.getErrorCategory().ifPresent(category -> {
+ *             if (category == HttpErrorCategory.INVALID_CONTENT) {
  *                 logger.error("Invalid content received");
  *             }
  *         });
@@ -85,39 +84,34 @@
  * <h3>4. Factory Methods for Common Scenarios</h3>
  * <pre>
  * // Successful HTTP response
- * HttpResultObject&lt;Document&gt; result = HttpResultObject.success(document, etag, 200);
+ * HttpResult&lt;Document&gt; result = HttpResult.success(document, etag, 200);
  *
  * // Error with fallback content
- * HttpResultObject&lt;Document&gt; errorResult = HttpResultObject.error(
+ * HttpResult&lt;Document&gt; errorResult = HttpResult.failureWithFallback(
+ *     "Connection failed",
+ *     null,
  *     fallbackDocument,
  *     HttpErrorCategory.NETWORK_ERROR,
- *     new ResultDetail(new DisplayName("Connection failed"))
+ *     cachedEtag,
+ *     null
  * );
  * </pre>
  *
  * <h2>Pattern Comparison</h2>
  *
- * <h3>HttpResult (Recommended)</h3>
+ * <h3>HttpResult</h3>
  * <ul>
  *   <li>Sealed interface with Success/Failure records</li>
  *   <li>Type-safe pattern matching</li>
  *   <li>Immutable records</li>
  *   <li>Optional-based content access</li>
  *   <li>No external dependencies</li>
- * </ul>
- *
- * <h3>HttpResultObject (Legacy)</h3>
- * <ul>
- *   <li>Extends CUI ResultObject</li>
- *   <li>State-based checking (VALID/WARNING/ERROR)</li>
- *   <li>Integrates with CUI i18n framework</li>
- *   <li>Direct content access (non-Optional)</li>
- *   <li>Requires cui-core-ui-model dependency</li>
+ *   <li>Simple string-based error messages</li>
  * </ul>
  *
  * @author Oliver Wolff
  * @see de.cuioss.http.client.result.HttpResult
- * @see de.cuioss.http.client.result.HttpResultObject
+ * @see de.cuioss.http.client.result.HttpErrorCategory
  * @since 1.0
  */
 package de.cuioss.http.client.result;
