@@ -86,6 +86,15 @@ import java.util.Optional;
 public record Cookie(@Nullable String name, @Nullable String value, @Nullable String attributes) {
 
     /**
+     * Shared validator for cookie name suffixes using default security configuration.
+     * Validates cookie name characters to prevent injection attacks in factory methods.
+     */
+    private static final CharacterValidationStage COOKIE_NAME_VALIDATOR =
+            new CharacterValidationStage(
+                    SecurityConfiguration.builder().build(),
+                    ValidationType.COOKIE_NAME);
+
+    /**
      * Creates a simple cookie with no attributes.
      *
      * @param name The cookie name
@@ -133,9 +142,7 @@ public record Cookie(@Nullable String name, @Nullable String value, @Nullable St
      */
     public static Cookie hostPrefix(String suffix, String value) {
         // Validate suffix to prevent injection of invalid characters
-        new CharacterValidationStage(
-                SecurityConfiguration.builder().build(),
-                ValidationType.COOKIE_NAME).validate(suffix);
+        COOKIE_NAME_VALIDATOR.validate(suffix);
         return new Cookie("__Host-" + suffix, value, "Secure; Path=/; HttpOnly; SameSite=Strict");
     }
 
@@ -178,9 +185,7 @@ public record Cookie(@Nullable String name, @Nullable String value, @Nullable St
      */
     public static Cookie securePrefix(String suffix, String value) {
         // Validate suffix to prevent injection of invalid characters
-        new CharacterValidationStage(
-                SecurityConfiguration.builder().build(),
-                ValidationType.COOKIE_NAME).validate(suffix);
+        COOKIE_NAME_VALIDATOR.validate(suffix);
         return new Cookie("__Secure-" + suffix, value, "Secure; HttpOnly; SameSite=Lax");
     }
 
