@@ -53,7 +53,6 @@ class CookiePrefixValidationStageTest {
     private static final String HOST_PREFIX = "__Host-";
     private static final String SECURE_PREFIX = "__Secure-";
     private static final String VALID_HOST_ATTRS = "Secure; Path=/";
-    private static final String VALID_SECURE_ATTRS = "Secure";
 
     @Nested
     @DisplayName("__Host- Prefix Validation")

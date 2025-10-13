@@ -398,20 +398,24 @@ class CookieChaosAttackTest {
         assertNotNull(withLegacy.name());
 
         // But validation should reject them
+        String name1 = withUnicodeSpace.name();
         var ex1 = assertThrows(UrlSecurityException.class,
-                () -> cookieNameValidator.validate(withUnicodeSpace.name()));
+                () -> cookieNameValidator.validate(name1));
         assertNotNull(ex1);
 
+        String name2 = withZeroWidth.name();
         var ex2 = assertThrows(UrlSecurityException.class,
-                () -> cookieNameValidator.validate(withZeroWidth.name()));
+                () -> cookieNameValidator.validate(name2));
         assertNotNull(ex2);
 
+        String name3 = withWhitespace.name();
         var ex3 = assertThrows(UrlSecurityException.class,
-                () -> cookieNameValidator.validate(withWhitespace.name()));
+                () -> cookieNameValidator.validate(name3));
         assertNotNull(ex3);
 
+        String name4 = withLegacy.name();
         var ex4 = assertThrows(UrlSecurityException.class,
-                () -> cookieNameValidator.validate(withLegacy.name()));
+                () -> cookieNameValidator.validate(name4));
         assertNotNull(ex4);
     }
 
