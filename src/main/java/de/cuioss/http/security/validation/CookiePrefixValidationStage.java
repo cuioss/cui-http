@@ -20,7 +20,6 @@ import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.data.Cookie;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
-import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
 import java.util.Optional;
@@ -161,7 +160,8 @@ public record CookiePrefixValidationStage() implements HttpSecurityValidator {
      * @param cookie The cookie to validate
      * @throws UrlSecurityException if the cookie violates prefix requirements
      */
-    public void validateCookie(@NonNull Cookie cookie) throws UrlSecurityException {
+    @SuppressWarnings("ConstantConditions") // hasName() guarantees non-null after check
+    public void validateCookie(Cookie cookie) throws UrlSecurityException {
         if (!cookie.hasName()) {
             throw UrlSecurityException.builder()
                     .failureType(UrlSecurityFailureType.INVALID_INPUT)
@@ -196,7 +196,8 @@ public record CookiePrefixValidationStage() implements HttpSecurityValidator {
      * @param cookie The cookie with __Host- prefix
      * @throws UrlSecurityException if requirements are not met
      */
-    private void validateHostPrefix(@NonNull Cookie cookie) throws UrlSecurityException {
+    @SuppressWarnings("ConstantConditions") // Called after hasName() check
+    private void validateHostPrefix(Cookie cookie) throws UrlSecurityException {
         String cookieName = cookie.name();
 
         // Requirement 1: Must have Secure attribute
@@ -239,7 +240,8 @@ public record CookiePrefixValidationStage() implements HttpSecurityValidator {
      * @param cookie The cookie with __Secure- prefix
      * @throws UrlSecurityException if requirements are not met
      */
-    private void validateSecurePrefix(@NonNull Cookie cookie) throws UrlSecurityException {
+    @SuppressWarnings("ConstantConditions") // Called after hasName() check
+    private void validateSecurePrefix(Cookie cookie) throws UrlSecurityException {
         String cookieName = cookie.name();
 
         // Requirement: Must have Secure attribute
