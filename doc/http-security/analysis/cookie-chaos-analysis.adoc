@@ -1,0 +1,569 @@
+= Cookie Chaos: Bypassing Host and Secure Cookie Prefixes - Security Analysis
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:icons: font
+:source-highlighter: highlight.js
+
+link:../README.adoc[← Back to Documentation Index]
+
+== Overview
+
+This document analyzes cookie security vulnerabilities from the PortSwigger research "Cookie Chaos: How to Bypass Host and Secure Cookie Prefixes" (https://portswigger.net/research/cookie-chaos-how-to-bypass-host-and-secure-cookie-prefixes) focusing on server-side validation in the cui-http library. Each vulnerability is assessed for applicability to `de.cuioss.http.security`, and test coverage is documented.
+
+**Note:** For client-side browser behavior details, refer to the original PortSwigger article. This document focuses on server-side Java validation and attack pattern detection.
+
+== Cookie Security Background
+
+=== Cookie Prefixes (RFC 6265bis)
+
+Cookie prefixes are a security mechanism defined in RFC 6265bis to provide additional guarantees:
+
+[cols="1,3,2"]
+|===
+|Prefix |Security Guarantees |Requirements
+
+|`__Host-`
+|• Cookie bound to exact host (no subdomain access) +
+• Must be sent over HTTPS only +
+• Cannot have Domain attribute +
+• Path must be /
+|• Secure attribute required +
+• Domain attribute forbidden +
+• Path=/ required
+
+|`__Secure-`
+|• Cookie sent over HTTPS only
+|• Secure attribute required
+|===
+
+**Security Value:**
+
+* Prevents subdomain takeover attacks
+* Prevents MITM cookie injection over HTTP
+* Ensures cookies stay within intended scope
+
+== Vulnerability Analysis
+
+=== 1. Unicode Whitespace Injection
+
+==== Description
+Attackers inject Unicode whitespace characters (e.g., U+2000, U+2001, U+00A0) into cookie names to bypass cookie prefix validation. Server-side parsers may normalize (strip) these characters, causing `__Host-` or `__Secure-` prefix requirements to be checked after normalization - allowing cookies with forbidden attributes.
+
+==== Server-Side Attack Vector
+```
+Received cookie: "\u2000__Host-session=malicious; Domain=.example.com; Path=/; Secure"
+After normalization: "__Host-session=malicious; Domain=.example.com"
+Result: __Host- cookie with forbidden Domain attribute
+```
+
+**Client behavior details:** See PortSwigger article for browser-specific handling of Unicode whitespace.
+
+==== Affected Characters
+* **Multibyte Unicode whitespace**: U+2000-U+200B (various space widths)
+* **Single-byte Unicode whitespace**: U+0085 (NEL - Next Line), U+00A0 (NBSP - Non-Breaking Space)
+* **Zero-width characters**: U+200B (Zero-Width Space), U+FEFF (Zero-Width No-Break Space/BOM)
+
+==== Impact on Server Validation
+* Bypass `__Host-` domain restrictions
+* Bypass `__Secure-` HTTPS enforcement
+* Session fixation attacks
+* Cookie injection from untrusted subdomains
+
+==== Current Implementation Status: PARTIALLY MITIGATED
+
+The library's character validation provides some protection but may have gaps:
+
+**Existing Protections:**
+
+* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage.java:268-312] - Character validation with Unicode awareness
+* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage.java:294-296] - Cookie names must be ASCII-only per RFC
+* Unicode characters above 127 are rejected for `COOKIE_NAME` validation type
+
+**Potential Gaps:**
+
+* No explicit validation of cookie name prefixes (`__Host-`, `__Secure-`)
+* No validation of cookie attributes against prefix requirements
+* Character validation happens at a lower level - prefix semantics not enforced
+* Applications using the library must implement prefix validation themselves
+
+**Recommended Enhancements:**
+
+1. Add explicit cookie prefix validation
+2. Validate cookie attributes comply with prefix requirements
+3. Add tests for Unicode whitespace injection attempts
+4. Document cookie prefix validation requirements for library users
+
+==== Test Coverage
+
+* link:../../../src/test/java/de/cuioss/http/security/generators/cookie/CookieNameUnicodeWhitespaceGenerator.java[CookieNameUnicodeWhitespaceGenerator] - Generates 13 Unicode whitespace types
+* link:../../../src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest] - Tests Unicode whitespace injection with 50 generated test cases
+* ✓ **Implemented**: Specific tests for Unicode whitespace in cookie names
+* **Partial**: Tests for cookie prefix validation (documented behavior)
+* **Missing**: Semantic validation of cookie attribute compliance with prefixes
+
+=== 2. Legacy Parsing Exploitation
+
+==== Description
+Java servlet containers (Apache Tomcat, Jetty) support legacy RFC 2109 cookie parsing when a cookie string starts with `$Version=1`. This legacy mode changes parsing rules and may allow bypassing modern security restrictions.
+
+==== Server-Side Attack Vector
+```
+Received: "$Version=1,__Host-session=injected; Path=/admin; Domain=.example.com;"
+
+Legacy parser behavior:
+1. May not recognize __Host- prefix
+2. May allow forbidden Domain attribute
+3. Uses RFC 2109 parsing rules instead of RFC 6265
+```
+
+**Client behavior details:** See PortSwigger article for how browsers handle $Version cookies.
+
+==== Affected Servers
+* **Apache Tomcat**: All versions supporting RFC 2109 (legacy) parsing
+* **Eclipse Jetty**: Versions with RFC 2109 parser support
+* **Java Servlet Containers**: Any supporting legacy cookie specification
+
+==== Impact
+* Bypass `__Host-` domain restrictions on affected servers
+* Bypass `__Secure-` validation on affected servers
+* Cookie injection from subdomains
+* Session fixation attacks
+
+==== Current Implementation Status: NOT DIRECTLY APPLICABLE
+
+The cui-http library focuses on validation of HTTP components, not parsing of incoming cookies:
+
+**Library Scope:**
+
+* Validates cookie names and values before they are sent
+* Does not parse incoming `Set-Cookie` or `Cookie` headers
+* Applications typically rely on HTTP frameworks for cookie parsing
+
+**Mitigation Approach:**
+
+* Applications using Tomcat/Jetty should disable legacy parsing:
+  ** Tomcat: Set `STRICT_SERVLET_COMPLIANCE=true`
+  ** Jetty: Configure `CookieCompliance.RFC6265`
+* The library's validation prevents applications from creating malicious cookies
+* Server-side cookie parsing is outside the library's scope
+
+**Recommended Actions:**
+
+1. Document the legacy parsing issue in security best practices
+2. Provide guidance for configuring server frameworks
+3. Consider adding cookie parsing validation if library scope expands
+
+==== Test Coverage
+
+* link:../../../src/test/java/de/cuioss/http/security/generators/cookie/CookieNameLegacyParsingGenerator.java[CookieNameLegacyParsingGenerator] - Generates legacy parsing patterns
+* link:../../../src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest] - Tests legacy parsing triggers with 20 generated test cases
+* ✓ **Implemented**: Character-level rejection of $Version patterns
+* **Documented**: Server configuration recommendations for Tomcat/Jetty
+
+=== 3. Server-Side Cookie Name Normalization
+
+==== Description
+Java servlet containers and application code may normalize cookie names by stripping whitespace. This causes validation to happen after normalization, potentially accepting cookies that should be rejected.
+
+==== Server-Side Attack Vector
+```
+Received: "  __Host-session=value; Domain=.example.com"
+After trim(): "__Host-session=value; Domain=.example.com"
+Result: __Host- cookie with forbidden Domain attribute bypasses validation
+```
+
+==== Framework-Specific Behavior
+* Some servlet containers apply whitespace trimming during cookie parsing
+* Custom cookie parsers may implement non-standard normalization
+* Application code may normalize cookie names before security validation
+
+==== Impact
+* Cookie prefix bypass via whitespace manipulation
+* Inconsistent security policy enforcement
+* Cookie injection attacks
+
+==== Current Implementation Status: PARTIALLY MITIGATED
+
+**Existing Protections:**
+
+* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage.java:294-296] - Cookie names validated as ASCII-only
+* Whitespace characters in cookie names would typically be flagged
+* No normalization performed - validates input as-is
+
+**Potential Gaps:**
+
+* Library validates before sending, not after receiving
+* Server-side normalization happens outside library scope
+* Applications may need additional validation after parsing
+
+**Recommended Enhancements:**
+
+1. Add validation that cookie names don't start/end with whitespace
+2. Document server-side normalization risks
+3. Provide utility methods for safe cookie name validation
+
+==== Test Coverage
+
+* link:../../../src/test/java/de/cuioss/http/security/generators/cookie/CookieNameAsciiWhitespaceGenerator.java[CookieNameAsciiWhitespaceGenerator] - Generates ASCII whitespace patterns
+* link:../../../src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest] - Tests leading/trailing whitespace with 40 generated test cases
+* ✓ **Implemented**: Specific tests for leading/trailing whitespace in cookie names
+* **Documented**: Normalization risk (server-side, outside library scope)
+
+=== 4. Domain Attribute Validation
+
+==== Description
+The `__Host-` prefix requires that cookies do NOT have a Domain attribute. Server-side parsers may accept `__Host-` cookies with Domain attributes if prefix validation is not implemented or happens after normalization.
+
+==== Server-Side Attack Vector
+```
+Received: "\u0085__Host-session=value; Domain=.example.com; Secure; Path=/;"
+After normalization: "__Host-session=value; Domain=.example.com; Secure; Path=/"
+Result: __Host- cookie with forbidden Domain attribute accepted by server
+```
+
+==== Impact
+* Cookie can be set by any subdomain
+* Session hijacking from compromised subdomains
+* Defeats the entire purpose of `__Host-` prefix
+
+==== Current Implementation Status: NOT MITIGATED
+
+**Library Scope:**
+
+* link:../../../src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.java] - Data structure with name, value, attributes
+* link:../../../src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.java:149-151] - Can extract Domain attribute
+* No validation of cookie prefix requirements
+
+**Missing Functionality:**
+
+* No validation that `__Host-` cookies lack Domain attribute
+* No validation that `__Host-` cookies have Path=/
+* No validation that `__Host-` and `__Secure-` cookies have Secure attribute
+* Cookie prefix validation must be implemented by applications
+
+**Recommended Enhancements:**
+
+1. Add cookie prefix validation methods
+2. Validate Domain/Path/Secure requirements for prefixed cookies
+3. Create dedicated validator for cookie security attributes
+4. Add builder methods that enforce prefix requirements
+
+==== Test Coverage
+
+* link:../../../src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.java:125-132] - Methods to check Secure attribute
+* link:../../../src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.java:145-160] - Methods to extract attributes
+* link:../../../src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest] - Documents __Host- prefix requirements
+* **Documented**: Tests demonstrate violations that Cookie structure accepts
+* **Missing**: Semantic validator for cookie prefix requirements (future enhancement)
+
+=== 5. Path Attribute Validation
+
+==== Description
+The `__Host-` prefix requires `Path=/` to ensure cookies are sent for all paths on the host. Server-side parsers may accept `__Host-` cookies with restricted paths if prefix validation is not implemented.
+
+==== Server-Side Attack Vector
+```
+Received: "\u00A0__Host-limited=value; Path=/api; Secure;"
+After normalization: "__Host-limited=value; Path=/api; Secure"
+Result: __Host- cookie with restricted path accepted by server
+```
+
+==== Impact
+* Cookie scope narrowed to specific paths
+* Path-based session fixation attacks
+* Reduced protection against subdirectory takeover
+
+==== Current Implementation Status: NOT MITIGATED
+
+**Library Scope:**
+
+* link:../../../src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.java:154-160] - Can extract Path attribute
+* No validation of Path requirements for `__Host-` prefix
+
+**Recommended Enhancements:**
+
+1. Validate `__Host-` cookies have `Path=/`
+2. Add validation for Path attribute format
+3. Test path validation with various bypass techniques
+
+==== Test Coverage
+
+* link:../../../src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest] - Documents Path=/ requirement for __Host-
+* **Documented**: Tests demonstrate Path violations that Cookie structure accepts
+* **Missing**: Semantic validator for Path attribute requirements (future enhancement)
+
+== Attack Pattern Database
+
+=== Unicode Whitespace Characters for Cookie Name Injection
+
+**Note:** Browser-specific acceptance/rejection behavior documented in PortSwigger article. This section focuses on server-side validation patterns.
+
+==== Multibyte Unicode Whitespace
+[source]
+----
+U+2000  EN QUAD                    [\u2000]
+U+2001  EM QUAD                    [\u2001]
+U+2002  EN SPACE                   [\u2002]
+U+2003  EM SPACE                   [\u2003]
+U+2004  THREE-PER-EM SPACE         [\u2004]
+U+2005  FOUR-PER-EM SPACE          [\u2005]
+U+2006  SIX-PER-EM SPACE           [\u2006]
+U+2007  FIGURE SPACE               [\u2007]
+U+2008  PUNCTUATION SPACE          [\u2008]
+U+2009  THIN SPACE                 [\u2009]
+U+200A  HAIR SPACE                 [\u200A]
+U+200B  ZERO WIDTH SPACE           [\u200B]
+----
+
+==== Single-Byte Unicode Whitespace
+[source]
+----
+U+0085  NEXT LINE (NEL)            [\u0085]
+U+00A0  NO-BREAK SPACE (NBSP)      [\u00A0]
+----
+
+==== Zero-Width Characters
+[source]
+----
+U+200B  ZERO WIDTH SPACE           [\u200B]
+U+200C  ZERO WIDTH NON-JOINER      [\u200C]
+U+200D  ZERO WIDTH JOINER          [\u200D]
+U+FEFF  ZERO WIDTH NO-BREAK SPACE  [\uFEFF] (BOM)
+----
+
+=== Legacy Parsing Triggers
+
+[source]
+----
+$Version=1,cookiename=value
+$Version=1; cookiename=value
+----
+
+=== Server-Side Attack Payloads for Testing
+
+==== Bypass __Host- Domain Restriction
+```
+Cookie: "\u2000__Host-session=attack; Domain=.example.com; Secure; Path=/;"
+Cookie: "\u00A0__Host-session=attack; Domain=.example.com; Secure; Path=/;"
+Cookie: "\u0085__Host-session=attack; Domain=.example.com; Secure; Path=/;"
+Cookie: "$Version=1,__Host-session=attack; Domain=.example.com; Secure; Path=/;"
+```
+
+==== Bypass __Host- Path Restriction
+```
+Cookie: "\u00A0__Host-limited=attack; Path=/admin; Secure;"
+Cookie: "$Version=1,__Host-limited=attack; Path=/api; Secure;"
+```
+
+==== Bypass __Secure- HTTPS Requirement
+```
+Cookie: "\u2000__Secure-session=attack;"
+Cookie: "$Version=1,__Secure-session=attack;"
+```
+
+== Applicability Assessment
+
+=== Direct Applicability: MEDIUM
+
+The cui-http library provides cookie data structures and validation but does not implement cookie prefix validation. Applications using the library need to:
+
+1. Implement cookie prefix validation themselves
+2. Ensure cookies with `__Host-` prefix meet RFC requirements
+3. Validate cookie attributes against security requirements
+4. Handle server-side cookie parsing securely
+
+=== Recommended Actions
+
+==== For Library Enhancement
+
+1. **Add Cookie Prefix Validator**
+   * Validate `__Host-` prefix requirements (no Domain, Path=/, Secure)
+   * Validate `__Secure-` prefix requirements (Secure attribute)
+   * Reject Unicode whitespace in cookie names
+   * Provide clear error messages for prefix violations
+
+2. **Enhance Character Validation**
+   * Explicitly validate cookie names don't start with whitespace
+   * Add tests for all Unicode whitespace characters
+   * Document ASCII-only requirement for cookie names
+
+3. **Add Cookie Builder with Validation**
+   * Provide factory methods for creating `__Host-` cookies
+   * Provide factory methods for creating `__Secure-` cookies
+   * Enforce prefix requirements at creation time
+   * Prevent creation of invalid prefix cookies
+
+4. **Expand Test Coverage**
+   * Add tests for Unicode whitespace injection
+   * Add tests for cookie prefix validation
+   * Add tests for attribute validation against prefixes
+   * Add tests for legacy parsing patterns (documentation)
+
+==== For Library Users
+
+1. **Implement Prefix Validation**
+
+   [source,java]
+   ----
+   // Check __Host- prefix requirements
+   if (cookie.name() != null && cookie.name().startsWith("__Host-")) {
+       // Must not have Domain attribute
+       if (cookie.getDomain().isPresent()) {
+           throw new SecurityException("__Host- cookies must not have Domain attribute");
+       }
+       // Must have Path=/
+       if (!cookie.getPath().map(p -> p.equals("/")).orElse(false)) {
+           throw new SecurityException("__Host- cookies must have Path=/");
+       }
+       // Must have Secure attribute
+       if (!cookie.isSecure()) {
+           throw new SecurityException("__Host- cookies must have Secure attribute");
+       }
+   }
+   ----
+
+2. **Configure Server Frameworks**
+
+   * Tomcat: Set `STRICT_SERVLET_COMPLIANCE=true`
+   * Jetty: Configure `CookieCompliance.RFC6265`
+   * Disable legacy cookie parsing (RFC 2109)
+
+3. **Validate Cookie Names**
+
+   [source,java]
+   ----
+   // Ensure no leading/trailing whitespace
+   String name = cookie.name();
+   if (name != null && (!name.equals(name.trim()) || name.isEmpty())) {
+       throw new SecurityException("Cookie name has invalid whitespace");
+   }
+
+   // Ensure ASCII-only (already enforced by CharacterValidationStage)
+   validator.validate(name, ValidationType.COOKIE_NAME);
+   ----
+
+== Test Implementation
+
+=== Implemented Tests
+
+All recommended test cases have been implemented using parameterized tests with generators:
+
+**Test Class:** link:../../../src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest]
+
+**Test Generators:**
+
+* link:../../../src/test/java/de/cuioss/http/security/generators/cookie/CookieNameUnicodeWhitespaceGenerator.java[CookieNameUnicodeWhitespaceGenerator] - 13 Unicode whitespace types
+* link:../../../src/test/java/de/cuioss/http/security/generators/cookie/CookieNameZeroWidthGenerator.java[CookieNameZeroWidthGenerator] - 4 zero-width character types
+* link:../../../src/test/java/de/cuioss/http/security/generators/cookie/CookieNameAsciiWhitespaceGenerator.java[CookieNameAsciiWhitespaceGenerator] - ASCII whitespace patterns
+* link:../../../src/test/java/de/cuioss/http/security/generators/cookie/CookieNameLegacyParsingGenerator.java[CookieNameLegacyParsingGenerator] - Legacy parsing triggers
+* link:../../../src/test/java/de/cuioss/http/security/generators/cookie/ValidCookieGenerator.java[ValidCookieGenerator] - Valid cookie patterns
+* link:../../../src/test/java/de/cuioss/http/security/generators/cookie/AttackCookieGenerator.java[AttackCookieGenerator] - General attack patterns
+
+**Test Coverage (213 total test cases):**
+
+1. **Attack #1**: Unicode whitespace injection (50 parameterized tests)
+2. **Attack #2**: Zero-width character injection (30 parameterized tests)
+3. **Attack #3**: ASCII whitespace (40 parameterized tests)
+4. **Attack #4**: Legacy parsing triggers (20 parameterized tests)
+5. **Test #5**: __Host- prefix requirements (1 documentation test)
+6. **Test #6**: __Secure- prefix requirements (1 documentation test)
+7. **Test #7**: Valid cookie acceptance (20 parameterized tests)
+8. **Test #8**: Attack cookie patterns (50 parameterized tests)
+9. **Test #9**: Cookie record design validation (1 test)
+
+**Benefits of Generator-Based Approach:**
+
+* **Reproducibility**: All tests use seed-based generation
+* **Coverage**: Systematic testing of all attack vector combinations
+* **Maintainability**: Generators can be reused across test classes
+* **Documentation**: Attack patterns documented in generator code
+* **Scalability**: Easy to increase test count by adjusting `count` parameter
+
+== References
+
+==== Primary Research
+
+* link:https://portswigger.net/research/cookie-chaos-how-to-bypass-host-and-secure-cookie-prefixes[PortSwigger: Cookie Chaos - How to Bypass Host and Secure Cookie Prefixes] - Original research article with client-side browser behavior details
+
+==== Standards and Specifications
+
+* link:https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-rfc6265bis[RFC 6265bis - HTTP State Management Mechanism (Draft)] - Cookie prefix specification
+* link:https://tools.ietf.org/html/rfc6265[RFC 6265 - HTTP State Management Mechanism] - Current cookie standard
+* link:https://tools.ietf.org/html/rfc2109[RFC 2109 - HTTP State Management Mechanism (Legacy)] - Legacy parsing specification
+
+==== Security Standards
+
+* link:https://owasp.org/www-community/controls/SecureFlag[OWASP: Secure Cookie Flag]
+* link:https://owasp.org/www-community/HttpOnly[OWASP: HttpOnly Cookie Flag]
+* link:https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html[OWASP: Session Management Cheat Sheet]
+
+==== Java Server Configuration
+
+* link:https://tomcat.apache.org/tomcat-9.0-doc/config/http.html[Apache Tomcat Configuration] - Cookie parsing configuration
+* link:https://www.eclipse.org/jetty/documentation/current/[Eclipse Jetty Documentation] - CookieCompliance settings
+
+== Summary and Recommendations
+
+=== Current Status
+
+The cui-http library provides:
+
+* ✓ Cookie data structure with attribute parsing
+* ✓ Character validation for cookie names and values (ASCII-only)
+* ✓ Unicode character rejection for cookie names
+* ✓ Comprehensive tests for Unicode whitespace injection (213 test cases)
+* ✓ Tests for zero-width character injection
+* ✓ Tests for ASCII whitespace attacks
+* ✓ Tests for legacy parsing trigger detection
+* ✗ No semantic cookie prefix validation (`__Host-`, `__Secure-`)
+* ✗ No automatic validation of prefix attribute requirements
+
+=== Priority Recommendations
+
+1. **HIGH PRIORITY**: Add cookie prefix validator
+   * Validate `__Host-` prefix requirements
+   * Validate `__Secure-` prefix requirements
+   * Provide clear API for applications to use
+
+2. **HIGH PRIORITY**: Enhance character validation
+   * Explicitly reject leading/trailing whitespace in cookie names
+   * Add tests for all Unicode whitespace characters
+   * Document ASCII-only requirement more prominently
+
+3. **MEDIUM PRIORITY**: ✓ Add comprehensive tests (COMPLETED)
+   * ✓ Unicode whitespace injection tests (50 test cases with CookieNameUnicodeWhitespaceGenerator)
+   * ✓ Zero-width character tests (30 test cases with CookieNameZeroWidthGenerator)
+   * ✓ ASCII whitespace tests (40 test cases with CookieNameAsciiWhitespaceGenerator)
+   * ✓ Legacy parsing trigger tests (20 test cases with CookieNameLegacyParsingGenerator)
+   * ✓ Existing AttackCookieGenerator tests (50 test cases)
+   * ✓ Valid cookie tests (20 test cases with ValidCookieGenerator)
+   * Total: 213 automated test cases
+
+4. **MEDIUM PRIORITY**: Documentation
+   * Document cookie prefix validation requirements
+   * Provide code examples for applications
+   * Document server framework configuration requirements
+
+5. **LOW PRIORITY**: Cookie builder enhancements
+   * Add factory methods for `__Host-` cookies
+   * Add factory methods for `__Secure-` cookies
+   * Enforce prefix requirements at creation time
+
+=== Architectural Notes
+
+The cookie chaos vulnerabilities primarily affect server-side cookie processing:
+
+1. **Server parsing** - Java servlet containers may normalize or parse cookies differently (Tomcat, Jetty)
+2. **Application validation** - Applications must validate cookie prefixes after parsing
+3. **Framework behavior** - Legacy RFC 2109 parsers vs modern RFC 6265 parsers
+
+The cui-http library scope:
+
+* **In scope**: Character-level validation of cookie names and values (currently implemented)
+* **In scope**: Preventing malicious cookie creation by applications (partially implemented)
+* **Future enhancement**: Semantic validation of cookie prefix requirements (`__Host-`, `__Secure-`)
+* **Out of scope**: Controlling servlet container cookie parsing behavior (configure via server settings)
+
+**Note:** For client-side browser behavior (how cookies are initially accepted/rejected), refer to the PortSwigger article. This library focuses on server-side Java validation.
