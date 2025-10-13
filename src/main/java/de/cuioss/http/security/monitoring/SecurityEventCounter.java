@@ -34,7 +34,7 @@ import java.util.stream.Collectors;
  * <ul>
  *   <li><strong>Thread Safety</strong> - All operations are atomic and thread-safe</li>
  *   <li><strong>Lock-Free</strong> - Uses lock-free data structures for performance</li>
- *   <li><strong>Memory Efficient</strong> - Only allocates counters for observed failure types</li>
+ *   <li><strong>Memory</strong> - Only allocates counters for observed failure types</li>
  *   <li><strong>Non-Blocking</strong> - All operations complete in constant time</li>
  * </ul>
  *
@@ -64,8 +64,8 @@ import java.util.stream.Collectors;
  *
  * <h3>Memory Characteristics</h3>
  * <p>Counters are created lazily - only failure types that have been observed will
- * consume memory. This makes the class efficient even when dealing with the full
- * range of possible {@link UrlSecurityFailureType} values.</p>
+ * consume memory, even when dealing with the full range of possible
+ * {@link UrlSecurityFailureType} values.</p>
  *
  * Implements: Task S1 from HTTP verification specification
  *

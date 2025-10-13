@@ -32,7 +32,7 @@ import java.util.Optional;
  *
  * <p>This stage validates input characters against component-specific allowed character sets,
  * ensuring compliance with HTTP specifications and preventing character-based security attacks.
- * It performs comprehensive character validation including null byte detection, control character
+ * It performs character validation including null byte detection, control character
  * filtering, and percent-encoding validation.</p>
  *
  * <h3>Design Principles</h3>
@@ -40,7 +40,7 @@ import java.util.Optional;
  *   <li><strong>RFC Compliance</strong> - Enforces RFC 3986 (URI) and RFC 7230 (HTTP) character rules</li>
  *   <li><strong>Security First</strong> - Rejects dangerous characters before any processing</li>
  *   <li><strong>Context Aware</strong> - Different character sets for different HTTP components</li>
- *   <li><strong>Performance Optimized</strong> - Uses BitSet for O(1) character lookups</li>
+ *   <li><strong>Performance</strong> - Uses BitSet for O(1) character lookups</li>
  *   <li><strong>Configurable</strong> - Allows fine-tuning of character validation rules</li>
  * </ul>
  *

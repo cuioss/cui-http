@@ -15,11 +15,10 @@
  */
 
 /**
- * Comprehensive HTTP security validation framework for web applications.
+ * HTTP security validation framework for web applications.
  *
- * <p>This package provides a complete solution for validating HTTP components against
- * security threats including path traversal, injection attacks, malicious headers,
- * and other common web application vulnerabilities.</p>
+ * <p>Validates HTTP components against security threats including path traversal,
+ * injection attacks, malicious headers, and other web application vulnerabilities.</p>
  *
  * <h3>Core Components</h3>
  * <ul>

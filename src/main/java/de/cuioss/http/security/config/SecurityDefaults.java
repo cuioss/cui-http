@@ -18,7 +18,7 @@ package de.cuioss.http.security.config;
 import java.util.Set;
 
 /**
- * Comprehensive collection of default values and constants for HTTP security configuration.
+ * Collection of default values and constants for HTTP security configuration.
  *
  * <p>This class provides centralized constants for all security-related configuration values,
  * making it easy to reference standard limits, common patterns, and recommended settings

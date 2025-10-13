@@ -18,7 +18,7 @@ toc::[]
 
 == Overview
 
-HTTP client utilities providing simplified HTTP request execution, SSL/TLS context management, and HTTP status classification.
+HTTP client utilities for request execution, SSL/TLS context management, and HTTP status classification.
 
 == Components
 
@@ -35,21 +35,21 @@ Builder-based HTTP client wrapper with automatic SSL context creation for HTTPS.
 
 ==== xref:../src/main/java/de/cuioss/http/client/ResilientHttpHandler.java[ResilientHttpHandler]
 
-Advanced HTTP handler providing resilient loading with retry logic and ETag-based caching.
+HTTP handler with retry logic and ETag-based caching.
 
-* Automatic retry with configurable strategies
+* Retry with configurable strategies
 * ETag-based HTTP caching (304 Not Modified support)
-* Content conversion via pluggable converters
-* Thread-safe with proper concurrency handling
-* Comprehensive error categorization and recovery
+* Content conversion via converters
+* Thread-safe concurrency handling
+* Error categorization and recovery
 
 ==== xref:../src/main/java/de/cuioss/http/client/HttpHandlerProvider.java[HttpHandlerProvider]
 
 Interface for providing HTTP handlers with retry strategies.
 
-* Enables configuration-based handler creation
+* Configuration-based handler creation
 * Combines HTTP handler with retry strategy
-* Used by ResilientHttpHandler for flexible initialization
+* Used by ResilientHttpHandler for initialization
 
 === SSL/TLS Support
 
@@ -123,7 +123,7 @@ Interface for HTTP retry strategies with built-in implementations.
 Exponential backoff implementation with jitter.
 
 * Default: 3 attempts, 1s initial delay, 2x multiplier
-* Random jitter to prevent thundering herd
+* Random jitter to distribute retry timing
 * Maximum delay capped at 30 seconds
 
 ==== xref:../src/main/java/de/cuioss/http/client/retry/RetryContext.java[RetryContext]

@@ -177,7 +177,7 @@ ValidationType validationType) implements HttpSecurityValidator {
      * Pattern to detect internal slash-dotdot patterns.
      * Matches "/" followed by ".." only when it's a directory traversal (followed by "/" or end of string).
      * This avoids false positives for filenames starting with ".." like "a/..c"
-     * Optimized for .find() usage without unnecessary .* wrappers.
+     * Uses .find() without unnecessary .* wrappers.
      */
     static final Pattern CONTAINS_SLASH_DOTDOT_PATTERN = Pattern.compile("/\\.\\.(?:/|$)");
 
@@ -185,13 +185,13 @@ ValidationType validationType) implements HttpSecurityValidator {
      * Pattern to detect internal dotdot-backslash patterns.
      * Matches ".." followed by "\\" anywhere in the path.
      * Used in conjunction with STARTS_WITH_DOTDOT_BACKSLASH_PATTERN to exclude initial "..\\".
-     * Optimized for .find() usage without unnecessary .* wrappers.
+     * Uses .find() without unnecessary .* wrappers.
      */
     static final Pattern CONTAINS_DOTDOT_BACKSLASH_PATTERN = Pattern.compile("\\.\\.\\\\");
 
 
     /**
-     * Validates and normalizes a path with comprehensive security checks.
+     * Validates and normalizes a path with security checks.
      *
      * <p>Processing stages:</p>
      * <ol>
@@ -451,8 +451,8 @@ ValidationType validationType) implements HttpSecurityValidator {
      *
      * <p>After proper normalization, there should be no remaining .. segments
      * except at the beginning for relative paths (which is handled by escapesRoot).
-     * This method performs comprehensive checks for any remaining traversal patterns
-     * that could indicate incomplete normalization or sophisticated attacks.</p>
+     * This method checks for any remaining traversal patterns
+     * that could indicate incomplete normalization or attacks.</p>
      *
      * @param path The normalized path to check
      * @return true if path contains internal traversal patterns

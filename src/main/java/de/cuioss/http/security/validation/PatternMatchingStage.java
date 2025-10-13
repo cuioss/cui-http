@@ -30,7 +30,7 @@ import java.util.regex.Pattern;
 /**
  * Pattern matching validation stage for detecting malicious attack patterns.
  *
- * <p>This stage performs comprehensive pattern-based security validation to detect
+ * <p>This stage performs pattern-based security validation to detect
  * known attack signatures, injection attempts, and suspicious content patterns.
  * The stage analyzes input against multiple security pattern databases:</p>
  *
@@ -45,7 +45,7 @@ import java.util.regex.Pattern;
  * <ul>
  *   <li><strong>Signature-Based Detection</strong> - Uses known attack patterns from OWASP and CVE databases</li>
  *   <li><strong>Configurable Sensitivity</strong> - Behavior controlled by failOnSuspiciousPatterns setting</li>
- *   <li><strong>Performance Optimized</strong> - Uses pre-compiled patterns and efficient string operations</li>
+ *   <li><strong>Performance</strong> - Uses pre-compiled patterns</li>
  *   <li><strong>Context Aware</strong> - Different pattern sets applied based on validation type</li>
  * </ul>
  *
@@ -95,7 +95,7 @@ import java.util.regex.Pattern;
  * <ul>
  *   <li>O(n*m) time complexity where n = input length, m = number of patterns</li>
  *   <li>Early termination on first pattern match</li>
- *   <li>Optimized pattern order based on common attack frequency</li>
+ *   <li>Pattern order based on common attack frequency</li>
  *   <li>Case-insensitive matching for broader attack detection</li>
  * </ul>
  *
@@ -158,7 +158,7 @@ ValidationType validationType) implements HttpSecurityValidator {
 
 
     /**
-     * Validates input against comprehensive attack pattern databases.
+     * Validates input against attack pattern databases.
      *
      * <p>Processing stages:</p>
      * <ol>

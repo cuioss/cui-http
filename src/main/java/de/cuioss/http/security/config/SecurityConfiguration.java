@@ -22,7 +22,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Immutable class representing comprehensive security configuration for HTTP validation.
+ * Immutable class representing security configuration for HTTP validation.
  *
  * <p>This class encapsulates all security policies and settings needed to configure
  * HTTP security validators. It provides a type-safe, immutable configuration object
@@ -32,7 +32,7 @@ import java.util.stream.Collectors;
  * <ul>
  *   <li><strong>Immutability</strong> - Configuration cannot be modified once created</li>
  *   <li><strong>Type Safety</strong> - Strongly typed configuration parameters</li>
- *   <li><strong>Completeness</strong> - Covers all aspects of HTTP security validation</li>
+ *   <li><strong>Complete Coverage</strong> - Covers all aspects of HTTP security validation</li>
  *   <li><strong>Composability</strong> - Easy to combine with builder patterns</li>
  *   <li><strong>Performance</strong> - Pre-processes sets for O(1) case-insensitive lookups</li>
  * </ul>
@@ -228,7 +228,7 @@ public final class SecurityConfiguration {
         // Pre-process sets for case-insensitive comparison if needed
         // This optimization changes lookups from O(n) to O(1) average case
         if (!caseSensitiveComparison) {
-            // Convert all strings to lowercase for efficient case-insensitive lookups
+            // Convert all strings to lowercase for case-insensitive lookups
             this.allowedHeaderNamesLowercase = this.allowedHeaderNames != null ?
                     this.allowedHeaderNames.stream()
                             .map(String::toLowerCase)
@@ -387,7 +387,7 @@ public final class SecurityConfiguration {
     }
 
     /**
-     * Optimized helper method to check if a value is allowed based on allow and block lists.
+     * Helper method to check if a value is allowed based on allow and block lists.
      * For case-insensitive comparison, uses pre-processed lowercase sets for O(1) lookups
      * instead of O(n) stream operations.
      *

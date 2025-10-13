@@ -18,8 +18,8 @@
  * Validation pipelines for different HTTP component types.
  *
  * <p>This package provides specialized validation pipelines that combine multiple validation
- * stages optimized for specific HTTP components. Each pipeline is designed to detect and
- * prevent security vulnerabilities relevant to its target component type.</p>
+ * stages for specific HTTP components. Each pipeline detects and prevents security
+ * vulnerabilities relevant to its target component type.</p>
  *
  * <h3>Available Pipelines</h3>
  * <ul>

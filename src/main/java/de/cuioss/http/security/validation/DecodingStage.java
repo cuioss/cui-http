@@ -47,7 +47,7 @@ import java.util.regex.Pattern;
  * <ul>
  *   <li><strong>Immutability</strong> - All fields are final, stage instances are immutable</li>
  *   <li><strong>Thread Safety</strong> - Safe for concurrent use across multiple threads</li>
- *   <li><strong>Performance</strong> - Uses pre-compiled patterns and efficient operations</li>
+ *   <li><strong>Performance</strong> - Uses pre-compiled patterns</li>
  *   <li><strong>Security First</strong> - Detects attacks before potentially dangerous decoding</li>
  * </ul>
  *

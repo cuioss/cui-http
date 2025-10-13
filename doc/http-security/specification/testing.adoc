@@ -9,7 +9,7 @@ link:../README.adoc[← Back to Documentation Overview]
 
 == Overview
 
-Comprehensive testing framework for HTTP security validation with generator-based testing, attack databases, and performance validation.
+Testing framework for HTTP security validation with generator-based testing, attack databases, and performance validation.
 
 == Test Framework Structure
 
@@ -127,7 +127,7 @@ src/test/java/de/cuioss/http/security/
 
 For usage as a test dependency, see link:../../test-generators-readme.adoc[Test Generators README].
 
-Each database provides structured test cases with expected failure types and comprehensive attack documentation.
+Each database provides structured test cases with expected failure types and attack documentation.
 
 == Attack Test Implementation
 

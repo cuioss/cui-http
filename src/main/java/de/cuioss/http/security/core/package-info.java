@@ -24,7 +24,7 @@
  * <ul>
  *   <li>{@link de.cuioss.http.security.core.HttpSecurityValidator} - Main functional interface for validation</li>
  *   <li>{@link de.cuioss.http.security.core.ValidationType} - Enumeration of HTTP component types for validation</li>
- *   <li>{@link de.cuioss.http.security.core.UrlSecurityFailureType} - Comprehensive classification of security failures</li>
+ *   <li>{@link de.cuioss.http.security.core.UrlSecurityFailureType} - Classification of security failures</li>
  * </ul>
  *
  * <h3>Usage Example</h3>

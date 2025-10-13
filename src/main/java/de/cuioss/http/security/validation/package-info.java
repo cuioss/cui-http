@@ -35,7 +35,7 @@
  * <ul>
  *   <li><strong>Immutability</strong> - All stages are immutable after construction</li>
  *   <li><strong>Thread Safety</strong> - Safe for concurrent use without synchronization</li>
- *   <li><strong>Performance</strong> - Optimized for &lt;1ms validation times</li>
+ *   <li><strong>Performance</strong> - Target &lt;1ms validation times</li>
  *   <li><strong>Composability</strong> - Stages can be combined in different pipelines</li>
  * </ul>
  *
