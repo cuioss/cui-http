@@ -160,7 +160,7 @@ public record CookiePrefixValidationStage() implements HttpSecurityValidator {
      * @param cookie The cookie to validate
      * @throws UrlSecurityException if the cookie violates prefix requirements
      */
-    @SuppressWarnings("java:S4449") // hasName() guarantees non-null after check
+    @SuppressWarnings({"java:S4449", "DataFlowIssue"}) // hasName() guarantees non-null after check
     public void validateCookie(Cookie cookie) throws UrlSecurityException {
         if (!cookie.hasName()) {
             throw UrlSecurityException.builder()
@@ -196,8 +196,9 @@ public record CookiePrefixValidationStage() implements HttpSecurityValidator {
      * @param cookie The cookie with __Host- prefix
      * @throws UrlSecurityException if requirements are not met
      */
+    @SuppressWarnings({"java:S4449", "DataFlowIssue", "java:S3655"}) // Non-null: called after hasName() check in validateCookie
     private void validateHostPrefix(Cookie cookie) throws UrlSecurityException {
-        @SuppressWarnings("java:S4449") // Non-null: called after hasName() check in validateCookie
+
         String cookieName = cookie.name();
 
         // Requirement 1: Must have Secure attribute
@@ -240,8 +241,8 @@ public record CookiePrefixValidationStage() implements HttpSecurityValidator {
      * @param cookie The cookie with __Secure- prefix
      * @throws UrlSecurityException if requirements are not met
      */
+    @SuppressWarnings({"java:S4449", "DataFlowIssue"}) // Non-null: called after hasName() check in validateCookie
     private void validateSecurePrefix(Cookie cookie) throws UrlSecurityException {
-        @SuppressWarnings("java:S4449") // Non-null: called after hasName() check in validateCookie
         String cookieName = cookie.name();
 
         // Requirement: Must have Secure attribute
