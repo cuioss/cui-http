@@ -6,7 +6,7 @@
 
 == Maven Coordinates
 
-[source, xml]
+[source,xml]
 ----
 <dependency>
     <groupId>de.cuioss</groupId>
