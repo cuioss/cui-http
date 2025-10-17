@@ -95,7 +95,10 @@ import java.util.Optional;
  * @since 1.0
  * @see ValidationType#BODY
  */
-public record HTTPBody(@Nullable String content, @Nullable String contentType, @Nullable String encoding) {
+public record HTTPBody(@Nullable
+    String content, @Nullable
+    String contentType, @Nullable
+    String encoding) {
 
     public static HTTPBody of(String content, String contentType) {
         return new HTTPBody(content, contentType, "");
