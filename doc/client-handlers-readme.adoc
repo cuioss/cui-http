@@ -191,7 +191,9 @@ if (HttpStatusFamily.isSuccess(response.statusCode())) {
 }
 ----
 
-=== Resilient HTTP Handler with Retry
+=== Resilient HTTP Handler with Retry and Caching
+
+This example demonstrates the typical resilience pattern using `ResilientHttpHandler` with ETag-based caching, retry logic, and synchronous access.
 
 [source,java]
 ----
@@ -201,11 +203,14 @@ HttpHandlerProvider provider = new HttpHandlerProvider() {
     public HttpHandler getHttpHandler() {
         return HttpHandler.builder()
             .uri("https://api.example.com/data")
+            .connectionTimeoutSeconds(10)
+            .readTimeoutSeconds(30)
             .build();
     }
 
     @Override
     public RetryStrategy getRetryStrategy() {
+        // 3 attempts with exponential backoff (1s, 2s, 4s)
         return RetryStrategies.exponentialBackoff();
     }
 };
@@ -223,16 +228,251 @@ HttpResult<String> result = resilientHandler.load();
 if (result.isSuccess()) {
     result.getContent().ifPresent(content -> {
         processContent(content);
-        result.getETag().ifPresent(etag -> logger.debug("ETag: {}", etag));
+        // ETag available for cache optimization
+        result.getETag().ifPresent(etag -> logger.debug("Cached with ETag: {}", etag));
     });
+    // Next load() call may return 304 Not Modified with cached content
 } else {
     // Handle error with detailed information
-    result.getErrorMessage().ifPresent(logger::error);
+    result.getErrorMessage().ifPresent(msg -> logger.error("Load failed: {}", msg));
+    HttpErrorCategory category = result.getErrorCategory();
+
     if (result.isRetryable()) {
-        scheduleRetry();
+        logger.info("Retryable error ({}), will retry", category);
+    } else {
+        logger.error("Non-retryable error ({}), giving up", category);
     }
 }
 ----
+
+=== Async Initialization with Resilient Handler and Background Refresh
+
+This comprehensive example demonstrates the typical async resilience pattern used in production scenarios. It shows `CompletableFuture`-based initialization, status tracking, and background refresh - the preferred approach for resilient systems.
+
+[source,java]
+----
+/**
+ * Example loader component showing async initialization pattern with ResilientHttpHandler.
+ * This pattern is commonly used when:
+ * - Initial load may be slow (network latency, discovery, retries)
+ * - Application startup should not block on data loading
+ * - Background refresh is needed to keep data current
+ * - Status monitoring is required for health checks
+ */
+public class AsyncDataLoader implements LoadingStatusProvider, AutoCloseable {
+
+    private static final CuiLogger LOGGER = new CuiLogger(AsyncDataLoader.class);
+
+    private final HttpHandlerProvider handlerProvider;
+    private final ScheduledExecutorService scheduler;
+    private final AtomicReference<LoaderStatus> status = new AtomicReference<>(LoaderStatus.UNDEFINED);
+    private final AtomicReference<ResilientHttpHandler<String>> httpHandler = new AtomicReference<>();
+    private final AtomicReference<String> currentData = new AtomicReference<>();
+    private final AtomicReference<ScheduledFuture<?>> refreshTask = new AtomicReference<>();
+    private final int refreshIntervalSeconds;
+
+    public AsyncDataLoader(HttpHandlerProvider handlerProvider,
+                          ScheduledExecutorService scheduler,
+                          int refreshIntervalSeconds) {
+        this.handlerProvider = handlerProvider;
+        this.scheduler = scheduler;
+        this.refreshIntervalSeconds = refreshIntervalSeconds;
+    }
+
+    /**
+     * Asynchronous initialization - does not block caller.
+     * Returns CompletableFuture to allow non-blocking startup and status tracking.
+     */
+    public CompletableFuture<LoaderStatus> initialize() {
+        // Execute initialization asynchronously to avoid blocking application startup
+        return CompletableFuture.supplyAsync(() -> {
+            status.set(LoaderStatus.IN_PROGRESS);
+
+            // Create resilient handler with retry strategy
+            ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
+                handlerProvider.getHttpHandler(),
+                handlerProvider.getRetryStrategy(),
+                StringContentConverter.identity()
+            );
+            httpHandler.set(handler);
+
+            // Perform initial load with automatic retry
+            HttpResult<String> result = handler.load();
+
+            // Start background refresh regardless of initial load status
+            // This enables automatic recovery from transient failures
+            startBackgroundRefresh();
+
+            if (result.isSuccess()) {
+                result.getContent().ifPresent(content -> {
+                    currentData.set(content);
+                    LOGGER.info("Data loaded successfully");
+                    result.getETag().ifPresent(etag ->
+                        LOGGER.debug("Initial ETag: {}", etag));
+                });
+
+                status.set(LoaderStatus.OK);
+                return LoaderStatus.OK;
+            } else {
+                // Log error but don't fail completely - background refresh will retry
+                result.getErrorMessage().ifPresent(msg ->
+                    LOGGER.warn("Initial load failed: {}", msg));
+
+                // Keep status as IN_PROGRESS to allow background refresh to recover
+                status.set(LoaderStatus.IN_PROGRESS);
+                return LoaderStatus.IN_PROGRESS;
+            }
+        });
+    }
+
+    /**
+     * Get current data - safe to call from any thread.
+     */
+    public Optional<String> getCurrentData() {
+        return Optional.ofNullable(currentData.get());
+    }
+
+    @Override
+    public LoaderStatus getLoaderStatus() {
+        return status.get(); // Atomic read, thread-safe
+    }
+
+    /**
+     * Start background refresh using ResilientHttpHandler's ETag-based caching.
+     * Handler automatically sends If-None-Match header on subsequent requests.
+     */
+    private void startBackgroundRefresh() {
+        refreshTask.set(scheduler.scheduleAtFixedRate(() -> {
+            try {
+                ResilientHttpHandler<String> handler = httpHandler.get();
+                if (handler == null) {
+                    LOGGER.warn("Handler not initialized, skipping refresh");
+                    return;
+                }
+
+                // Load with ETag-based caching - may return 304 Not Modified
+                HttpResult<String> result = handler.load();
+
+                if (result.isSuccess()) {
+                    // Check HTTP status to distinguish between 200 (new data) and 304 (cached)
+                    Optional<Integer> httpStatus = result.getHttpStatus();
+
+                    if (httpStatus.isPresent() && httpStatus.get() == 200) {
+                        // New data received (200 OK)
+                        result.getContent().ifPresent(content -> {
+                            currentData.set(content);
+                            LOGGER.info("Background refresh: data updated");
+                            result.getETag().ifPresent(etag ->
+                                LOGGER.debug("New ETag: {}", etag));
+                        });
+                        status.set(LoaderStatus.OK);
+                    } else if (httpStatus.isPresent() && httpStatus.get() == 304) {
+                        // Data unchanged (304 Not Modified) - use cached content
+                        result.getContent().ifPresent(content -> {
+                            LOGGER.debug("Background refresh: data unchanged (304)");
+                        });
+                        status.set(LoaderStatus.OK);
+                    }
+                } else {
+                    // Handle refresh failure
+                    String errorMsg = result.getErrorMessage().orElse("Unknown error");
+                    LOGGER.warn("Background refresh failed: {}", errorMsg);
+
+                    // Only set ERROR if we have no cached data at all
+                    if (currentData.get() == null) {
+                        status.set(LoaderStatus.ERROR);
+                    }
+                    // Otherwise keep OK status - stale data is better than no data
+                }
+            } catch (Exception e) {
+                LOGGER.error("Background refresh exception", e);
+                if (currentData.get() == null) {
+                    status.set(LoaderStatus.ERROR);
+                }
+            }
+        }, refreshIntervalSeconds, refreshIntervalSeconds, TimeUnit.SECONDS));
+
+        LOGGER.info("Background refresh started (interval: {}s)", refreshIntervalSeconds);
+    }
+
+    @Override
+    public void close() {
+        ScheduledFuture<?> task = refreshTask.get();
+        if (task != null) {
+            task.cancel(false);
+        }
+        httpHandler.set(null);
+        currentData.set(null);
+        status.set(LoaderStatus.UNDEFINED);
+    }
+}
+
+// Usage in application
+public class Application {
+    public static void main(String[] args) {
+        // Configure handler provider
+        HttpHandlerProvider provider = new HttpHandlerProvider() {
+            @Override
+            public HttpHandler getHttpHandler() {
+                return HttpHandler.builder()
+                    .uri("https://api.example.com/data")
+                    .connectionTimeoutSeconds(10)
+                    .readTimeoutSeconds(30)
+                    .build();
+            }
+
+            @Override
+            public RetryStrategy getRetryStrategy() {
+                return ExponentialBackoffRetryStrategy.builder()
+                    .maxAttempts(3)
+                    .initialDelayMillis(1000)
+                    .maxDelayMillis(10000)
+                    .multiplier(2.0)
+                    .build();
+            }
+        };
+
+        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+        AsyncDataLoader loader = new AsyncDataLoader(provider, scheduler, 300); // 5 min refresh
+
+        // Non-blocking initialization
+        CompletableFuture<LoaderStatus> initFuture = loader.initialize();
+
+        // Application continues startup while loader initializes asynchronously
+        LOGGER.info("Application starting, loader initializing in background...");
+
+        // Optional: wait for initial load or handle async
+        initFuture.thenAccept(status -> {
+            LOGGER.info("Loader initialization completed with status: {}", status);
+
+            // Start serving requests - data will be available via getCurrentData()
+            startServer(loader);
+        }).exceptionally(ex -> {
+            LOGGER.error("Loader initialization failed", ex);
+            return null;
+        });
+
+        // Health check endpoint can monitor loader status
+        // GET /health -> loader.getLoaderStatus()
+    }
+
+    private static void startServer(AsyncDataLoader loader) {
+        // Server can safely access current data
+        // loader.getCurrentData() returns Optional<String>
+        // loader.getLoaderStatus() returns current status for health checks
+    }
+}
+----
+
+Key aspects of this async pattern:
+
+1. **Non-blocking Initialization**: `CompletableFuture.supplyAsync()` prevents blocking application startup
+2. **ETag-based Caching**: `ResilientHttpHandler` automatically handles If-None-Match headers
+3. **Status Tracking**: `AtomicReference<LoaderStatus>` for thread-safe status monitoring
+4. **Background Refresh**: Scheduled task keeps data current with automatic retry
+5. **Graceful Degradation**: Continues with cached data if refresh fails
+6. **HTTP 304 Optimization**: Distinguishes between new data (200) and unchanged (304)
+7. **Thread Safety**: All state access via atomic references, no synchronization needed
 
 === Custom Content Converter
 
