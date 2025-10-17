@@ -452,7 +452,7 @@ String msg = result.getErrorMessage().orElse("Unknown error");
 
 == See Also
 
-* link:client-handlers-readme.adoc[HTTP Client Handlers]
+* xref:client-handlers-readme.adoc[HTTP Client Handlers]
 * `de.cuioss.http.client.result.HttpResult` - API documentation
 * `de.cuioss.http.client.result.HttpErrorCategory` - Error categories
 * `de.cuioss.http.client.ResilientHttpHandler` - Primary producer

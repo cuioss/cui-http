@@ -534,4 +534,4 @@ RetryStrategy customExponential = ExponentialBackoffRetryStrategy.builder()
 == Related Documentation
 
 * xref:../doc/http-security/README.adoc[HTTP Security Validation Framework]
-* xref:https://tools.ietf.org/html/rfc7231[RFC 7231 - HTTP/1.1 Semantics]
+* https://tools.ietf.org/html/rfc7231[RFC 7231 - HTTP/1.1 Semantics]

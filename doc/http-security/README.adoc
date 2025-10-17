@@ -125,13 +125,13 @@ When updating this documentation suite:
 
 === Standards
 
-* xref:https://www.rfc-editor.org/rfc/rfc3986[RFC 3986 - URI Generic Syntax]
-* xref:https://www.rfc-editor.org/rfc/rfc7230[RFC 7230 - HTTP/1.1 Message Syntax]
-* xref:https://www.rfc-editor.org/rfc/rfc8941[RFC 8941 - Structured Field Values]
+* https://www.rfc-editor.org/rfc/rfc3986[RFC 3986 - URI Generic Syntax]
+* https://www.rfc-editor.org/rfc/rfc7230[RFC 7230 - HTTP/1.1 Message Syntax]
+* https://www.rfc-editor.org/rfc/rfc8941[RFC 8941 - Structured Field Values]
 
 === Security Resources
 
-* xref:https://owasp.org/www-community/attacks/Path_Traversal[OWASP Path Traversal]
-* xref:https://cwe.mitre.org/data/definitions/22.html[CWE-22: Path Traversal]
-* xref:https://portswigger.net/web-security/file-path-traversal[PortSwigger Web Security]
+* https://owasp.org/www-community/attacks/Path_Traversal[OWASP Path Traversal]
+* https://cwe.mitre.org/data/definitions/22.html[CWE-22: Path Traversal]
+* https://portswigger.net/web-security/file-path-traversal[PortSwigger Web Security]
 

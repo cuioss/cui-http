@@ -11,9 +11,9 @@ This document defines the functional requirements for the HTTP Security Validati
 
 These requirements are derived from:
 
-* link:specification/specification.adoc[Architecture Specification]
-* link:analysis/owasp-best-practices.adoc[OWASP Best Practices Analysis]
-* link:analysis/cve-analysis.adoc[CVE Analysis]
+* xref:specification/specification.adoc[Architecture Specification]
+* xref:analysis/owasp-best-practices.adoc[OWASP Best Practices Analysis]
+* xref:analysis/cve-analysis.adoc[CVE Analysis]
 
 == General Requirements
 
@@ -27,7 +27,7 @@ These requirements are derived from:
 
 * Each component type must have appropriate validation rules
 * The system must provide separate validators for each component type
-* Reference: link:specification/specification.adoc#_core_components[Core Components]
+* Reference: xref:specification/specification.adoc#_core_components[Core Components]
 
 === HTTP-2: Zero External Dependencies
 
@@ -42,7 +42,7 @@ These requirements are derived from:
 * Security violations must throw runtime exceptions
 * Validation must not continue after a security violation is detected
 * All security failures must be logged appropriately
-* Reference: link:specification/specification.adoc#_core_components[Core Components]
+* Reference: xref:specification/specification.adoc#_core_components[Core Components]
 
 == Validation Pipeline Requirements
 
@@ -52,7 +52,7 @@ These requirements are derived from:
 * Each stage must complete successfully before the next stage executes
 * The pipeline must support configurable stages based on validation type
 * Pipeline execution must be atomic (all-or-nothing)
-* Reference: link:specification/specification.adoc#_architecture[Architecture]
+* Reference: xref:specification/specification.adoc#_architecture[Architecture]
 
 === HTTP-5: Stage-Based Validation Architecture
 
@@ -66,7 +66,7 @@ These requirements are derived from:
   ** Normalization
   ** Pattern matching
 
-* Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
+* Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
 === HTTP-6: Input Normalization
 
@@ -78,7 +78,7 @@ These requirements are derived from:
   ** Removal of redundant path separators
 
 * The system must detect when normalization changes input significantly
-* Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
+* Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
 == Path Traversal Prevention Requirements
 
@@ -92,7 +92,7 @@ These requirements are derived from:
   ** Mixed encoding attempts
 
 * Detection must occur after normalization
-* Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
+* Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
 === HTTP-8: Root Directory Escape Prevention
 
@@ -100,7 +100,7 @@ These requirements are derived from:
 * Must detect attempts to access parent directories beyond the root
 * Must handle both absolute and relative path validation
 * Must maintain security even with symbolic links present
-* Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
+* Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
 [#HTTP-9]
 === HTTP-9: Double Encoding Protection
@@ -112,7 +112,7 @@ These requirements are derived from:
   ** Partial encoding attempts
 
 * Must validate after each decoding pass
-* Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
+* Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
 == Character and Encoding Requirements
 
@@ -125,7 +125,7 @@ These requirements are derived from:
   ** Headers: visible ASCII characters
 
 * Must detect and block control characters
-* Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
+* Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
 === HTTP-11: Null Byte Injection Prevention
 
@@ -133,7 +133,7 @@ These requirements are derived from:
 * Detection must occur in both raw and encoded forms
 * Must check after each decoding stage
 * Must prevent null byte injection in all validated components
-* Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
+* Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
 === HTTP-12: Unicode Security Validation
 
@@ -145,7 +145,7 @@ These requirements are derived from:
 
 * Must normalize Unicode to NFC form
 * Must detect when normalization changes the input
-* Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
+* Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
 == Configuration Requirements
 
@@ -158,7 +158,7 @@ These requirements are derived from:
   ** Encoding strictness levels
 * Configuration must be immutable after initialization
 * Must provide sensible secure defaults
-* Reference: link:specification/specification.adoc#_configuration_architecture[Configuration Architecture]
+* Reference: xref:specification/specification.adoc#_configuration_architecture[Configuration Architecture]
 
 === HTTP-14: Validation Type Configuration
 
@@ -170,7 +170,7 @@ These requirements are derived from:
   ** `HEADER_VALUE`: Header value validation rules (broader character set)
 * Configurations must be independently configurable
 * Must support configuration inheritance for common settings
-* Reference: link:specification/specification.adoc#_configuration_architecture[Configuration Architecture]
+* Reference: xref:specification/specification.adoc#_configuration_architecture[Configuration Architecture]
 
 == Error Handling Requirements
 
@@ -184,7 +184,7 @@ These requirements are derived from:
   ** Sanitized input (if available)
   ** Detailed error message
 * Exceptions must extend `RuntimeException`
-* Reference: link:specification/specification.adoc#_core_components[Core Components]
+* Reference: xref:specification/specification.adoc#_core_components[Core Components]
 
 === HTTP-16: Security Event Tracking
 
@@ -195,7 +195,7 @@ These requirements are derived from:
   ** Time window
 * Must support metrics extraction for monitoring
 * Must be thread-safe
-* Reference: link:specification/specification.adoc#_security_event_tracking[Security Event Tracking]
+* Reference: xref:specification/specification.adoc#_security_event_tracking[Security Event Tracking]
 
 == Integration Requirements
 
@@ -205,7 +205,7 @@ These requirements are derived from:
 * Must use CuiLogger for internal logging
 * Must support different log levels for different event types
 * Must not log sensitive data in clear text
-* Reference: link:specification/specification.adoc#_security_event_tracking[Security Event Tracking]
+* Reference: xref:specification/specification.adoc#_security_event_tracking[Security Event Tracking]
 
 == Performance Requirements
 
@@ -217,7 +217,7 @@ These requirements are derived from:
   ** Large headers: < 5ms
 * Must handle high-throughput scenarios
 * Must not cause memory leaks
-* Reference: link:specification/testing.adoc#_performance_benchmarking[Performance Benchmarks]
+* Reference: xref:specification/testing.adoc#_performance_benchmarking[Performance Benchmarks]
 
 === HTTP-19: Resource Constraints
 
@@ -227,7 +227,7 @@ These requirements are derived from:
   ** Maximum normalization passes
 * Must fail fast when limits are exceeded
 * Must prevent algorithmic complexity attacks
-* Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
+* Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
 == Implementation References
 
@@ -267,23 +267,23 @@ The following classes implement the functional requirements:
 |===
 | Requirement ID | Description | Specification Reference
 
-| HTTP-1 | Multi-Component Validation | link:specification/specification.adoc#_validation_types[§Validation Types]
-| HTTP-2 | Zero Dependencies | link:specification/specification.adoc#_executive_summary[§Executive Summary]
-| HTTP-3 | Fail-Fast Model | link:specification/specification.adoc#_functionalinterface[§Functional Interface]
-| HTTP-4 | Sequential Pipeline | link:specification/specification.adoc#_sequential_execution_model[§Execution Model]
-| HTTP-5 | Stage Architecture | link:specification/specification.adoc#_validation_stages[§Validation Stages]
-| HTTP-6 | Input Normalization | link:specification/specification.adoc#_normalizationstage[§Normalization]
-| HTTP-7 | Traversal Detection | link:specification/specification.adoc#_patternmatchingstage[§Pattern Matching]
-| HTTP-8 | Root Escape Prevention | link:specification/specification.adoc#_normalizationstage[§Path Security]
-| HTTP-9 | Double Encoding | link:specification/specification.adoc#_decodingstage[§Decoding Stage]
-| HTTP-10 | Character Validation | link:specification/specification.adoc#_charactervalidationstage[§Character Stage]
-| HTTP-11 | Null Byte Prevention | link:specification/specification.adoc#_charactervalidationstage[§Character Security]
-| HTTP-12 | Unicode Security | link:specification/specification.adoc#_encodingvalidationstage[§Unicode]
-| HTTP-13 | Configurable Rules | link:specification/specification.adoc#_configuration_architecture[§Configuration]
-| HTTP-14 | Type Configuration | link:specification/specification.adoc#_validation_type_configurations[§Type Config]
-| HTTP-15 | Security Exceptions | link:specification/specification.adoc#_urlsecurityexception[§Exceptions]
-| HTTP-16 | Event Tracking | link:specification/specification.adoc#_event_counter_pattern[§Event Counter]
-| HTTP-17 | Logging Integration | link:specification/specification.adoc#_securityeventcounter[§Logging]
-| HTTP-18 | Efficient Processing | link:specification/testing.adoc#_performance_benchmarking[§Performance]
-| HTTP-19 | Resource Constraints | link:specification/specification.adoc#_lengthvalidationstage[§Constraints]
+| HTTP-1 | Multi-Component Validation | xref:specification/specification.adoc#_validation_types[§Validation Types]
+| HTTP-2 | Zero Dependencies | xref:specification/specification.adoc#_executive_summary[§Executive Summary]
+| HTTP-3 | Fail-Fast Model | xref:specification/specification.adoc#_functionalinterface[§Functional Interface]
+| HTTP-4 | Sequential Pipeline | xref:specification/specification.adoc#_sequential_execution_model[§Execution Model]
+| HTTP-5 | Stage Architecture | xref:specification/specification.adoc#_validation_stages[§Validation Stages]
+| HTTP-6 | Input Normalization | xref:specification/specification.adoc#_normalizationstage[§Normalization]
+| HTTP-7 | Traversal Detection | xref:specification/specification.adoc#_patternmatchingstage[§Pattern Matching]
+| HTTP-8 | Root Escape Prevention | xref:specification/specification.adoc#_normalizationstage[§Path Security]
+| HTTP-9 | Double Encoding | xref:specification/specification.adoc#_decodingstage[§Decoding Stage]
+| HTTP-10 | Character Validation | xref:specification/specification.adoc#_charactervalidationstage[§Character Stage]
+| HTTP-11 | Null Byte Prevention | xref:specification/specification.adoc#_charactervalidationstage[§Character Security]
+| HTTP-12 | Unicode Security | xref:specification/specification.adoc#_encodingvalidationstage[§Unicode]
+| HTTP-13 | Configurable Rules | xref:specification/specification.adoc#_configuration_architecture[§Configuration]
+| HTTP-14 | Type Configuration | xref:specification/specification.adoc#_validation_type_configurations[§Type Config]
+| HTTP-15 | Security Exceptions | xref:specification/specification.adoc#_urlsecurityexception[§Exceptions]
+| HTTP-16 | Event Tracking | xref:specification/specification.adoc#_event_counter_pattern[§Event Counter]
+| HTTP-17 | Logging Integration | xref:specification/specification.adoc#_securityeventcounter[§Logging]
+| HTTP-18 | Efficient Processing | xref:specification/testing.adoc#_performance_benchmarking[§Performance]
+| HTTP-19 | Resource Constraints | xref:specification/specification.adoc#_lengthvalidationstage[§Constraints]
 |===
