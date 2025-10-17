@@ -65,14 +65,17 @@ _See Requirement link:../functional-requirements.adoc#HTTP-3[HTTP-3: Fail-Fast S
 The following classes implement the core security validation components:
 
 ==== Core Interfaces
+
 * link:../../../src/main/java/de/cuioss/http/security/core/HttpSecurityValidator.java[HttpSecurityValidator] - Core functional interface for validation
 * link:../../../src/main/java/de/cuioss/http/security/core/ValidationType.java[ValidationType] - Enumeration of input types for validation
 * link:../../../src/main/java/de/cuioss/http/security/core/UrlSecurityFailureType.java[UrlSecurityFailureType] - Failure type enumeration
 
 ==== Exception Handling
+
 * link:../../../src/main/java/de/cuioss/http/security/exceptions/UrlSecurityException.java[UrlSecurityException] - Main exception for security violations
 
 ==== Data Models
+
 * link:../../../src/main/java/de/cuioss/http/security/data/URLParameter.java[URLParameter] - URL parameter representation
 * link:../../../src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie] - Cookie data model
 
@@ -187,11 +190,13 @@ For implementation details, see the JavaDoc of each monitoring class.
 The following test suites verify the implementation meets this specification:
 
 === Unit Tests
+
 * link:../../../src/test/java/de/cuioss/http/security/core/HttpSecurityValidatorTest.java[HttpSecurityValidatorTest] - Core interface tests
 * link:../../../src/test/java/de/cuioss/http/security/core/UrlSecurityFailureTypeTest.java[UrlSecurityFailureTypeTest] - Failure type enumeration tests
 * link:../../../src/test/java/de/cuioss/http/security/config/SecurityConfigurationTest.java[SecurityConfigurationTest] - Configuration tests
 
 === Validation Stage Tests
+
 * link:../../../src/test/java/de/cuioss/http/security/validation/LengthValidationStageTest.java[LengthValidationStageTest] - Length validation tests
 * link:../../../src/test/java/de/cuioss/http/security/validation/CharacterValidationStageTest.java[CharacterValidationStageTest] - Character validation tests
 * link:../../../src/test/java/de/cuioss/http/security/validation/DecodingStageTest.java[DecodingStageTest] - Decoding stage tests
@@ -199,12 +204,14 @@ The following test suites verify the implementation meets this specification:
 * link:../../../src/test/java/de/cuioss/http/security/validation/PatternMatchingStageTest.java[PatternMatchingStageTest] - Pattern matching tests
 
 === Pipeline Tests
+
 * link:../../../src/test/java/de/cuioss/http/security/pipeline/URLPathValidationPipelineTest.java[URLPathValidationPipelineTest] - Path pipeline tests
 * link:../../../src/test/java/de/cuioss/http/security/pipeline/URLParameterValidationPipelineTest.java[URLParameterValidationPipelineTest] - Parameter pipeline tests
 * link:../../../src/test/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipelineTest.java[HTTPHeaderValidationPipelineTest] - Header pipeline tests
 * link:../../../src/test/java/de/cuioss/http/security/pipeline/PipelineFactoryTest.java[PipelineFactoryTest] - Factory tests
 
 === Attack Database Tests
+
 * link:../../../src/test/java/de/cuioss/http/security/tests/OWASPZAPAttackDatabaseTest.java[OWASPZAPAttackDatabaseTest] - OWASP ZAP attack patterns
 * link:../../../src/test/java/de/cuioss/http/security/tests/ApacheCVEAttackDatabaseTest.java[ApacheCVEAttackDatabaseTest] - Apache CVE tests
 * link:../../../src/test/java/de/cuioss/http/security/tests/IISCVEAttackDatabaseTest.java[IISCVEAttackDatabaseTest] - IIS CVE tests

@@ -26,6 +26,7 @@ These requirements are derived from:
 * Must prevent:
   ** Path injection/traversal
   ** Command injection via file paths
+
 * Reference: link:analysis/owasp-best-practices.adoc#_a032021_injection[OWASP A03:2021]
 
 [#SEC-2]
@@ -37,6 +38,7 @@ These requirements are derived from:
   ** Canonicalization
   ** Output encoding
   ** Access control verification
+
 * Must fail securely (deny by default)
 * Must implement secure defaults for all configurations
 * Reference: link:specification/specification.adoc#_architecture[Architecture]
@@ -52,6 +54,7 @@ These requirements are derived from:
   ** link:https://nvd.nist.gov/vuln/detail/CVE-2021-42013[CVE-2021-42013]: Apache httpd double encoding
   ** link:https://nvd.nist.gov/vuln/detail/CVE-2020-5410[CVE-2020-5410]: Spring Cloud Config traversal
   ** link:https://nvd.nist.gov/vuln/detail/CVE-2019-0232[CVE-2019-0232]: Apache Tomcat RCE via traversal
+
 * Must detect novel combinations of known techniques
 * Must maintain pattern database for emerging threats
 * Reference: link:analysis/cve-analysis.adoc[CVE Analysis]
@@ -66,6 +69,7 @@ These requirements are derived from:
   ** UTF-8 overlong encoding attacks
   ** Mixed case hexadecimal encoding
   ** Unicode normalization attacks
+
 * **ARCHITECTURAL BOUNDARY**: HTML entity encoding and Base64 decoding are application-layer responsibilities
 * Must validate at HTTP protocol decoding stage only
 * Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
@@ -80,6 +84,7 @@ These requirements are derived from:
   ** Hard links
   ** Junction points (Windows)
   ** UNC paths
+
 * Must prevent TOCTOU (Time-of-Check-Time-of-Use) vulnerabilities
 * Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
 
@@ -95,6 +100,7 @@ These requirements are derived from:
   ** Character sets (prevent injection)
   ** Format patterns (ensure structure)
   ** Semantic validity (business logic)
+
 * Must not attempt to "fix" invalid input
 * Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
 
@@ -107,6 +113,7 @@ These requirements are derived from:
   ** Encoded null bytes (`%00`, `\u0000`)
   ** Control characters (0x00-0x1F, 0x7F)
   ** Unicode control characters
+
 * Must prevent null byte injection attacks
 * Must prevent log injection via control characters
 * Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]

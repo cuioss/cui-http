@@ -50,6 +50,7 @@ G
 **Back-end:** Processes chunked encoding, sees chunk size 0 (end), interprets "G" as start of next request
 
 ==== Impact
+
 * Request smuggling
 * Cache poisoning
 * Authentication bypass
@@ -96,6 +97,7 @@ Host: vulnerable.com
 **Back-end:** Uses Content-Length: 4, reads only "5c\r\n", interprets remaining bytes as next request
 
 ==== Impact
+
 * Request smuggling
 * Administrative access bypass
 * Session hijacking
@@ -137,6 +139,7 @@ Host: vulnerable.com
 **Back-end:** Ignores body, interprets smuggled request as next request
 
 ==== Impact
+
 * Request smuggling without Transfer-Encoding obfuscation
 * Simpler exploitation pattern
 * Cache poisoning
@@ -183,6 +186,7 @@ Host: vulnerable.com
 * Various reverse proxies
 
 ==== Impact
+
 * Request smuggling via Expect header
 * Bypassing security controls
 * Cache poisoning
@@ -244,6 +248,7 @@ Front-end ignores obfuscated Transfer-Encoding, back-end processes it.
 * Various CDNs and load balancers
 
 ==== Impact
+
 * Request smuggling via parser differences
 * Bypassing security validation
 * Cache poisoning

@@ -24,6 +24,7 @@ These requirements are derived from:
   ** Query parameters (e.g., `?search=term&page=1`)
   ** HTTP headers (e.g., `Authorization: Bearer token`)
   ** Request body parameters (form-data, JSON, XML)
+
 * Each component type must have appropriate validation rules
 * The system must provide separate validators for each component type
 * Reference: link:specification/specification.adoc#_core_components[Core Components]
@@ -64,6 +65,7 @@ These requirements are derived from:
   ** Character validation
   ** Normalization
   ** Pattern matching
+
 * Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
 
 === HTTP-6: Input Normalization
@@ -74,6 +76,7 @@ These requirements are derived from:
   ** Path canonicalization
   ** Unicode normalization (NFC)
   ** Removal of redundant path separators
+
 * The system must detect when normalization changes input significantly
 * Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
 
@@ -87,6 +90,7 @@ These requirements are derived from:
   ** Encoded variants (`%2e%2e%2f`, `%252e%252e%252f`)
   ** Unicode variants
   ** Mixed encoding attempts
+
 * Detection must occur after normalization
 * Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
 
@@ -106,6 +110,7 @@ These requirements are derived from:
   ** URL encoding over URL encoding
   ** Mixed encoding schemes
   ** Partial encoding attempts
+
 * Must validate after each decoding pass
 * Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
 
@@ -118,6 +123,7 @@ These requirements are derived from:
   ** Path segments: alphanumeric, hyphen, underscore, period
   ** Query parameters: extended ASCII subset
   ** Headers: visible ASCII characters
+
 * Must detect and block control characters
 * Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
 
@@ -136,6 +142,7 @@ These requirements are derived from:
   ** Invisible characters
   ** Right-to-left override characters
   ** Zero-width characters
+
 * Must normalize Unicode to NFC form
 * Must detect when normalization changes the input
 * Reference: link:specification/specification.adoc#_validation_stages[Validation Stages]
