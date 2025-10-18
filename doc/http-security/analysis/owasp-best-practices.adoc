@@ -1,8 +1,10 @@
 = OWASP Path Traversal Prevention Best Practices
 :toc: left
 :toclevels: 3
+:toc-title: Table of Contents
 :sectnums:
 :icons: font
+:source-highlighter: highlight.js
 
 xref:../README.adoc[← Back to Documentation Index]
 

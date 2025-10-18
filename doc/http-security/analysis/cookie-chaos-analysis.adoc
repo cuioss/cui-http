@@ -139,6 +139,7 @@ Result: __Host- cookie with forbidden Domain attribute bypasses validation
 * Application code may normalize cookie names before security validation
 
 ==== Impact
+
 * Cookie prefix bypass via whitespace manipulation
 * Inconsistent security policy enforcement
 * Cookie injection attacks
@@ -167,6 +168,7 @@ Result: __Host- cookie with forbidden Domain attribute accepted by server
 ```
 
 ==== Impact
+
 * Cookie can be set by any subdomain
 * Session hijacking from compromised subdomains
 * Defeats the entire purpose of `__Host-` prefix
@@ -194,6 +196,7 @@ Result: __Host- cookie with restricted path accepted by server
 ```
 
 ==== Impact
+
 * Cookie scope narrowed to specific paths
 * Path-based session fixation attacks
 * Reduced protection against subdirectory takeover

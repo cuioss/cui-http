@@ -1,6 +1,8 @@
 = Log Messages for cui-http
 :toc: left
-:toclevels: 2
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
 :source-highlighter: highlight.js
 
 == Overview
@@ -10,6 +12,7 @@ All messages follow the format: HTTP-[identifier]: [message]
 Module: `de.cuioss.http`
 
 LogMessages Classes:
+
 - `de.cuioss.http.client.HttpLogMessages` - HTTP client operations
 
 == INFO Level (001-099)

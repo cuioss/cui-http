@@ -269,6 +269,7 @@ Front-end ignores obfuscated Transfer-Encoding, back-end processes it.
 * Whitespace normalization in headers
 
 **Tests:**
+
 * link:../../../src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] - TE.TE and CL.CL variants
 * link:../../../src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java[HttpHeaderInjectionAttackTest] - Header manipulation patterns
 
@@ -286,6 +287,7 @@ Many infrastructure components reuse upstream connections for performance. If re
 * Various reverse proxies with connection pooling
 
 ==== Impact
+
 * Request routing to wrong user
 * Session hijacking
 * Authentication bypass

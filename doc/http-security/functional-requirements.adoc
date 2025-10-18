@@ -156,6 +156,7 @@ These requirements are derived from:
   ** Maximum directory depth
   ** Allowed character sets
   ** Encoding strictness levels
+
 * Configuration must be immutable after initialization
 * Must provide sensible secure defaults
 * Reference: xref:specification/specification.adoc#_configuration_architecture[Configuration Architecture]
@@ -168,6 +169,7 @@ These requirements are derived from:
   ** `PARAMETER_VALUE`: Parameter value validation rules (URL decoding support)
   ** `HEADER_NAME`: Header name validation rules (RFC 7230 token rules)
   ** `HEADER_VALUE`: Header value validation rules (broader character set)
+
 * Configurations must be independently configurable
 * Must support configuration inheritance for common settings
 * Reference: xref:specification/specification.adoc#_configuration_architecture[Configuration Architecture]
@@ -183,6 +185,7 @@ These requirements are derived from:
   ** Original input (for logging)
   ** Sanitized input (if available)
   ** Detailed error message
+
 * Exceptions must extend `RuntimeException`
 * Reference: xref:specification/specification.adoc#_core_components[Core Components]
 
@@ -193,6 +196,7 @@ These requirements are derived from:
   ** Failure type
   ** Validation type
   ** Time window
+
 * Must support metrics extraction for monitoring
 * Must be thread-safe
 * Reference: xref:specification/specification.adoc#_security_event_tracking[Security Event Tracking]
@@ -215,6 +219,7 @@ These requirements are derived from:
   ** Simple paths: < 1ms
   ** Complex encoded input: < 10ms
   ** Large headers: < 5ms
+
 * Must handle high-throughput scenarios
 * Must not cause memory leaks
 * Reference: xref:specification/testing.adoc#_performance_benchmarking[Performance Benchmarks]
@@ -225,6 +230,7 @@ These requirements are derived from:
   ** Maximum input length (configurable)
   ** Maximum decoding iterations (prevent DoS)
   ** Maximum normalization passes
+
 * Must fail fast when limits are exceeded
 * Must prevent algorithmic complexity attacks
 * Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]

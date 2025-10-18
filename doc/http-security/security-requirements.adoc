@@ -128,6 +128,7 @@ These requirements are derived from:
   ** Bidirectional text attacks
   ** Zero-width character abuse
   ** Case transformation attacks
+
 * Must normalize to NFC before validation
 * Must detect significant changes during normalization
 * Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
@@ -143,6 +144,7 @@ These requirements are derived from:
   ** Processing time (prevent CPU exhaustion)
   ** Decoding iterations (prevent infinite loops)
   ** Regex complexity (prevent ReDoS)
+
 * Must fail fast when limits are exceeded
 * Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
@@ -154,6 +156,7 @@ These requirements are derived from:
   ** Exponential algorithms
   ** Unbounded recursion
   ** Catastrophic backtracking in regex
+
 * Must use linear or logarithmic algorithms where possible
 * Must implement circuit breakers for long-running operations
 * Reference: xref:specification/testing.adoc#_performance_validation[Performance Security]
@@ -169,6 +172,7 @@ These requirements are derived from:
   ** Attack patterns detected
   ** Threshold violations
   ** Configuration changes
+
 * Must not log sensitive data (passwords, tokens)
 * Must support security information and event management (SIEM) integration
 * Reference: xref:specification/specification.adoc#_security_event_tracking[Security Event Tracking]
@@ -182,6 +186,7 @@ These requirements are derived from:
   ** Pattern scanning attempts
   ** Automated tool signatures
   ** Coordinated attacks
+
 * Must support rate limiting and blocking
 * Must generate alerts for suspicious patterns
 * Reference: xref:specification/specification.adoc#_security_event_tracking[Security Event Tracking]
@@ -197,6 +202,7 @@ These requirements are derived from:
   ** Prevent timing attacks
   ** Handle encoding errors safely
   ** Validate encoding consistency
+
 * Must not leak information through error messages
 * Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
@@ -209,6 +215,7 @@ These requirements are derived from:
   ** Maximum security checks active
   ** Conservative length limits
   ** Minimal allowed character sets
+
 * Configuration relaxation must require explicit action
 * Reference: xref:specification/specification.adoc#_configuration_architecture[Secure Configuration]
 
@@ -223,6 +230,7 @@ These requirements are derived from:
   ** Configuration changes
   ** Validation rule updates
   ** Security exceptions granted
+
 * Must support tamper-evident logging
 * Must integrate with enterprise audit systems
 * Reference: xref:specification/specification.adoc#_security_event_tracking[Security Event Tracking]
@@ -236,6 +244,7 @@ These requirements are derived from:
   ** Support for automated security testing tools
   ** Security regression test support
   ** Penetration testing hooks
+
 * Must maintain security test coverage metrics
 * Reference: xref:specification/testing.adoc[Security Testing Framework]
 
@@ -250,6 +259,7 @@ These requirements are derived from:
   ** Prevent API misuse through design
   ** Validate all API inputs
   ** Document security considerations
+
 * Must follow secure coding practices
 * Reference: xref:specification/specification.adoc#_core_components[Core Components]
 
@@ -263,6 +273,7 @@ These requirements are derived from:
   ** Allow configuration of new attack patterns
   ** Update validation rules based on pattern definitions
   ** Support pattern updates without code changes
+
 * Must handle pattern configuration updates safely
 * Reference: xref:analysis/cve-analysis.adoc[Attack Pattern Analysis]
 

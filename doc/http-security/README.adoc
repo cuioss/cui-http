@@ -1,7 +1,10 @@
 = HTTP Security Validation Overview
 :toc: left
-:toclevels: 2
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
 :icons: font
+:source-highlighter: highlight.js
 
 == Overview
 
