@@ -230,6 +230,7 @@ public class PathTraversalAttackTest {
 }
 ----
 
+[#_test_data_categories]
 == Attack Pattern Database
 
 === Database Structure
@@ -307,6 +308,8 @@ public class AttackPatternDatabase {
 
 == Test Execution Strategy
 
+[#_performance_benchmarking]
+[#_performance_validation]
 === Performance Benchmarking
 
 ==== JMH Integration Setup

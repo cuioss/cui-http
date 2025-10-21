@@ -12,6 +12,8 @@ xref:../README.adoc[← Back to Documentation Index]
 
 OWASP guidelines for preventing path traversal vulnerabilities applied in the cui-http security validation framework.
 
+[#_core_prevention_principles]
+[#_a032021_injection]
 == Core Prevention Principles
 
 === Primary Defense: Avoid User Input in File Operations

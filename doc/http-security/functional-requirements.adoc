@@ -17,6 +17,7 @@ These requirements are derived from:
 
 == General Requirements
 
+[#HTTP-1]
 === HTTP-1: Multi-Component Validation Support
 
 * The system must support validation of different HTTP components
@@ -29,6 +30,7 @@ These requirements are derived from:
 * The system must provide separate validators for each component type
 * Reference: xref:specification/specification.adoc#_core_components[Core Components]
 
+[#HTTP-2]
 === HTTP-2: Zero External Dependencies
 
 * The system must not require any external runtime dependencies
@@ -36,6 +38,7 @@ These requirements are derived from:
 * Development-only dependencies (e.g., Lombok) are permitted
 * The system must be compatible with Jakarta EE environments
 
+[#HTTP-3]
 === HTTP-3: Fail-Fast Security Model
 
 * The system must immediately reject invalid input upon detection
@@ -46,6 +49,7 @@ These requirements are derived from:
 
 == Validation Pipeline Requirements
 
+[#HTTP-4]
 === HTTP-4: Sequential Validation Pipeline
 
 * The system must execute validation stages in a defined sequence
@@ -54,6 +58,7 @@ These requirements are derived from:
 * Pipeline execution must be atomic (all-or-nothing)
 * Reference: xref:specification/specification.adoc#_architecture[Architecture]
 
+[#HTTP-5]
 === HTTP-5: Stage-Based Validation Architecture
 
 * Each validation concern must be implemented as a separate stage
@@ -68,6 +73,7 @@ These requirements are derived from:
 
 * Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
+[#HTTP-6]
 === HTTP-6: Input Normalization
 
 * The system must normalize input before pattern matching
@@ -82,6 +88,7 @@ These requirements are derived from:
 
 == Path Traversal Prevention Requirements
 
+[#HTTP-7]
 === HTTP-7: Directory Traversal Detection
 
 * The system must detect and block directory traversal sequences
@@ -94,6 +101,7 @@ These requirements are derived from:
 * Detection must occur after normalization
 * Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
+[#HTTP-8]
 === HTTP-8: Root Directory Escape Prevention
 
 * The system must prevent paths that escape the application root
@@ -116,6 +124,7 @@ These requirements are derived from:
 
 == Character and Encoding Requirements
 
+[#HTTP-10]
 === HTTP-10: Character Set Validation
 
 * The system must validate characters against configurable allowed sets
@@ -127,6 +136,7 @@ These requirements are derived from:
 * Must detect and block control characters
 * Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
+[#HTTP-11]
 === HTTP-11: Null Byte Injection Prevention
 
 * The system must detect and block null bytes (`\0`, `%00`)
@@ -135,6 +145,7 @@ These requirements are derived from:
 * Must prevent null byte injection in all validated components
 * Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
+[#HTTP-12]
 === HTTP-12: Unicode Security Validation
 
 * The system must handle Unicode security concerns:
@@ -149,6 +160,7 @@ These requirements are derived from:
 
 == Configuration Requirements
 
+[#HTTP-13]
 === HTTP-13: Configurable Validation Rules
 
 * The system must support configuration of validation parameters:
@@ -161,6 +173,7 @@ These requirements are derived from:
 * Must provide sensible secure defaults
 * Reference: xref:specification/specification.adoc#_configuration_architecture[Configuration Architecture]
 
+[#HTTP-14]
 === HTTP-14: Validation Type Configuration
 
 * Each validation type must have its own configuration:
@@ -176,6 +189,7 @@ These requirements are derived from:
 
 == Error Handling Requirements
 
+[#HTTP-15]
 === HTTP-15: Detailed Security Exceptions
 
 * Security violations must throw `UrlSecurityException`
@@ -189,6 +203,7 @@ These requirements are derived from:
 * Exceptions must extend `RuntimeException`
 * Reference: xref:specification/specification.adoc#_core_components[Core Components]
 
+[#HTTP-16]
 === HTTP-16: Security Event Tracking
 
 * The system must track security events through `SecurityEventCounter`
@@ -203,6 +218,7 @@ These requirements are derived from:
 
 == Integration Requirements
 
+[#HTTP-17]
 === HTTP-17: Logging Integration
 
 * The system must integrate with standard logging frameworks
@@ -213,6 +229,7 @@ These requirements are derived from:
 
 == Performance Requirements
 
+[#HTTP-18]
 === HTTP-18: Efficient Validation Processing
 
 * Validation must complete within reasonable time limits:
@@ -224,6 +241,7 @@ These requirements are derived from:
 * Must not cause memory leaks
 * Reference: xref:specification/testing.adoc#_performance_benchmarking[Performance Benchmarks]
 
+[#HTTP-19]
 === HTTP-19: Resource Constraints
 
 * The system must enforce resource limits:
