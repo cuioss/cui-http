@@ -1,0 +1,771 @@
+= Compliance Traceability Matrix
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+== Purpose
+
+This document provides complete traceability from compliance requirements to specifications to unit tests for all claimed security standards. This ensures that all compliance claims in `doc/http-security/Requirements.adoc` are substantiated with evidence.
+
+== Table of Contents
+
+. <<owasp-top-10-2021-traceability,OWASP Top 10 2021 Traceability>>
+. <<cwe-top-25-traceability,CWE Top 25 Traceability>>
+. <<nist-800-53-traceability,NIST 800-53 Traceability>>
+. <<iso-27001-traceability,ISO 27001 Traceability>>
+. <<pci-dss-traceability,PCI DSS Traceability>>
+
+[#owasp-top-10-2021-traceability]
+== OWASP Top 10 2021 Traceability
+
+=== Overview
+
+The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories A01, A03, A04, A05, A07, A08, and A09 at the HTTP/URL protocol layer.
+
+=== A01:2021 - Broken Access Control
+
+*Description*: Restricts access to resources through path traversal prevention and containment validation.
+
+==== Requirements
+
+* *Functional*:
+* xref:../functional-requirements.adoc#HTTP-7[HTTP-7]: Directory Traversal Detection
+* xref:../functional-requirements.adoc#HTTP-8[HTTP-8]: Root Directory Escape Prevention
+* *Security*:
+* xref:../security-requirements.adoc#SEC-3[SEC-3]: Traversal Pattern Detection
+* xref:../security-requirements.adoc#SEC-5[SEC-5]: Canonicalization Security
+
+==== Specifications
+
+* xref:../analysis/owasp-best-practices.adoc[Path Traversal Prevention]: OWASP best practices implementation
+* link:../../../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]: Pipeline architecture
+* link:../../../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage]: Attack pattern detection
+* link:../../../src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]: Path canonicalization
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest]: OWASP A01 attack patterns (lines 50-126)
+* `CLASSIC_PATH_TRAVERSAL_UNIX`: `../../../etc/passwd`
+* `URL_ENCODED_TRAVERSAL`: `%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd`
+* `DOUBLE_ENCODED_TRAVERSAL`: `%252e%252e%252f...`
+* `UTF8_OVERLONG_TRAVERSAL`: `%c0%ae%c0%ae%c0%af...`
+* `STRUTS2_COMPONENT_TRAVERSAL`: `/struts2-showcase/../../../etc/passwd`
+* `AUTH_BYPASS_TRAVERSAL`: `/admin/../user/profile`
+* link:../../../src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]: Comprehensive path traversal testing
+
+* `shouldRejectAllPathTraversalPatterns()`: 64 generated patterns
+* `shouldBlockCVEStylePatterns()`: CVE-based patterns
+* link:../../../src/test/java/de/cuioss/http/security/tests/EncodedPathTraversalAttackTest.java[EncodedPathTraversalAttackTest]: Encoded variants
+
+* link:../../../src/test/java/de/cuioss/http/security/tests/UnicodePathTraversalAttackTest.java[UnicodePathTraversalAttackTest]: Unicode-based traversal
+
+*Status*: ✅ VERIFIED - Complete coverage with 200+ test cases
+
+=== A03:2021 - Injection
+
+*Description*: Prevents injection attacks through strict input validation and encoding handling.
+
+==== Requirements
+
+* *Functional*:
+* xref:../functional-requirements.adoc#HTTP-9[HTTP-9]: Double Encoding Protection
+* xref:../functional-requirements.adoc#HTTP-10[HTTP-10]: Character Set Validation
+* xref:../functional-requirements.adoc#HTTP-11[HTTP-11]: Null Byte Injection Prevention
+* *Security*:
+* xref:../security-requirements.adoc#SEC-1[SEC-1]: A03:2021 Injection Prevention
+* xref:../security-requirements.adoc#SEC-4[SEC-4]: HTTP Protocol Encoding Attack Prevention
+* xref:../security-requirements.adoc#SEC-6[SEC-6]: Strict Input Validation
+* xref:../security-requirements.adoc#SEC-7[SEC-7]: Null Byte and Control Character Prevention
+
+==== Specifications
+
+* link:../../../src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage]: URL decoding with double-encoding detection
+* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage]: RFC-compliant character validation
+* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationConstants.java[CharacterValidationConstants]: Allowed character sets
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/tests/DoubleEncodingAttackTest.java[DoubleEncodingAttackTest]: Double/triple encoding patterns (CWE-20, CWE-22)
+* link:../../../src/test/java/de/cuioss/http/security/tests/MixedEncodingAttackTest.java[MixedEncodingAttackTest]: Mixed encoding combinations (CWE-20, CWE-116, CWE-838)
+* link:../../../src/test/java/de/cuioss/http/security/tests/NullBytePathTraversalAttackTest.java[NullBytePathTraversalAttackTest]: Null byte injection
+* link:../../../src/test/java/de/cuioss/http/security/validation/DecodingStageTest.java[DecodingStageTest]: Decoding stage validation
+* link:../../../src/test/java/de/cuioss/http/security/validation/CharacterValidationStageTest.java[CharacterValidationStageTest]: Character validation
+
+*Status*: ✅ VERIFIED - Complete coverage at HTTP/URL protocol layer
+
+=== A04:2021 - Insecure Design
+
+*Description*: Implements defense-in-depth with multiple validation layers and secure-by-default configuration.
+
+==== Requirements
+
+* *Functional*:
+* xref:../functional-requirements.adoc#HTTP-4[HTTP-4]: Sequential Validation Pipeline
+* xref:../functional-requirements.adoc#HTTP-5[HTTP-5]: Stage-Based Validation Architecture
+* xref:../functional-requirements.adoc#HTTP-13[HTTP-13]: Configurable Validation Rules
+* *Security*:
+* xref:../security-requirements.adoc#SEC-2[SEC-2]: A04:2021 Insecure Design
+* xref:../security-requirements.adoc#SEC-14[SEC-14]: Secure Defaults
+
+==== Specifications
+
+* xref:specification.adoc[Pipeline Architecture]: Sequential validation stages
+* link:../../../src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration]: Immutable configuration
+* link:../../../src/main/java/de/cuioss/http/security/config/SecurityDefaults.java[SecurityDefaults]: OWASP-compliant defaults
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/pipeline/URLPathValidationPipelineTest.java[URLPathValidationPipelineTest]: Pipeline execution
+* link:../../../src/test/java/de/cuioss/http/security/config/SecurityConfigurationTest.java[SecurityConfigurationTest]: Configuration validation
+* link:../../../src/test/java/de/cuioss/http/security/config/SecurityDefaultsTest.java[SecurityDefaultsTest]: Secure defaults
+
+*Status*: ✅ VERIFIED - Defense-in-depth architecture implemented
+
+=== A05:2021 - Security Misconfiguration
+
+*Description*: Provides secure defaults and validates all configuration parameters.
+
+==== Requirements
+
+* *Functional*:
+* xref:../functional-requirements.adoc#HTTP-13[HTTP-13]: Configurable Validation Rules
+* xref:../functional-requirements.adoc#HTTP-14[HTTP-14]: Validation Type Configuration
+* *Security*:
+* xref:../security-requirements.adoc#SEC-14[SEC-14]: Secure Defaults
+
+==== Specifications
+
+* link:../../../src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration]: Configuration management
+* link:../../../src/main/java/de/cuioss/http/security/config/SecurityDefaults.java[SecurityDefaults]: Default values based on RFC standards
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/config/SecurityConfigurationTest.java[SecurityConfigurationTest]: Configuration validation
+* link:../../../src/test/java/de/cuioss/http/security/config/SecurityConfigurationBuilderTest.java[SecurityConfigurationBuilderTest]: Builder pattern validation
+* link:../../../src/test/java/de/cuioss/http/security/config/SecurityDefaultsTest.java[SecurityDefaultsTest]: Default configuration testing
+
+*Status*: ✅ VERIFIED - Secure defaults enforced
+
+=== A07:2021 - Identification and Authentication Failures
+
+*Description*: Prevents authentication bypass through path traversal and header injection.
+
+==== Requirements
+
+* *Functional*:
+
+* xref:../functional-requirements.adoc#HTTP-7[HTTP-7]: Directory Traversal Detection
+
+* *Security*:
+* xref:../security-requirements.adoc#SEC-3[SEC-3]: Traversal Pattern Detection
+
+==== Specifications
+
+* link:../../../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]: Authentication bypass prevention
+* link:../../../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline]: Header validation
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest]: `AUTH_BYPASS_TRAVERSAL` pattern
+* link:../../../src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java[HttpHeaderInjectionAttackTest]: Header injection patterns (CWE-113, CWE-116)
+* link:../../../src/test/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipelineTest.java[HTTPHeaderValidationPipelineTest]: Header validation
+
+*Status*: ✅ VERIFIED - Authentication bypass patterns detected
+
+=== A08:2021 - Software and Data Integrity Failures
+
+*Description*: Ensures input integrity through validation pipelines and encoding checks.
+
+==== Requirements
+
+* *Functional*:
+* xref:../functional-requirements.adoc#HTTP-6[HTTP-6]: Input Normalization
+* xref:../functional-requirements.adoc#HTTP-12[HTTP-12]: Unicode Security Validation
+* *Security*:
+* xref:../security-requirements.adoc#SEC-8[SEC-8]: Unicode and Internationalization Security
+* xref:../security-requirements.adoc#SEC-13[SEC-13]: Secure Encoding Handling
+
+==== Specifications
+
+* link:../../../src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]: Unicode normalization (NFC)
+* link:../../../src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage]: Encoding consistency validation
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/tests/UnicodeNormalizationAttackTest.java[UnicodeNormalizationAttackTest]: Unicode normalization attacks (CWE-20, CWE-176, CWE-838)
+* link:../../../src/test/java/de/cuioss/http/security/tests/UnicodeControlCharacterAttackTest.java[UnicodeControlCharacterAttackTest]: Control character attacks (CWE-74, CWE-20, CWE-176)
+* link:../../../src/test/java/de/cuioss/http/security/tests/HomographAttackDatabaseTest.java[HomographAttackDatabaseTest]: Homograph attacks (CWE-20, CWE-178)
+* link:../../../src/test/java/de/cuioss/http/security/validation/NormalizationStageTest.java[NormalizationStageTest]: Normalization validation
+
+*Status*: ✅ VERIFIED - Input integrity validated
+
+=== A09:2021 - Security Logging and Monitoring Failures
+
+*Description*: Comprehensive security event logging and monitoring with structured audit trails.
+
+==== Requirements
+
+* *Functional*:
+* xref:../functional-requirements.adoc#HTTP-16[HTTP-16]: Security Event Tracking
+* xref:../functional-requirements.adoc#HTTP-17[HTTP-17]: Logging Integration
+* *Security*:
+* xref:../security-requirements.adoc#SEC-11[SEC-11]: Security Event Logging
+* xref:../security-requirements.adoc#SEC-12[SEC-12]: Attack Pattern Recognition
+* xref:../security-requirements.adoc#SEC-15[SEC-15]: Audit Trail Support
+
+==== Specifications
+
+* link:../../../src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]: Event tracking by failure type
+* link:../../../src/main/java/de/cuioss/http/security/monitoring/URLSecurityLogMessages.java[URLSecurityLogMessages]: Structured logging
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/monitoring/SecurityEventCounterTest.java[SecurityEventCounterTest]: Event counter validation
+* All attack database tests verify security events are recorded:
+* `assertTrue(eventCounter.getTotalCount() > initialEventCount)`
+
+*Status*: ✅ VERIFIED - Comprehensive logging and monitoring
+
+[#cwe-top-25-traceability]
+== CWE Top 25 Traceability
+
+=== CWE-22: Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')
+
+*Description*: Core path traversal vulnerability prevention.
+
+==== Requirements
+
+* *Functional*: xref:../functional-requirements.adoc#HTTP-7[HTTP-7], xref:../functional-requirements.adoc#HTTP-8[HTTP-8]
+* *Security*: xref:../security-requirements.adoc#SEC-3[SEC-3], xref:../security-requirements.adoc#SEC-5[SEC-5]
+
+==== Specifications
+
+* link:../../../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]: Primary defense
+* link:../../../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage]: Pattern detection
+* link:../../../src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]: Path canonicalization
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]: 64+ patterns
+* References CVE-2019-5418, CVE-2018-1000671, CVE-2020-5398 (lines 64)
+* link:../../../src/test/java/de/cuioss/http/security/tests/EncodedPathTraversalAttackTest.java[EncodedPathTraversalAttackTest]: Encoded variants
+* link:../../../src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest]: Multiple traversal patterns
+* link:../../../src/test/java/de/cuioss/http/security/tests/ApacheCVEAttackDatabaseTest.java[ApacheCVEAttackDatabaseTest]: Apache-specific CVEs
+* link:../../../src/test/java/de/cuioss/http/security/tests/IISCVEAttackDatabaseTest.java[IISCVEAttackDatabaseTest]: IIS-specific CVEs
+* link:../../../src/test/java/de/cuioss/http/security/tests/NginxCVEAttackDatabaseTest.java[NginxCVEAttackDatabaseTest]: Nginx-specific CVEs
+* link:../../../src/test/java/de/cuioss/http/security/tests/DoubleEncodingAttackTest.java[DoubleEncodingAttackTest]: References CWE-22 (line 63)
+
+*Status*: ✅ VERIFIED - Extensive coverage with 500+ test cases
+
+=== CWE-23: Relative Path Traversal
+
+*Description*: Prevents relative path manipulation attacks.
+
+==== Requirements
+
+* *Functional*: xref:../functional-requirements.adoc#HTTP-7[HTTP-7], xref:../functional-requirements.adoc#HTTP-8[HTTP-8]
+* *Security*: xref:../security-requirements.adoc#SEC-3[SEC-3]
+
+==== Specifications
+
+* link:../../../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]: Relative path detection
+* link:../../../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage]: `../` pattern detection
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]:
+* Test case: `../../../etc/passwd` (line 209)
+* Relative path patterns in 64+ generated test cases
+* link:../../../src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest]:
+* `CLASSIC_PATH_TRAVERSAL_UNIX`: `../../../etc/passwd`
+* `AUTH_BYPASS_TRAVERSAL`: `/admin/../user/profile`
+
+*Status*: ✅ VERIFIED - Relative paths properly detected
+
+=== CWE-35: Path Traversal: '…/…//'
+
+*Description*: Detects alternative path traversal representations.
+
+==== Requirements
+
+* *Functional*: xref:../functional-requirements.adoc#HTTP-7[HTTP-7]
+* *Security*: xref:../security-requirements.adoc#SEC-3[SEC-3]
+
+==== Specifications
+
+* link:../../../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage]: Advanced pattern detection
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]:
+* Test case: `....//....//etc/passwd` (line 217)
+* Generator includes advanced patterns
+* link:../../../src/test/java/de/cuioss/http/security/generators/encoding/PathTraversalGenerator.java[PathTraversalGenerator]: Generates advanced patterns
+
+*Status*: ✅ VERIFIED - Advanced patterns detected
+
+=== CWE-73: External Control of File Name or Path
+
+*Description*: Validates all external input used in path construction.
+
+==== Requirements
+
+* *Functional*: xref:../functional-requirements.adoc#HTTP-1[HTTP-1], xref:../functional-requirements.adoc#HTTP-7[HTTP-7]
+* *Security*: xref:../security-requirements.adoc#SEC-6[SEC-6]
+
+==== Specifications
+
+* link:../../../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]: Validates all path input
+* link:../../../src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline]: Validates parameters
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/generators/url/PathTraversalParameterGeneratorTest.java[PathTraversalParameterGeneratorTest]: Parameter-based path traversal
+* link:../../../src/test/java/de/cuioss/http/security/pipeline/URLParameterValidationPipelineTest.java[URLParameterValidationPipelineTest]: Parameter validation
+* link:../../../src/test/java/de/cuioss/http/security/tests/ProtocolHandlerAttackTest.java[ProtocolHandlerAttackTest]: References CWE-73 for protocol injection
+
+*Status*: ✅ VERIFIED - External input validated
+
+=== CWE-78: Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')
+
+*Description*: HTTP layer validates input to prevent command injection in downstream processing.
+
+==== Requirements
+
+* *Functional*: xref:../functional-requirements.adoc#HTTP-10[HTTP-10], xref:../functional-requirements.adoc#HTTP-11[HTTP-11]
+* *Security*: xref:../security-requirements.adoc#SEC-1[SEC-1], xref:../security-requirements.adoc#SEC-7[SEC-7]
+
+==== Specifications
+
+* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage]: Blocks command injection characters
+* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationConstants.java[CharacterValidationConstants]: Defines safe character sets
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/validation/CharacterValidationStageTest.java[CharacterValidationStageTest]: Character validation including special characters
+* link:../../../src/test/java/de/cuioss/http/security/pipeline/URLParameterValidationPipelineTest.java[URLParameterValidationPipelineTest]: Parameter validation
+
+*Note*: Full command injection prevention requires application-layer validation. HTTP layer prevents injection characters in URLs/parameters.
+
+*Status*: ✅ VERIFIED - HTTP/URL layer protection implemented
+
+[#nist-800-53-traceability]
+== NIST 800-53 Traceability
+
+=== AC-3: Access Enforcement
+
+*Description*: Enforces approved authorizations by preventing path traversal to unauthorized resources.
+
+==== Requirements
+
+* *Security*: xref:../security-requirements.adoc#SEC-3[SEC-3], xref:../security-requirements.adoc#SEC-5[SEC-5]
+
+==== Specifications
+
+* link:../../../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]: Path containment
+* link:../../../src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]: Canonicalization prevents bypass
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]: Access control bypass prevention
+* link:../../../src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest]: `AUTH_BYPASS_TRAVERSAL`
+
+*Status*: ✅ VERIFIED
+
+=== AC-4: Information Flow Enforcement
+
+*Description*: Controls information flow through input validation boundaries.
+
+==== Requirements
+
+* *Functional*: xref:../functional-requirements.adoc#HTTP-4[HTTP-4], xref:../functional-requirements.adoc#HTTP-5[HTTP-5]
+* *Security*: xref:../security-requirements.adoc#SEC-6[SEC-6]
+
+==== Specifications
+
+* xref:specification.adoc[Pipeline Architecture]: Sequential validation stages create enforcement boundaries
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/pipeline/URLPathValidationPipelineTest.java[URLPathValidationPipelineTest]: Pipeline execution
+* link:../../../src/test/java/de/cuioss/http/security/pipeline/URLParameterValidationPipelineTest.java[URLParameterValidationPipelineTest]: Parameter flow control
+
+*Status*: ✅ VERIFIED
+
+=== AU-2: Audit Events
+
+*Description*: Defines auditable security events and event types.
+
+==== Requirements
+
+* *Functional*: xref:../functional-requirements.adoc#HTTP-16[HTTP-16]
+* *Security*: xref:../security-requirements.adoc#SEC-11[SEC-11], xref:../security-requirements.adoc#SEC-15[SEC-15]
+
+==== Specifications
+
+* link:../../../src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]: Event tracking by type
+* link:../../../src/main/java/de/cuioss/http/security/core/UrlSecurityFailureType.java[UrlSecurityFailureType]: Event categorization
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/monitoring/SecurityEventCounterTest.java[SecurityEventCounterTest]: Event counting validation
+* link:../../../src/test/java/de/cuioss/http/security/core/UrlSecurityFailureTypeTest.java[UrlSecurityFailureTypeTest]: Failure type enumeration
+
+*Status*: ✅ VERIFIED
+
+=== AU-3: Content of Audit Records
+
+*Description*: Generates audit records with required security information.
+
+==== Requirements
+
+* *Functional*: xref:../functional-requirements.adoc#HTTP-15[HTTP-15], xref:../functional-requirements.adoc#HTTP-16[HTTP-16]
+* *Security*: xref:../security-requirements.adoc#SEC-11[SEC-11]
+
+==== Specifications
+
+* link:../../../src/main/java/de/cuioss/http/security/exceptions/UrlSecurityException.java[UrlSecurityException]: Detailed exception context
+* Failure type
+* Validation type
+* Original input
+* Sanitized input (if available)
+* Detailed error message
+* link:../../../src/main/java/de/cuioss/http/security/monitoring/URLSecurityLogMessages.java[URLSecurityLogMessages]: Structured log messages
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/exceptions/UrlSecurityExceptionTest.java[UrlSecurityExceptionTest]: Exception content validation
+* All attack tests verify exception content
+
+*Status*: ✅ VERIFIED
+
+=== AU-12: Audit Generation
+
+*Description*: Provides audit record generation capability for security-relevant events.
+
+==== Requirements
+
+* *Functional*: xref:../functional-requirements.adoc#HTTP-16[HTTP-16], xref:../functional-requirements.adoc#HTTP-17[HTTP-17]
+* *Security*: xref:../security-requirements.adoc#SEC-11[SEC-11], xref:../security-requirements.adoc#SEC-15[SEC-15]
+
+==== Specifications
+
+* link:../../../src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]: Event generation and tracking
+* link:../../../src/main/java/de/cuioss/http/security/monitoring/URLSecurityLogMessages.java[URLSecurityLogMessages]: Log message generation
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/monitoring/SecurityEventCounterTest.java[SecurityEventCounterTest]: Event generation validation
+* All attack tests verify events are generated
+
+*Status*: ✅ VERIFIED
+
+=== SI-10: Information Input Validation
+
+*Description*: Checks validity of information inputs.
+
+==== Requirements
+
+* *Functional*: xref:../functional-requirements.adoc#HTTP-4[HTTP-4] through xref:../functional-requirements.adoc#HTTP-12[HTTP-12]
+* *Security*: xref:../security-requirements.adoc#SEC-1[SEC-1], xref:../security-requirements.adoc#SEC-4[SEC-4], xref:../security-requirements.adoc#SEC-6[SEC-6], xref:../security-requirements.adoc#SEC-7[SEC-7], xref:../security-requirements.adoc#SEC-8[SEC-8]
+
+==== Specifications
+
+* All validation stages implement input validation:
+* link:../../../src/main/java/de/cuioss/http/security/validation/LengthValidationStage.java[LengthValidationStage]
+* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage]
+* link:../../../src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage]
+* link:../../../src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]
+* link:../../../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage]
+
+==== Unit Tests
+
+* All validation stage tests:
+* link:../../../src/test/java/de/cuioss/http/security/validation/LengthValidationStageTest.java[LengthValidationStageTest]
+* link:../../../src/test/java/de/cuioss/http/security/validation/CharacterValidationStageTest.java[CharacterValidationStageTest]
+* link:../../../src/test/java/de/cuioss/http/security/validation/DecodingStageTest.java[DecodingStageTest]
+* link:../../../src/test/java/de/cuioss/http/security/validation/NormalizationStageTest.java[NormalizationStageTest]
+* link:../../../src/test/java/de/cuioss/http/security/validation/PatternMatchingStageTest.java[PatternMatchingStageTest]
+
+*Status*: ✅ VERIFIED
+
+[#iso-27001-traceability]
+== ISO 27001 Traceability
+
+=== A.12.2: Protection from Malware
+
+*Description*: Prevents injection attacks that could lead to malicious code execution.
+
+==== Requirements
+
+* *Security*: xref:../security-requirements.adoc#SEC-1[SEC-1], xref:../security-requirements.adoc#SEC-6[SEC-6], xref:../security-requirements.adoc#SEC-7[SEC-7]
+
+==== Specifications
+
+* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage]: Blocks malicious characters
+* link:../../../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage]: Detects attack patterns
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/validation/CharacterValidationStageTest.java[CharacterValidationStageTest]
+* link:../../../src/test/java/de/cuioss/http/security/validation/PatternMatchingStageTest.java[PatternMatchingStageTest]
+* All attack database tests
+
+*Status*: ✅ VERIFIED
+
+=== A.12.6: Technical Vulnerability Management
+
+*Description*: Addresses known CVE vulnerabilities through pattern detection and validation.
+
+==== Requirements
+
+* *Security*: xref:../security-requirements.adoc#SEC-3[SEC-3]
+
+==== Specifications
+
+* xref:../analysis/cve-analysis.adoc[CVE Analysis]: Documented CVE coverage
+* Attack databases containing CVE-specific patterns
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/tests/ApacheCVEAttackDatabaseTest.java[ApacheCVEAttackDatabaseTest]: Apache CVEs
+* link:../../../src/test/java/de/cuioss/http/security/tests/IISCVEAttackDatabaseTest.java[IISCVEAttackDatabaseTest]: IIS CVEs
+* link:../../../src/test/java/de/cuioss/http/security/tests/NginxCVEAttackDatabaseTest.java[NginxCVEAttackDatabaseTest]: Nginx CVEs
+* link:../../../src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]: References CVE-2019-5418, CVE-2018-1000671, CVE-2020-5398
+
+*Status*: ✅ VERIFIED
+
+=== A.13.1: Network Security Management
+
+*Description*: Manages HTTP protocol security controls.
+
+==== Requirements
+
+* *Functional*: xref:../functional-requirements.adoc#HTTP-1[HTTP-1]
+* *Security*: xref:../security-requirements.adoc#SEC-17[SEC-17]
+
+==== Specifications
+
+* link:../../../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline]: Header security
+* link:../../../src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest]: Protocol-level attacks (CWE-444)
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipelineTest.java[HTTPHeaderValidationPipelineTest]
+* link:../../../src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java[HttpHeaderInjectionAttackTest]
+* link:../../../src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest]
+
+*Status*: ✅ VERIFIED
+
+=== A.14.2: Security in Development and Support Processes
+
+*Description*: Implements secure coding practices and security testing.
+
+==== Requirements
+
+* *Security*: xref:../security-requirements.adoc#SEC-14[SEC-14], xref:../security-requirements.adoc#SEC-16[SEC-16], xref:../security-requirements.adoc#SEC-17[SEC-17]
+
+==== Specifications
+
+* xref:testing.adoc[Testing Framework]: Comprehensive security testing
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/generators/AllGeneratorsIntegrationTest.java[AllGeneratorsIntegrationTest]: Generator framework testing
+* All attack database tests demonstrate systematic security testing
+* Test coverage &gt; 80% (enforced by build)
+
+*Status*: ✅ VERIFIED
+
+[#pci-dss-traceability]
+== PCI DSS Traceability
+
+=== 6.5.1: Injection Flaws (SQL Injection, etc.)
+
+*Description*: Validates input to prevent injection attacks at HTTP/URL layer.
+
+==== Requirements
+
+* *Security*: xref:../security-requirements.adoc#SEC-1[SEC-1], xref:../security-requirements.adoc#SEC-6[SEC-6]
+
+==== Specifications
+
+* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage]: Character filtering
+* link:../../../src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage]: Encoding attack prevention
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/validation/CharacterValidationStageTest.java[CharacterValidationStageTest]
+* link:../../../src/test/java/de/cuioss/http/security/tests/MixedEncodingAttackTest.java[MixedEncodingAttackTest]
+
+*Note*: Full SQL injection prevention requires application-layer validation. HTTP layer provides input sanitization.
+
+*Status*: ✅ VERIFIED - HTTP/URL layer protection
+
+=== 6.5.8: Improper Access Control
+
+*Description*: Prevents unauthorized access through path traversal and authentication bypass.
+
+==== Requirements
+
+* *Functional*: xref:../functional-requirements.adoc#HTTP-7[HTTP-7], xref:../functional-requirements.adoc#HTTP-8[HTTP-8]
+* *Security*: xref:../security-requirements.adoc#SEC-3[SEC-3], xref:../security-requirements.adoc#SEC-5[SEC-5]
+
+==== Specifications
+
+* link:../../../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]: Access control enforcement
+* link:../../../src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]: Canonicalization
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]: 64+ test cases
+* link:../../../src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest]: Access control bypass patterns
+* All CVE attack database tests
+
+*Status*: ✅ VERIFIED
+
+=== 10.2: Audit Trail for All Security Events
+
+*Description*: Implements comprehensive audit logging for security-relevant events.
+
+==== Requirements
+
+* *Functional*: xref:../functional-requirements.adoc#HTTP-16[HTTP-16], xref:../functional-requirements.adoc#HTTP-17[HTTP-17]
+* *Security*: xref:../security-requirements.adoc#SEC-11[SEC-11], xref:../security-requirements.adoc#SEC-15[SEC-15]
+
+==== Specifications
+
+* link:../../../src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]: Event tracking
+* link:../../../src/main/java/de/cuioss/http/security/monitoring/URLSecurityLogMessages.java[URLSecurityLogMessages]: Structured logging
+* link:../../../src/main/java/de/cuioss/http/security/exceptions/UrlSecurityException.java[UrlSecurityException]: Detailed context
+
+==== Unit Tests
+
+* link:../../../src/test/java/de/cuioss/http/security/monitoring/SecurityEventCounterTest.java[SecurityEventCounterTest]
+* All attack tests verify audit trail generation
+
+*Status*: ✅ VERIFIED
+
+== Summary
+
+=== Compliance Status
+
+|===
+|Standard |Claimed Categories |Verified |Status 
+
+|*OWASP Top 10 2021* |A01, A03, A04, A05, A07, A08, A09 |7/7 |✅ COMPLETE 
+|*CWE Top 25* |CWE-22, CWE-23, CWE-35, CWE-73, CWE-78 |5/5 |✅ COMPLETE 
+|*NIST 800-53* |AC-3, AC-4, AU-2, AU-3, AU-12, SI-10 |6/6 |✅ COMPLETE 
+|*ISO 27001* |A.12.2, A.12.6, A.13.1, A.14.2 |4/4 |✅ COMPLETE 
+|*PCI DSS* |6.5.1, 6.5.8, 10.2 |3/3 |✅ COMPLETE 
+|===
+
+=== Test Coverage Summary
+
+* *Total Test Classes*: 70+
+* *Attack Database Tests*: 25+
+* *Validation Stage Tests*: 7
+* *Pipeline Tests*: 4
+* *Integration Tests*: 5+
+* *Attack Patterns Tested*: 1000+
+* *Code Coverage*: &gt;80% (enforced by build)
+
+=== Key Implementation Artifacts
+
+==== Core Implementation
+
+* 5 Validation Stages (Length, Character, Decoding, Normalization, Pattern Matching)
+* 3 Validation Pipelines (Path, Parameter, Header)
+* 1 Security Event Counter
+* 1 Configuration System with Secure Defaults
+
+==== Test Framework
+
+* 15+ Attack Databases (OWASP, CVE-specific, Protocol-specific)
+* 25+ Test Generators
+* Comprehensive attack pattern coverage
+* CVE-based test cases
+
+==== Documentation
+
+* 10+ Specification Documents
+* 5+ Analysis Documents
+* Complete Requirements Traceability
+* CVE Analysis with 50+ CVEs documented
+
+== Verification Methodology
+
+This traceability matrix was created through:
+
+. *Requirements Analysis*: Reviewed all functional and security requirements documents
+. *Specification Review*: Examined implementation specifications and architecture documents
+. *Code Analysis*: Inspected source code for implementation classes
+. *Test Coverage Analysis*: Analyzed all test classes and their coverage
+. *Cross-Reference Validation*: Verified linkages between requirements, specs, and tests
+. *Standards Research*: Validated compliance interpretations against official standards
+
+=== Verification Evidence
+
+Each compliance claim is supported by:
+
+- ✅ Documented requirement(s)
+- ✅ Implementation specification(s)
+- ✅ Source code reference(s)
+- ✅ Unit test(s) with specific test case examples
+- ✅ Line number references for verification
+
+== Limitations and Scope
+
+=== HTTP/URL Protocol Layer Scope
+
+This library focuses on *HTTP/URL protocol layer security*. The following are *out of scope* and must be handled by application-layer security:
+
+* *SQL Injection*: Application must sanitize SQL queries
+* *Command Injection*: Application must validate command parameters
+* *LDAP Injection*: Application must sanitize LDAP queries
+* *XSS in HTML*: Application must encode HTML output
+* *XML/JSON Injection*: Application must validate structured data
+
+=== What This Library DOES Provide
+
+* ✅ URL path validation and traversal prevention
+* ✅ URL parameter character validation
+* ✅ HTTP header injection prevention
+* ✅ URL encoding attack detection
+* ✅ Unicode security validation
+* ✅ Protocol-level attack pattern detection
+
+== Maintenance
+
+This traceability matrix should be updated when:
+
+- New requirements are added
+- New tests are created
+- Compliance standards are updated
+- Security vulnerabilities are discovered
+- Code coverage changes significantly
+
+*Last Updated*: 2025-10-17
+*Next Review*: 2025-11-17 (Monthly)
+
+== References
+
+=== Standards Documentation
+
+* https://owasp.org/Top10/[OWASP Top 10 2021]
+* https://cwe.mitre.org/top25/[CWE Top 25]
+* https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final[NIST 800-53 Rev 5]
+* https://www.iso.org/standard/27001[ISO/IEC 27001:2022]
+* https://www.pcisecuritystandards.org/[PCI DSS v4.0]
+
+=== Project Documentation
+
+* xref:../Requirements.adoc[Requirements]
+* xref:../functional-requirements.adoc[Functional Requirements]
+* xref:../security-requirements.adoc[Security Requirements]
+* xref:specification.adoc[Specification]
+* xref:testing.adoc[Testing Framework]
+* xref:../analysis/owasp-best-practices.adoc[OWASP Best Practices]
+* xref:../analysis/cve-analysis.adoc[CVE Analysis]

@@ -1,10 +1,31 @@
 = About
 :toc: left
 :toclevels: 3
+:toc-title: Table of Contents
 :sectnums:
 :icons: font
 :source-highlighter: highlight.js
 
 == About
 
-Some information about this project
+CUI-HTTP is a security-focused HTTP utilities library that provides secure validation pipelines, SSL/TLS context management, and HTTP client handlers.
+The library emphasizes security validation of HTTP components including paths, parameters, headers, and request bodies with comprehensive attack pattern detection.
+
+=== Key Features
+
+* Security validation pipelines for URLs, HTTP headers, and parameters
+* Attack pattern detection and prevention (directory traversal, injection attacks, CVE exploits)
+* Secure SSL/TLS context management
+* HTTP client handlers with resilience patterns
+* Thread-safe, composable validators with fail-secure design
+
+=== Use Cases
+
+CUI-HTTP is designed for applications that require:
+
+* Validation of user-supplied URLs and HTTP parameters
+* Protection against common web security vulnerabilities
+* Secure HTTP client configuration and request handling
+* Attack pattern detection in web inputs
+
+For detailed documentation, see the link:index.html[project documentation].

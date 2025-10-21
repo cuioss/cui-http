@@ -1,14 +1,15 @@
 = HTTP Security Validation Framework
 :toc: left
-:toclevels: 2
+:toclevels: 3
 :toc-title: Table of Contents
+:sectnums:
 :source-highlighter: highlight.js
 
 toc::[]
 
 == Maven Coordinates
 
-[source, xml]
+[source,xml]
 ----
 <dependency>
     <groupId>de.cuioss</groupId>
@@ -22,33 +23,39 @@ Validation framework for HTTP components (paths, parameters, headers, bodies) wi
 
 === Core Interface
 
-xref:../src/main/java/de/cuioss/http/security/core/HttpSecurityValidator.java[HttpSecurityValidator]: Functional interface following "String in, String out, throws on violation" pattern.
+`HttpSecurityValidator`: Functional interface following "String in, String out, throws on violation" pattern. See `de.cuioss.http.security.core.HttpSecurityValidator`.
 
 == Validation Pipelines
 
-=== xref:../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]
+=== URLPathValidationPipeline
 
-For path-only attacks, directory traversal, CVE exploits. Sequential validation through configured stages.
+Validates path-only attacks, directory traversal patterns, and CVE exploits. Processes input through sequential validation stages to detect path-based security threats.
 
-=== xref:../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline]
+See `de.cuioss.http.security.pipeline.URLPathValidationPipeline`.
 
-For header injection, CRLF attacks.
+=== HTTPHeaderValidationPipeline
 
-=== xref:../src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline]
+Validates HTTP header content, detecting header injection attacks and CRLF (Carriage Return Line Feed) injection attempts that could manipulate HTTP response headers.
 
-For query parameters, form data validation.
+See `de.cuioss.http.security.pipeline.HTTPHeaderValidationPipeline`.
+
+=== URLParameterValidationPipeline
+
+Validates query parameters and form data, ensuring parameter values don't contain malicious patterns or injection attempts.
+
+See `de.cuioss.http.security.pipeline.URLParameterValidationPipeline`.
 
 == Validation Stages
 
-* xref:../src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage] - URL decoding, UTF-8 overlong detection
-* xref:../src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage] - Unicode normalization
-* xref:../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - Character validation
-* xref:../src/main/java/de/cuioss/http/security/validation/LengthValidationStage.java[LengthValidationStage] - Length limits
-* xref:../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Attack pattern detection
+* `DecodingStage` - URL percent-decoding and UTF-8 overlong encoding detection
+* `NormalizationStage` - Unicode normalization for consistent character representation
+* `CharacterValidationStage` - Invalid and dangerous character detection
+* `LengthValidationStage` - Length limit enforcement to prevent buffer overflow attacks
+* `PatternMatchingStage` - Attack pattern detection using configured security rules
 
 == Configuration
 
-xref:../src/main/java/de/cuioss/http/security/config/SecurityConfigurationBuilder.java[SecurityConfigurationBuilder] provides configuration with sensible defaults:
+`SecurityConfigurationBuilder` provides configuration with sensible defaults:
 
 * Path length: 4096 characters
 * Parameter count: 100

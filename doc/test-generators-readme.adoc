@@ -1,12 +1,13 @@
 = HTTP Security Test Generators
 :toc: left
-:toclevels: 2
+:toclevels: 3
 :toc-title: Table of Contents
+:sectnums:
 :source-highlighter: highlight.js
 
 == Maven Coordinates
 
-[source, xml]
+[source,xml]
 ----
 <dependency>
     <groupId>de.cuioss</groupId>
@@ -58,7 +59,7 @@ All databases implement `AttackDatabase` interface and provide `AttackTestCase` 
 
 The test artifact includes generators organized by category (body, cookie, encoding, header, injection, url).
 
-For complete generator architecture and categories, see link:http-security/specification/testing.adoc[Testing Framework].
+For complete generator architecture and categories, see xref:http-security/specification/testing.adoc[Testing Framework].
 
 == Usage
 
@@ -105,6 +106,6 @@ static Stream<AttackTestCase> getAllTestCases() {
 
 == Related Documentation
 
-* link:http-security/specification/testing.adoc[Testing Framework] - Complete test framework structure
-* link:test-framework-structure.adoc[Test Framework Structure] - Detailed file listing with links
-* link:http-security/analysis/cve-analysis.adoc[CVE Analysis] - Attack patterns and vulnerabilities
+* xref:http-security/specification/testing.adoc[Testing Framework] - Complete test framework structure
+* xref:test-framework-structure.adoc[Test Framework Structure] - Detailed file listing with links
+* xref:http-security/analysis/cve-analysis.adoc[CVE Analysis] - Attack patterns and vulnerabilities

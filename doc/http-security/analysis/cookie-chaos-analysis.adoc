@@ -6,7 +6,7 @@
 :icons: font
 :source-highlighter: highlight.js
 
-link:../README.adoc[← Back to Documentation Index]
+xref:../README.adoc[← Back to Documentation Index]
 
 == Overview
 
@@ -61,11 +61,13 @@ Result: __Host- cookie with forbidden Domain attribute
 **Client behavior details:** See PortSwigger article for browser-specific handling of Unicode whitespace.
 
 ==== Affected Characters
+
 * **Multibyte Unicode whitespace**: U+2000-U+200B (various space widths)
 * **Single-byte Unicode whitespace**: U+0085 (NEL - Next Line), U+00A0 (NBSP - Non-Breaking Space)
 * **Zero-width characters**: U+200B (Zero-Width Space), U+FEFF (Zero-Width No-Break Space/BOM)
 
 ==== Impact on Server Validation
+
 * Bypass `__Host-` domain restrictions
 * Bypass `__Secure-` HTTPS enforcement
 * Session fixation attacks
@@ -91,6 +93,7 @@ Java servlet containers (Apache Tomcat, Jetty) support legacy RFC 2109 cookie pa
 Received: "$Version=1,__Host-session=injected; Path=/admin; Domain=.example.com;"
 
 Legacy parser behavior:
+
 1. May not recognize __Host- prefix
 2. May allow forbidden Domain attribute
 3. Uses RFC 2109 parsing rules instead of RFC 6265
@@ -99,11 +102,13 @@ Legacy parser behavior:
 **Client behavior details:** See PortSwigger article for how browsers handle $Version cookies.
 
 ==== Affected Servers
+
 * **Apache Tomcat**: All versions supporting RFC 2109 (legacy) parsing
 * **Eclipse Jetty**: Versions with RFC 2109 parser support
 * **Java Servlet Containers**: Any supporting legacy cookie specification
 
 ==== Impact
+
 * Bypass `__Host-` domain restrictions on affected servers
 * Bypass `__Secure-` validation on affected servers
 * Cookie injection from subdomains
@@ -128,11 +133,13 @@ Result: __Host- cookie with forbidden Domain attribute bypasses validation
 ```
 
 ==== Framework-Specific Behavior
+
 * Some servlet containers apply whitespace trimming during cookie parsing
 * Custom cookie parsers may implement non-standard normalization
 * Application code may normalize cookie names before security validation
 
 ==== Impact
+
 * Cookie prefix bypass via whitespace manipulation
 * Inconsistent security policy enforcement
 * Cookie injection attacks
@@ -144,7 +151,9 @@ Result: __Host- cookie with forbidden Domain attribute bypasses validation
 * link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - ASCII-only validation
 * link:../../../src/main/java/de/cuioss/http/security/validation/CookiePrefixValidationStage.java[CookiePrefixValidationStage] - Whitespace rejection before prefix validation
 
-**Tests:** link:../../../src/test/java/de/cuioss/http/security/validation/CookiePrefixValidationStageTest.java[CookiePrefixValidationStageTest], link:../../../src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest] (40 tests with link:../../../src/test/java/de/cuioss/http/security/generators/cookie/CookieNameAsciiWhitespaceGenerator.java[CookieNameAsciiWhitespaceGenerator])
+**Tests:**
+
+link:../../../src/test/java/de/cuioss/http/security/validation/CookiePrefixValidationStageTest.java[CookiePrefixValidationStageTest], link:../../../src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest] (40 tests with link:../../../src/test/java/de/cuioss/http/security/generators/cookie/CookieNameAsciiWhitespaceGenerator.java[CookieNameAsciiWhitespaceGenerator])
 
 === 4. Domain Attribute Validation
 
@@ -159,6 +168,7 @@ Result: __Host- cookie with forbidden Domain attribute accepted by server
 ```
 
 ==== Impact
+
 * Cookie can be set by any subdomain
 * Session hijacking from compromised subdomains
 * Defeats the entire purpose of `__Host-` prefix
@@ -186,6 +196,7 @@ Result: __Host- cookie with restricted path accepted by server
 ```
 
 ==== Impact
+
 * Cookie scope narrowed to specific paths
 * Path-based session fixation attacks
 * Reduced protection against subdirectory takeover

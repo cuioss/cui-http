@@ -1,7 +1,8 @@
 = CUI-HTTP
 :toc: left
-:toclevels: 2
+:toclevels: 3
 :toc-title: Table of Contents
+:sectnums:
 :source-highlighter: highlight.js
 
 [.discrete]
@@ -26,7 +27,7 @@ toc::[]
 
 == Maven Coordinates
 
-[source, xml]
+[source,xml]
 ----
 <dependency>
     <groupId>de.cuioss</groupId>
@@ -35,7 +36,7 @@ toc::[]
 ----
 
 Test artifact:
-[source, xml]
+[source,xml]
 ----
 <dependency>
     <groupId>de.cuioss</groupId>

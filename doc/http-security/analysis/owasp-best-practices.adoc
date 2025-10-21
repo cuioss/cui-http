@@ -1,15 +1,19 @@
 = OWASP Path Traversal Prevention Best Practices
 :toc: left
 :toclevels: 3
+:toc-title: Table of Contents
 :sectnums:
 :icons: font
+:source-highlighter: highlight.js
 
-link:../README.adoc[← Back to Documentation Index]
+xref:../README.adoc[← Back to Documentation Index]
 
 == Overview
 
 OWASP guidelines for preventing path traversal vulnerabilities applied in the cui-http security validation framework.
 
+[#_core_prevention_principles]
+[#_a032021_injection]
 == Core Prevention Principles
 
 === Primary Defense: Avoid User Input in File Operations

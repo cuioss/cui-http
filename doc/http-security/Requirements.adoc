@@ -109,3 +109,5 @@ All requirements maintain bidirectional traceability:
 | PCI DSS | 6.5.1, 6.5.8, 10.2 | ✓ Complete
 |===
 
+For complete traceability from Requirements → Specifications → Unit Tests for all compliance claims, see xref:specification/compliance-traceability.adoc[Compliance Traceability Matrix].
+
