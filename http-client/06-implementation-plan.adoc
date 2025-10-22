@@ -1,0 +1,269 @@
+= Implementation Plan
+:toc: left
+:toclevels: 3
+:sectnums:
+
+== Phase 1: Core Infrastructure
+
+=== New Files to Create
+
+[cols="1,2"]
+|===
+|File |Description
+
+|`HttpMethod.java`
+|HTTP method enum with buildRequest() and send() methods
+
+|`ContentType.java`
+|Content type enum with charset support
+
+|`HttpAdapter.java`
+|Adapter interface
+
+|`HttpRequestBodyPublisher.java`
+|Request body publisher interface
+
+|`NoBodyPublisher.java`
+|No-body implementation (singleton)
+
+|`StringBodyPublisher.java`
+|String body publisher with charset
+
+|`ByteArrayBodyPublisher.java`
+|Byte array body publisher
+
+|`ETagAwareHttpAdapter.java`
+|Base adapter with built-in ETag caching
+
+|`package-info.java` (adapter)
+|Package documentation
+
+|`package-info.java` (request)
+|Package documentation
+|===
+
+=== Files to Modify
+
+[cols="1,2"]
+|===
+|File |Changes
+
+|`HttpStatusFamily.java`
+|Add toErrorCategory() helper method
+
+|`HttpErrorCategory.java`
+|No changes needed (REDIRECTION not required)
+
+|`HttpContentConverter.java`
+|Remove emptyValue(), add expectedContentType()
+
+|`StringContentConverter.java`
+|Update to implement expectedContentType()
+
+|`module-info.java`
+|Export new packages: adapter, request
+|===
+
+=== Files to Refactor
+
+[cols="1,2"]
+|===
+|File |Changes
+
+|`ResilientHttpHandler.java`
+|Refactor to ResilientHttpAdapter (decorator pattern)
+
+|`RetryConfig.java`
+|Create configuration record with builder (replace RetryStrategy interface)
+|===
+
+== Phase 2: Testing
+
+=== Unit Tests
+
+[cols="1,2"]
+|===
+|Test Class |Coverage
+
+|`HttpMethodTest`
+|Enum values, buildRequest(), send() methods
+
+|`ContentTypeTest`
+|Enum values, toHeaderValue(), charset handling
+
+|`HttpRequestBodyPublisherTest`
+|Factory methods, all implementations
+
+|`StringBodyPublisherTest`
+|String conversion, charset handling, null handling
+
+|`ByteArrayBodyPublisherTest`
+|Byte array conversion, null handling
+
+|`ETagAwareHttpAdapterTest`
+|All request types, ETag caching, 304 handling
+
+|`ResilientHttpAdapterTest`
+|Retry logic, error categories, composition
+|===
+
+=== Integration Tests
+
+Using `MockWebServer` for realistic HTTP scenarios:
+
+[cols="1,2"]
+|===
+|Test Scenario |What to Test
+
+|GET with ETag
+|First request → 200, second request → 304
+
+|POST request
+|Body sending, response handling
+
+|PUT request
+|Body sending, idempotency
+
+|DELETE request
+|No body, response handling
+
+|Network failure
+|IOException, retry behavior
+
+|Server error
+|5xx responses, retry behavior
+
+|Client error
+|4xx responses, no retry
+
+|Composition
+|ETagAwareHttpAdapter + ResilientHttpAdapter
+|===
+
+=== Coverage Requirements
+
+* Minimum 80% overall coverage (CUI standard)
+* 100% coverage for critical paths:
+** ETag caching logic
+** 304 Not Modified handling
+** Retry logic
+** Error categorization
+
+== Phase 3: Documentation
+
+=== Javadoc Updates
+
+All new classes need comprehensive Javadoc:
+
+* Class-level documentation with examples
+* All public methods documented
+* @param, @return, @throws tags
+* Usage examples in class Javadoc
+* @since 1.0 tags
+
+=== Update Documentation
+
+* Add Javadoc to all new classes
+* Update project README with new features
+
+== Phase 4: Security Integration
+
+=== Validation Integration
+
+Document how to integrate security validators:
+
+* Request body validation (POST/PUT)
+* Header validation (custom headers)
+* Response Content-Type validation
+
+=== Example ValidatingHttpAdapter
+
+Optional decorator for automatic validation:
+
+[source,java]
+----
+public class ValidatingHttpAdapter<T> implements HttpAdapter<T> {
+    private final HttpAdapter<T> delegate;
+    private final URLParameterValidationPipeline bodyValidator;
+    private final HTTPHeaderValidationPipeline headerValidator;
+
+    // Validates before delegating to wrapped adapter
+}
+----
+
+=== Security Testing
+
+* Header injection prevention
+* Body validation integration
+* Content-Type mismatch handling
+
+== Phase 5: Pre-Commit and Quality
+
+=== Pre-Commit Checks
+
+*MANDATORY* before any commit:
+
+[source,bash]
+----
+./mvnw -Ppre-commit clean verify
+----
+
+Includes:
+
+* Compilation
+* All tests
+* Code formatting
+* Static analysis
+* Coverage verification
+
+=== Additional Quality Checks
+
+[source,bash]
+----
+# Coverage report
+./mvnw -Pcoverage clean verify
+
+# Dependency analysis
+./mvnw dependency:analyze
+----
+
+== Implementation Order
+
+=== Step-by-Step Sequence
+
+. Create new packages (adapter, request)
+. Implement ContentType enum
+. Implement HttpRequestBodyPublisher interface + implementations
+. Implement HttpMethod enum
+. Implement HttpAdapter interface
+. Implement ETagAwareHttpAdapter (with If-None-Match prevention)
+. Update HttpStatusFamily (add toErrorCategory())
+. Update HttpContentConverter (breaking change)
+. Refactor ResilientHttpHandler → ResilientHttpAdapter
+. Create RetryConfig record (replace RetryStrategy interface)
+. Unit tests (as you go)
+. Integration tests (MockWebServer)
+. Documentation (Javadoc)
+. Security integration
+. Pre-commit checks
+. Final review
+
+== Success Criteria
+
+* ✅ Pre-commit checks pass
+* ✅ 80%+ test coverage (100% for critical paths)
+* ✅ All documentation complete
+* ✅ No TODOs or FIXMEs in production code
+* ✅ Cache entry retrieved at request start, reference held throughout (structural correctness)
+* ✅ 304 always returns Success with cached content (no null checks needed)
+* ✅ Thread-safe: cache operations don't affect in-flight requests
+
+== Post-Implementation
+
+=== Version 1.0 Release
+
+* Tag release: `v1.0.0`
+* Update CHANGELOG.md
+* Publish to Maven Central
+* Announce breaking changes
+

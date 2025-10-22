@@ -1,0 +1,499 @@
+= Current Architecture Analysis
+:toc: left
+:toclevels: 3
+:sectnums:
+
+== Overview
+
+This document analyzes the existing cui-http library architecture to understand current capabilities and identify integration points for HTTP method extensions.
+
+== Core Components
+
+=== HttpHandler
+
+*Location:* `src/main/java/de/cuioss/http/client/handler/HttpHandler.java`
+
+==== Current Capabilities
+
+* Builder-based configuration (URI, SSL, timeouts)
+* SSL/TLS context management via `SecureSSLContextProvider`
+* Provides `HttpRequest.Builder` via `requestBuilder()` method
+* Supports HEAD and GET ping operations
+* Thread-safe, immutable design
+
+==== Key Methods
+
+[source,java]
+----
+public class HttpHandler {
+    // Creates configured HttpClient instance
+    public HttpClient createHttpClient();
+
+    // Provides request builder with base configuration
+    public HttpRequest.Builder requestBuilder();
+
+    // Convenience methods
+    public HttpResult<Boolean> ping();          // HEAD request
+    public HttpResult<Boolean> pingViaGet();    // GET request
+}
+----
+
+==== Builder Pattern
+
+[source,java]
+----
+HttpHandler handler = HttpHandler.builder()
+    .uri("https://api.example.com/resource")
+    .connectionTimeoutSeconds(5)
+    .readTimeoutSeconds(10)
+    .sslContextProvider(SecureSSLContextProvider.builder().build())
+    .build();
+----
+
+==== Current Limitations
+
+* No explicit support for POST/PUT/DELETE methods
+* No request body handling mechanism
+* `requestBuilder()` returns generic builder without HTTP method configured
+* GET is the default/implicit method
+
+=== ResilientHttpHandler
+
+*Location:* `src/main/java/de/cuioss/http/client/ResilientHttpHandler.java`
+
+==== Current Capabilities
+
+* ETag-based caching with conditional requests (If-None-Match)
+* Retry logic via `RetryStrategy`
+* Response body conversion via `HttpContentConverter<T>`
+* Thread-safe with `ReentrantLock`
+* Returns `HttpResult<T>` with comprehensive state tracking
+
+==== Current Design
+
+[source,java]
+----
+public class ResilientHttpHandler<T> {
+    private final HttpHandler httpHandler;
+    private final RetryStrategy retryStrategy;
+    private final HttpContentConverter<T> contentConverter;
+
+    // Main method - GET only
+    public HttpResult<T> load();
+}
+----
+
+==== Architectural Issue
+
+The current `ResilientHttpHandler` *mixes three orthogonal concerns*:
+
+. *ETag Caching* (HTTP optimization) - 304 Not Modified, bandwidth reduction
+. *Retry Logic* (reliability) - Transient failure handling, exponential backoff
+. *Response Conversion* - Type-safe body handling
+
+*Problem:* These are independent! You might want:
+
+* Caching WITHOUT retry (simple GET operations)
+* Retry WITHOUT caching (POST/PUT/DELETE operations)
+* Neither (direct execution)
+* Both (composed together)
+
+==== Proposed Solution
+
+Replace with composable adapter pattern:
+
+* `ETagAwareHttpAdapter` - Base adapter with *built-in* ETag caching (configurable)
+* `ResilientHttpAdapter` - Wrapper for retry logic
+* Compose as needed: `new ResilientHttpAdapter(baseAdapter, strategy)`
+
+=== HttpContentConverter
+
+*Location:* `src/main/java/de/cuioss/http/client/converter/HttpContentConverter.java`
+
+==== Current Interface
+
+[source,java]
+----
+public interface HttpContentConverter<T> {
+    // Response body → T
+    Optional<T> convert(Object rawContent);
+
+    // Response handling
+    HttpResponse.BodyHandler<?> getBodyHandler();
+
+    // DEPRECATED: Will be removed
+    T emptyValue();
+}
+----
+
+==== Key Insight
+
+This is a *response-only* converter. It bridges between Java's `HttpResponse.BodyHandler` and application-level types.
+
+==== Existing Implementations
+
+* `StringContentConverter<T>` - Base class for text-based content (JSON, XML, HTML)
+* `StringContentConverter.identity()` - Returns raw String
+
+==== Proposed Changes (Breaking)
+
+[source,java]
+----
+public interface HttpContentConverter<T> {
+    Optional<T> convert(Object rawContent);
+    HttpResponse.BodyHandler<?> getBodyHandler();
+
+    // NEW: Replaces emptyValue()
+    ContentType expectedContentType();
+}
+----
+
+*Rationale:*
+
+* `emptyValue()` is redundant - `HttpResult<T>` uses `Optional<T>`
+* `expectedContentType()` enables validation and documentation
+
+=== HttpResult
+
+*Location:* `src/main/java/de/cuioss/http/client/result/HttpResult.java`
+
+==== Design
+
+Sealed interface with two implementations:
+
+[source,java]
+----
+public sealed interface HttpResult<T>
+    permits HttpResult.Success, HttpResult.Failure {
+
+    boolean isSuccess();
+    Optional<T> getContent();
+    Optional<String> getETag();
+    Optional<Integer> getHttpStatus();
+    Optional<HttpErrorCategory> getErrorCategory();
+}
+----
+
+==== Success Record
+
+[source,java]
+----
+record Success<T>(
+    T content,              // Never null
+    @Nullable String etag,
+    int httpStatus
+) implements HttpResult<T>
+----
+
+==== Failure Record
+
+[source,java]
+----
+record Failure<T>(
+    String errorMessage,
+    @Nullable Throwable cause,
+    @Nullable Integer httpStatus
+) implements HttpResult<T> {
+
+    // Derive category from httpStatus and cause
+    public HttpErrorCategory category() {
+        if (httpStatus != null) {
+            if (httpStatus >= 400 && httpStatus < 500) return HttpErrorCategory.CLIENT_ERROR;
+            if (httpStatus >= 500 && httpStatus < 600) return HttpErrorCategory.SERVER_ERROR;
+        }
+        if (cause instanceof IOException) return HttpErrorCategory.NETWORK_ERROR;
+        if (cause instanceof SSLException) return HttpErrorCategory.CONFIGURATION_ERROR;
+        return HttpErrorCategory.INVALID_CONTENT;
+    }
+}
+----
+
+==== Factory Methods
+
+[source,java]
+----
+// Success
+HttpResult.success(content, etag, httpStatus)
+
+// Failure (category derived automatically)
+HttpResult.failure(errorMessage, cause, httpStatus)
+----
+
+=== HttpStatusFamily
+
+*Location:* `src/main/java/de/cuioss/http/client/handler/HttpStatusFamily.java`
+
+==== Purpose
+
+Classifies HTTP status codes into RFC 7231 families (1xx, 2xx, 3xx, 4xx, 5xx).
+
+==== Enum Values
+
+[source,java]
+----
+public enum HttpStatusFamily {
+    INFORMATIONAL(100, 199, "Informational"),  // 1xx
+    SUCCESS(200, 299, "Success"),              // 2xx
+    REDIRECTION(300, 399, "Redirection"),      // 3xx
+    CLIENT_ERROR(400, 499, "Client Error"),    // 4xx
+    SERVER_ERROR(500, 599, "Server Error"),    // 5xx
+    UNKNOWN(-1, -1, "Unknown");
+
+    public static HttpStatusFamily fromStatusCode(int statusCode);
+    public boolean contains(int statusCode);
+}
+----
+
+==== Proposed Addition
+
+Add helper method to convert to application-level error category:
+
+[source,java]
+----
+/**
+ * Converts HTTP status family to error category for retry decisions.
+ */
+public HttpErrorCategory toErrorCategory() {
+    return switch (this) {
+        case CLIENT_ERROR -> HttpErrorCategory.CLIENT_ERROR;
+        case SERVER_ERROR -> HttpErrorCategory.SERVER_ERROR;
+        case REDIRECTION -> HttpErrorCategory.REDIRECTION;  // NEW
+        case SUCCESS -> throw new IllegalStateException(
+            "SUCCESS is not an error");
+        case INFORMATIONAL, UNKNOWN -> HttpErrorCategory.INVALID_CONTENT;
+    };
+}
+----
+
+=== HttpErrorCategory
+
+*Location:* `src/main/java/de/cuioss/http/client/result/HttpErrorCategory.java`
+
+==== Purpose
+
+Classifies ALL failures for retry decisions (broader than HTTP status codes).
+
+==== Current Enum Values
+
+[source,java]
+----
+public enum HttpErrorCategory {
+    NETWORK_ERROR,      // IOException - RETRYABLE
+    SERVER_ERROR,       // 5xx - RETRYABLE
+    CLIENT_ERROR,       // 4xx - NOT retryable
+    INVALID_CONTENT,    // Parsing failed - NOT retryable
+    CONFIGURATION_ERROR; // SSL, URI - NOT retryable
+
+    public boolean isRetryable();
+}
+----
+
+===== Protocol → Application Mapping
+
+*Note:* No REDIRECTION category is needed - most 3xx codes are followed automatically by HttpClient, and 304 Not Modified is handled as application success by ETagAwareHttpAdapter.
+
+[cols="2,2,1"]
+|===
+|HttpStatusFamily |HttpErrorCategory |Retryable?
+
+|SUCCESS (2xx)
+|(not an error)
+|N/A
+
+|REDIRECTION (3xx)
+|REDIRECTION
+|No
+
+|CLIENT_ERROR (4xx)
+|CLIENT_ERROR
+|No
+
+|SERVER_ERROR (5xx)
+|SERVER_ERROR
+|Yes
+
+|INFORMATIONAL (1xx)
+|INVALID_CONTENT
+|No
+
+|UNKNOWN
+|INVALID_CONTENT
+|No
+
+|IOException
+|NETWORK_ERROR
+|Yes
+
+|SSLException
+|CONFIGURATION_ERROR
+|No
+
+|Parsing failure
+|INVALID_CONTENT
+|No
+|===
+
+=== RetryStrategy
+
+*Location:* `src/main/java/de/cuioss/http/client/retry/RetryStrategy.java`
+
+==== Current Interface
+
+[source,java]
+----
+public interface RetryStrategy {
+    <T> CompletableFuture<HttpResult<T>> execute(
+        Supplier<HttpResult<T>> operation,
+        RetryContext context
+    );
+
+    static RetryStrategy none(); // ❌ Will be removed
+}
+----
+
+==== Proposed Simplification
+
+Remove `RetryStrategy.none()` - if you don't want retry, don't use `ResilientHttpAdapter`!
+
+==== RetryStrategies Utility
+
+*Location:* `src/main/java/de/cuioss/http/client/retry/RetryStrategies.java`
+
+[source,java]
+----
+public final class RetryStrategies {
+    /**
+     * Exponential backoff with sensible defaults.
+     */
+    public static RetryStrategy exponentialBackoff();
+}
+----
+
+*Proposed:* Consider builder pattern instead of factory methods.
+
+== Integration Flow
+
+=== Current GET Request Flow
+
+[source]
+----
+Client Code
+    ↓
+ResilientHttpHandler.load()
+    ↓ creates request
+HttpHandler.requestBuilder()
+    ↓ adds If-None-Match
+buildRequestWithConditionalHeaders()
+    ↓ executes
+HttpClient.send(request, BodyHandler)
+    ↓ receives
+HttpResponse<?>
+    ↓ converts
+HttpContentConverter.convert()
+    ↓ returns
+HttpResult<T>
+----
+
+=== Issues with Current Flow
+
+. *Mixed concerns* - ETag caching, retry, and conversion bundled together
+. *No method flexibility* - GET is hardcoded
+. *No request body support* - Cannot send POST/PUT/DELETE
+
+== Security Components
+
+=== Validation Pipelines
+
+*Location:* `src/main/java/de/cuioss/http/security/pipeline/`
+
+==== Available Validators
+
+* `URLPathValidationPipeline` - All URL validation (paths, full URLs, directory traversal, CVE exploits)
+* `HTTPHeaderValidationPipeline` - Header injection attacks
+* `URLParameterValidationPipeline` - Query parameter validation
+
+==== Contract
+
+[source,java]
+----
+public interface HttpSecurityValidator {
+    Optional<String> validate(@Nullable String value)
+        throws UrlSecurityException;
+}
+----
+
+All validators are:
+
+* Thread-safe
+* Composable (can be chained)
+* Fail-secure (throw `UrlSecurityException` on violations)
+
+==== Integration Points
+
+. *Request body validation* - Before POST/PUT
+. *Header validation* - For custom headers
+. *URL validation* - Already integrated in HttpHandler
+
+== Module Definition
+
+*Location:* `src/main/java/module-info.java`
+
+=== Current Exports
+
+[source,java]
+----
+module de.cuioss.http {
+    requires de.cuioss.java.tools;
+    requires org.jspecify;
+    requires static lombok;
+    requires java.net.http;
+
+    exports de.cuioss.http.client;
+    exports de.cuioss.http.client.handler;
+    exports de.cuioss.http.client.converter;
+    exports de.cuioss.http.client.result;
+    exports de.cuioss.http.client.retry;
+
+    // Security
+    exports de.cuioss.http.security;
+    exports de.cuioss.http.security.pipeline;
+    exports de.cuioss.http.security.validation;
+}
+----
+
+=== Required Additions
+
+[source,java]
+----
+exports de.cuioss.http.client.adapter;   // NEW
+exports de.cuioss.http.client.request;   // NEW
+----
+
+== Summary
+
+=== Strengths to Preserve
+
+* ✅ Security validation pipelines
+* ✅ SSL/TLS context management
+* ✅ Builder pattern for configuration
+* ✅ Type-safe `HttpResult<T>` with pattern matching
+* ✅ Thread-safe, immutable design
+* ✅ Comprehensive logging via CuiLogger
+
+=== Issues to Address
+
+* ❌ Mixed concerns in `ResilientHttpHandler`
+* ❌ No POST/PUT/DELETE support
+* ❌ No request body handling
+* ❌ No type-safe HTTP method enum
+* ❌ No Content-Type enum
+
+=== Proposed Solutions
+
+* ✅ Replace `ResilientHttpHandler` with `ETagAwareHttpAdapter` + `ResilientHttpAdapter`
+* ✅ Add `HttpMethod` enum
+* ✅ Add `ContentType` enum
+* ✅ Add `HttpRequestBodyPublisher<T>` interface
+* ✅ Add `HttpAdapter<T>` interface for composition
+* ✅ Implement If-None-Match prevention (only send when cache exists)
+* ✅ Handle 304 as application success, not failure

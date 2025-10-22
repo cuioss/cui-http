@@ -1,0 +1,429 @@
+= Migration Guide: Pre-1.0 to 1.0
+:toc: left
+:toclevels: 3
+:sectnums:
+
+== Breaking Changes
+
+[cols="1,2,2"]
+|===
+|Component |Status |Action Required
+
+|`ResilientHttpHandler`
+|**DELETED**
+|Replace with `ETagAwareHttpAdapter` + `ResilientHttpAdapter`
+
+|`RetryStrategy` interface
+|**DELETED**
+|Replace with `RetryConfig` record
+
+|`RetryStrategies` factory
+|**DELETED**
+|Replace with `RetryConfig.builder()` or `RetryConfig.defaults()`
+
+|`RetryContext` record
+|**DELETED**
+|Not needed (internal to ResilientHttpAdapter)
+
+|`HttpContentConverter.emptyValue()`
+|**REMOVED**
+|Replace with `expectedContentType()`
+|===
+
+== Migration Steps
+
+=== Step 1: Update ResilientHttpHandler Usage
+
+==== OLD Code
+
+[source,java]
+----
+// Pre-1.0
+HttpHandler handler = HttpHandler.builder()
+    .uri("https://api.example.com/users")
+    .build();
+
+ResilientHttpHandler<User> resilientHandler = new ResilientHttpHandler<>(
+    handler,
+    RetryStrategies.exponentialBackoff(),  // ❌ OLD approach
+    userConverter
+);
+
+HttpResult<User> result = resilientHandler.load();  // GET only
+----
+
+==== NEW Code
+
+[source,java]
+----
+// 1.0
+HttpHandler handler = HttpHandler.builder()
+    .uri("https://api.example.com/users")
+    .build();
+
+// Base adapter with ETag caching (enabled by default)
+HttpAdapter<User> baseAdapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .build();
+
+// Wrap with retry
+HttpAdapter<User> resilientAdapter = ResilientHttpAdapter.wrap(baseAdapter);
+
+// Now supports all HTTP methods
+HttpResult<User> result = HttpMethod.GET.send(resilientAdapter);
+HttpResult<User> result = HttpMethod.POST.send(resilientAdapter, publisher, body);
+----
+
+=== Step 2: Update HttpContentConverter Implementations
+
+==== OLD Interface
+
+[source,java]
+----
+public class UserConverter extends StringContentConverter<User> {
+    @Override
+    protected Optional<User> convertString(String rawContent) {
+        return Optional.ofNullable(parseJson(rawContent));
+    }
+
+    @Override
+    public User emptyValue() {  // ❌ REMOVED
+        return new User();
+    }
+}
+----
+
+==== NEW Interface
+
+[source,java]
+----
+public class UserConverter extends StringContentConverter<User> {
+    @Override
+    protected Optional<User> convertString(String rawContent) {
+        return Optional.ofNullable(parseJson(rawContent));
+    }
+
+    @Override
+    public ContentType expectedContentType() {  // ✅ NEW
+        return ContentType.APPLICATION_JSON;
+    }
+}
+----
+
+=== Step 3: Update Retry Configuration Usage
+
+==== OLD Code
+
+[source,java]
+----
+// Pre-1.0
+RetryStrategy strategy = RetryStrategies.exponentialBackoff();
+RetryStrategy noRetry = RetryStrategies.none();  // ❌ REMOVED
+----
+
+==== NEW Code
+
+[source,java]
+----
+// 1.0 - Default configuration
+RetryConfig config = RetryConfig.defaults();
+// Or: RetryConfig.builder().build()
+
+// Custom configuration
+RetryConfig custom = RetryConfig.builder()
+    .maxAttempts(3)
+    .initialDelay(Duration.ofMillis(500))
+    .build();
+
+// No retry? Don't use ResilientHttpAdapter!
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .build();
+----
+
+=== Step 4: Disable ETag Caching (If Needed)
+
+If you don't want ETag caching (was never available before):
+
+[source,java]
+----
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .etagCachingEnabled(false)  // Disable
+    .build();
+----
+
+== Migration Patterns
+
+=== Pattern 1: Simple GET with ETag
+
+==== OLD
+
+[source,java]
+----
+ResilientHttpHandler<User> handler = new ResilientHttpHandler<>(
+    httpHandler,
+    RetryStrategies.exponentialBackoff(),  // ❌ OLD
+    userConverter
+);
+
+HttpResult<User> result = handler.load();
+----
+
+==== NEW
+
+[source,java]
+----
+HttpAdapter<User> adapter = ResilientHttpAdapter.wrap(
+    ETagAwareHttpAdapter.<User>builder()
+        .httpHandler(httpHandler)
+        .contentConverter(userConverter)
+        .build()
+);
+
+HttpResult<User> result = HttpMethod.GET.send(adapter);
+----
+
+=== Pattern 2: GET without Retry
+
+==== OLD
+
+[source,java]
+----
+ResilientHttpHandler<User> handler = new ResilientHttpHandler<>(
+    httpHandler,
+    RetryStrategies.none(),  // ❌ OLD - No longer exists
+    userConverter
+);
+
+HttpResult<User> result = handler.load();
+----
+
+==== NEW
+
+[source,java]
+----
+// Just don't use ResilientHttpAdapter
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(httpHandler)
+    .contentConverter(userConverter)
+    .build();
+
+HttpResult<User> result = HttpMethod.GET.send(adapter);
+----
+
+=== Pattern 3: GET without ETag Caching
+
+==== OLD
+
+Not possible (ETag caching was always on in ResilientHttpHandler)
+
+==== NEW
+
+[source,java]
+----
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(httpHandler)
+    .contentConverter(userConverter)
+    .etagCachingEnabled(false)  // Disable
+    .build();
+
+HttpResult<User> result = HttpMethod.GET.send(adapter);
+----
+
+=== Pattern 4: POST/PUT/DELETE (New!)
+
+==== OLD
+
+Not supported
+
+==== NEW
+
+[source,java]
+----
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(httpHandler)
+    .contentConverter(userConverter)
+    .build();
+
+// POST
+HttpResult<User> result = HttpMethod.POST.send(
+    adapter,
+    HttpRequestBodyPublisher.json(),
+    jsonBody
+);
+
+// PUT
+HttpResult<User> result = HttpMethod.PUT.send(
+    adapter,
+    HttpRequestBodyPublisher.json(),
+    jsonBody
+);
+
+// DELETE
+HttpResult<Void> result = HttpMethod.DELETE.send(voidAdapter);
+----
+
+== Common Migration Scenarios
+
+=== Scenario 1: JWT Token Validation Service
+
+==== OLD
+
+[source,java]
+----
+HttpHandler handler = HttpHandler.builder()
+    .uri(jwksUri)
+    .build();
+
+ResilientHttpHandler<Jwks> jwksHandler = new ResilientHttpHandler<>(
+    handler,
+    RetryStrategies.exponentialBackoff(),  // ❌ OLD
+    jwksConverter
+);
+
+HttpResult<Jwks> result = jwksHandler.load();
+----
+
+==== NEW
+
+[source,java]
+----
+HttpHandler handler = HttpHandler.builder()
+    .uri(jwksUri)
+    .build();
+
+HttpAdapter<Jwks> adapter = ResilientHttpAdapter.wrap(
+    ETagAwareHttpAdapter.<Jwks>builder()
+        .httpHandler(handler)
+        .contentConverter(jwksConverter)
+        .build()  // ETag caching ON (good for JWKS)
+);
+
+HttpResult<Jwks> result = HttpMethod.GET.send(adapter);
+----
+
+=== Scenario 2: Well-Known Configuration Loading
+
+==== OLD
+
+[source,java]
+----
+ResilientHttpHandler<WellKnownResult> handler = new ResilientHttpHandler<>(
+    httpHandler,
+    RetryStrategies.exponentialBackoff(),  // ❌ OLD
+    wellKnownConverter
+);
+
+HttpResult<WellKnownResult> result = handler.load();
+----
+
+==== NEW
+
+[source,java]
+----
+HttpAdapter<WellKnownResult> adapter = ResilientHttpAdapter.wrap(
+    ETagAwareHttpAdapter.<WellKnownResult>builder()
+        .httpHandler(httpHandler)
+        .contentConverter(wellKnownConverter)
+        .build()
+);
+
+HttpResult<WellKnownResult> result = HttpMethod.GET.send(adapter);
+----
+
+=== Scenario 3: API Client with POST/PUT
+
+==== OLD
+
+Had to use HttpHandler.requestBuilder() manually:
+
+[source,java]
+----
+HttpRequest request = httpHandler.requestBuilder()
+    .POST(BodyPublishers.ofString(jsonBody))
+    .header("Content-Type", "application/json")
+    .build();
+
+HttpClient client = httpHandler.createHttpClient();
+HttpResponse<String> response = client.send(request, BodyHandlers.ofString());
+// Manual error handling, no retry, no type safety
+----
+
+==== NEW
+
+[source,java]
+----
+HttpAdapter<User> adapter = ResilientHttpAdapter.wrap(
+    ETagAwareHttpAdapter.<User>builder()
+        .httpHandler(httpHandler)
+        .contentConverter(userConverter)
+        .build()
+);
+
+HttpResult<User> result = HttpMethod.POST.send(
+    adapter,
+    HttpRequestBodyPublisher.json(),
+    jsonBody
+);
+// Type-safe, automatic retry, structured error handling
+----
+
+== Verification Checklist
+
+After migration:
+
+* [ ] All `ResilientHttpHandler` instances replaced
+* [ ] All `emptyValue()` methods replaced with `expectedContentType()`
+* [ ] All `RetryStrategies` usages replaced with `RetryConfig`
+* [ ] All `RetryStrategy` interface usages replaced with `RetryConfig` record
+* [ ] Pre-commit checks pass: `./mvnw -Ppre-commit clean verify`
+* [ ] Tests updated and passing
+* [ ] No compiler warnings
+* [ ] No deprecation warnings
+
+== Benefits After Migration
+
+[cols="1,2"]
+|===
+|Benefit |Description
+
+|POST/PUT/DELETE support
+|Full HTTP method support, not just GET
+
+|Type-safe methods
+|`HttpMethod.POST` enum instead of strings
+
+|Configurable ETag caching
+|Can disable if not needed
+
+|Composable adapters
+|Clean separation: ETag → Retry → Custom adapters
+
+|Simpler retry config
+|RetryConfig record with builder, no strategy pattern needed
+
+|Cleaner API
+|Less ceremony, more intuitive
+|===
+
+== Rollback Plan
+
+If you need to roll back:
+
+. Keep old code in separate branch
+. Version 0.2.x remains available in Maven Central
+. No data migration needed (stateless HTTP client)
+. Switch dependency version in pom.xml
+
+== Support
+
+If you encounter issues during migration:
+
+. Check this migration guide
+. Review usage examples in `07-usage-examples.adoc`
+. Check GitHub issues
+. Ask in project discussions

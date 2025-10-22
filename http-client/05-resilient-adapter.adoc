@@ -1,0 +1,523 @@
+= ResilientHttpAdapter Implementation
+:toc: left
+:toclevels: 3
+:sectnums:
+
+== Overview
+
+`ResilientHttpAdapter` is a decorator that adds retry logic with exponential backoff to any `HttpAdapter` implementation.
+
+== Design Goals
+
+* *Composition* - Wraps any HttpAdapter implementation
+* *Simplicity* - Configuration object, not strategy pattern
+* *Single Algorithm* - Exponential backoff with jitter (industry best practice)
+* *Fail-Fast* - No retry for non-retryable errors (CLIENT_ERROR)
+* *Configurable* - Builder pattern for retry parameters
+
+== Simplified Architecture
+
+Instead of complex strategy pattern, we use a simple configuration object:
+
+[source]
+----
+RetryConfig (record)
+    ↓ configures
+ResilientHttpAdapter (contains retry logic)
+    ↓ wraps
+Any HttpAdapter implementation
+----
+
+== RetryConfig Record
+
+Simple data class with builder:
+
+[source,java]
+----
+package de.cuioss.http.client.adapter;
+
+/**
+ * Configuration for retry behavior with exponential backoff.
+ * This is a simple data record that configures retry parameters.
+ */
+public record RetryConfig(
+    int maxAttempts,
+    Duration initialDelay,
+    double multiplier,
+    Duration maxDelay,
+    double jitter
+) {
+
+    /**
+     * Creates builder with sensible defaults.
+     * See "Default Values" table below for specific defaults.
+     */
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    /**
+     * Returns default configuration.
+     * Equivalent to builder().build()
+     */
+    public static RetryConfig defaults() {
+        return builder().build();
+    }
+
+    public static class Builder {
+        private int maxAttempts = 5;
+        private Duration initialDelay = Duration.ofSeconds(1);
+        private double multiplier = 2.0;
+        private Duration maxDelay = Duration.ofMinutes(1);
+        private double jitter = 0.1;
+
+        public Builder maxAttempts(int maxAttempts) {
+            if (maxAttempts < 1) {
+                throw new IllegalArgumentException("maxAttempts must be >= 1");
+            }
+            this.maxAttempts = maxAttempts;
+            return this;
+        }
+
+        public Builder initialDelay(Duration delay) {
+            this.initialDelay = requireNonNull(delay, "initialDelay");
+            return this;
+        }
+
+        public Builder multiplier(double multiplier) {
+            if (multiplier < 1.0) {
+                throw new IllegalArgumentException("multiplier must be >= 1.0");
+            }
+            this.multiplier = multiplier;
+            return this;
+        }
+
+        public Builder maxDelay(Duration maxDelay) {
+            this.maxDelay = requireNonNull(maxDelay, "maxDelay");
+            return this;
+        }
+
+        public Builder jitter(double jitter) {
+            if (jitter < 0.0 || jitter > 1.0) {
+                throw new IllegalArgumentException("jitter must be between 0.0 and 1.0");
+            }
+            this.jitter = jitter;
+            return this;
+        }
+
+        public RetryConfig build() {
+            return new RetryConfig(maxAttempts, initialDelay, multiplier, maxDelay, jitter);
+        }
+    }
+}
+----
+
+=== Default Values
+
+[cols="2,2,3"]
+|===
+|Parameter |Default Value |Valid Range
+
+|`maxAttempts`
+|`5`
+|1 or greater
+
+|`initialDelay`
+|`1 second`
+|Any positive Duration
+
+|`multiplier`
+|`2.0`
+|1.0 or greater (exponential backoff)
+
+|`maxDelay`
+|`1 minute`
+|Any positive Duration
+
+|`jitter`
+|`0.1` (10%)
+|0.0 to 1.0 (0% to 100%)
+|===
+
+**Notes:**
+
+* `maxAttempts`: Total attempts including initial try (5 = 1 initial + 4 retries)
+* `initialDelay`: Starting delay after first failure
+* `multiplier`: Each retry delay multiplied by this value (2.0 = doubling)
+* `maxDelay`: Cap on delay regardless of exponential growth
+* `jitter`: Randomization to prevent thundering herd (0.1 = ±10%)
+
+=== Why These Defaults?
+
+[cols="2,3"]
+|===
+|Default |Rationale
+
+|**maxAttempts: 5**
+|Industry best practice (AWS SDK, Google Cloud SDK). Balances resilience vs. latency. Too few (< 3) = poor resilience. Too many (> 7) = excessive delays on persistent failures.
+
+|**initialDelay: 1s**
+|Enough time for transient issues to clear (network hiccup, server restart). Short enough to feel responsive. Sub-second often too fast for real transient issues.
+
+|**multiplier: 2.0**
+|Exponential backoff is proven most effective (RFC 8085, AWS best practices). Linear backoff less effective. Higher multipliers (3.0+) cause excessive delays.
+
+|**maxDelay: 60s**
+|Prevents runaway delays from exponential growth. After ~4 retries, delays would exceed 16s without cap. 60s balances patience vs. reasonable timeout expectations.
+
+|**jitter: 10%**
+|Prevents thundering herd when many clients fail simultaneously. 10% provides sufficient randomization without excessive variance. Based on AWS recommendations.
+|===
+
+**References:**
+
+* AWS SDK retry strategies
+* RFC 8085 (Congestion Control)
+* Google Cloud SDK best practices
+* Polly (.NET resilience library) defaults
+
+== ResilientHttpAdapter Implementation
+
+[source,java]
+----
+package de.cuioss.http.client.adapter;
+
+/**
+ * Wraps any HttpAdapter to add retry support with exponential backoff.
+ * Retries transient failures (NETWORK_ERROR, SERVER_ERROR) up to configured attempts.
+ */
+public class ResilientHttpAdapter<T> implements HttpAdapter<T> {
+    private static final CuiLogger LOGGER = new CuiLogger(ResilientHttpAdapter.class);
+
+    private final HttpAdapter<T> delegate;
+    private final RetryConfig config;
+
+    public ResilientHttpAdapter(HttpAdapter<T> delegate, RetryConfig config) {
+        this.delegate = requireNonNull(delegate, "delegate");
+        this.config = requireNonNull(config, "config");
+    }
+
+    /**
+     * Wrap adapter with retry using default configuration.
+     */
+    public static <T> HttpAdapter<T> wrap(HttpAdapter<T> delegate) {
+        return new ResilientHttpAdapter<>(delegate, RetryConfig.defaults());
+    }
+
+    /**
+     * Wrap adapter with retry using custom configuration.
+     */
+    public static <T> HttpAdapter<T> wrap(HttpAdapter<T> delegate, RetryConfig config) {
+        return new ResilientHttpAdapter<>(delegate, config);
+    }
+
+    @Override
+    public <R> HttpResult<T> send(HttpMethod method,
+                                   HttpRequestBodyPublisher<R> bodyPublisher,
+                                   @Nullable R requestBody,
+                                   Map<String, String> additionalHeaders) {
+
+        String operationName = method.methodName() + " request";
+
+        for (int attempt = 1; attempt <= config.maxAttempts(); attempt++) {
+            LOGGER.debug("Attempt {}/{} for {}", attempt, config.maxAttempts(), operationName);
+
+            HttpResult<T> result = delegate.send(method, bodyPublisher, requestBody, additionalHeaders);
+
+            // Success - return immediately
+            if (result.isSuccess()) {
+                if (attempt > 1) {
+                    LOGGER.info("{} succeeded on attempt {}", operationName, attempt);
+                }
+                return result;
+            }
+
+            // Non-retryable failure - return immediately
+            if (!result.isRetryable()) {
+                LOGGER.debug("{} failed with non-retryable error: {}",
+                    operationName, result.getErrorCategory().orElse(null));
+                return result;
+            }
+
+            // Retryable failure - wait and retry (unless max attempts reached)
+            if (attempt < config.maxAttempts()) {
+                Duration delay = calculateDelay(attempt);
+                LOGGER.warn("{} failed on attempt {}, retrying after {}ms",
+                    operationName, attempt, delay.toMillis());
+                sleep(delay);
+            } else {
+                LOGGER.error("{} failed after {} attempts",
+                    operationName, config.maxAttempts());
+            }
+        }
+
+        // Max attempts reached - return last result
+        return delegate.send(method, bodyPublisher, requestBody, additionalHeaders);
+    }
+
+    /**
+     * Calculates delay for given attempt using exponential backoff with jitter.
+     *
+     * Formula: initialDelay * (multiplier ^ (attempt - 1)) * (1 + random(0, jitter))
+     * Capped at maxDelay.
+     */
+    private Duration calculateDelay(int attempt) {
+        double baseDelay = config.initialDelay().toMillis();
+        double exponential = baseDelay * Math.pow(config.multiplier(), attempt - 1);
+
+        // Add jitter: random value between 0 and jitter% of delay
+        double jitterAmount = exponential * config.jitter() * Math.random();
+        double delayWithJitter = exponential + jitterAmount;
+
+        // Cap at maxDelay
+        long millis = Math.min((long) delayWithJitter, config.maxDelay().toMillis());
+
+        return Duration.ofMillis(millis);
+    }
+
+    private void sleep(Duration duration) {
+        try {
+            Thread.sleep(duration.toMillis());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Retry interrupted", e);
+        }
+    }
+}
+----
+
+== Usage Examples
+
+=== Default Configuration
+
+[source,java]
+----
+HttpAdapter<User> baseAdapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .build();
+
+// Use defaults (5 attempts, 1s initial, 2.0 multiplier, 1min max, 10% jitter)
+HttpAdapter<User> resilientAdapter = ResilientHttpAdapter.wrap(
+    baseAdapter,
+    RetryConfig.defaults()
+);
+----
+
+=== Custom Configuration
+
+[source,java]
+----
+// Custom retry configuration
+RetryConfig customRetry = RetryConfig.builder()
+    .maxAttempts(3)                        // Only 3 attempts
+    .initialDelay(Duration.ofMillis(500))  // Start with 500ms
+    .multiplier(1.5)                       // Slower backoff
+    .maxDelay(Duration.ofSeconds(30))      // Cap at 30s
+    .jitter(0.2)                           // 20% jitter
+    .build();
+
+HttpAdapter<User> resilientAdapter = ResilientHttpAdapter.wrap(
+    baseAdapter,
+    customRetry
+);
+----
+
+=== Minimal Retry
+
+[source,java]
+----
+// Just 2 quick attempts
+RetryConfig minimal = RetryConfig.builder()
+    .maxAttempts(2)
+    .initialDelay(Duration.ofMillis(100))
+    .build();
+
+HttpAdapter<User> adapter = ResilientHttpAdapter.wrap(baseAdapter, minimal);
+----
+
+=== Aggressive Retry
+
+[source,java]
+----
+// More attempts, longer waits
+RetryConfig aggressive = RetryConfig.builder()
+    .maxAttempts(10)
+    .initialDelay(Duration.ofSeconds(2))
+    .maxDelay(Duration.ofMinutes(5))
+    .build();
+
+HttpAdapter<User> adapter = ResilientHttpAdapter.wrap(baseAdapter, aggressive);
+----
+
+== Retry Behavior
+
+=== Retryable Errors
+
+Retry happens for:
+
+* `NETWORK_ERROR` - IOException, timeouts, connection failures
+* `SERVER_ERROR` - HTTP 5xx responses (503, 502, 500, etc.)
+
+=== Non-Retryable Errors
+
+No retry for:
+
+* `CLIENT_ERROR` - HTTP 4xx (bad request, auth failure, not found, etc.)
+* `INVALID_CONTENT` - Response parsing failed
+* `CONFIGURATION_ERROR` - SSL issues, invalid URI
+
+*Note:* Most 3xx redirects are followed automatically by `HttpClient`. 304 Not Modified is handled as application success by `ETagAwareHttpAdapter`.
+
+=== Exponential Backoff Example
+
+With defaults (initial=1s, multiplier=2.0, jitter=10%):
+
+[source]
+----
+Attempt 1: Execute immediately
+  ↓ Failure (retryable)
+Wait: ~1000ms (1s * 2^0 * 1.05)
+
+Attempt 2: Execute
+  ↓ Failure (retryable)
+Wait: ~2100ms (1s * 2^1 * 1.05)
+
+Attempt 3: Execute
+  ↓ Failure (retryable)
+Wait: ~4200ms (1s * 2^2 * 1.05)
+
+Attempt 4: Execute
+  ↓ Failure (retryable)
+Wait: ~8400ms (1s * 2^3 * 1.05)
+
+Attempt 5: Execute (final)
+  ↓ Return result (success or failure)
+----
+
+Jitter adds randomness (0-10%) to prevent thundering herd.
+
+== Thread Safety
+
+* `ResilientHttpAdapter` is thread-safe
+* All fields are final and immutable
+* Each thread gets independent retry loop
+* No shared state between requests
+
+== Composition
+
+=== With ETag Caching
+
+[source,java]
+----
+HttpAdapter<User> adapter = ResilientHttpAdapter.wrap(
+    ETagAwareHttpAdapter.<User>builder()
+        .httpHandler(handler)
+        .contentConverter(userConverter)
+        .build(),
+    RetryConfig.defaults()
+);
+----
+
+== What We Removed
+
+Compared to the strategy pattern approach:
+
+[cols="1,1"]
+|===
+|Deleted |Reason
+
+|`RetryStrategy` interface
+|Too abstract, overkill for simple config
+
+|`ExponentialBackoffRetryStrategy`
+|Logic moved into ResilientHttpAdapter
+
+|`NoRetryStrategy`
+|Don't use ResilientHttpAdapter if no retry needed
+
+|`FixedDelayRetryStrategy`
+|Not needed - exponential backoff is best practice
+
+|`RetryStrategies` factory
+|Replaced by RetryConfig.builder()
+
+|`RetryContext`
+|Not needed - attempt number is loop variable
+|===
+
+== Benefits of Configuration Approach
+
+[cols="1,2"]
+|===
+|Benefit |Description
+
+|Simpler
+|One class, not interface + implementations
+
+|Data-focused
+|Configuration is just data (serializable, externalizable)
+
+|Testable
+|Easy to test delay calculations separately
+
+|Standard algorithm
+|Exponential backoff is industry best practice
+
+|Less ceremony
+|No need to choose strategy implementation
+
+|Clearer intent
+|"Configure retry" not "provide strategy"
+
+|Easy to extend
+|Add fields to record, no interface changes needed
+|===
+
+== Testing Requirements
+
+* ✅ Default configuration values
+* ✅ Custom configuration via builder
+* ✅ Retry on NETWORK_ERROR
+* ✅ Retry on SERVER_ERROR
+* ✅ No retry on CLIENT_ERROR
+* ✅ Max attempts respected
+* ✅ Exponential backoff delay calculation
+* ✅ Jitter applied correctly
+* ✅ maxDelay cap enforced
+* ✅ Thread interruption handling
+* ✅ Success on first attempt (no delay)
+* ✅ Success on retry attempt
+* ✅ Failure after max attempts
+* ✅ Composition with ETagAwareHttpAdapter
+
+== Design Decisions
+
+[cols="1,2,2"]
+|===
+|Decision |Choice |Rationale
+
+|Architecture
+|Configuration object
+|Simpler than strategy pattern
+
+|Retry algorithm
+|Exponential backoff only
+|Industry best practice, covers 99% of cases
+
+|Jitter
+|Configurable (default 10%)
+|Prevents thundering herd
+
+|Sync API
+|Blocking sleep
+|Simpler, can add async later if needed
+
+|Thread safety
+|Immutable config, stateless adapter
+|Safe for concurrent use
+
+|Logging
+|WARN for retries, ERROR for exhaustion
+|Appropriate visibility
+|===

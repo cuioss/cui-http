@@ -1,0 +1,240 @@
+= ETagAwareHttpAdapter
+:toc: left
+:toclevels: 3
+:sectnums:
+
+Base HTTP adapter with built-in, configurable ETag caching.
+
+== Structural Correctness Pattern
+
+Correctness achieved through program structure rather than runtime validation:
+
+[source,java]
+----
+public HttpResult<T> send(...) {
+    // 1. Retrieve cache entry BEFORE sending request
+    CacheEntry cachedEntry = cache.get(cacheKey);
+
+    // 2. Build request with conditional header IF cache exists
+    HttpRequest.Builder builder = handler.requestBuilder();
+    if (cachedEntry != null) {
+        builder.header("If-None-Match", cachedEntry.etag());
+    }
+
+    // 3. Send request
+    HttpResponse<?> response = httpClient.send(builder.build(), ...);
+
+    // 4. Handle 304
+    if (response.statusCode() == 304) {
+        // cachedEntry MUST be non-null here!
+        // We only sent If-None-Match if cachedEntry existed.
+        // Server only sends 304 if If-None-Match was present.
+        // Therefore: cachedEntry cannot be null.
+        return HttpResult.success(cachedEntry.content(), cachedEntry.etag(), 304);
+    }
+}
+----
+
+**Guarantees:**
+
+* Local reference held throughout request
+* Cannot receive 304 without having sent If-None-Match
+* Cannot send If-None-Match without cached entry
+* Therefore: 304 handling has guaranteed non-null cache entry
+* Thread-safe: local reference immune to concurrent cache clearing
+
+**Note:** Design pattern, not language guarantee. Java's type system doesn't enforce this.
+
+== Responsibilities
+
+. Execute requests via HttpHandler
+. Convert responses via HttpContentConverter
+. Preserve HTTP metadata (ETag, status)
+. ETag caching (when enabled):
+** Add If-None-Match for GET requests
+** Handle 304 Not Modified
+** Return cached content for 304
+** Update cache on successful responses
+. Error categorization
+
+== ETag Extraction from All Responses
+
+ETags are extracted from **all** HTTP responses (GET, POST, PUT, DELETE), even though only GET responses are cached. This enables **optimistic locking patterns** for subsequent updates:
+
+[source,java]
+----
+// POST creates resource, returns ETag
+HttpResult<User> created = HttpMethod.POST.send(adapter, publisher, user);
+String etag = created.getETag().orElseThrow();
+
+// Later: PUT with If-Match for optimistic locking
+Map<String, String> headers = Map.of("If-Match", etag);
+HttpResult<User> updated = HttpMethod.PUT.send(adapter, publisher, updatedUser, headers);
+// Server returns 412 Precondition Failed if resource changed
+----
+
+**Use cases:** Conditional updates (If-Match), resource versioning, conflict detection, audit trails.
+
+== 304 Not Modified Flow
+
+[source]
+----
+1. send() called for GET request
+
+2. send():
+   → Retrieve cache entry at START (holds reference)
+      CacheEntry cachedEntry = cache.get(cacheKey);
+   → If cachedEntry exists with ETag:
+      → Add If-None-Match: cachedEntry.etag to request
+   → If no cachedEntry:
+      → Don't add If-None-Match (normal GET)
+
+3. Server responds: 304 Not Modified, ETag: "cached-etag"
+
+4. send():
+   → Detects status == 304
+   → Use cachedEntry reference (structurally guaranteed non-null)
+   → return HttpResult.success(cachedEntry.content, cachedEntry.etag, 304)
+   → Logs at DEBUG level
+
+5. Client receives Success(cachedContent, "cached-etag", 304)
+----
+
+**Design:** 304 returned as Success with cached content. Status preserved for metrics/debugging.
+
+== Builder API
+
+[source,java]
+----
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .etagCachingEnabled(true)  // Default: true
+    .build();
+----
+
+== Cache Key Generation
+
+=== Algorithm
+
+The cache key is generated to uniquely identify requests:
+
+[source,java]
+----
+String cacheKey = generateCacheKey(uri, additionalHeaders);
+
+private String generateCacheKey(URI uri, Map<String, String> headers) {
+    StringBuilder key = new StringBuilder(uri.toString());
+
+    // Sort headers by key for consistency
+    List<String> sortedKeys = new ArrayList<>(headers.keySet());
+    Collections.sort(sortedKeys);
+
+    for (String headerName : sortedKeys) {
+        key.append('|').append(headerName)
+           .append('=').append(headers.get(headerName));
+    }
+
+    return key.toString();
+}
+----
+
+=== Key Components
+
+* **URI**: From HttpHandler (fixed per adapter instance)
+* **Additional headers**: Sorted alphabetically by key name for consistency
+* **Separator**: `|` character separates URI from headers
+
+=== Examples
+
+[source]
+----
+// Simple GET
+"https://api.example.com/users"
+
+// GET with Authorization header
+"https://api.example.com/users|Authorization=Bearer token123"
+
+// GET with multiple headers (sorted)
+"https://api.example.com/users|Authorization=Bearer token123|X-Request-ID=abc-123"
+----
+
+=== Important Notes
+
+* HTTP method is **not** part of cache key (only GET requests are cached)
+* Headers are sorted to ensure `{A, B}` and `{B, A}` produce the same key
+* Request body is **not** part of cache key (POST/PUT/DELETE never cached)
+
+**⚠️ WARNING - Frequently-Changing Headers:**
+
+Including frequently-changing headers (e.g., short-lived Bearer tokens) in cache keys can cause cache bloat:
+
+* Each token refresh creates a new cache entry for the same resource
+* Old entries are never automatically purged (no TTL implemented)
+* Memory usage grows unbounded over time
+
+**Mitigation strategies:**
+
+. **Periodic cache clearing** - Call `adapter.clearETagCache()` after token refresh
+. **Disable caching for token-based APIs** - Set `etagCachingEnabled(false)`
+. **Use separate adapter instances** - One per token lifetime, dispose after expiry
+
+== Usage Examples
+
+=== Default (ETag Caching Enabled)
+
+[source,java]
+----
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .build();  // caching ON by default
+----
+
+=== Disable ETag Caching
+
+[source,java]
+----
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .etagCachingEnabled(false)
+    .build();
+----
+
+== Cache Management
+
+=== Cache Lifecycle
+
+The ETag cache has an **unbounded, indefinite lifetime**:
+
+* **No TTL (Time-To-Live)** - Entries never expire automatically
+* **No size limit** - Cache grows unbounded with unique cache keys
+* **Manual clearing only** - Must explicitly call `clearETagCache()`
+* **No LRU eviction** - Least-recently-used entries are not removed
+
+=== When to Clear Cache
+
+[source,java]
+----
+ETagAwareHttpAdapter<User> adapter = ...;
+
+// Clear cache manually
+adapter.clearETagCache();
+----
+
+**Clear on:** User logout, token refresh, periodic maintenance, configuration change, memory pressure.
+
+**Thread-safe:** In-flight requests hold local cache references. Clearing cache doesn't affect them.
+
+== Thread Safety
+
+* Builder: NOT thread-safe
+* Built adapter: Fully thread-safe (immutable fields, ConcurrentHashMap cache, local references)
+
+== Test Coverage
+
+* ETag caching on/off, If-None-Match conditional sending
+* 304 handling, cache hits/misses, ETag preservation
+* POST/PUT/DELETE bypass caching
+* Network errors, thread safety, concurrent cache clearing

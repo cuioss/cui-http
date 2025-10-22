@@ -1,0 +1,640 @@
+= Usage Examples
+:toc: left
+:toclevels: 3
+:sectnums:
+
+== Overview
+
+This document provides 25 complete, runnable examples covering all common use cases including error handling, retry logic, and security integration.
+
+== Basic Setup
+
+All examples assume this basic setup:
+
+[source,java]
+----
+// HTTP Handler configuration
+HttpHandler handler = HttpHandler.builder()
+    .uri("https://api.example.com/users")
+    .connectionTimeoutSeconds(5)
+    .readTimeoutSeconds(10)
+    .sslContextProvider(SecureSSLContextProvider.builder().build())
+    .build();
+
+// Content converter for User objects
+HttpContentConverter<User> userConverter = new StringContentConverter<>() {
+    @Override
+    protected Optional<User> convertString(String rawContent) {
+        return Optional.ofNullable(parseJsonToUser(rawContent));
+    }
+
+    @Override
+    public ContentType expectedContentType() {
+        return ContentType.APPLICATION_JSON;
+    }
+};
+----
+
+== Example 1: Simple GET Request
+
+[source,java]
+----
+// Create adapter (ETag caching enabled by default)
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .build();
+
+// Send GET request
+HttpResult<User> result = HttpMethod.GET.send(adapter);
+
+// Handle result
+if (result.isSuccess()) {
+    result.getContent().ifPresent(user ->
+        LOGGER.info("Loaded user: {}", user.getName()));
+
+    // Check if served from cache
+    if (result.getHttpStatus().orElse(0) == 304) {
+        LOGGER.debug("Content served from ETag cache");
+    }
+} else {
+    result.getErrorMessage().ifPresent(LOGGER::error);
+}
+----
+
+== Example 2: GET with Pattern Matching
+
+[source,java]
+----
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .build();
+
+HttpResult<User> result = HttpMethod.GET.send(adapter);
+
+// Pattern matching (Java 17+)
+switch (result) {
+    case HttpResult.Success<User>(var user, var etag, var status) -> {
+        LOGGER.info("Success: {}", user.getName());
+        if (status == 304) {
+            LOGGER.debug("Cached with ETag: {}", etag);
+        }
+    }
+    case HttpResult.Failure<User> failure -> {
+        LOGGER.error("Failed: {}", failure.errorMessage());
+        if (failure.isRetryable()) {
+            LOGGER.warn("Consider retry");
+        }
+    }
+}
+----
+
+== Example 3: POST Request Creating Resource
+
+[source,java]
+----
+// Create adapter
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .build();
+
+// Prepare JSON body
+String userJson = """
+    {
+        "name": "John Doe",
+        "email": "john@example.com",
+        "role": "USER"
+    }
+    """;
+
+// Send POST request
+HttpResult<User> result = HttpMethod.POST.send(
+    adapter,
+    HttpRequestBodyPublisher.json(),
+    userJson
+);
+
+// Handle result
+if (result.isSuccess()) {
+    result.getContent().ifPresent(createdUser -> {
+        LOGGER.info("Created user with ID: {}", createdUser.getId());
+        result.getETag().ifPresent(etag ->
+            LOGGER.debug("Created with ETag: {}", etag));
+    });
+} else {
+    LOGGER.error("Creation failed: {}",
+        result.getErrorMessage().orElse("Unknown error"));
+}
+----
+
+== Example 4: PUT Request Updating Resource
+
+[source,java]
+----
+HttpHandler updateHandler = HttpHandler.builder()
+    .uri("https://api.example.com/users/123")  // Specific user
+    .build();
+
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(updateHandler)
+    .contentConverter(userConverter)
+    .build();
+
+String updatedJson = """
+    {
+        "name": "Jane Doe",
+        "email": "jane@example.com",
+        "role": "ADMIN"
+    }
+    """;
+
+HttpResult<User> result = HttpMethod.PUT.send(
+    adapter,
+    HttpRequestBodyPublisher.json(),
+    updatedJson
+);
+
+switch (result) {
+    case HttpResult.Success<User>(var user, var etag, var status) -> {
+        LOGGER.info("Updated user successfully");
+        etag.ifPresent(tag -> LOGGER.debug("New ETag: {}", tag));
+    }
+    case HttpResult.Failure<User> failure -> {
+        LOGGER.error("Update failed: {}", failure.errorMessage());
+        failure.getErrorCategory().ifPresent(category -> {
+            if (category == HttpErrorCategory.CLIENT_ERROR) {
+                LOGGER.error("Check request data - likely validation error");
+            }
+        });
+    }
+}
+----
+
+== Example 5: DELETE Request
+
+[source,java]
+----
+HttpHandler deleteHandler = HttpHandler.builder()
+    .uri("https://api.example.com/users/123")
+    .build();
+
+// Void converter (ignores response body)
+HttpContentConverter<Void> voidConverter = new StringContentConverter<>() {
+    @Override
+    protected Optional<Void> convertString(String rawContent) {
+        return Optional.empty();
+    }
+
+    @Override
+    public ContentType expectedContentType() {
+        return ContentType.APPLICATION_JSON;
+    }
+};
+
+HttpAdapter<Void> adapter = ETagAwareHttpAdapter.<Void>builder()
+    .httpHandler(deleteHandler)
+    .contentConverter(voidConverter)
+    .build();
+
+// Send DELETE request (no body)
+HttpResult<Void> result = HttpMethod.DELETE.send(adapter);
+
+if (result.isSuccess()) {
+    LOGGER.info("User deleted successfully");
+} else {
+    LOGGER.error("Delete failed: {}",
+        result.getErrorMessage().orElse("Unknown error"));
+}
+----
+
+== Example 6: Authenticated Request
+
+[source,java]
+----
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .build();
+
+// Add Authorization header
+Map<String, String> headers = Map.of(
+    "Authorization", "Bearer " + getAccessToken()
+);
+
+HttpResult<User> result = HttpMethod.GET.send(adapter, headers);
+----
+
+== Example 7: Disable ETag Caching
+
+[source,java]
+----
+// Explicitly disable ETag caching
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .etagCachingEnabled(false)  // Disable
+    .build();
+
+HttpResult<User> result = HttpMethod.GET.send(adapter);
+// No If-None-Match header added, no 304 handling
+----
+
+== Example 8: With Retry (Default Configuration)
+
+[source,java]
+----
+// Base adapter
+HttpAdapter<User> baseAdapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .build();
+
+// Wrap with retry (default: 5 attempts, exponential backoff)
+HttpAdapter<User> resilientAdapter = ResilientHttpAdapter.wrap(baseAdapter);
+
+// Use
+HttpResult<User> result = HttpMethod.GET.send(resilientAdapter);
+// Automatically retries on NETWORK_ERROR and SERVER_ERROR
+----
+
+== Example 9: With Custom Retry Configuration
+
+[source,java]
+----
+// Custom retry configuration
+RetryConfig customRetry = RetryConfig.builder()
+    .maxAttempts(3)                    // Only 3 attempts
+    .initialDelay(Duration.ofMillis(500))  // Start with 500ms
+    .multiplier(1.5)                   // Slower backoff
+    .maxDelay(Duration.ofSeconds(30))  // Cap at 30s
+    .jitter(0.2)                       // 20% jitter
+    .build();
+
+// Base adapter
+HttpAdapter<User> baseAdapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .build();
+
+// Wrap with custom retry
+HttpAdapter<User> resilientAdapter = ResilientHttpAdapter.wrap(
+    baseAdapter,
+    customRetry
+);
+
+HttpResult<User> result = HttpMethod.POST.send(
+    resilientAdapter,
+    HttpRequestBodyPublisher.json(),
+    jsonBody
+);
+----
+
+== Example 10: Error Handling by Category
+
+[source,java]
+----
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .build();
+
+HttpResult<User> result = HttpMethod.GET.send(adapter);
+
+result.getErrorCategory().ifPresent(category -> {
+    switch (category) {
+        case NETWORK_ERROR -> {
+            LOGGER.warn("Network error, schedule retry");
+            scheduleRetry();
+        }
+        case SERVER_ERROR -> {
+            LOGGER.warn("Server error (5xx), schedule retry");
+            scheduleRetry();
+        }
+        case CLIENT_ERROR -> {
+            LOGGER.error("Client error (4xx), check request");
+            alertOperations("Invalid HTTP request");
+        }
+        case INVALID_CONTENT -> {
+            LOGGER.error("Response content invalid");
+            useFallbackSource();
+        }
+        case CONFIGURATION_ERROR -> {
+            LOGGER.error("Configuration error, check SSL/URL");
+            alertOperations("HTTP handler misconfigured");
+        }
+    }
+});
+----
+
+== Example 11: XML Request Body
+
+[source,java]
+----
+String xmlBody = """
+    <?xml version="1.0"?>
+    <user>
+        <name>John Doe</name>
+        <email>john@example.com</email>
+    </user>
+    """;
+
+HttpResult<User> result = HttpMethod.POST.send(
+    adapter,
+    HttpRequestBodyPublisher.xml(),  // XML publisher
+    xmlBody
+);
+----
+
+== Example 12: Plain Text Request
+
+[source,java]
+----
+String textBody = "User registration data...";
+
+HttpResult<String> result = HttpMethod.POST.send(
+    adapter,
+    HttpRequestBodyPublisher.plainText(),
+    textBody
+);
+----
+
+== Example 13: Binary Data (Image Upload)
+
+[source,java]
+----
+byte[] imageData = Files.readAllBytes(Path.of("profile.png"));
+
+HttpAdapter<Response> adapter = ETagAwareHttpAdapter.<Response>builder()
+    .httpHandler(uploadHandler)
+    .contentConverter(responseConverter)
+    .build();
+
+HttpResult<Response> result = HttpMethod.POST.send(
+    adapter,
+    HttpRequestBodyPublisher.ofByteArray(ContentType.IMAGE_PNG),
+    imageData
+);
+----
+
+== Example 14: Clear ETag Cache
+
+[source,java]
+----
+ETagAwareHttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .build();
+
+// Use adapter...
+HttpResult<User> result = HttpMethod.GET.send(adapter);
+
+// Later, clear cache
+adapter.clearETagCache();
+----
+
+== Example 15: Fallback Content on Failure
+
+[source,java]
+----
+HttpAdapter<User> adapter = ResilientHttpAdapter.wrap(
+    ETagAwareHttpAdapter.<User>builder()
+        .httpHandler(handler)
+        .contentConverter(userConverter)
+        .build()
+);
+
+HttpResult<User> result = HttpMethod.GET.send(adapter);
+
+// Use fallback if available
+User user = result.getContent()
+    .orElseGet(() -> loadUserFromCache());
+----
+
+== Example 16: Multiple Headers
+
+[source,java]
+----
+Map<String, String> headers = Map.of(
+    "Authorization", "Bearer " + token,
+    "X-Request-ID", UUID.randomUUID().toString(),
+    "X-Client-Version", "1.0.0"
+);
+
+HttpResult<User> result = HttpMethod.GET.send(adapter, headers);
+----
+
+== Example 17: PATCH Request
+
+[source,java]
+----
+String patchJson = """
+    {
+        "email": "newemail@example.com"
+    }
+    """;
+
+HttpResult<User> result = HttpMethod.PATCH.send(
+    adapter,
+    HttpRequestBodyPublisher.json(),
+    patchJson
+);
+----
+
+== Example 18: HEAD Request (Metadata Only)
+
+[source,java]
+----
+// HEAD returns no body, only headers
+HttpResult<Void> result = HttpMethod.HEAD.send(voidAdapter);
+
+if (result.isSuccess()) {
+    result.getETag().ifPresent(etag ->
+        LOGGER.info("Resource ETag: {}", etag));
+    result.getHttpStatus().ifPresent(status ->
+        LOGGER.info("Resource status: {}", status));
+}
+----
+
+== Example 19: OPTIONS Request
+
+[source,java]
+----
+HttpResult<String> result = HttpMethod.OPTIONS.send(stringAdapter);
+
+if (result.isSuccess()) {
+    // Server may return allowed methods in response
+    result.getContent().ifPresent(LOGGER::info);
+}
+----
+
+== Example 20: Handling Network Errors
+
+[source,java]
+----
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .build();
+
+try {
+    HttpResult<User> result = HttpMethod.GET.send(adapter);
+
+    switch (result) {
+        case HttpResult.Success<User>(var user, var etag, var status) -> {
+            LOGGER.info("Success: {}", user);
+        }
+        case HttpResult.Failure<User> failure -> {
+            // Check if caused by IOException (network error)
+            if (failure.cause() instanceof IOException ioEx) {
+                LOGGER.error("Network error: {}", ioEx.getMessage());
+                // Retry or use fallback source
+                scheduleRetry();
+            }
+        }
+    }
+} catch (Exception e) {
+    LOGGER.error("Unexpected error", e);
+}
+----
+
+== Example 21: Handling SSL/TLS Errors
+
+[source,java]
+----
+HttpResult<User> result = HttpMethod.GET.send(adapter);
+
+if (!result.isSuccess()) {
+    result.getCause().ifPresent(cause -> {
+        if (cause instanceof SSLException sslEx) {
+            LOGGER.error("SSL/TLS error: {}", sslEx.getMessage());
+            // Check certificate configuration
+            alertOperations("SSL certificate issue detected");
+        } else if (cause instanceof SSLHandshakeException) {
+            LOGGER.error("SSL handshake failed - possible certificate mismatch");
+        }
+    });
+}
+----
+
+== Example 22: Handling Timeout Scenarios
+
+[source,java]
+----
+// Configure handler with timeout
+HttpHandler handler = HttpHandler.builder()
+    .uri("https://api.example.com/users")
+    .connectionTimeoutSeconds(5)
+    .readTimeoutSeconds(10)
+    .build();
+
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .build();
+
+HttpResult<User> result = HttpMethod.GET.send(adapter);
+
+result.getCause().ifPresent(cause -> {
+    if (cause instanceof HttpTimeoutException) {
+        LOGGER.warn("Request timed out");
+        // Use cached data if available
+        useStaleCache();
+    }
+});
+----
+
+== Example 23: Handling JSON Parsing Failures
+
+[source,java]
+----
+HttpContentConverter<User> userConverter = new StringContentConverter<>() {
+    @Override
+    protected Optional<User> convertString(String rawContent) {
+        try {
+            return Optional.ofNullable(parseJsonToUser(rawContent));
+        } catch (JsonParseException e) {
+            LOGGER.error("JSON parsing failed: {}", e.getMessage());
+            return Optional.empty();  // Converter returns empty
+        }
+    }
+
+    @Override
+    public ContentType expectedContentType() {
+        return ContentType.APPLICATION_JSON;
+    }
+};
+
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .build();
+
+HttpResult<User> result = HttpMethod.GET.send(adapter);
+
+if (result.isSuccess() && result.getContent().isEmpty()) {
+    LOGGER.warn("Response received but content could not be parsed");
+    // Check error category
+    result.getErrorCategory().ifPresent(category -> {
+        if (category == HttpErrorCategory.INVALID_CONTENT) {
+            LOGGER.error("Invalid content format received");
+        }
+    });
+}
+----
+
+== Example 24: Comprehensive Error Recovery
+
+[source,java]
+----
+public User loadUserWithFallback(String userId) {
+    HttpAdapter<User> adapter = ResilientHttpAdapter.wrap(
+        ETagAwareHttpAdapter.<User>builder()
+            .httpHandler(handler)
+            .contentConverter(userConverter)
+            .build()
+    );
+
+    HttpResult<User> result = HttpMethod.GET.send(adapter);
+
+    return switch (result) {
+        case HttpResult.Success<User>(var user, var etag, var status) -> {
+            LOGGER.info("Loaded user {} (status: {})", userId, status);
+            yield user;
+        }
+        case HttpResult.Failure<User> failure -> {
+            LOGGER.error("Failed to load user {}: {}",
+                userId, failure.errorMessage());
+
+            // Try different recovery strategies based on error category
+            HttpErrorCategory category = failure.category();
+            yield switch (category) {
+                case NETWORK_ERROR, SERVER_ERROR -> {
+                    // Transient error - use cache
+                    LOGGER.info("Using cached data for user {}", userId);
+                    yield loadUserFromCache(userId);
+                }
+                case CLIENT_ERROR -> {
+                    // Bad request - use default user
+                    LOGGER.warn("Bad request for user {}, using default", userId);
+                    yield createDefaultUser(userId);
+                }
+                case INVALID_CONTENT -> {
+                    // Response parsing failed - report and use default
+                    LOGGER.error("Invalid response format for user {}", userId);
+                    reportDataQualityIssue();
+                    yield createDefaultUser(userId);
+                }
+                case CONFIGURATION_ERROR -> {
+                    // Configuration issue - alert operations
+                    LOGGER.error("Configuration error loading user {}", userId);
+                    alertOperations("HTTP client misconfigured");
+                    throw new IllegalStateException("Cannot load user", failure.cause());
+                }
+            };
+        }
+    };
+}
+----
+

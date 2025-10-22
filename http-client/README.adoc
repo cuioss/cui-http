@@ -1,0 +1,171 @@
+= HTTP Client Extension Documentation
+:toc: left
+:toclevels: 2
+:sectnums:
+
+== Navigation
+
+=== Implementers Path
+
+. link:01-current-architecture.adoc[Current Architecture] - Existing code analysis
+. link:02-proposed-architecture.adoc[Architecture] - Design patterns and layers
+. link:03-core-components.adoc[Components] - Interface specifications
+. link:04-etag-aware-adapter.adoc[ETag Adapter] - Base adapter with caching
+. link:05-resilient-adapter.adoc[Resilient Adapter] - Retry logic
+. link:06-implementation-plan.adoc[Implementation Plan] - Phases and steps
+
+=== Users Path
+
+. link:07-usage-examples.adoc[Usage Examples] - 25 complete examples
+. link:08-migration-guide.adoc[Migration Guide] - Pre-1.0 to 1.0
+. link:09-security-considerations.adoc[Security] - Best practices
+
+== Architecture
+
+[source]
+----
+Client Code
+    ↓
+HttpMethod.{GET|POST|PUT|DELETE|...}
+    ↓
+ResilientHttpAdapter (optional retry)
+    ↓
+ETagAwareHttpAdapter (base + ETag caching)
+    ↓
+HttpHandler (SSL, timeouts)
+    ↓
+java.net.http.HttpClient
+----
+
+== Key Decisions
+
+[cols="1,2"]
+|===
+|Decision |Choice
+
+|HTTP Methods |`HttpMethod` enum for type safety
+|ETag Caching |Built into `ETagAwareHttpAdapter` (default enabled, configurable)
+|Retry Logic |`ResilientHttpAdapter` with `RetryConfig` record
+|Request Bodies |`HttpRequestBodyPublisher<T>` interface
+|Content Types |`ContentType` enum
+|===
+
+== Quick Examples
+
+=== GET Request
+
+[source,java]
+----
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .build();
+
+HttpResult<User> result = HttpMethod.GET.send(adapter);
+----
+
+=== POST with JSON
+
+[source,java]
+----
+HttpResult<User> result = HttpMethod.POST.send(
+    adapter,
+    HttpRequestBodyPublisher.json(),
+    jsonBody
+);
+----
+
+=== With Retry
+
+[source,java]
+----
+HttpAdapter<User> resilient = ResilientHttpAdapter.wrap(baseAdapter);
+----
+
+== Adapter Composition Order
+
+Order matters when composing multiple adapters:
+
+[cols="2,2,2"]
+|===
+|Pattern |Behavior |Use When
+
+|`Retry(Auth(Base))`
+|Retries entire operation including auth
+|Auth failures are transient
+
+|`Auth(Retry(Base))`
+|Retries requests, reuses auth
+|Auth is stable
+
+|`Base → Retry → Auth`
+|Standard composition
+|Recommended default
+|===
+
+Example trade-offs:
+
+[source,java]
+----
+// Option 1: Retry includes auth
+// Pro: Handles auth token race conditions
+// Con: More token refresh calls
+HttpAdapter<User> option1 = ResilientHttpAdapter.wrap(
+    new BearerTokenAdapter<>(baseAdapter, tokenSupplier)
+);
+
+// Option 2: Auth wraps retry
+// Pro: Fewer token refresh calls
+// Con: Auth failures not retried
+HttpAdapter<User> option2 = new BearerTokenAdapter<>(
+    ResilientHttpAdapter.wrap(baseAdapter),
+    tokenSupplier
+);
+----
+
+**Rule:** Place stable concerns outside, variable concerns inside retry loop.
+
+== 304 Not Modified Handling
+
+The adapter uses structural correctness: cache entry retrieved at request start, reference held throughout. This guarantees:
+
+* 304 response returns `Success` with cached content
+* Thread-safe: local reference immune to concurrent cache modifications
+* No defensive null checks needed
+
+See link:04-etag-aware-adapter.adoc#_304_not_modified_handling[304 Implementation]
+
+== Breaking Changes
+
+**Deleted:**
+
+* `ResilientHttpHandler` → Use `ETagAwareHttpAdapter` + `ResilientHttpAdapter`
+* `RetryStrategy` interface → Use `RetryConfig` record
+* `HttpContentConverter.emptyValue()` → Use `expectedContentType()`
+
+**New:**
+
+* `HttpMethod` enum, `ContentType` enum
+* `HttpAdapter<T>` interface
+* `HttpRequestBodyPublisher<T>` interface
+* `RetryConfig` record
+
+See link:08-migration-guide.adoc[Complete Migration Guide]
+
+== Documents
+
+[cols="1,2"]
+|===
+|Document |Content
+
+|README |This file - navigation and quick reference
+|01-current-architecture |Analysis of existing components
+|02-proposed-architecture |Design patterns and data flows
+|03-core-components |Interface specifications
+|04-etag-aware-adapter |Base adapter implementation
+|05-resilient-adapter |Retry implementation
+|06-implementation-plan |Implementation phases
+|07-usage-examples |Code examples
+|08-migration-guide |Breaking changes and migration
+|09-security-considerations |Security best practices
+|===

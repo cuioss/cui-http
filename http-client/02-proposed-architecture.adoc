@@ -1,0 +1,248 @@
+= Proposed Architecture
+:toc: left
+:toclevels: 3
+:sectnums:
+
+== Component Layers
+
+[source]
+----
+Client Code
+    ↓
+HttpMethod Enum (GET, POST, PUT, ...)
+    ↓
+ResilientHttpAdapter (optional retry)
+    ↓
+ETagAwareHttpAdapter (base + built-in ETag caching)
+    ↓
+HttpHandler (SSL, timeouts, configuration)
+    ↓
+java.net.http.HttpClient
+----
+
+**Key simplification:** Single `ETagAwareHttpAdapter` with built-in ETag caching (configurable) instead of separate `SimpleHttpAdapter` + `CachingHttpAdapter` decorator.
+
+== HttpAdapter<T> Interface
+
+[source,java]
+----
+@FunctionalInterface
+public interface HttpAdapter<T> {
+    <R> HttpResult<T> send(HttpMethod method,
+                           HttpRequestBodyPublisher<R> bodyPublisher,
+                           @Nullable R requestBody,
+                           Map<String, String> additionalHeaders);
+}
+----
+
+**Purpose:** Enable composition and extensions
+
+See link:03-core-components.adoc#_httpadapter_interface[Full Specification]
+
+== Component Responsibilities
+
+=== ETagAwareHttpAdapter
+
+**Role:** Base adapter with built-in ETag caching
+
+* Execute HTTP requests via HttpHandler
+* Convert responses via HttpContentConverter
+* Preserve HTTP metadata (ETag, status)
+* Built-in ETag caching (enabled by default, disable via `etagCachingEnabled(false)`)
+* Cache only GET requests
+* Thread-safe (ConcurrentHashMap)
+
+See link:04-etag-aware-adapter.adoc[Complete Specification]
+
+=== ResilientHttpAdapter
+
+**Role:** Retry decorator
+
+* Wrap any HttpAdapter<T>
+* Retry on NETWORK_ERROR and SERVER_ERROR
+* Use RetryConfig for backoff/jitter
+* Synchronous blocking execution
+
+See link:05-resilient-adapter.adoc[Complete Specification]
+
+=== HttpHandler
+
+**Role:** Low-level HTTP client configuration
+
+* SSL/TLS context management
+* Timeout configuration
+* URI management
+* HttpClient creation
+
+**Unchanged from current implementation**
+
+== Data Flows
+
+=== GET with ETag Caching
+
+[source]
+----
+1. Client: HttpMethod.GET.send(adapter)
+
+2. ResilientHttpAdapter (if used):
+   → Delegate to ETagAwareHttpAdapter
+
+3. ETagAwareHttpAdapter:
+   → Check cache for ETag
+   → Build request with If-None-Match: "etag" (if cached)
+   → Send via HttpHandler
+
+4. Server: 304 Not Modified
+
+5. ETagAwareHttpAdapter:
+   → Detect 304
+   → Return Success(cachedContent, etag, 304)
+
+6. ResilientHttpAdapter:
+   → Success, no retry
+
+7. Client: Success(cachedContent, etag, 304)
+----
+
+=== POST with Retry
+
+[source]
+----
+1. Client: HttpMethod.POST.send(adapter, publisher, body)
+
+2. ResilientHttpAdapter:
+   → Delegate to ETagAwareHttpAdapter
+
+3. ETagAwareHttpAdapter:
+   → POST: no ETag caching
+   → Build request with body
+   → Send via HttpHandler
+
+4. Network fails (IOException)
+
+5. ETagAwareHttpAdapter:
+   → Return Failure(NETWORK_ERROR, ...)
+
+6. ResilientHttpAdapter:
+   → NETWORK_ERROR is retryable
+   → Wait (exponential backoff)
+   → Retry (attempt 2)
+
+7. Attempt 2 succeeds:
+   → Return Success(content, etag, 201)
+----
+
+=== 304 Not Modified (Structural Correctness)
+
+**Critical:** 304 handled as success through structural guarantees.
+
+* Cache entry retrieved at request start, reference held throughout
+* If cached: add `If-None-Match` header
+* 304 response uses cached content: `HttpResult.success(cachedContent, etag, 304)`
+* Thread-safe: local reference immune to concurrent cache modifications
+* Status 304 preserved for metrics/logging
+
+See link:04-etag-aware-adapter.adoc#_304_not_modified_handling[Implementation Details]
+
+== Type System
+
+See link:03-core-components.adoc[Core Components] for complete specifications.
+
+=== HttpMethod Enum
+
+Type-safe HTTP methods (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS) with `send()` convenience methods.
+
+=== ContentType Enum
+
+Type-safe MIME types (APPLICATION_JSON, TEXT_PLAIN, etc.) with charset support.
+
+=== HttpRequestBodyPublisher<T>
+
+Request body publishing with factory methods (`json()`, `plainText()`, `xml()`, `ofByteArray()`).
+
+=== HttpErrorCategory
+
+[source,java]
+----
+public enum HttpErrorCategory {
+    NETWORK_ERROR,      // IOException - RETRYABLE
+    SERVER_ERROR,       // 5xx - RETRYABLE
+    CLIENT_ERROR,       // 4xx - NOT retryable
+    INVALID_CONTENT,    // Parsing failed - NOT retryable
+    CONFIGURATION_ERROR; // SSL, URI - NOT retryable
+
+    public boolean isRetryable() {
+        return this == NETWORK_ERROR || this == SERVER_ERROR;
+    }
+}
+----
+
+**Note:** Most 3xx redirects followed automatically by HttpClient. 304 handled specially by ETagAwareHttpAdapter as success.
+
+== Configuration Examples
+
+=== Basic GET (ETag Enabled)
+
+[source,java]
+----
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .build();  // ETag ON by default
+
+HttpResult<User> result = HttpMethod.GET.send(adapter);
+----
+
+=== Disable ETag
+
+[source,java]
+----
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .etagCachingEnabled(false)
+    .build();
+----
+
+=== POST with Retry
+
+[source,java]
+----
+HttpAdapter<User> baseAdapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .build();
+
+HttpAdapter<User> resilientAdapter = ResilientHttpAdapter.wrap(baseAdapter);
+
+HttpResult<User> result = HttpMethod.POST.send(
+    resilientAdapter,
+    HttpRequestBodyPublisher.json(),
+    jsonBody
+);
+----
+
+== Breaking Changes
+
+See link:08-migration-guide.adoc[Migration Guide] for complete details.
+
+**Deleted:**
+
+* `ResilientHttpHandler` → `ETagAwareHttpAdapter` + `ResilientHttpAdapter`
+* `RetryStrategy` interface → `RetryConfig` record
+* `RetryStrategies` factory → `RetryConfig.builder()`
+* `RetryContext` record
+* `HttpContentConverter.emptyValue()` → `expectedContentType()`
+
+**Modified:**
+
+* `HttpContentConverter` - Remove `emptyValue()`, add `expectedContentType()`
+* `module-info.java` - Export packages: `adapter`, `request`
+
+**New:**
+
+* `HttpMethod` enum, `ContentType` enum
+* `HttpAdapter<T>` interface
+* `HttpRequestBodyPublisher<T>` interface
+* `ETagAwareHttpAdapter<T>`, `ResilientHttpAdapter<T>`
+* `RetryConfig` record
