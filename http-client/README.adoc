@@ -16,7 +16,7 @@
 
 === Users Path
 
-. link:07-usage-examples.adoc[Usage Examples] - 25 complete examples
+. link:07-usage-examples.adoc[Usage Examples] - 24 complete examples
 . link:08-migration-guide.adoc[Migration Guide] - Pre-1.0 to 1.0
 . link:09-security-considerations.adoc[Security] - Best practices
 
@@ -26,7 +26,7 @@
 ----
 Client Code
     ↓
-HttpMethod.{GET|POST|PUT|DELETE|...}
+HttpAdapter.{get()|post()|put()|delete()|...}
     ↓
 ResilientHttpAdapter (optional retry)
     ↓
@@ -43,10 +43,10 @@ java.net.http.HttpClient
 |===
 |Decision |Choice
 
-|HTTP Methods |`HttpMethod` enum for type safety
+|HTTP Methods |Method-specific API (`adapter.get()`, `adapter.post()`, etc.)
 |ETag Caching |Built into `ETagAwareHttpAdapter` (default enabled, configurable)
 |Retry Logic |`ResilientHttpAdapter` with `RetryConfig` record
-|Request Bodies |`HttpRequestBodyPublisher<T>` interface
+|Content Conversion |Bidirectional `HttpContentConverter<T>` (request + response)
 |Content Types |`ContentType` enum
 |===
 
@@ -61,18 +61,15 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .contentConverter(userConverter)
     .build();
 
-HttpResult<User> result = HttpMethod.GET.send(adapter);
+HttpResult<User> result = adapter.get();
 ----
 
 === POST with JSON
 
 [source,java]
 ----
-HttpResult<User> result = HttpMethod.POST.send(
-    adapter,
-    HttpRequestBodyPublisher.json(),
-    jsonBody
-);
+User newUser = User.builder().name("John").email("john@example.com").build();
+HttpResult<User> result = adapter.post(newUser);
 ----
 
 === With Retry
@@ -154,14 +151,24 @@ See link:04-etag-aware-adapter.adoc#_304_not_modified_handling[304 Implementatio
 
 * `ResilientHttpHandler` → Use `ETagAwareHttpAdapter` + `ResilientHttpAdapter`
 * `RetryStrategy` interface → Use `RetryConfig` record
-* `HttpContentConverter.emptyValue()` → Use `expectedContentType()`
+* `HttpContentConverter.emptyValue()` → Use `contentType()`
+* `HttpRequestBodyPublisher<T>` → Use bidirectional `HttpContentConverter<T>`
+
+**Modified:**
+
+* `HttpAdapter<T>` → Method-specific interface (`get()`, `post()`, `put()`, etc.)
+* `HttpContentConverter<T>` → Bidirectional (added `toBodyPublisher()`)
+* `HttpContentConverter.expectedContentType()` → Renamed to `contentType()`
 
 **New:**
 
-* `HttpMethod` enum, `ContentType` enum
-* `HttpAdapter<T>` interface
-* `HttpRequestBodyPublisher<T>` interface
+* `ContentType` enum
 * `RetryConfig` record
+* `CacheKeyHeaders` enum
+
+**Internal-Only (not exported):**
+
+* `HttpMethod` enum (package-private)
 
 See link:08-migration-guide.adoc[Complete Migration Guide]
 

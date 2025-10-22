@@ -5,7 +5,7 @@
 
 == Overview
 
-This document provides 25 complete, runnable examples covering all common use cases including error handling, retry logic, and security integration.
+This document provides 24 complete, runnable examples covering all common use cases including error handling, retry logic, and security integration.
 
 == Basic Setup
 
@@ -21,7 +21,7 @@ HttpHandler handler = HttpHandler.builder()
     .sslContextProvider(SecureSSLContextProvider.builder().build())
     .build();
 
-// Content converter for User objects
+// Bidirectional content converter for User objects
 HttpContentConverter<User> userConverter = new StringContentConverter<>() {
     @Override
     protected Optional<User> convertString(String rawContent) {
@@ -29,7 +29,14 @@ HttpContentConverter<User> userConverter = new StringContentConverter<>() {
     }
 
     @Override
-    public ContentType expectedContentType() {
+    public HttpRequest.BodyPublisher toBodyPublisher(@Nullable User user) {
+        if (user == null) return HttpRequest.BodyPublishers.noBody();
+        String json = convertUserToJson(user);
+        return HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8);
+    }
+
+    @Override
+    public ContentType contentType() {
         return ContentType.APPLICATION_JSON;
     }
 };
@@ -46,7 +53,7 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .build();
 
 // Send GET request
-HttpResult<User> result = HttpMethod.GET.send(adapter);
+HttpResult<User> result = adapter.get();
 
 // Handle result
 if (result.isSuccess()) {
@@ -71,7 +78,7 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .contentConverter(userConverter)
     .build();
 
-HttpResult<User> result = HttpMethod.GET.send(adapter);
+HttpResult<User> result = adapter.get();
 
 // Pattern matching (Java 17+)
 switch (result) {
@@ -100,21 +107,15 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .contentConverter(userConverter)
     .build();
 
-// Prepare JSON body
-String userJson = """
-    {
-        "name": "John Doe",
-        "email": "john@example.com",
-        "role": "USER"
-    }
-    """;
+// Prepare User object
+User newUser = User.builder()
+    .name("John Doe")
+    .email("john@example.com")
+    .role("USER")
+    .build();
 
-// Send POST request
-HttpResult<User> result = HttpMethod.POST.send(
-    adapter,
-    HttpRequestBodyPublisher.json(),
-    userJson
-);
+// Send POST request (bidirectional converter handles serialization)
+HttpResult<User> result = adapter.post(newUser);
 
 // Handle result
 if (result.isSuccess()) {
@@ -142,19 +143,13 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .contentConverter(userConverter)
     .build();
 
-String updatedJson = """
-    {
-        "name": "Jane Doe",
-        "email": "jane@example.com",
-        "role": "ADMIN"
-    }
-    """;
+User updatedUser = User.builder()
+    .name("Jane Doe")
+    .email("jane@example.com")
+    .role("ADMIN")
+    .build();
 
-HttpResult<User> result = HttpMethod.PUT.send(
-    adapter,
-    HttpRequestBodyPublisher.json(),
-    updatedJson
-);
+HttpResult<User> result = adapter.put(updatedUser);
 
 switch (result) {
     case HttpResult.Success<User>(var user, var etag, var status) -> {
@@ -188,7 +183,12 @@ HttpContentConverter<Void> voidConverter = new StringContentConverter<>() {
     }
 
     @Override
-    public ContentType expectedContentType() {
+    public HttpRequest.BodyPublisher toBodyPublisher(@Nullable Void content) {
+        return HttpRequest.BodyPublishers.noBody();
+    }
+
+    @Override
+    public ContentType contentType() {
         return ContentType.APPLICATION_JSON;
     }
 };
@@ -199,7 +199,7 @@ HttpAdapter<Void> adapter = ETagAwareHttpAdapter.<Void>builder()
     .build();
 
 // Send DELETE request (no body)
-HttpResult<Void> result = HttpMethod.DELETE.send(adapter);
+HttpResult<Void> result = adapter.delete();
 
 if (result.isSuccess()) {
     LOGGER.info("User deleted successfully");
@@ -233,7 +233,7 @@ Map<String, String> headers = Map.of(
     "Authorization", "Bearer " + getAccessToken()
 );
 
-HttpResult<User> result = HttpMethod.GET.send(adapter, headers);
+HttpResult<User> result = adapter.get(headers);
 ----
 
 == Example 6b: Authenticated Request (Single-User Client)
@@ -252,7 +252,7 @@ Map<String, String> headers = Map.of(
     "Authorization", "Bearer " + getAccessToken()
 );
 
-HttpResult<User> result = HttpMethod.GET.send(adapter, headers);
+HttpResult<User> result = adapter.get(headers);
 // Cache key: URI only (e.g., "https://api.example.com/users")
 // Token changes don't affect caching
 ----
@@ -268,7 +268,7 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .etagCachingEnabled(false)  // Disable
     .build();
 
-HttpResult<User> result = HttpMethod.GET.send(adapter);
+HttpResult<User> result = adapter.get();
 // No If-None-Match header added, no 304 handling
 ----
 
@@ -286,7 +286,7 @@ HttpAdapter<User> baseAdapter = ETagAwareHttpAdapter.<User>builder()
 HttpAdapter<User> resilientAdapter = ResilientHttpAdapter.wrap(baseAdapter);
 
 // Use
-HttpResult<User> result = HttpMethod.GET.send(resilientAdapter);
+HttpResult<User> result = resilientAdapter.get();
 // Automatically retries on NETWORK_ERROR and SERVER_ERROR
 ----
 
@@ -315,11 +315,8 @@ HttpAdapter<User> resilientAdapter = ResilientHttpAdapter.wrap(
     customRetry
 );
 
-HttpResult<User> result = HttpMethod.POST.send(
-    resilientAdapter,
-    HttpRequestBodyPublisher.json(),
-    jsonBody
-);
+User newUser = User.builder().name("John").build();
+HttpResult<User> result = resilientAdapter.post(newUser);
 ----
 
 == Example 10: Error Handling by Category
@@ -331,7 +328,7 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .contentConverter(userConverter)
     .build();
 
-HttpResult<User> result = HttpMethod.GET.send(adapter);
+HttpResult<User> result = adapter.get();
 
 result.getErrorCategory().ifPresent(category -> {
     switch (category) {
@@ -363,6 +360,25 @@ result.getErrorCategory().ifPresent(category -> {
 
 [source,java]
 ----
+// Create XML converter
+HttpContentConverter<String> xmlConverter = new StringContentConverter<>() {
+    @Override
+    protected Optional<String> convertString(String rawContent) {
+        return Optional.of(rawContent);
+    }
+
+    @Override
+    public HttpRequest.BodyPublisher toBodyPublisher(@Nullable String content) {
+        if (content == null) return HttpRequest.BodyPublishers.noBody();
+        return HttpRequest.BodyPublishers.ofString(content, StandardCharsets.UTF_8);
+    }
+
+    @Override
+    public ContentType contentType() {
+        return ContentType.APPLICATION_XML;
+    }
+};
+
 String xmlBody = """
     <?xml version="1.0"?>
     <user>
@@ -371,24 +387,40 @@ String xmlBody = """
     </user>
     """;
 
-HttpResult<User> result = HttpMethod.POST.send(
-    adapter,
-    HttpRequestBodyPublisher.xml(),  // XML publisher
-    xmlBody
-);
+// String→User: use request converter for different type
+HttpResult<User> result = adapter.post(xmlConverter, xmlBody);
 ----
 
 == Example 12: Plain Text Request
 
 [source,java]
 ----
-String textBody = "User registration data...";
+// Adapter with String bidirectional converter
+HttpContentConverter<String> textConverter = new StringContentConverter<>() {
+    @Override
+    protected Optional<String> convertString(String rawContent) {
+        return Optional.of(rawContent);
+    }
 
-HttpResult<String> result = HttpMethod.POST.send(
-    adapter,
-    HttpRequestBodyPublisher.plainText(),
-    textBody
-);
+    @Override
+    public HttpRequest.BodyPublisher toBodyPublisher(@Nullable String content) {
+        if (content == null) return HttpRequest.BodyPublishers.noBody();
+        return HttpRequest.BodyPublishers.ofString(content, StandardCharsets.UTF_8);
+    }
+
+    @Override
+    public ContentType contentType() {
+        return ContentType.TEXT_PLAIN;
+    }
+};
+
+HttpAdapter<String> textAdapter = ETagAwareHttpAdapter.<String>builder()
+    .httpHandler(handler)
+    .contentConverter(textConverter)
+    .build();
+
+String textBody = "User registration data...";
+HttpResult<String> result = textAdapter.post(textBody);
 ----
 
 == Example 13: Binary Data (Image Upload)
@@ -397,16 +429,40 @@ HttpResult<String> result = HttpMethod.POST.send(
 ----
 byte[] imageData = Files.readAllBytes(Path.of("profile.png"));
 
+// Binary converter
+HttpContentConverter<byte[]> imageConverter = new HttpContentConverter<>() {
+    @Override
+    public Optional<byte[]> convert(Object rawContent) {
+        if (rawContent instanceof byte[] bytes) {
+            return Optional.of(bytes);
+        }
+        return Optional.empty();
+    }
+
+    @Override
+    public HttpRequest.BodyPublisher toBodyPublisher(@Nullable byte[] content) {
+        if (content == null) return HttpRequest.BodyPublishers.noBody();
+        return HttpRequest.BodyPublishers.ofByteArray(content);
+    }
+
+    @Override
+    public HttpResponse.BodyHandler<byte[]> getBodyHandler() {
+        return HttpResponse.BodyHandlers.ofByteArray();
+    }
+
+    @Override
+    public ContentType contentType() {
+        return ContentType.IMAGE_PNG;
+    }
+};
+
 HttpAdapter<Response> adapter = ETagAwareHttpAdapter.<Response>builder()
     .httpHandler(uploadHandler)
     .contentConverter(responseConverter)
     .build();
 
-HttpResult<Response> result = HttpMethod.POST.send(
-    adapter,
-    HttpRequestBodyPublisher.ofByteArray(ContentType.IMAGE_PNG),
-    imageData
-);
+// byte[]→Response: use request converter for different type
+HttpResult<Response> result = adapter.post(imageConverter, imageData);
 ----
 
 == Example 14: Clear ETag Cache
@@ -419,7 +475,7 @@ ETagAwareHttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .build();
 
 // Use adapter...
-HttpResult<User> result = HttpMethod.GET.send(adapter);
+HttpResult<User> result = adapter.get();
 
 // Later, clear cache
 adapter.clearETagCache();
@@ -436,7 +492,7 @@ HttpAdapter<User> adapter = ResilientHttpAdapter.wrap(
         .build()
 );
 
-HttpResult<User> result = HttpMethod.GET.send(adapter);
+HttpResult<User> result = adapter.get();
 
 // Use fallback if available
 User user = result.getContent()
@@ -453,24 +509,18 @@ Map<String, String> headers = Map.of(
     "X-Client-Version", "1.0.0"
 );
 
-HttpResult<User> result = HttpMethod.GET.send(adapter, headers);
+HttpResult<User> result = adapter.get(headers);
 ----
 
 == Example 17: PATCH Request
 
 [source,java]
 ----
-String patchJson = """
-    {
-        "email": "newemail@example.com"
-    }
-    """;
+User patchData = User.builder()
+    .email("newemail@example.com")
+    .build();
 
-HttpResult<User> result = HttpMethod.PATCH.send(
-    adapter,
-    HttpRequestBodyPublisher.json(),
-    patchJson
-);
+HttpResult<User> result = adapter.patch(patchData);
 ----
 
 == Example 18: HEAD Request (Metadata Only)
@@ -478,7 +528,7 @@ HttpResult<User> result = HttpMethod.PATCH.send(
 [source,java]
 ----
 // HEAD returns no body, only headers
-HttpResult<Void> result = HttpMethod.HEAD.send(voidAdapter);
+HttpResult<Void> result = voidAdapter.head();
 
 if (result.isSuccess()) {
     result.getETag().ifPresent(etag ->
@@ -492,7 +542,7 @@ if (result.isSuccess()) {
 
 [source,java]
 ----
-HttpResult<String> result = HttpMethod.OPTIONS.send(stringAdapter);
+HttpResult<String> result = stringAdapter.options();
 
 if (result.isSuccess()) {
     // Server may return allowed methods in response
@@ -510,7 +560,7 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .build();
 
 try {
-    HttpResult<User> result = HttpMethod.GET.send(adapter);
+    HttpResult<User> result = adapter.get();
 
     switch (result) {
         case HttpResult.Success<User>(var user, var etag, var status) -> {
@@ -534,7 +584,7 @@ try {
 
 [source,java]
 ----
-HttpResult<User> result = HttpMethod.GET.send(adapter);
+HttpResult<User> result = adapter.get();
 
 if (!result.isSuccess()) {
     result.getCause().ifPresent(cause -> {
@@ -565,7 +615,7 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .contentConverter(userConverter)
     .build();
 
-HttpResult<User> result = HttpMethod.GET.send(adapter);
+HttpResult<User> result = adapter.get();
 
 result.getCause().ifPresent(cause -> {
     if (cause instanceof HttpTimeoutException) {
@@ -592,7 +642,14 @@ HttpContentConverter<User> userConverter = new StringContentConverter<>() {
     }
 
     @Override
-    public ContentType expectedContentType() {
+    public HttpRequest.BodyPublisher toBodyPublisher(@Nullable User user) {
+        if (user == null) return HttpRequest.BodyPublishers.noBody();
+        String json = convertUserToJson(user);
+        return HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8);
+    }
+
+    @Override
+    public ContentType contentType() {
         return ContentType.APPLICATION_JSON;
     }
 };
@@ -602,7 +659,7 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .contentConverter(userConverter)
     .build();
 
-HttpResult<User> result = HttpMethod.GET.send(adapter);
+HttpResult<User> result = adapter.get();
 
 if (result.isSuccess() && result.getContent().isEmpty()) {
     LOGGER.warn("Response received but content could not be parsed");
@@ -627,7 +684,7 @@ public User loadUserWithFallback(String userId) {
             .build()
     );
 
-    HttpResult<User> result = HttpMethod.GET.send(adapter);
+    HttpResult<User> result = adapter.get();
 
     return switch (result) {
         case HttpResult.Success<User>(var user, var etag, var status) -> {

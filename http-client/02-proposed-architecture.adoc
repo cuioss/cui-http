@@ -9,7 +9,7 @@
 ----
 Client Code
     ↓
-HttpMethod Enum (GET, POST, PUT, ...)
+HttpAdapter.{get()|post()|put()|...}
     ↓
 ResilientHttpAdapter (optional retry)
     ↓
@@ -20,22 +20,35 @@ HttpHandler (SSL, timeouts, configuration)
 java.net.http.HttpClient
 ----
 
-**Key simplification:** Single `ETagAwareHttpAdapter` with built-in ETag caching (configurable) instead of separate `SimpleHttpAdapter` + `CachingHttpAdapter` decorator.
+**Key simplifications:**
+* Single `ETagAwareHttpAdapter` with built-in ETag caching (configurable) instead of separate `SimpleHttpAdapter` + `CachingHttpAdapter` decorator
+* Method-specific API (`adapter.get()`, `adapter.post()`, etc.) instead of generic `send(HttpMethod, ...)`
+* Bidirectional `HttpContentConverter<T>` handles both request and response conversion
 
 == HttpAdapter<T> Interface
 
 [source,java]
 ----
-@FunctionalInterface
 public interface HttpAdapter<T> {
-    <R> HttpResult<T> send(HttpMethod method,
-                           HttpRequestBodyPublisher<R> bodyPublisher,
+    // No-body methods
+    HttpResult<T> get(Map<String, String> additionalHeaders);
+    HttpResult<T> delete(Map<String, String> additionalHeaders);
+    // ... head(), options()
+
+    // Body methods (T → T, bidirectional converter)
+    HttpResult<T> post(@Nullable T requestBody, Map<String, String> additionalHeaders);
+    HttpResult<T> put(@Nullable T requestBody, Map<String, String> additionalHeaders);
+    // ... patch(), delete(T, Map)
+
+    // Body methods (R → T, different request type)
+    <R> HttpResult<T> post(HttpContentConverter<R> requestConverter,
                            @Nullable R requestBody,
                            Map<String, String> additionalHeaders);
+    // ... put(R), patch(R)
 }
 ----
 
-**Purpose:** Enable composition and extensions
+**Purpose:** Enable composition and extensions with method-specific type-safe APIs
 
 See link:03-core-components.adoc#_httpadapter_interface[Full Specification]
 
@@ -82,7 +95,7 @@ See link:05-resilient-adapter.adoc[Complete Specification]
 
 [source]
 ----
-1. Client: HttpMethod.GET.send(adapter)
+1. Client: adapter.get()
 
 2. ResilientHttpAdapter (if used):
    → Delegate to ETagAwareHttpAdapter
@@ -108,13 +121,14 @@ See link:05-resilient-adapter.adoc[Complete Specification]
 
 [source]
 ----
-1. Client: HttpMethod.POST.send(adapter, publisher, body)
+1. Client: adapter.post(userObject)
 
 2. ResilientHttpAdapter:
    → Delegate to ETagAwareHttpAdapter
 
 3. ETagAwareHttpAdapter:
    → POST: no ETag caching
+   → Convert body via contentConverter.toBodyPublisher(userObject)
    → Build request with body
    → Send via HttpHandler
 
@@ -148,17 +162,21 @@ See link:04-etag-aware-adapter.adoc#_304_not_modified_handling[Implementation De
 
 See link:03-core-components.adoc[Core Components] for complete specifications.
 
-=== HttpMethod Enum
+=== HttpAdapter<T> Interface
 
-Type-safe HTTP methods (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS) with `send()` convenience methods.
+Method-specific interface for HTTP operations (`get()`, `post()`, `put()`, `delete()`, `patch()`, `head()`, `options()`).
+
+=== HttpContentConverter<T>
+
+Bidirectional converter handling both request serialization (T → HTTP) and response deserialization (HTTP → T).
 
 === ContentType Enum
 
 Type-safe MIME types (APPLICATION_JSON, TEXT_PLAIN, etc.) with charset support.
 
-=== HttpRequestBodyPublisher<T>
+=== CacheKeyHeaders Enum
 
-Request body publishing with factory methods (`json()`, `plainText()`, `xml()`, `ofByteArray()`).
+Configure which headers are included in ETag cache keys (`ALL` or `NONE`).
 
 === HttpErrorCategory
 
@@ -190,7 +208,7 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .contentConverter(userConverter)
     .build();  // ETag ON by default
 
-HttpResult<User> result = HttpMethod.GET.send(adapter);
+HttpResult<User> result = adapter.get();
 ----
 
 === Disable ETag
@@ -228,11 +246,8 @@ HttpAdapter<User> baseAdapter = ETagAwareHttpAdapter.<User>builder()
 
 HttpAdapter<User> resilientAdapter = ResilientHttpAdapter.wrap(baseAdapter);
 
-HttpResult<User> result = HttpMethod.POST.send(
-    resilientAdapter,
-    HttpRequestBodyPublisher.json(),
-    jsonBody
-);
+User newUser = User.builder().name("John").build();
+HttpResult<User> result = resilientAdapter.post(newUser);
 ----
 
 == Breaking Changes
@@ -245,17 +260,24 @@ See link:08-migration-guide.adoc[Migration Guide] for complete details.
 * `RetryStrategy` interface → `RetryConfig` record
 * `RetryStrategies` factory → `RetryConfig.builder()`
 * `RetryContext` record
-* `HttpContentConverter.emptyValue()` → `expectedContentType()`
+* `HttpContentConverter.emptyValue()` → `contentType()`
+* `HttpRequestBodyPublisher<T>` → Use bidirectional `HttpContentConverter<T>`
 
 **Modified:**
 
-* `HttpContentConverter` - Remove `emptyValue()`, add `expectedContentType()`
-* `module-info.java` - Export packages: `adapter`, `request`
+* `HttpAdapter<T>` - Method-specific interface (`get()`, `post()`, `put()`, etc.)
+* `HttpContentConverter<T>` - Bidirectional (added `toBodyPublisher()`)
+* `HttpContentConverter.expectedContentType()` → Renamed to `contentType()`
+* `module-info.java` - Export packages: `adapter` (NOT `request`)
 
 **New:**
 
-* `HttpMethod` enum, `ContentType` enum
-* `HttpAdapter<T>` interface
-* `HttpRequestBodyPublisher<T>` interface
+* `ContentType` enum
+* `HttpAdapter<T>` interface (method-specific)
 * `ETagAwareHttpAdapter<T>`, `ResilientHttpAdapter<T>`
 * `RetryConfig` record
+* `CacheKeyHeaders` enum
+
+**Internal-Only (not exported):**
+
+* `HttpMethod` enum (package-private)

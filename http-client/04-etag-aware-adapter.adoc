@@ -76,12 +76,12 @@ This enables **optimistic locking patterns** for subsequent updates:
 [source,java]
 ----
 // POST creates resource, returns ETag
-HttpResult<User> created = HttpMethod.POST.send(adapter, publisher, user);
+HttpResult<User> created = adapter.post(user);
 String etag = created.getETag().orElseThrow();
 
 // Later: PUT with If-Match for optimistic locking
 Map<String, String> headers = Map.of("If-Match", etag);
-HttpResult<User> updated = HttpMethod.PUT.send(adapter, publisher, updatedUser, headers);
+HttpResult<User> updated = adapter.put(updatedUser, headers);
 // Server returns 412 Precondition Failed if resource changed
 ----
 
@@ -127,7 +127,7 @@ The 304 status code is preserved in `HttpResult` for:
 
 [source,java]
 ----
-HttpResult<User> result = HttpMethod.GET.send(adapter);
+HttpResult<User> result = adapter.get();
 
 // ✅ GOOD - Treat all Success the same
 if (result.isSuccess()) {
@@ -329,12 +329,12 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
 
 // Token refresh doesn't create duplicate cache entries
 Map<String, String> headers1 = Map.of("Authorization", "Bearer old-token");
-HttpResult<User> result1 = HttpMethod.GET.send(adapter, headers1);
+HttpResult<User> result1 = adapter.get(headers1);
 // Cache key: "https://api.example.com/users"
 
 // After token refresh
 Map<String, String> headers2 = Map.of("Authorization", "Bearer new-token");
-HttpResult<User> result2 = HttpMethod.GET.send(adapter, headers2);
+HttpResult<User> result2 = adapter.get(headers2);
 // Same cache key: "https://api.example.com/users"
 // → 304 Not Modified (cache hit!)
 ----
