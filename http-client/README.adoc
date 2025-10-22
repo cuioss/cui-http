@@ -180,10 +180,6 @@ See link:04-etag-aware-adapter.adoc#_304_not_modified_handling[304 Implementatio
 * `RetryConfig` record
 * `CacheKeyHeaders` enum
 
-**Internal-Only (not exported):**
-
-* `HttpMethod` enum (package-private)
-
 See link:08-migration-guide.adoc[Complete Migration Guide]
 
 == Documents

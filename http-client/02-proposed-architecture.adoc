@@ -281,7 +281,3 @@ See link:08-migration-guide.adoc[Migration Guide] for complete details.
 * `ETagAwareHttpAdapter<T>`, `ResilientHttpAdapter<T>`
 * `RetryConfig` record
 * `CacheKeyHeaders` enum
-
-**Internal-Only (not exported):**
-
-* `HttpMethod` enum (package-private)
