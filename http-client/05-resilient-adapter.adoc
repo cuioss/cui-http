@@ -5,13 +5,12 @@
 
 == Overview
 
-`ResilientHttpAdapter` is an async decorator that adds retry logic with exponential backoff to any `HttpAdapter` implementation. It uses `CompletableFuture` for non-blocking retries with virtual threads and shared retry logic from `ExponentialBackoffRetryStrategy`.
+`ResilientHttpAdapter` is an async decorator that adds retry logic with exponential backoff to any `HttpAdapter` implementation. It uses `CompletableFuture` for non-blocking retries with virtual threads.
 
 == Design Goals
 
 * *Async-First* - CompletableFuture-based, non-blocking retries
 * *Virtual Threads* - Leverages Java 21+ virtual threads for scalability
-* *Code Reuse* - Shares delay calculation and retry logic with ExponentialBackoffRetryStrategy
 * *Composition* - Wraps any HttpAdapter implementation
 * *Single Algorithm* - Exponential backoff with jitter (industry best practice)
 * *Fail-Fast* - No retry for non-retryable errors (CLIENT_ERROR)
@@ -19,15 +18,15 @@
 
 == Architecture
 
-Async retry with shared logic:
+Async retry with configuration:
 
 [source]
 ----
-RetryConfig (record)
+RetryConfig (record with calculateDelay method)
     ↓ configures
 ResilientHttpAdapter (async retry orchestration)
-    ├─ reuses → DelayCalculator (shared with ExponentialBackoffRetryStrategy)
-    └─ wraps → Any HttpAdapter implementation
+    ↓ wraps
+Any HttpAdapter implementation
 
 CompletableFuture<HttpResult<T>>
     ↓ non-blocking delays using
@@ -188,52 +187,33 @@ public record RetryConfig(
 * Google Cloud SDK best practices
 * Polly (.NET resilience library) defaults
 
-== DelayCalculator (Shared Logic)
+=== RetryConfig Methods
 
-Extracted for reuse between `ResilientHttpAdapter` and `ExponentialBackoffRetryStrategy`:
+The record includes a method to calculate delays:
 
 [source,java]
 ----
-package de.cuioss.http.client.retry;
-
-import java.time.Duration;
-import java.util.concurrent.ThreadLocalRandom;
-
 /**
- * Calculates exponential backoff delays with jitter.
- * Shared by ResilientHttpAdapter and ExponentialBackoffRetryStrategy.
+ * Calculates delay for given attempt using exponential backoff with jitter.
+ * Formula: initialDelay * (multiplier ^ (attempt - 1)) * (1 ± jitter)
+ *
+ * @param attemptNumber current attempt (1-based)
+ * @return calculated delay with jitter applied, capped at maxDelay
  */
-public final class DelayCalculator {
+@SuppressWarnings("java:S2245") // Random is fine for jitter
+public Duration calculateDelay(int attemptNumber) {
+    // Exponential backoff: initialDelay * (multiplier ^ (attempt - 1))
+    double exponentialDelay = initialDelay.toMillis()
+        * Math.pow(multiplier, (double) attemptNumber - 1);
 
-    private DelayCalculator() {} // Utility class
+    // Apply jitter: delay * (1 ± jitter)
+    // Random value between -1.0 and 1.0
+    double randomFactor = 2.0 * ThreadLocalRandom.current().nextDouble() - 1.0;
+    double jitterMultiplier = 1.0 + (randomFactor * jitter);
+    long delayMs = Math.round(exponentialDelay * jitterMultiplier);
 
-    /**
-     * Calculates delay for given attempt using exponential backoff with jitter.
-     *
-     * @param attemptNumber current attempt (1-based)
-     * @param initialDelay starting delay
-     * @param backoffMultiplier exponential multiplier
-     * @param maxDelay maximum delay cap
-     * @param jitterFactor randomization factor (0.0-1.0)
-     * @return calculated delay with jitter applied
-     */
-    @SuppressWarnings("java:S2245") // Random is fine for jitter
-    public static Duration calculateDelay(int attemptNumber, Duration initialDelay,
-                                         double backoffMultiplier, Duration maxDelay,
-                                         double jitterFactor) {
-        // Exponential backoff: initialDelay * (multiplier ^ (attempt - 1))
-        double exponentialDelay = initialDelay.toMillis()
-            * Math.pow(backoffMultiplier, (double) attemptNumber - 1);
-
-        // Apply jitter: delay * (1 ± jitterFactor)
-        // Random value between -1.0 and 1.0
-        double randomFactor = 2.0 * ThreadLocalRandom.current().nextDouble() - 1.0;
-        double jitter = 1.0 + (randomFactor * jitterFactor);
-        long delayMs = Math.round(exponentialDelay * jitter);
-
-        // Cap at maximum delay
-        return Duration.ofMillis(Math.min(delayMs, maxDelay.toMillis()));
-    }
+    // Cap at maximum delay
+    return Duration.ofMillis(Math.min(delayMs, maxDelay.toMillis()));
 }
 ----
 
@@ -243,7 +223,6 @@ public final class DelayCalculator {
 ----
 package de.cuioss.http.client.adapter;
 
-import de.cuioss.http.client.retry.DelayCalculator;
 import de.cuioss.tools.logging.CuiLogger;
 
 import java.time.Duration;
@@ -342,13 +321,7 @@ public class ResilientHttpAdapter<T> implements HttpAdapter<T> {
                     }
 
                     // Retryable failure - calculate delay and schedule retry
-                    Duration delay = DelayCalculator.calculateDelay(
-                        attempt,
-                        config.initialDelay(),
-                        config.multiplier(),
-                        config.maxDelay(),
-                        config.jitter()
-                    );
+                    Duration delay = config.calculateDelay(attempt);
 
                     LOGGER.warn("{} failed on attempt {}, retrying after {}ms",
                         operationName, attempt, delay.toMillis());
@@ -635,34 +608,6 @@ CompletableFuture<List<HttpResult<User>>> allResults =
             .toList());
 ----
 
-== Code Reuse with ExponentialBackoffRetryStrategy
-
-Both `ResilientHttpAdapter` and `ExponentialBackoffRetryStrategy` share:
-
-[cols="1,2"]
-|===
-|Shared Component |Location
-
-|**DelayCalculator**
-|`de.cuioss.http.client.retry.DelayCalculator` - calculates exponential backoff with jitter
-
-|**RetryConfig fields**
-|Same configuration parameters (maxAttempts, initialDelay, multiplier, maxDelay, jitter)
-
-|**Virtual thread pattern**
-|`Executors.newVirtualThreadPerTaskExecutor()`
-
-|**Async delay pattern**
-|`CompletableFuture.delayedExecutor(delay, MILLISECONDS, virtualThreadExecutor)`
-|===
-
-**Benefits:**
-
-* Single source of truth for delay calculation
-* Consistent retry behavior across HTTP client and general retry use cases
-* Same algorithm tuning applies everywhere
-* Less code duplication, easier maintenance
-
 == Benefits of Async Approach
 
 [cols="1,2"]
@@ -689,9 +634,6 @@ Both `ResilientHttpAdapter` and `ExponentialBackoffRetryStrategy` share:
 
 |**Testable**
 |Easy to test with `CompletableFuture` test utilities
-
-|**Shared logic**
-|Reuses `DelayCalculator` with `ExponentialBackoffRetryStrategy`
 |===
 
 == Testing Requirements
@@ -702,9 +644,9 @@ Both `ResilientHttpAdapter` and `ExponentialBackoffRetryStrategy` share:
 * ✅ Retry on SERVER_ERROR (async)
 * ✅ No retry on CLIENT_ERROR
 * ✅ Max attempts respected
-* ✅ Exponential backoff delay calculation (via DelayCalculator)
-* ✅ Jitter applied correctly (via DelayCalculator)
-* ✅ maxDelay cap enforced (via DelayCalculator)
+* ✅ Exponential backoff delay calculation (via RetryConfig.calculateDelay)
+* ✅ Jitter applied correctly (via RetryConfig.calculateDelay)
+* ✅ maxDelay cap enforced (via RetryConfig.calculateDelay)
 * ✅ CompletableFuture composition
 * ✅ Virtual thread execution
 * ✅ Non-blocking delays using delayedExecutor
@@ -714,7 +656,6 @@ Both `ResilientHttpAdapter` and `ExponentialBackoffRetryStrategy` share:
 * ✅ Async timeout handling (orTimeout)
 * ✅ Parallel execution of multiple requests
 * ✅ Composition with ETagAwareHttpAdapter
-* ✅ DelayCalculator shared logic correctness
 
 == Design Decisions
 
@@ -723,8 +664,8 @@ Both `ResilientHttpAdapter` and `ExponentialBackoffRetryStrategy` share:
 |Decision |Choice |Rationale
 
 |Architecture
-|Async decorator with shared utilities
-|Non-blocking, reuses logic with ExponentialBackoffRetryStrategy
+|Async decorator with RetryConfig
+|Non-blocking, simple configuration object pattern
 
 |Return type
 |CompletableFuture<HttpResult<T>>
@@ -742,13 +683,13 @@ Both `ResilientHttpAdapter` and `ExponentialBackoffRetryStrategy` share:
 |Exponential backoff only
 |Industry best practice, covers 99% of cases
 
-|Code reuse
-|Shared DelayCalculator utility
-|Single source of truth for delay calculation logic
+|Delay calculation
+|RetryConfig.calculateDelay method
+|Configuration record with behavior, keeps logic with config
 
 |Jitter
 |Configurable (default 10%)
-|Prevents thundering herd, same algorithm as ExponentialBackoffRetryStrategy
+|Prevents thundering herd
 
 |Thread safety
 |Immutable config, stateless adapter
