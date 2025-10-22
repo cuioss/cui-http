@@ -285,8 +285,18 @@ HttpAdapter<User> baseAdapter = ETagAwareHttpAdapter.<User>builder()
 // Wrap with retry (default: 5 attempts, exponential backoff)
 HttpAdapter<User> resilientAdapter = ResilientHttpAdapter.wrap(baseAdapter);
 
-// Use
-HttpResult<User> result = resilientAdapter.get();
+// Async execution - returns CompletableFuture
+CompletableFuture<HttpResult<User>> futureResult = resilientAdapter.get();
+
+// Handle result asynchronously
+futureResult.thenAccept(result -> {
+    if (result.isSuccess()) {
+        LOGGER.info("User loaded: {}", result.getContent());
+    }
+});
+
+// Or block if needed (not recommended in async contexts)
+HttpResult<User> result = futureResult.join();
 // Automatically retries on NETWORK_ERROR and SERVER_ERROR
 ----
 
@@ -316,7 +326,18 @@ HttpAdapter<User> resilientAdapter = ResilientHttpAdapter.wrap(
 );
 
 User newUser = User.builder().name("John").build();
-HttpResult<User> result = resilientAdapter.post(newUser);
+
+// Async execution
+CompletableFuture<HttpResult<User>> futureResult = resilientAdapter.post(newUser);
+
+// Chain async operations
+futureResult
+    .thenApply(result -> result.getValue().orElse(null))
+    .thenAccept(createdUser -> LOGGER.info("User created: {}", createdUser))
+    .exceptionally(ex -> {
+        LOGGER.error("Async operation failed", ex);
+        return null;
+    });
 ----
 
 == Example 10: Error Handling by Category
@@ -492,11 +513,18 @@ HttpAdapter<User> adapter = ResilientHttpAdapter.wrap(
         .build()
 );
 
-HttpResult<User> result = adapter.get();
+// Async execution with fallback
+CompletableFuture<User> userFuture = adapter.get()
+    .thenApply(result -> result.getContent().orElseGet(() -> loadUserFromCache()));
 
-// Use fallback if available
-User user = result.getContent()
-    .orElseGet(() -> loadUserFromCache());
+// Handle user asynchronously
+userFuture.thenAccept(user -> {
+    LOGGER.info("User loaded (from API or cache): {}", user.getName());
+    processUser(user);
+});
+
+// Or block if needed
+User user = userFuture.join();
 ----
 
 == Example 16: Multiple Headers
@@ -672,11 +700,11 @@ if (result.isSuccess() && result.getContent().isEmpty()) {
 }
 ----
 
-== Example 24: Comprehensive Error Recovery
+== Example 24: Comprehensive Error Recovery (Async)
 
 [source,java]
 ----
-public User loadUserWithFallback(String userId) {
+public CompletableFuture<User> loadUserWithFallback(String userId) {
     HttpAdapter<User> adapter = ResilientHttpAdapter.wrap(
         ETagAwareHttpAdapter.<User>builder()
             .httpHandler(handler)
@@ -684,45 +712,52 @@ public User loadUserWithFallback(String userId) {
             .build()
     );
 
-    HttpResult<User> result = adapter.get();
+    return adapter.get()
+        .thenApply(result -> switch (result) {
+            case HttpResult.Success<User>(var user, var etag, var status) -> {
+                LOGGER.info("Loaded user {} (status: {})", userId, status);
+                yield user;
+            }
+            case HttpResult.Failure<User> failure -> {
+                LOGGER.error("Failed to load user {}: {}",
+                    userId, failure.errorMessage());
 
-    return switch (result) {
-        case HttpResult.Success<User>(var user, var etag, var status) -> {
-            LOGGER.info("Loaded user {} (status: {})", userId, status);
-            yield user;
-        }
-        case HttpResult.Failure<User> failure -> {
-            LOGGER.error("Failed to load user {}: {}",
-                userId, failure.errorMessage());
-
-            // Try different recovery strategies based on error category
-            HttpErrorCategory category = failure.category();
-            yield switch (category) {
-                case NETWORK_ERROR, SERVER_ERROR -> {
-                    // Transient error - use cache
-                    LOGGER.info("Using cached data for user {}", userId);
-                    yield loadUserFromCache(userId);
-                }
-                case CLIENT_ERROR -> {
-                    // Bad request - use default user
-                    LOGGER.warn("Bad request for user {}, using default", userId);
-                    yield createDefaultUser(userId);
-                }
-                case INVALID_CONTENT -> {
-                    // Response parsing failed - report and use default
-                    LOGGER.error("Invalid response format for user {}", userId);
-                    reportDataQualityIssue();
-                    yield createDefaultUser(userId);
-                }
-                case CONFIGURATION_ERROR -> {
-                    // Configuration issue - alert operations
-                    LOGGER.error("Configuration error loading user {}", userId);
-                    alertOperations("HTTP client misconfigured");
-                    throw new IllegalStateException("Cannot load user", failure.cause());
-                }
-            };
-        }
-    };
+                // Try different recovery strategies based on error category
+                HttpErrorCategory category = failure.category();
+                yield switch (category) {
+                    case NETWORK_ERROR, SERVER_ERROR -> {
+                        // Transient error - use cache
+                        LOGGER.info("Using cached data for user {}", userId);
+                        yield loadUserFromCache(userId);
+                    }
+                    case CLIENT_ERROR -> {
+                        // Bad request - use default user
+                        LOGGER.warn("Bad request for user {}, using default", userId);
+                        yield createDefaultUser(userId);
+                    }
+                    case INVALID_CONTENT -> {
+                        // Response parsing failed - report and use default
+                        LOGGER.error("Invalid response format for user {}", userId);
+                        reportDataQualityIssue();
+                        yield createDefaultUser(userId);
+                    }
+                    case CONFIGURATION_ERROR -> {
+                        // Configuration issue - alert operations
+                        LOGGER.error("Configuration error loading user {}", userId);
+                        alertOperations("HTTP client misconfigured");
+                        throw new IllegalStateException("Cannot load user", failure.cause());
+                    }
+                };
+            }
+        });
 }
+
+// Usage:
+loadUserWithFallback("user123")
+    .thenAccept(user -> LOGGER.info("Processing user: {}", user))
+    .exceptionally(ex -> {
+        LOGGER.error("Failed to load user", ex);
+        return null;
+    });
 ----
 

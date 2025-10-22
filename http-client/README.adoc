@@ -77,6 +77,16 @@ HttpResult<User> result = adapter.post(newUser);
 [source,java]
 ----
 HttpAdapter<User> resilient = ResilientHttpAdapter.wrap(baseAdapter);
+
+// Async execution - returns CompletableFuture
+CompletableFuture<HttpResult<User>> future = resilient.get();
+
+// Handle asynchronously
+future.thenAccept(result -> {
+    if (result.isSuccess()) {
+        processUser(result.getValue().orElseThrow());
+    }
+});
 ----
 
 === Single-User Client (No Token Bloat)
@@ -131,6 +141,10 @@ HttpAdapter<User> option2 = new BearerTokenAdapter<>(
     ResilientHttpAdapter.wrap(baseAdapter),
     tokenSupplier
 );
+
+// Both return CompletableFuture for async execution
+CompletableFuture<HttpResult<User>> future1 = option1.get();
+CompletableFuture<HttpResult<User>> future2 = option2.get();
 ----
 
 **Rule:** Place stable concerns outside, variable concerns inside retry loop.

@@ -67,12 +67,22 @@ HttpAdapter<User> baseAdapter = ETagAwareHttpAdapter.<User>builder()
     .contentConverter(userConverter)
     .build();
 
-// Wrap with retry
+// Wrap with retry (returns CompletableFuture for async operation)
 HttpAdapter<User> resilientAdapter = ResilientHttpAdapter.wrap(baseAdapter);
 
-// Now supports all HTTP methods
-HttpResult<User> result = HttpMethod.GET.send(resilientAdapter);
-HttpResult<User> result = HttpMethod.POST.send(resilientAdapter, publisher, body);
+// Now supports all HTTP methods - returns CompletableFuture
+CompletableFuture<HttpResult<User>> futureGet = resilientAdapter.get();
+CompletableFuture<HttpResult<User>> futurePost = resilientAdapter.post(body);
+
+// Handle asynchronously
+futureGet.thenAccept(result -> {
+    if (result.isSuccess()) {
+        processUser(result.getValue().orElseThrow());
+    }
+});
+
+// Or block if needed (not recommended in async contexts)
+HttpResult<User> result = futureGet.join();
 ----
 
 === Step 2: Update HttpContentConverter Implementations
@@ -184,7 +194,15 @@ HttpAdapter<User> adapter = ResilientHttpAdapter.wrap(
         .build()
 );
 
-HttpResult<User> result = HttpMethod.GET.send(adapter);
+// Async execution
+CompletableFuture<HttpResult<User>> future = adapter.get();
+
+// Handle asynchronously
+future.thenAccept(result -> {
+    if (result.isSuccess()) {
+        processUser(result.getValue().orElseThrow());
+    }
+});
 ----
 
 === Pattern 2: GET without Retry
@@ -303,7 +321,18 @@ HttpAdapter<Jwks> adapter = ResilientHttpAdapter.wrap(
         .build()  // ETag caching ON (good for JWKS)
 );
 
-HttpResult<Jwks> result = HttpMethod.GET.send(adapter);
+// Async execution
+CompletableFuture<HttpResult<Jwks>> future = adapter.get();
+
+// Handle asynchronously
+future.thenAccept(result -> {
+    if (result.isSuccess()) {
+        result.getValue().ifPresent(jwks -> {
+            LOGGER.info("JWKS loaded with {} keys", jwks.getKeys().size());
+            cacheJwks(jwks);
+        });
+    }
+});
 ----
 
 === Scenario 2: Well-Known Configuration Loading
@@ -332,7 +361,20 @@ HttpAdapter<WellKnownResult> adapter = ResilientHttpAdapter.wrap(
         .build()
 );
 
-HttpResult<WellKnownResult> result = HttpMethod.GET.send(adapter);
+// Async execution
+CompletableFuture<HttpResult<WellKnownResult>> future = adapter.get();
+
+// Chain async operations
+future
+    .thenApply(result -> result.getValue().orElseThrow())
+    .thenAccept(config -> {
+        LOGGER.info("Well-known configuration loaded");
+        updateConfiguration(config);
+    })
+    .exceptionally(ex -> {
+        LOGGER.error("Failed to load configuration", ex);
+        return null;
+    });
 ----
 
 === Scenario 3: API Client with POST/PUT
@@ -364,12 +406,22 @@ HttpAdapter<User> adapter = ResilientHttpAdapter.wrap(
         .build()
 );
 
-HttpResult<User> result = HttpMethod.POST.send(
-    adapter,
-    HttpRequestBodyPublisher.json(),
-    jsonBody
-);
-// Type-safe, automatic retry, structured error handling
+User newUser = User.builder().name("John").email("john@example.com").build();
+
+// Async execution - returns CompletableFuture
+CompletableFuture<HttpResult<User>> future = adapter.post(newUser);
+
+// Handle result asynchronously
+future.thenAccept(result -> {
+    if (result.isSuccess()) {
+        result.getValue().ifPresent(createdUser ->
+            LOGGER.info("User created with ID: {}", createdUser.getId())
+        );
+    } else {
+        LOGGER.error("User creation failed: {}", result.getErrorMessage());
+    }
+});
+// Type-safe, automatic retry with async, structured error handling
 ----
 
 == Verification Checklist
