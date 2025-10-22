@@ -113,31 +113,31 @@ Using `MockWebServer` for realistic HTTP scenarios:
 
 [cols="1,2"]
 |===
-|Test Scenario |What to Test
+|Test Scenario |Expected Results
 
 |GET with ETag
-|First request → 200, second request → 304
+|First request → 200 with ETag, cached; second request → sends If-None-Match, receives 304, returns Success with cached content
 
 |POST request
-|Body sending, response handling
+|Request body sent with Content-Type header, response converted, ETag extracted but not cached
 
 |PUT request
-|Body sending, idempotency
+|Request body sent, idempotent behavior, successful update returns Success with updated content
 
 |DELETE request
-|No body, response handling
+|No body sent, server responds 204 No Content or 200, returns Success
 
 |Network failure
-|IOException, retry behavior
+|IOException thrown → Failure(NETWORK_ERROR), retry triggered (up to maxAttempts), final failure if all attempts exhausted
 
 |Server error
-|5xx responses, retry behavior
+|5xx response → Failure(SERVER_ERROR, httpStatus=5xx), retry triggered, success on retry or final failure
 
 |Client error
-|4xx responses, no retry
+|4xx response → Failure(CLIENT_ERROR, httpStatus=4xx), NO retry, immediate return of failure
 
 |Composition
-|ETagAwareHttpAdapter + ResilientHttpAdapter
+|ResilientHttpAdapter wraps ETagAwareHttpAdapter → retries work with ETag caching, 304 responses not retried (Success)
 |===
 
 === Coverage Requirements

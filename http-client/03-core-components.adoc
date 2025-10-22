@@ -105,6 +105,135 @@ HttpResult<User> result = HttpMethod.GET.send(
 );
 ----
 
+== CacheKeyHeaders Enum
+
+*Package:* `de.cuioss.http.client.adapter`
+
+*Purpose:* Configure which headers are included in ETag cache keys.
+
+=== Interface Definition
+
+[source,java]
+----
+package de.cuioss.http.client.adapter;
+
+/**
+ * Strategy for including HTTP headers in ETag cache keys.
+ *
+ * <p>Cache keys uniquely identify cached responses. Including headers
+ * creates separate cache entries per header combination, excluding
+ * headers shares cache entries across different header values.
+ *
+ * @since 1.0
+ */
+public enum CacheKeyHeaders {
+    /**
+     * Include all additional headers in cache key (default).
+     *
+     * <p><b>Use when:</b>
+     * <ul>
+     *   <li>Adapter is shared across multiple users</li>
+     *   <li>Headers affect response content (Authorization, Accept-Language)</li>
+     *   <li>You want defense-in-depth against buggy server ETags</li>
+     * </ul>
+     *
+     * <p><b>Benefits:</b>
+     * <ul>
+     *   <li>Safe for multi-user scenarios (no cross-user cache pollution)</li>
+     *   <li>Efficient: Avoids wasted If-None-Match requests when ETags won't match</li>
+     *   <li>Defense against server ETag bugs (user-agnostic ETags)</li>
+     * </ul>
+     *
+     * <p><b>Drawback:</b>
+     * <ul>
+     *   <li>Token refresh creates duplicate cache entries (cache bloat)</li>
+     * </ul>
+     */
+    ALL,
+
+    /**
+     * Exclude all headers from cache key (URI only).
+     *
+     * <p><b>Use ONLY when:</b>
+     * <ul>
+     *   <li>Adapter is NOT shared across users (single-user client)</li>
+     *   <li>Server implements user-aware ETags correctly</li>
+     *   <li>Headers don't affect response content (or server includes in ETag)</li>
+     * </ul>
+     *
+     * <p><b>Benefits:</b>
+     * <ul>
+     *   <li>No cache bloat from token refresh</li>
+     *   <li>Higher cache hit rate for same resource with varying headers</li>
+     * </ul>
+     *
+     * <p><b>Risks:</b>
+     * <ul>
+     *   <li>In multi-user scenarios: Wasted bandwidth (ETag mismatches)</li>
+     *   <li>Relies on server implementing user-aware ETags correctly</li>
+     *   <li>May cache wrong content if server doesn't include header-dependent
+     *       data in ETag (e.g., Accept-Language)</li>
+     * </ul>
+     *
+     * <p><b>Example - Single User Client:</b>
+     * <pre>{@code
+     * // Mobile app, desktop app, or service account
+     * HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+     *     .httpHandler(handler)
+     *     .contentConverter(userConverter)
+     *     .cacheKeyHeaders(CacheKeyHeaders.NONE)  // Safe: single user
+     *     .build();
+     * }</pre>
+     *
+     * <p><b>Example - Multi-User Server (UNSAFE):</b>
+     * <pre>{@code
+     * // Web API endpoint (BAD - don't do this!)
+     * HttpAdapter<User> sharedAdapter = ETagAwareHttpAdapter.<User>builder()
+     *     .httpHandler(handler)
+     *     .contentConverter(userConverter)
+     *     .cacheKeyHeaders(CacheKeyHeaders.NONE)  // ⚠️ UNSAFE: shared across users
+     *     .build();
+     *
+     * // User A: GET /api/users/me → caches with key "/api/users/me"
+     * // User B: GET /api/users/me → sends If-None-Match with User A's ETag
+     * // Result: Server sends 200 (ETag mismatch) → wasted bandwidth
+     * }</pre>
+     */
+    NONE;
+}
+----
+
+=== Decision Guide
+
+[cols="2,2,2"]
+|===
+|Scenario |Recommended Setting |Rationale
+
+|Multi-user web server
+|`CacheKeyHeaders.ALL`
+|Separate cache per user, efficient If-None-Match
+
+|Single-user mobile app
+|`CacheKeyHeaders.NONE`
+|No token refresh cache bloat
+
+|Service account (one token)
+|`CacheKeyHeaders.NONE`
+|Token rarely changes
+
+|Desktop application
+|`CacheKeyHeaders.NONE`
+|One user per app instance
+
+|Multi-tenant SaaS
+|`CacheKeyHeaders.ALL`
+|Defense against cross-tenant leakage
+
+|Per-user adapter instances
+|`CacheKeyHeaders.NONE`
+|Already isolated per user
+|===
+
 == ContentType Enum
 
 *Package:* `de.cuioss.http.client`

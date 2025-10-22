@@ -80,7 +80,10 @@ public record RetryConfig(
         }
 
         public Builder initialDelay(Duration delay) {
-            this.initialDelay = requireNonNull(delay, "initialDelay");
+            if (delay == null || delay.isNegative() || delay.isZero()) {
+                throw new IllegalArgumentException("initialDelay must be positive");
+            }
+            this.initialDelay = delay;
             return this;
         }
 
@@ -93,7 +96,10 @@ public record RetryConfig(
         }
 
         public Builder maxDelay(Duration maxDelay) {
-            this.maxDelay = requireNonNull(maxDelay, "maxDelay");
+            if (maxDelay == null || maxDelay.isNegative() || maxDelay.isZero()) {
+                throw new IllegalArgumentException("maxDelay must be positive");
+            }
+            this.maxDelay = maxDelay;
             return this;
         }
 
@@ -120,23 +126,23 @@ public record RetryConfig(
 
 |`maxAttempts`
 |`5`
-|1 or greater
+|1 or greater (validated)
 
 |`initialDelay`
 |`1 second`
-|Any positive Duration
+|Positive Duration (non-null, non-negative, non-zero, validated)
 
 |`multiplier`
 |`2.0`
-|1.0 or greater (exponential backoff)
+|1.0 or greater (exponential backoff, validated)
 
 |`maxDelay`
 |`1 minute`
-|Any positive Duration
+|Positive Duration (non-null, non-negative, non-zero, validated)
 
 |`jitter`
 |`0.1` (10%)
-|0.0 to 1.0 (0% to 100%)
+|0.0 to 1.0 (0% to 100%, validated)
 |===
 
 **Notes:**

@@ -82,6 +82,19 @@ HttpResult<User> result = HttpMethod.POST.send(
 HttpAdapter<User> resilient = ResilientHttpAdapter.wrap(baseAdapter);
 ----
 
+=== Single-User Client (No Token Bloat)
+
+[source,java]
+----
+// Mobile app, desktop app, or service account
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .cacheKeyHeaders(CacheKeyHeaders.NONE)  // URI only, ignore Authorization
+    .build();
+// Token refresh doesn't create duplicate cache entries
+----
+
 == Adapter Composition Order
 
 Order matters when composing multiple adapters:

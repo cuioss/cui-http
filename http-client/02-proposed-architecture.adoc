@@ -204,6 +204,19 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .build();
 ----
 
+=== Single-User Client (URI-Only Cache Keys)
+
+[source,java]
+----
+// Mobile app, desktop app, or service account
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .cacheKeyHeaders(CacheKeyHeaders.NONE)  // URI only, ignore Authorization
+    .build();
+// Token refresh doesn't create duplicate cache entries
+----
+
 === POST with Retry
 
 [source,java]

@@ -203,7 +203,7 @@ record Failure<T>(
         }
         if (cause instanceof IOException) return HttpErrorCategory.NETWORK_ERROR;
         if (cause instanceof SSLException) return HttpErrorCategory.CONFIGURATION_ERROR;
-        return HttpErrorCategory.INVALID_CONTENT;
+        return HttpErrorCategory.INVALID_CONTENT;  // Default fallback
     }
 }
 ----
@@ -299,10 +299,6 @@ public enum HttpErrorCategory {
 |SUCCESS (2xx)
 |(not an error)
 |N/A
-
-|REDIRECTION (3xx)
-|REDIRECTION
-|No
 
 |CLIENT_ERROR (4xx)
 |CLIENT_ERROR

@@ -216,7 +216,17 @@ if (result.isSuccess()) {
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
     .contentConverter(userConverter)
-    .build();
+    .build();  // Default: CacheKeyHeaders.ALL
+
+// ⚠️ EFFICIENCY NOTE: Authorization headers are included in cache key by default.
+//
+// Multi-user scenario (web server):
+//   ✅ GOOD: Each user gets separate cache entries
+//   ✅ Efficient: Avoids wasted If-None-Match requests (user ETags won't match)
+//
+// Single-user scenario (mobile app, desktop):
+//   ❌ Cache bloat: Token refresh creates duplicate entries
+//   ✅ Solution: Use CacheKeyHeaders.NONE (see Example 6b below)
 
 // Add Authorization header
 Map<String, String> headers = Map.of(
@@ -224,6 +234,27 @@ Map<String, String> headers = Map.of(
 );
 
 HttpResult<User> result = HttpMethod.GET.send(adapter, headers);
+----
+
+== Example 6b: Authenticated Request (Single-User Client)
+
+[source,java]
+----
+// Mobile app, desktop app, or service account
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)
+    .cacheKeyHeaders(CacheKeyHeaders.NONE)  // URI only, ignore Authorization
+    .build();
+
+// Token refresh doesn't create duplicate cache entries
+Map<String, String> headers = Map.of(
+    "Authorization", "Bearer " + getAccessToken()
+);
+
+HttpResult<User> result = HttpMethod.GET.send(adapter, headers);
+// Cache key: URI only (e.g., "https://api.example.com/users")
+// Token changes don't affect caching
 ----
 
 == Example 7: Disable ETag Caching
