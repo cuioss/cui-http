@@ -468,7 +468,7 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .build();
 
 // Void adapter (status code only) - built-in convenience
-HttpAdapter<Void> voidAdapter = ETagAwareHttpAdapter.forVoid(handler);
+HttpAdapter<Void> voidAdapter = ETagAwareHttpAdapter.statusCodeOnly(handler);
 // Equivalent to:
 // ETagAwareHttpAdapter.<Void>builder()
 //     .httpHandler(handler)
@@ -503,7 +503,7 @@ public interface ETagAwareHttpAdapter<T> {
      * @param httpHandler HTTP handler configuration
      * @return Adapter that only returns HTTP status codes
      */
-    static HttpAdapter<Void> forVoid(HttpHandler httpHandler) {
+    static HttpAdapter<Void> statusCodeOnly(HttpHandler httpHandler) {
         return ETagAwareHttpAdapter.<Void>builder()
             .httpHandler(httpHandler)
             .responseConverter(VoidResponseConverter.INSTANCE)
@@ -520,7 +520,7 @@ public interface ETagAwareHttpAdapter<T> {
 [source,java]
 ----
 // DELETE endpoint - only care about status
-HttpAdapter<Void> deleteAdapter = ETagAwareHttpAdapter.forVoid(
+HttpAdapter<Void> deleteAdapter = ETagAwareHttpAdapter.statusCodeOnly(
     HttpHandler.builder()
         .uri("https://api.example.com/users/123")
         .build()
@@ -532,7 +532,7 @@ if (result.isSuccess()) {
 }
 
 // Health check endpoint
-HttpAdapter<Void> healthCheck = ETagAwareHttpAdapter.forVoid(
+HttpAdapter<Void> healthCheck = ETagAwareHttpAdapter.statusCodeOnly(
     HttpHandler.builder()
         .uri("https://api.example.com/health")
         .build()
@@ -541,7 +541,7 @@ HttpAdapter<Void> healthCheck = ETagAwareHttpAdapter.forVoid(
 boolean isHealthy = healthCheck.head().isSuccess();
 
 // Webhook POST (fire and forget)
-HttpAdapter<Void> webhook = ETagAwareHttpAdapter.forVoid(
+HttpAdapter<Void> webhook = ETagAwareHttpAdapter.statusCodeOnly(
     HttpHandler.builder()
         .uri("https://webhook.example.com/events")
         .build()
