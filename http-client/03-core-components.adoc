@@ -463,6 +463,92 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .responseConverter(userResponseConverter)  // Required
     .requestConverter(userRequestConverter)     // Optional (for same-type POST/PUT/PATCH)
     .build();
+
+// Void adapter (status code only) - built-in convenience
+HttpAdapter<Void> voidAdapter = ETagAwareHttpAdapter.forVoid(handler);
+// Equivalent to:
+// ETagAwareHttpAdapter.<Void>builder()
+//     .httpHandler(handler)
+//     .responseConverter(VoidResponseConverter.INSTANCE)
+//     .build();
+----
+
+=== Convenience Factory Methods
+
+[source,java]
+----
+package de.cuioss.http.client.adapter;
+
+/**
+ * Adapter builder and factory methods.
+ */
+public interface ETagAwareHttpAdapter<T> {
+
+    /**
+     * Creates builder for typed responses.
+     */
+    static <T> Builder<T> builder() {
+        return new Builder<>();
+    }
+
+    /**
+     * Convenience factory for status-code-only adapters.
+     * Uses built-in VoidResponseConverter - no body parsing.
+     *
+     * <p>Use for DELETE, HEAD, health checks, webhooks, etc.
+     *
+     * @param httpHandler HTTP handler configuration
+     * @return Adapter that only returns HTTP status codes
+     */
+    static HttpAdapter<Void> forVoid(HttpHandler httpHandler) {
+        return ETagAwareHttpAdapter.<Void>builder()
+            .httpHandler(httpHandler)
+            .responseConverter(VoidResponseConverter.INSTANCE)
+            .etagCachingEnabled(false)  // No caching for Void responses
+            .build();
+    }
+
+    // ... other methods
+}
+----
+
+**Usage:**
+
+[source,java]
+----
+// DELETE endpoint - only care about status
+HttpAdapter<Void> deleteAdapter = ETagAwareHttpAdapter.forVoid(
+    HttpHandler.builder()
+        .uri("https://api.example.com/users/123")
+        .build()
+);
+
+HttpResult<Void> result = deleteAdapter.delete();
+if (result.isSuccess()) {
+    LOGGER.info("User deleted successfully");
+}
+
+// Health check endpoint
+HttpAdapter<Void> healthCheck = ETagAwareHttpAdapter.forVoid(
+    HttpHandler.builder()
+        .uri("https://api.example.com/health")
+        .build()
+);
+
+boolean isHealthy = healthCheck.head().isSuccess();
+
+// Webhook POST (fire and forget)
+HttpAdapter<Void> webhook = ETagAwareHttpAdapter.forVoid(
+    HttpHandler.builder()
+        .uri("https://webhook.example.com/events")
+        .build()
+);
+
+WebhookEvent event = new WebhookEvent("user.created", data);
+HttpResult<Void> sent = webhook.post(
+    new JsonRequestConverter<>(WebhookEvent.class),
+    event
+);
 ----
 
 === Design Rationale
@@ -919,27 +1005,100 @@ HttpContentConverter<T> → HttpResponseConverter<T> + HttpRequestConverter<T>
 .contentConverter(converter)      // NEW: sets both (convenience)
 ----
 
-=== Void Converter (For DELETE/No Response)
+=== Built-in Converters
+
+==== VoidResponseConverter (Status Code Only)
+
+For operations where you only care about HTTP status code, not the response body:
 
 [source,java]
 ----
-public class VoidConverter implements HttpResponseConverter<Void> {
+package de.cuioss.http.client.converter;
+
+/**
+ * Built-in converter for Void responses (status code only).
+ * Use when response body is ignored - only HTTP status matters.
+ *
+ * <p>Common use cases:
+ * <ul>
+ *   <li>DELETE /resource/123 → 204 No Content</li>
+ *   <li>HEAD /health → 200 OK</li>
+ *   <li>POST /webhooks → 200 OK (fire and forget)</li>
+ * </ul>
+ */
+public final class VoidResponseConverter implements HttpResponseConverter<Void> {
+
+    /** Singleton instance - no need to create multiple */
+    public static final VoidResponseConverter INSTANCE = new VoidResponseConverter();
+
+    private VoidResponseConverter() {} // Use INSTANCE
+
     @Override
     public Optional<Void> convert(Object rawContent) {
-        return Optional.empty();  // Ignore response body
+        return Optional.empty();  // Always empty - body is discarded
     }
 
     @Override
     public HttpResponse.BodyHandler<?> getBodyHandler() {
-        return HttpResponse.BodyHandlers.discarding();
+        return HttpResponse.BodyHandlers.discarding();  // Efficient - don't read body
     }
 
     @Override
     public ContentType contentType() {
-        return ContentType.APPLICATION_JSON;  // Doesn't matter for Void
+        return ContentType.APPLICATION_JSON;  // Doesn't matter, body discarded
+    }
+}
+----
+
+**Usage:**
+
+[source,java]
+----
+// Status-code-only adapter using built-in converter
+HttpAdapter<Void> adapter = ETagAwareHttpAdapter.<Void>builder()
+    .httpHandler(handler)
+    .responseConverter(VoidResponseConverter.INSTANCE)  // Built-in!
+    .build();
+
+// DELETE - only care about success/failure
+HttpResult<Void> result = adapter.delete();
+if (result.isSuccess()) {
+    LOGGER.info("Resource deleted (status: {})", result.getHttpStatus().orElse(0));
+}
+
+// HEAD - only care about status
+HttpResult<Void> healthCheck = adapter.head();
+boolean isHealthy = healthCheck.isSuccess();
+----
+
+==== VoidRequestConverter (No Body Requests)
+
+For operations where request has no body:
+
+[source,java]
+----
+package de.cuioss.http.client.converter;
+
+/**
+ * Built-in converter for requests with no body.
+ * Returns no-body publisher for any input.
+ */
+public final class VoidRequestConverter implements HttpRequestConverter<Void> {
+
+    /** Singleton instance */
+    public static final VoidRequestConverter INSTANCE = new VoidRequestConverter();
+
+    private VoidRequestConverter() {} // Use INSTANCE
+
+    @Override
+    public HttpRequest.BodyPublisher toBodyPublisher(@Nullable Void content) {
+        return HttpRequest.BodyPublishers.noBody();
     }
 
-    // No toBodyPublisher method - response converter only
+    @Override
+    public ContentType contentType() {
+        return ContentType.APPLICATION_JSON;  // Doesn't matter
+    }
 }
 ----
 
