@@ -255,7 +255,7 @@ Disable ETag caching for sensitive endpoints:
 // For sensitive data endpoints
 HttpAdapter<SensitiveData> adapter = ETagAwareHttpAdapter.<SensitiveData>builder()
     .httpHandler(handler)
-    .contentConverter(converter)
+    .responseConverter(converter)
     .etagCachingEnabled(false)  // Disable for sensitive data
     .build();
 ----

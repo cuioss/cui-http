@@ -58,7 +58,7 @@ java.net.http.HttpClient
 ----
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
     .build();
 
 HttpResult<User> result = adapter.get();
@@ -96,7 +96,7 @@ future.thenAccept(result -> {
 // Mobile app, desktop app, or service account
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
     .cacheKeyHeaders(CacheKeyHeaders.NONE)  // URI only, ignore Authorization
     .build();
 // Token refresh doesn't create duplicate cache entries

@@ -353,7 +353,8 @@ public class ResilientHttpAdapter<T> implements HttpAdapter<T> {
 ----
 HttpAdapter<User> baseAdapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .build();
 
 // Wrap with retry using defaults (5 attempts, 1s initial, 2.0 multiplier, 1min max, 10% jitter)
@@ -572,7 +573,8 @@ CompletableFuture
 HttpAdapter<User> adapter = ResilientHttpAdapter.wrap(
     ETagAwareHttpAdapter.<User>builder()
         .httpHandler(handler)
-        .contentConverter(userConverter)
+        .responseConverter(userConverter)
+    .requestConverter(userConverter)
         .build(),
     RetryConfig.defaults()
 );

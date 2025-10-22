@@ -64,7 +64,8 @@ HttpHandler handler = HttpHandler.builder()
 // Base adapter with ETag caching (enabled by default)
 HttpAdapter<User> baseAdapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .build();
 
 // Wrap with retry (returns CompletableFuture for async operation)
@@ -149,7 +150,8 @@ RetryConfig custom = RetryConfig.builder()
 // No retry? Don't use ResilientHttpAdapter!
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .build();
 ----
 
@@ -161,7 +163,8 @@ If you don't want ETag caching (was never available before):
 ----
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .etagCachingEnabled(false)  // Disable
     .build();
 ----
@@ -190,7 +193,8 @@ HttpResult<User> result = handler.load();
 HttpAdapter<User> adapter = ResilientHttpAdapter.wrap(
     ETagAwareHttpAdapter.<User>builder()
         .httpHandler(httpHandler)
-        .contentConverter(userConverter)
+        .responseConverter(userConverter)
+    .requestConverter(userConverter)
         .build()
 );
 
@@ -227,7 +231,8 @@ HttpResult<User> result = handler.load();
 // Just don't use ResilientHttpAdapter
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(httpHandler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .build();
 
 HttpResult<User> result = HttpMethod.GET.send(adapter);
@@ -245,7 +250,8 @@ Not possible (ETag caching was always on in ResilientHttpHandler)
 ----
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(httpHandler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .etagCachingEnabled(false)  // Disable
     .build();
 
@@ -264,7 +270,8 @@ Not supported
 ----
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(httpHandler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .build();
 
 // POST
@@ -317,7 +324,7 @@ HttpHandler handler = HttpHandler.builder()
 HttpAdapter<Jwks> adapter = ResilientHttpAdapter.wrap(
     ETagAwareHttpAdapter.<Jwks>builder()
         .httpHandler(handler)
-        .contentConverter(jwksConverter)
+        .responseConverter(jwksConverter)
         .build()  // ETag caching ON (good for JWKS)
 );
 
@@ -357,7 +364,7 @@ HttpResult<WellKnownResult> result = handler.load();
 HttpAdapter<WellKnownResult> adapter = ResilientHttpAdapter.wrap(
     ETagAwareHttpAdapter.<WellKnownResult>builder()
         .httpHandler(httpHandler)
-        .contentConverter(wellKnownConverter)
+        .responseConverter(wellKnownConverter)
         .build()
 );
 
@@ -402,7 +409,8 @@ HttpResponse<String> response = client.send(request, BodyHandlers.ofString());
 HttpAdapter<User> adapter = ResilientHttpAdapter.wrap(
     ETagAwareHttpAdapter.<User>builder()
         .httpHandler(httpHandler)
-        .contentConverter(userConverter)
+        .responseConverter(userConverter)
+    .requestConverter(userConverter)
         .build()
 );
 

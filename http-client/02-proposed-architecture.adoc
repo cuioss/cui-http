@@ -128,7 +128,7 @@ See link:05-resilient-adapter.adoc[Complete Specification]
 
 3. ETagAwareHttpAdapter:
    → POST: no ETag caching
-   → Convert body via contentConverter.toBodyPublisher(userObject)
+   → Convert body via requestConverter.toBodyPublisher(userObject)
    → Build request with body
    → Send via HttpHandler
 
@@ -205,7 +205,8 @@ public enum HttpErrorCategory {
 ----
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .build();  // ETag ON by default
 
 HttpResult<User> result = adapter.get();
@@ -217,7 +218,8 @@ HttpResult<User> result = adapter.get();
 ----
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .etagCachingEnabled(false)
     .build();
 ----
@@ -229,7 +231,8 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
 // Mobile app, desktop app, or service account
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .cacheKeyHeaders(CacheKeyHeaders.NONE)  // URI only, ignore Authorization
     .build();
 // Token refresh doesn't create duplicate cache entries
@@ -241,7 +244,8 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
 ----
 HttpAdapter<User> baseAdapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .build();
 
 HttpAdapter<User> resilientAdapter = ResilientHttpAdapter.wrap(baseAdapter);

@@ -146,7 +146,7 @@ if (result.getHttpStatus().orElse(0) == 304) {
 ----
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
     .etagCachingEnabled(true)         // Default: true
     .cacheKeyHeaders(CacheKeyHeaders.ALL)  // Default: ALL (include all headers)
     .build();
@@ -162,9 +162,13 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
 |Required
 |HTTP client configuration (URI, SSL, timeouts)
 
-|`contentConverter`
+|`responseConverter`
 |Required
-|Response body type conversion
+|Response body type conversion (required)
+
+|`requestConverter`
+|Optional
+|Request body type conversion (for POST/PUT/PATCH)
 
 |`etagCachingEnabled`
 |`true`
@@ -299,7 +303,7 @@ The `cacheKeyHeaders` setting affects efficiency and memory usage:
 ----
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
     .build();  // caching ON by default
 ----
 
@@ -309,7 +313,7 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
 ----
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
     .etagCachingEnabled(false)
     .build();
 ----
@@ -323,7 +327,7 @@ For mobile apps, desktop apps, or service accounts where token refresh causes ca
 // Mobile app - single user, token refreshes frequently
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
     .cacheKeyHeaders(CacheKeyHeaders.NONE)  // URI only, ignore Authorization
     .build();
 
@@ -352,7 +356,7 @@ public class UserSession {
         // Each user gets their own adapter instance
         this.userAdapter = ETagAwareHttpAdapter.<User>builder()
             .httpHandler(handler)
-            .contentConverter(converter)
+            .responseConverter(converter)
             .cacheKeyHeaders(CacheKeyHeaders.NONE)  // Safe: adapter not shared
             .build();
     }
@@ -397,7 +401,7 @@ Best for mobile apps, desktop apps, or service accounts with token refresh:
 // Use URI-only cache keys - token changes don't create new cache entries
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
     .cacheKeyHeaders(CacheKeyHeaders.NONE)  // URI only
     .build();
 
@@ -447,7 +451,7 @@ For APIs with frequently-changing headers:
 ----
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
     .etagCachingEnabled(false)  // Disable caching
     .build();
 ----
@@ -462,7 +466,7 @@ For multi-user scenarios, create one adapter instance per user/session:
 public HttpAdapter<User> createAdapterForUser(String userId) {
     return ETagAwareHttpAdapter.<User>builder()
         .httpHandler(handler)
-        .contentConverter(userConverter)
+        .responseConverter(userConverter)
         .cacheKeyHeaders(CacheKeyHeaders.NONE)  // Safe: not shared across users
         .build();
 }

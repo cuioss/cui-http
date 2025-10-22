@@ -21,8 +21,9 @@ HttpHandler handler = HttpHandler.builder()
     .sslContextProvider(SecureSSLContextProvider.builder().build())
     .build();
 
-// Bidirectional content converter for User objects
-HttpContentConverter<User> userConverter = new StringContentConverter<>() {
+// Converter for User objects (implements both request and response)
+class UserConverter extends StringContentConverter<User>
+        implements HttpResponseConverter<User>, HttpRequestConverter<User> {
     @Override
     protected Optional<User> convertString(String rawContent) {
         return Optional.ofNullable(parseJsonToUser(rawContent));
@@ -39,7 +40,9 @@ HttpContentConverter<User> userConverter = new StringContentConverter<>() {
     public ContentType contentType() {
         return ContentType.APPLICATION_JSON;
     }
-};
+}
+
+UserConverter userConverter = new UserConverter();
 ----
 
 == Example 1: Simple GET Request
@@ -49,7 +52,8 @@ HttpContentConverter<User> userConverter = new StringContentConverter<>() {
 // Create adapter (ETag caching enabled by default)
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .build();
 
 // Send GET request
@@ -75,7 +79,8 @@ if (result.isSuccess()) {
 ----
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .build();
 
 HttpResult<User> result = adapter.get();
@@ -104,7 +109,8 @@ switch (result) {
 // Create adapter
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .build();
 
 // Prepare User object
@@ -140,7 +146,8 @@ HttpHandler updateHandler = HttpHandler.builder()
 
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(updateHandler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .build();
 
 User updatedUser = User.builder()
@@ -195,7 +202,7 @@ HttpContentConverter<Void> voidConverter = new StringContentConverter<>() {
 
 HttpAdapter<Void> adapter = ETagAwareHttpAdapter.<Void>builder()
     .httpHandler(deleteHandler)
-    .contentConverter(voidConverter)
+    .responseConverter(VoidResponseConverter.INSTANCE)
     .build();
 
 // Send DELETE request (no body)
@@ -215,7 +222,8 @@ if (result.isSuccess()) {
 ----
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .build();  // Default: CacheKeyHeaders.ALL
 
 // ⚠️ EFFICIENCY NOTE: Authorization headers are included in cache key by default.
@@ -243,7 +251,8 @@ HttpResult<User> result = adapter.get(headers);
 // Mobile app, desktop app, or service account
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .cacheKeyHeaders(CacheKeyHeaders.NONE)  // URI only, ignore Authorization
     .build();
 
@@ -264,7 +273,8 @@ HttpResult<User> result = adapter.get(headers);
 // Explicitly disable ETag caching
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .etagCachingEnabled(false)  // Disable
     .build();
 
@@ -279,7 +289,8 @@ HttpResult<User> result = adapter.get();
 // Base adapter
 HttpAdapter<User> baseAdapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .build();
 
 // Wrap with retry (default: 5 attempts, exponential backoff)
@@ -316,7 +327,8 @@ RetryConfig customRetry = RetryConfig.builder()
 // Base adapter
 HttpAdapter<User> baseAdapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .build();
 
 // Wrap with custom retry
@@ -346,7 +358,8 @@ futureResult
 ----
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .build();
 
 HttpResult<User> result = adapter.get();
@@ -437,7 +450,7 @@ HttpContentConverter<String> textConverter = new StringContentConverter<>() {
 
 HttpAdapter<String> textAdapter = ETagAwareHttpAdapter.<String>builder()
     .httpHandler(handler)
-    .contentConverter(textConverter)
+    .responseConverter(textConverter)
     .build();
 
 String textBody = "User registration data...";
@@ -479,7 +492,7 @@ HttpContentConverter<byte[]> imageConverter = new HttpContentConverter<>() {
 
 HttpAdapter<Response> adapter = ETagAwareHttpAdapter.<Response>builder()
     .httpHandler(uploadHandler)
-    .contentConverter(responseConverter)
+    .responseConverter(responseConverter)
     .build();
 
 // byte[]→Response: use request converter for different type
@@ -492,7 +505,8 @@ HttpResult<Response> result = adapter.post(imageConverter, imageData);
 ----
 ETagAwareHttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .build();
 
 // Use adapter...
@@ -509,7 +523,8 @@ adapter.clearETagCache();
 HttpAdapter<User> adapter = ResilientHttpAdapter.wrap(
     ETagAwareHttpAdapter.<User>builder()
         .httpHandler(handler)
-        .contentConverter(userConverter)
+        .responseConverter(userConverter)
+    .requestConverter(userConverter)
         .build()
 );
 
@@ -584,7 +599,8 @@ if (result.isSuccess()) {
 ----
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .build();
 
 try {
@@ -640,7 +656,8 @@ HttpHandler handler = HttpHandler.builder()
 
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .build();
 
 HttpResult<User> result = adapter.get();
@@ -684,7 +701,8 @@ HttpContentConverter<User> userConverter = new StringContentConverter<>() {
 
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)
+    .responseConverter(userConverter)
+    .requestConverter(userConverter)
     .build();
 
 HttpResult<User> result = adapter.get();
@@ -708,7 +726,8 @@ public CompletableFuture<User> loadUserWithFallback(String userId) {
     HttpAdapter<User> adapter = ResilientHttpAdapter.wrap(
         ETagAwareHttpAdapter.<User>builder()
             .httpHandler(handler)
-            .contentConverter(userConverter)
+            .responseConverter(userConverter)
+    .requestConverter(userConverter)
             .build()
     );
 
