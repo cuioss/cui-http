@@ -445,23 +445,26 @@ public interface HttpAdapter<T> {
 
 [source,java]
 ----
-// Configure response converter (required)
+// Response converter required
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
     .responseConverter(userResponseConverter)  // Required
     .build();
 
-// Or use convenience method for bidirectional (same type for request and response)
+// Response + request converters (for POST/PUT/PATCH with same type)
+JsonConverter<User> converter = new JsonConverter<>(User.class);
+
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(userConverter)  // Sets both request and response
+    .responseConverter(converter)  // Required
+    .requestConverter(converter)    // Optional - same instance for same type
     .build();
 
-// Or configure separately
+// Or separate converters (different types)
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .responseConverter(userResponseConverter)  // Required
-    .requestConverter(userRequestConverter)     // Optional (for same-type POST/PUT/PATCH)
+    .responseConverter(userResponseConverter)      // User
+    .requestConverter(createUserRequestConverter)  // CreateUserRequest
     .build();
 
 // Void adapter (status code only) - built-in convenience
@@ -715,45 +718,17 @@ public interface HttpRequestConverter<R> {
 }
 ----
 
-=== HttpContentConverter Interface (Convenience)
-
-Convenience interface for when request and response use the same type and logic.
-
-[source,java]
-----
-package de.cuioss.http.client.converter;
-
-/**
- * Convenience interface combining request and response conversion for the same type.
- *
- * <p>Use this when the same type and serialization logic applies to both
- * request and response bodies (common in CRUD operations).
- *
- * @param <T> The type used for both request and response
- * @since 1.0
- */
-public interface HttpContentConverter<T>
-        extends HttpResponseConverter<T>, HttpRequestConverter<T> {
-
-    /**
-     * Returns the content type used for both requests and responses.
-     * Default implementation satisfies both parent interfaces.
-     */
-    @Override
-    ContentType contentType();
-}
-----
 
 === Implementation Examples
 
-==== Bidirectional JSON Converter (Common Case)
+==== Same Type Request and Response (CRUD)
 
-When request and response use the same type and logic:
+When request and response use the same type - implement both interfaces in one class:
 
 [source,java]
 ----
 public class JsonConverter<T> extends StringContentConverter<T>
-        implements HttpContentConverter<T> {  // Implements both interfaces
+        implements HttpResponseConverter<T>, HttpRequestConverter<T> {
 
     private final ObjectMapper objectMapper;
     private final Class<T> type;
@@ -790,7 +765,7 @@ public class JsonConverter<T> extends StringContentConverter<T>
         }
     }
 
-    // Shared metadata
+    // Shared metadata - both interfaces require contentType()
     @Override
     public ContentType contentType() {
         return ContentType.APPLICATION_JSON;
@@ -798,9 +773,12 @@ public class JsonConverter<T> extends StringContentConverter<T>
 }
 
 // Usage:
+JsonConverter<User> converter = new JsonConverter<>(User.class);
+
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
-    .contentConverter(new JsonConverter<>(User.class))  // Sets both request and response
+    .responseConverter(converter)  // Set response
+    .requestConverter(converter)    // Set request (same instance)
     .build();
 ----
 
@@ -963,9 +941,9 @@ public class UserResponseConverter extends StringContentConverter<User>
     // No toBodyPublisher needed!
 }
 
-// NEW Option 2: Keep bidirectional (CRUD APIs)
+// NEW Option 2: Both directions (CRUD APIs)
 public class UserConverter extends StringContentConverter<User>
-        implements HttpContentConverter<User> {  // Extends both interfaces
+        implements HttpResponseConverter<User>, HttpRequestConverter<User> {
     @Override
     protected Optional<User> convertString(String rawContent) {
         return Optional.ofNullable(parseJson(rawContent));
@@ -982,6 +960,14 @@ public class UserConverter extends StringContentConverter<User>
         return ContentType.APPLICATION_JSON;
     }
 }
+
+// Usage - set same instance for both
+UserConverter converter = new UserConverter();
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .responseConverter(converter)
+    .requestConverter(converter)  // Same instance
+    .build();
 ----
 
 **Breaking Changes:**
@@ -995,14 +981,22 @@ T emptyValue();  // No longer needed, use Optional.empty()
 ContentType expectedContentType() → contentType()
 
 // SPLIT INTO SEPARATE INTERFACES:
-HttpContentConverter<T> → HttpResponseConverter<T> + HttpRequestConverter<T>
-                        → HttpContentConverter<T> extends both (convenience)
+HttpContentConverter<T> → HttpResponseConverter<T> (response only)
+                        + HttpRequestConverter<T> (request only)
 
 // ADAPTER BUILDER CHANGES:
-.contentConverter(converter)      // OLD: sets bidirectional
-.responseConverter(converter)     // NEW: sets response only (required)
-.requestConverter(converter)      // NEW: sets request only (optional)
-.contentConverter(converter)      // NEW: sets both (convenience)
+// OLD (forced bidirectional):
+.contentConverter(converter)      // Sets response + request (forced both)
+
+// NEW (explicit, separate):
+.responseConverter(converter)     // Required - sets response converter
+.requestConverter(converter)      // Optional - sets request converter (for POST/PUT/PATCH)
+
+// For same type both directions, use same instance:
+JsonConverter<User> converter = new JsonConverter<>(User.class);
+builder
+    .responseConverter(converter)
+    .requestConverter(converter)  // Same instance
 ----
 
 === Built-in Converters
@@ -1128,9 +1122,9 @@ public final class VoidRequestConverter implements HttpRequestConverter<Void> {
 |❌ Unclear which direction is used when
 |✅ Builder clearly shows responseConverter vs requestConverter
 
-|**Common Case Convenience**
+|**Common Case**
 |✅ One converter for same type
-|✅ HttpContentConverter<T> still provides this
+|✅ Use same instance for both: `.responseConverter(c).requestConverter(c)`
 |===
 
 == Module Exports
