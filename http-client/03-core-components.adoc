@@ -256,7 +256,7 @@ String toHeaderValue();          // "application/json; charset=UTF-8"
 package de.cuioss.http.client.adapter;
 
 import de.cuioss.http.client.result.HttpResult;
-import de.cuioss.http.client.converter.HttpContentConverter;
+import de.cuioss.http.client.converter.HttpRequestConverter;
 import org.jspecify.annotations.Nullable;
 import java.util.Map;
 
@@ -264,12 +264,14 @@ import java.util.Map;
  * Adapter for sending HTTP requests and receiving structured results.
  * Provides method-specific operations following HTTP semantics.
  *
- * <p>The adapter uses a bidirectional HttpContentConverter for the primary
- * type T, handling both request serialization and response deserialization.
- * For cases where request and response types differ, methods accept an
- * additional request converter.
+ * <p>The adapter is configured with a HttpResponseConverter<T> for responses.
+ * Request bodies can be sent using:
+ * <ul>
+ *   <li>Same type T (if adapter has request converter configured)</li>
+ *   <li>Different type R with explicit HttpRequestConverter<R></li>
+ * </ul>
  *
- * @param <T> Response body type (and default request type)
+ * @param <T> Response body type
  * @since 1.0
  */
 public interface HttpAdapter<T> {
@@ -314,120 +316,168 @@ public interface HttpAdapter<T> {
     HttpResult<T> delete(Map<String, String> additionalHeaders);
     default HttpResult<T> delete() { return delete(Map.of()); }
 
-    // ========== BODY METHODS (T → T, bidirectional converter) ==========
+    // ========== BODY METHODS (T → T, uses configured request converter) ==========
 
     /**
-     * Sends POST request to create resource.
-     * Uses the adapter's HttpContentConverter for both request serialization
-     * and response deserialization.
+     * Sends POST request with body of type T.
+     * Requires adapter to have a request converter configured for type T.
      *
      * @param requestBody Request body content, may be null
      * @param additionalHeaders Additional HTTP headers
      * @return Result containing created resource or error
+     * @throws IllegalStateException if no request converter configured for type T
      */
     HttpResult<T> post(@Nullable T requestBody, Map<String, String> additionalHeaders);
     default HttpResult<T> post(@Nullable T requestBody) { return post(requestBody, Map.of()); }
 
     /**
-     * Sends PUT request to create or replace resource.
-     * Uses the adapter's HttpContentConverter for both directions.
+     * Sends PUT request with body of type T.
+     * Requires adapter to have a request converter configured for type T.
      *
      * @param requestBody Request body content, may be null
      * @param additionalHeaders Additional HTTP headers
      * @return Result containing updated resource or error
+     * @throws IllegalStateException if no request converter configured for type T
      */
     HttpResult<T> put(@Nullable T requestBody, Map<String, String> additionalHeaders);
     default HttpResult<T> put(@Nullable T requestBody) { return put(requestBody, Map.of()); }
 
     /**
-     * Sends PATCH request to partially update resource.
-     * Uses the adapter's HttpContentConverter for both directions.
+     * Sends PATCH request with body of type T.
+     * Requires adapter to have a request converter configured for type T.
      *
-     * @param requestBody Request body content (typically partial object)
+     * @param requestBody Request body content, may be null
      * @param additionalHeaders Additional HTTP headers
      * @return Result containing updated resource or error
+     * @throws IllegalStateException if no request converter configured for type T
      */
     HttpResult<T> patch(@Nullable T requestBody, Map<String, String> additionalHeaders);
     default HttpResult<T> patch(@Nullable T requestBody) { return patch(requestBody, Map.of()); }
 
     /**
-     * Sends DELETE request with body (rare, but allowed by RFC).
-     * Uses the adapter's HttpContentConverter for body serialization.
+     * Sends DELETE request with body of type T.
+     * Requires adapter to have a request converter configured for type T.
      *
-     * @param requestBody Request body content
+     * @param requestBody Request body content, may be null
      * @param additionalHeaders Additional HTTP headers
      * @return Result containing response or error
+     * @throws IllegalStateException if no request converter configured for type T
      */
     HttpResult<T> delete(@Nullable T requestBody, Map<String, String> additionalHeaders);
     default HttpResult<T> delete(@Nullable T requestBody) {
         return delete(requestBody, Map.of());
     }
 
-    // ========== BODY METHODS (R → T, different request type) ==========
+    // ========== BODY METHODS (R → T, explicit request converter) ==========
 
     /**
-     * Sends POST request with different request and response types.
-     * Use when the creation request type differs from the created resource type.
+     * Sends POST request with explicit request converter for different type.
+     * Use when request type differs from response type.
      *
      * @param <R> Request body type
      * @param requestConverter Converter for request body serialization
-     * @param requestBody Request body content
+     * @param requestBody Request body content, may be null
      * @param additionalHeaders Additional HTTP headers
      * @return Result containing created resource (type T) or error
      */
-    <R> HttpResult<T> post(HttpContentConverter<R> requestConverter,
+    <R> HttpResult<T> post(HttpRequestConverter<R> requestConverter,
                            @Nullable R requestBody,
                            Map<String, String> additionalHeaders);
-    default <R> HttpResult<T> post(HttpContentConverter<R> requestConverter,
+    default <R> HttpResult<T> post(HttpRequestConverter<R> requestConverter,
                                    @Nullable R requestBody) {
         return post(requestConverter, requestBody, Map.of());
     }
 
     /**
-     * Sends PUT request with different request and response types.
+     * Sends PUT request with explicit request converter for different type.
      *
      * @param <R> Request body type
      * @param requestConverter Converter for request body serialization
-     * @param requestBody Request body content
+     * @param requestBody Request body content, may be null
      * @param additionalHeaders Additional HTTP headers
      * @return Result containing updated resource (type T) or error
      */
-    <R> HttpResult<T> put(HttpContentConverter<R> requestConverter,
+    <R> HttpResult<T> put(HttpRequestConverter<R> requestConverter,
                           @Nullable R requestBody,
                           Map<String, String> additionalHeaders);
-    default <R> HttpResult<T> put(HttpContentConverter<R> requestConverter,
+    default <R> HttpResult<T> put(HttpRequestConverter<R> requestConverter,
                                   @Nullable R requestBody) {
         return put(requestConverter, requestBody, Map.of());
     }
 
     /**
-     * Sends PATCH request with different request and response types.
+     * Sends PATCH request with explicit request converter for different type.
      *
      * @param <R> Request body type
      * @param requestConverter Converter for request body serialization
-     * @param requestBody Request body content
+     * @param requestBody Request body content, may be null
      * @param additionalHeaders Additional HTTP headers
      * @return Result containing updated resource (type T) or error
      */
-    <R> HttpResult<T> patch(HttpContentConverter<R> requestConverter,
+    <R> HttpResult<T> patch(HttpRequestConverter<R> requestConverter,
                             @Nullable R requestBody,
                             Map<String, String> additionalHeaders);
-    default <R> HttpResult<T> patch(HttpContentConverter<R> requestConverter,
+    default <R> HttpResult<T> patch(HttpRequestConverter<R> requestConverter,
                                     @Nullable R requestBody) {
         return patch(requestConverter, requestBody, Map.of());
+    }
+
+    /**
+     * Sends DELETE request with explicit request converter for different type.
+     *
+     * @param <R> Request body type
+     * @param requestConverter Converter for request body serialization
+     * @param requestBody Request body content, may be null
+     * @param additionalHeaders Additional HTTP headers
+     * @return Result containing response or error
+     */
+    <R> HttpResult<T> delete(HttpRequestConverter<R> requestConverter,
+                            @Nullable R requestBody,
+                            Map<String, String> additionalHeaders);
+    default <R> HttpResult<T> delete(HttpRequestConverter<R> requestConverter,
+                                    @Nullable R requestBody) {
+        return delete(requestConverter, requestBody, Map.of());
     }
 }
 ----
 
+=== Adapter Builder Configuration
+
+[source,java]
+----
+// Configure response converter (required)
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .responseConverter(userResponseConverter)  // Required
+    .build();
+
+// Or use convenience method for bidirectional (same type for request and response)
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(userConverter)  // Sets both request and response
+    .build();
+
+// Or configure separately
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .responseConverter(userResponseConverter)  // Required
+    .requestConverter(userRequestConverter)     // Optional (for same-type POST/PUT/PATCH)
+    .build();
+----
+
 === Design Rationale
 
+* **Separate concerns** - Request and response conversion are independent responsibilities
+* **Single responsibility** - Each converter does one thing well
+* **Composable** - Mix different request/response converters as needed
+* **Type flexibility** - POST `CreateUserRequest` → returns `User` cleanly supported
+* **Optional implementations** - Only implement what you need (GET-only? Just response converter)
+* **Convenience for common case** - `HttpContentConverter<T>` when same type/logic for both
 * **Method-specific APIs** - Clear intent, follows HTTP semantics
-* **Bidirectional converter** - Single converter handles request and response (most cases)
-* **Flexible for edge cases** - Separate request converter when types differ
 * **RFC compliant** - GET/HEAD/OPTIONS have no body methods
 * **Type-safe** - Compiler enforces correct usage
 * **Enables composition** - Can wrap adapters for retry, auth, metrics
-* **Self-documenting** - Method names indicate HTTP verb and semantics
+* **Self-documenting** - Method signatures clearly show what's needed
 
 == HttpErrorCategory (Updated)
 
@@ -490,37 +540,31 @@ public HttpErrorCategory toErrorCategory() {
 * 304 Not Modified is intercepted by `ETagAwareHttpAdapter` (never reaches error categorization)
 * Other 3xx are rare in modern HTTP and mapped to `INVALID_CONTENT`
 
-== HttpContentConverter (Updated - Bidirectional)
+== Converter Interfaces (Redesigned)
 
 *Package:* `de.cuioss.http.client.converter`
 
-*Purpose:* **Bidirectional converter** - handles both request serialization and response deserialization.
+*Purpose:* Separate, composable converters for requests and responses with optional convenience interface.
 
-=== Interface Definition
+=== HttpResponseConverter Interface
+
+Handles HTTP response → typed object conversion.
 
 [source,java]
 ----
 package de.cuioss.http.client.converter;
 
 import de.cuioss.http.client.ContentType;
-import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.Optional;
-import org.jspecify.annotations.Nullable;
 
 /**
- * Bidirectional converter for HTTP request and response bodies.
- * Handles both serialization (T → HTTP) and deserialization (HTTP → T).
+ * Converts HTTP response bodies to typed objects.
  *
- * <p>This enables symmetric APIs where the same type is used for
- * both request and response (common in CRUD operations).
- *
- * @param <T> The type to convert to/from
+ * @param <T> Response body type
  * @since 1.0
  */
-public interface HttpContentConverter<T> {
-
-    // ========== RESPONSE DIRECTION (HTTP → T) ==========
+public interface HttpResponseConverter<T> {
 
     /**
      * Converts HTTP response body to typed object.
@@ -537,7 +581,34 @@ public interface HttpContentConverter<T> {
      */
     HttpResponse.BodyHandler<?> getBodyHandler();
 
-    // ========== REQUEST DIRECTION (T → HTTP) ==========
+    /**
+     * Returns the expected content type for responses.
+     *
+     * @return Content type (e.g., APPLICATION_JSON, TEXT_XML)
+     */
+    ContentType contentType();
+}
+----
+
+=== HttpRequestConverter Interface
+
+Handles typed object → HTTP request body conversion.
+
+[source,java]
+----
+package de.cuioss.http.client.converter;
+
+import de.cuioss.http.client.ContentType;
+import java.net.http.HttpRequest;
+import org.jspecify.annotations.Nullable;
+
+/**
+ * Converts typed objects to HTTP request bodies.
+ *
+ * @param <R> Request body type
+ * @since 1.0
+ */
+public interface HttpRequestConverter<R> {
 
     /**
      * Converts typed object to HTTP request body publisher.
@@ -547,13 +618,10 @@ public interface HttpContentConverter<T> {
      * @param content The content to serialize, may be null
      * @return BodyPublisher for the HTTP request
      */
-    HttpRequest.BodyPublisher toBodyPublisher(@Nullable T content);
-
-    // ========== SHARED METADATA ==========
+    HttpRequest.BodyPublisher toBodyPublisher(@Nullable R content);
 
     /**
-     * Returns the content type for this converter.
-     * Used for both request Content-Type header and response validation.
+     * Returns the content type for requests.
      *
      * @return Content type (e.g., APPLICATION_JSON, TEXT_XML)
      */
@@ -561,25 +629,46 @@ public interface HttpContentConverter<T> {
 }
 ----
 
-=== Breaking Changes from Previous Version
+=== HttpContentConverter Interface (Convenience)
+
+Convenience interface for when request and response use the same type and logic.
 
 [source,java]
 ----
-// REMOVED:
-T emptyValue();  // No longer needed, use Optional.empty()
+package de.cuioss.http.client.converter;
 
-// RENAMED:
-ContentType expectedContentType() → contentType()
+/**
+ * Convenience interface combining request and response conversion for the same type.
+ *
+ * <p>Use this when the same type and serialization logic applies to both
+ * request and response bodies (common in CRUD operations).
+ *
+ * @param <T> The type used for both request and response
+ * @since 1.0
+ */
+public interface HttpContentConverter<T>
+        extends HttpResponseConverter<T>, HttpRequestConverter<T> {
 
-// ADDED:
-HttpRequest.BodyPublisher toBodyPublisher(@Nullable T content);
+    /**
+     * Returns the content type used for both requests and responses.
+     * Default implementation satisfies both parent interfaces.
+     */
+    @Override
+    ContentType contentType();
+}
 ----
 
-=== Implementation Example: JSON Converter
+=== Implementation Examples
+
+==== Bidirectional JSON Converter (Common Case)
+
+When request and response use the same type and logic:
 
 [source,java]
 ----
-public class JsonConverter<T> extends StringContentConverter<T> {
+public class JsonConverter<T> extends StringContentConverter<T>
+        implements HttpContentConverter<T> {  // Implements both interfaces
+
     private final ObjectMapper objectMapper;
     private final Class<T> type;
 
@@ -621,33 +710,139 @@ public class JsonConverter<T> extends StringContentConverter<T> {
         return ContentType.APPLICATION_JSON;
     }
 }
+
+// Usage:
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .contentConverter(new JsonConverter<>(User.class))  // Sets both request and response
+    .build();
+----
+
+==== Response-Only Converter (GET-only APIs)
+
+When you only need to read responses:
+
+[source,java]
+----
+public class UserResponseConverter extends StringContentConverter<User>
+        implements HttpResponseConverter<User> {  // Only response interface
+
+    @Override
+    protected Optional<User> convertString(String rawContent) {
+        return Optional.ofNullable(parseJsonToUser(rawContent));
+    }
+
+    @Override
+    public ContentType contentType() {
+        return ContentType.APPLICATION_JSON;
+    }
+
+    // No toBodyPublisher method needed!
+}
+
+// Usage:
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .responseConverter(new UserResponseConverter())  // Only response
+    .build();
+
+// Can only use GET/HEAD/OPTIONS/DELETE (no body methods)
+HttpResult<User> result = adapter.get();
+// adapter.post(user);  // ❌ Compile error - no request converter configured
+----
+
+==== Request-Only Converter (Fire-and-Forget POST)
+
+When you only send requests and ignore responses:
+
+[source,java]
+----
+public class CreateUserRequestConverter implements HttpRequestConverter<CreateUserRequest> {
+
+    @Override
+    public HttpRequest.BodyPublisher toBodyPublisher(@Nullable CreateUserRequest content) {
+        if (content == null) return HttpRequest.BodyPublishers.noBody();
+        String json = toJson(content);
+        return HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8);
+    }
+
+    @Override
+    public ContentType contentType() {
+        return ContentType.APPLICATION_JSON;
+    }
+}
+
+// Usage with explicit request converter
+HttpAdapter<Void> adapter = ETagAwareHttpAdapter.<Void>builder()
+    .httpHandler(handler)
+    .responseConverter(new VoidConverter())  // Discard response
+    .build();
+
+CreateUserRequest request = new CreateUserRequest("john@example.com");
+HttpResult<Void> result = adapter.post(
+    new CreateUserRequestConverter(),
+    request
+);
+----
+
+==== Mixed Types (Different Request/Response)
+
+POST CreateUserRequest → returns User:
+
+[source,java]
+----
+// Separate converters
+public class UserResponseConverter implements HttpResponseConverter<User> {
+    @Override
+    protected Optional<User> convertString(String json) {
+        return Optional.ofNullable(parseJsonToUser(json));
+    }
+
+    @Override
+    public ContentType contentType() {
+        return ContentType.APPLICATION_JSON;
+    }
+}
+
+public class CreateUserRequestConverter implements HttpRequestConverter<CreateUserRequest> {
+    @Override
+    public HttpRequest.BodyPublisher toBodyPublisher(@Nullable CreateUserRequest content) {
+        if (content == null) return HttpRequest.BodyPublishers.noBody();
+        return HttpRequest.BodyPublishers.ofString(toJson(content), StandardCharsets.UTF_8);
+    }
+
+    @Override
+    public ContentType contentType() {
+        return ContentType.APPLICATION_JSON;
+    }
+}
+
+// Adapter configured for User responses
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .responseConverter(new UserResponseConverter())
+    .build();
+
+// POST with different request type
+CreateUserRequest request = new CreateUserRequest("john@example.com");
+HttpResult<User> result = adapter.post(
+    new CreateUserRequestConverter(),
+    request
+);
+
+if (result.isSuccess()) {
+    User createdUser = result.getValue().orElseThrow();
+    LOGGER.info("Created user with ID: {}", createdUser.getId());
+}
 ----
 
 === Migration Guide
 
-**From Previous Version:**
+**From Old Bidirectional Design:**
 
 [source,java]
 ----
-// OLD (response-only converter)
-public class UserConverter extends StringContentConverter<User> {
-    @Override
-    protected Optional<User> convertString(String rawContent) {
-        return Optional.ofNullable(parseJson(rawContent));
-    }
-
-    @Override
-    public User emptyValue() {
-        return new User();  // ❌ Remove this
-    }
-
-    @Override
-    public ContentType expectedContentType() {
-        return ContentType.APPLICATION_JSON;  // ✅ Rename to contentType()
-    }
-}
-
-// NEW (bidirectional converter)
+// OLD (forced bidirectional)
 public class UserConverter extends StringContentConverter<User> {
     @Override
     protected Optional<User> convertString(String rawContent) {
@@ -656,23 +851,79 @@ public class UserConverter extends StringContentConverter<User> {
 
     @Override
     public HttpRequest.BodyPublisher toBodyPublisher(@Nullable User content) {
+        // Forced to implement even for GET-only converters!
         if (content == null) return HttpRequest.BodyPublishers.noBody();
-        String json = toJson(content);
-        return HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8);
+        return HttpRequest.BodyPublishers.ofString(toJson(content), StandardCharsets.UTF_8);
     }
 
     @Override
-    public ContentType contentType() {  // Renamed from expectedContentType()
+    public ContentType contentType() {
         return ContentType.APPLICATION_JSON;
     }
 }
+
+// NEW Option 1: Response-only (GET-only APIs)
+public class UserResponseConverter extends StringContentConverter<User>
+        implements HttpResponseConverter<User> {
+    @Override
+    protected Optional<User> convertString(String rawContent) {
+        return Optional.ofNullable(parseJson(rawContent));
+    }
+
+    @Override
+    public ContentType contentType() {
+        return ContentType.APPLICATION_JSON;
+    }
+    // No toBodyPublisher needed!
+}
+
+// NEW Option 2: Keep bidirectional (CRUD APIs)
+public class UserConverter extends StringContentConverter<User>
+        implements HttpContentConverter<User> {  // Extends both interfaces
+    @Override
+    protected Optional<User> convertString(String rawContent) {
+        return Optional.ofNullable(parseJson(rawContent));
+    }
+
+    @Override
+    public HttpRequest.BodyPublisher toBodyPublisher(@Nullable User content) {
+        if (content == null) return HttpRequest.BodyPublishers.noBody();
+        return HttpRequest.BodyPublishers.ofString(toJson(content), StandardCharsets.UTF_8);
+    }
+
+    @Override
+    public ContentType contentType() {
+        return ContentType.APPLICATION_JSON;
+    }
+}
+----
+
+**Breaking Changes:**
+
+[source,java]
+----
+// REMOVED:
+T emptyValue();  // No longer needed, use Optional.empty()
+
+// RENAMED:
+ContentType expectedContentType() → contentType()
+
+// SPLIT INTO SEPARATE INTERFACES:
+HttpContentConverter<T> → HttpResponseConverter<T> + HttpRequestConverter<T>
+                        → HttpContentConverter<T> extends both (convenience)
+
+// ADAPTER BUILDER CHANGES:
+.contentConverter(converter)      // OLD: sets bidirectional
+.responseConverter(converter)     // NEW: sets response only (required)
+.requestConverter(converter)      // NEW: sets request only (optional)
+.contentConverter(converter)      // NEW: sets both (convenience)
 ----
 
 === Void Converter (For DELETE/No Response)
 
 [source,java]
 ----
-public class VoidConverter implements HttpContentConverter<Void> {
+public class VoidConverter implements HttpResponseConverter<Void> {
     @Override
     public Optional<Void> convert(Object rawContent) {
         return Optional.empty();  // Ignore response body
@@ -684,16 +935,44 @@ public class VoidConverter implements HttpContentConverter<Void> {
     }
 
     @Override
-    public HttpRequest.BodyPublisher toBodyPublisher(@Nullable Void content) {
-        return HttpRequest.BodyPublishers.noBody();
-    }
-
-    @Override
     public ContentType contentType() {
         return ContentType.APPLICATION_JSON;  // Doesn't matter for Void
     }
+
+    // No toBodyPublisher method - response converter only
 }
 ----
+
+=== Design Benefits
+
+[cols="1,2,2"]
+|===
+|Benefit |Old Bidirectional Design |New Separate Design
+
+|**Single Responsibility**
+|❌ One converter does two unrelated things
+|✅ Each converter has one responsibility
+
+|**Type Flexibility**
+|❌ Request and response must be same type
+|✅ POST CreateUserRequest → User cleanly supported
+
+|**Implementation Freedom**
+|❌ Must implement both directions always
+|✅ Only implement what you need
+
+|**Composability**
+|❌ Can't mix different converters
+|✅ Mix any request/response converters
+
+|**Clarity**
+|❌ Unclear which direction is used when
+|✅ Builder clearly shows responseConverter vs requestConverter
+
+|**Common Case Convenience**
+|✅ One converter for same type
+|✅ HttpContentConverter<T> still provides this
+|===
 
 == Module Exports
 
