@@ -82,7 +82,7 @@ public enum CacheKeyHeaders {
      * // Mobile app, desktop app, or service account
      * HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
      *     .httpHandler(handler)
-     *     .contentConverter(userConverter)
+     *     .responseConverter(userConverter)
      *     .cacheKeyHeaders(CacheKeyHeaders.NONE)  // Safe: single user
      *     .build();
      * }</pre>
@@ -92,7 +92,7 @@ public enum CacheKeyHeaders {
      * // Web API endpoint (BAD - don't do this!)
      * HttpAdapter<User> sharedAdapter = ETagAwareHttpAdapter.<User>builder()
      *     .httpHandler(handler)
-     *     .contentConverter(userConverter)
+     *     .responseConverter(userConverter)
      *     .cacheKeyHeaders(CacheKeyHeaders.NONE)  // ⚠️ UNSAFE: shared across users
      *     .build();
      *
@@ -545,20 +545,20 @@ HttpResult<Void> sent = webhook.post(
 * **Composable** - Mix different request/response converters as needed
 * **Type flexibility** - POST `CreateUserRequest` → returns `User` cleanly supported
 * **Optional implementations** - Only implement what you need (GET-only? Just response converter)
-* **Convenience for common case** - `HttpContentConverter<T>` when same type/logic for both
+* **Same type support** - Use same instance for both converters when request/response share type
 * **Method-specific APIs** - Clear intent, follows HTTP semantics
 * **RFC compliant** - GET/HEAD/OPTIONS have no body methods
 * **Type-safe** - Compiler enforces correct usage
 * **Enables composition** - Can wrap adapters for retry, auth, metrics
 * **Self-documenting** - Method signatures clearly show what's needed
 
-== HttpErrorCategory (Updated)
+== HttpErrorCategory
 
 *Package:* `de.cuioss.http.client.result`
 
 *Purpose:* Classify failures for retry decisions.
 
-=== Updated Enum
+=== Enum Definition
 
 [source,java]
 ----
@@ -581,13 +581,13 @@ public enum HttpErrorCategory {
 * 304 Not Modified is handled as application-level success by `ETagAwareHttpAdapter`
 * No separate REDIRECTION category needed
 
-== HttpStatusFamily (Updated)
+== HttpStatusFamily
 
 *Package:* `de.cuioss.http.client.handler`
 
 *Purpose:* HTTP protocol-level status classification.
 
-=== New Method: toErrorCategory()
+=== Error Category Conversion
 
 [source,java]
 ----
@@ -884,105 +884,6 @@ if (result.isSuccess()) {
 }
 ----
 
-=== Migration Guide
-
-**From Old Bidirectional Design:**
-
-[source,java]
-----
-// OLD (forced bidirectional)
-public class UserConverter extends StringContentConverter<User> {
-    @Override
-    protected Optional<User> convertString(String rawContent) {
-        return Optional.ofNullable(parseJson(rawContent));
-    }
-
-    @Override
-    public HttpRequest.BodyPublisher toBodyPublisher(@Nullable User content) {
-        // Forced to implement even for GET-only converters!
-        if (content == null) return HttpRequest.BodyPublishers.noBody();
-        return HttpRequest.BodyPublishers.ofString(toJson(content), StandardCharsets.UTF_8);
-    }
-
-    @Override
-    public ContentType contentType() {
-        return ContentType.APPLICATION_JSON;
-    }
-}
-
-// NEW Option 1: Response-only (GET-only APIs)
-public class UserResponseConverter extends StringContentConverter<User>
-        implements HttpResponseConverter<User> {
-    @Override
-    protected Optional<User> convertString(String rawContent) {
-        return Optional.ofNullable(parseJson(rawContent));
-    }
-
-    @Override
-    public ContentType contentType() {
-        return ContentType.APPLICATION_JSON;
-    }
-    // No toBodyPublisher needed!
-}
-
-// NEW Option 2: Both directions (CRUD APIs)
-public class UserConverter extends StringContentConverter<User>
-        implements HttpResponseConverter<User>, HttpRequestConverter<User> {
-    @Override
-    protected Optional<User> convertString(String rawContent) {
-        return Optional.ofNullable(parseJson(rawContent));
-    }
-
-    @Override
-    public HttpRequest.BodyPublisher toBodyPublisher(@Nullable User content) {
-        if (content == null) return HttpRequest.BodyPublishers.noBody();
-        return HttpRequest.BodyPublishers.ofString(toJson(content), StandardCharsets.UTF_8);
-    }
-
-    @Override
-    public ContentType contentType() {
-        return ContentType.APPLICATION_JSON;
-    }
-}
-
-// Usage - set same instance for both
-UserConverter converter = new UserConverter();
-HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
-    .httpHandler(handler)
-    .responseConverter(converter)
-    .requestConverter(converter)  // Same instance
-    .build();
-----
-
-**Breaking Changes:**
-
-[source,java]
-----
-// REMOVED:
-T emptyValue();  // No longer needed, use Optional.empty()
-
-// RENAMED:
-ContentType expectedContentType() → contentType()
-
-// SPLIT INTO SEPARATE INTERFACES:
-HttpContentConverter<T> → HttpResponseConverter<T> (response only)
-                        + HttpRequestConverter<T> (request only)
-
-// ADAPTER BUILDER CHANGES:
-// OLD (forced bidirectional):
-.contentConverter(converter)      // Sets response + request (forced both)
-
-// NEW (explicit, separate):
-.responseConverter(converter)     // Required - sets response converter
-.requestConverter(converter)      // Optional - sets request converter (for POST/PUT/PATCH)
-
-// For same type both directions, use same instance:
-JsonConverter<User> converter = new JsonConverter<>(User.class);
-builder
-    .responseConverter(converter)
-    .requestConverter(converter)  // Same instance
-----
-
 === Built-in Converters
 
 ==== VoidResponseConverter (Status Code Only)
@@ -1080,56 +981,21 @@ public final class VoidRequestConverter implements HttpRequestConverter<Void> {
 }
 ----
 
-=== Design Benefits
-
-[cols="1,2,2"]
-|===
-|Benefit |Old Bidirectional Design |New Separate Design
-
-|**Single Responsibility**
-|❌ One converter does two unrelated things
-|✅ Each converter has one responsibility
-
-|**Type Flexibility**
-|❌ Request and response must be same type
-|✅ POST CreateUserRequest → User cleanly supported
-
-|**Implementation Freedom**
-|❌ Must implement both directions always
-|✅ Only implement what you need
-
-|**Composability**
-|❌ Can't mix different converters
-|✅ Mix any request/response converters
-
-|**Clarity**
-|❌ Unclear which direction is used when
-|✅ Builder clearly shows responseConverter vs requestConverter
-
-|**Common Case**
-|✅ One converter for same type
-|✅ Use same instance for both: `.responseConverter(c).requestConverter(c)`
-|===
-
 == Module Exports
 
 *File:* `src/main/java/module-info.java`
 
-=== New Exports
-
 [source,java]
 ----
 module de.cuioss.http {
-    // ... existing requires
+    // ... requires
 
-    // Existing exports
+    // Exports
     exports de.cuioss.http.client;
     exports de.cuioss.http.client.handler;
     exports de.cuioss.http.client.converter;
     exports de.cuioss.http.client.result;
     exports de.cuioss.http.client.retry;
-
-    // NEW exports
     exports de.cuioss.http.client.adapter;
 
     // ... security exports

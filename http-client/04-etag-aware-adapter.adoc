@@ -55,7 +55,7 @@ This approach is more reliable than runtime null checks, which can mask bugs.
 == Responsibilities
 
 . Execute requests via HttpHandler
-. Convert responses via HttpContentConverter
+. Convert responses via HttpResponseConverter
 . Preserve HTTP metadata (ETag, status)
 . ETag caching (when enabled):
 ** Add If-None-Match for GET requests
@@ -352,7 +352,7 @@ Combine per-user adapter instances with URI-only cache keys for optimal efficien
 public class UserSession {
     private final HttpAdapter<User> userAdapter;
 
-    public UserSession(HttpHandler handler, HttpContentConverter<User> converter) {
+    public UserSession(HttpHandler handler, HttpResponseConverter<User> converter) {
         // Each user gets their own adapter instance
         this.userAdapter = ETagAwareHttpAdapter.<User>builder()
             .httpHandler(handler)

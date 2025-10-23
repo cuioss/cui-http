@@ -20,10 +20,10 @@ HttpHandler (SSL, timeouts, configuration)
 java.net.http.HttpClient
 ----
 
-**Key simplifications:**
-* Single `ETagAwareHttpAdapter` with built-in ETag caching (configurable) instead of separate `SimpleHttpAdapter` + `CachingHttpAdapter` decorator
-* Method-specific API (`adapter.get()`, `adapter.post()`, etc.) instead of generic `send(HttpMethod, ...)`
-* Bidirectional `HttpContentConverter<T>` handles both request and response conversion
+**Key characteristics:**
+* Single `ETagAwareHttpAdapter` with built-in ETag caching (configurable)
+* Method-specific API (`adapter.get()`, `adapter.post()`, etc.)
+* Separate `HttpResponseConverter<T>` and `HttpRequestConverter<R>` interfaces for request and response conversion
 
 == HttpAdapter<T> Interface
 
@@ -35,13 +35,13 @@ public interface HttpAdapter<T> {
     HttpResult<T> delete(Map<String, String> additionalHeaders);
     // ... head(), options()
 
-    // Body methods (T → T, bidirectional converter)
+    // Body methods (T → T, same type for request and response)
     HttpResult<T> post(@Nullable T requestBody, Map<String, String> additionalHeaders);
     HttpResult<T> put(@Nullable T requestBody, Map<String, String> additionalHeaders);
     // ... patch(), delete(T, Map)
 
     // Body methods (R → T, different request type)
-    <R> HttpResult<T> post(HttpContentConverter<R> requestConverter,
+    <R> HttpResult<T> post(HttpRequestConverter<R> requestConverter,
                            @Nullable R requestBody,
                            Map<String, String> additionalHeaders);
     // ... put(R), patch(R)
@@ -59,7 +59,7 @@ See link:03-core-components.adoc#_httpadapter_interface[Full Specification]
 **Role:** Base adapter with built-in ETag caching
 
 * Execute HTTP requests via HttpHandler
-* Convert responses via HttpContentConverter
+* Convert responses via HttpResponseConverter
 * Preserve HTTP metadata (ETag, status)
 * Built-in ETag caching (enabled by default, disable via `etagCachingEnabled(false)`)
 * Cache only GET requests
@@ -74,7 +74,7 @@ See link:04-etag-aware-adapter.adoc[Complete Specification]
 * Wrap any HttpAdapter<T>
 * Retry on NETWORK_ERROR and SERVER_ERROR
 * Use RetryConfig for backoff/jitter
-* Synchronous blocking execution
+* Async execution with CompletableFuture (virtual threads)
 
 See link:05-resilient-adapter.adoc[Complete Specification]
 
@@ -86,8 +86,6 @@ See link:05-resilient-adapter.adoc[Complete Specification]
 * Timeout configuration
 * URI management
 * HttpClient creation
-
-**Unchanged from current implementation**
 
 == Data Flows
 
@@ -166,9 +164,13 @@ See link:03-core-components.adoc[Core Components] for complete specifications.
 
 Method-specific interface for HTTP operations (`get()`, `post()`, `put()`, `delete()`, `patch()`, `head()`, `options()`).
 
-=== HttpContentConverter<T>
+=== HttpResponseConverter<T>
 
-Bidirectional converter handling both request serialization (T → HTTP) and response deserialization (HTTP → T).
+Handles response deserialization (HTTP → T). Implementations define how to convert HTTP response bodies to domain objects.
+
+=== HttpRequestConverter<R>
+
+Handles request serialization (R → HTTP). Implementations define how to convert domain objects to HTTP request bodies.
 
 === ContentType Enum
 
@@ -253,31 +255,3 @@ HttpAdapter<User> resilientAdapter = ResilientHttpAdapter.wrap(baseAdapter);
 User newUser = User.builder().name("John").build();
 HttpResult<User> result = resilientAdapter.post(newUser);
 ----
-
-== Breaking Changes
-
-See link:08-migration-guide.adoc[Migration Guide] for complete details.
-
-**Deleted:**
-
-* `ResilientHttpHandler` → `ETagAwareHttpAdapter` + `ResilientHttpAdapter`
-* `RetryStrategy` interface → `RetryConfig` record
-* `RetryStrategies` factory → `RetryConfig.builder()`
-* `RetryContext` record
-* `HttpContentConverter.emptyValue()` → `contentType()`
-* `HttpRequestBodyPublisher<T>` → Use bidirectional `HttpContentConverter<T>`
-
-**Modified:**
-
-* `HttpAdapter<T>` - Method-specific interface (`get()`, `post()`, `put()`, etc.)
-* `HttpContentConverter<T>` - Bidirectional (added `toBodyPublisher()`)
-* `HttpContentConverter.expectedContentType()` → Renamed to `contentType()`
-* `module-info.java` - Export packages: `adapter` (NOT `request`)
-
-**New:**
-
-* `ContentType` enum
-* `HttpAdapter<T>` interface (method-specific)
-* `ETagAwareHttpAdapter<T>`, `ResilientHttpAdapter<T>`
-* `RetryConfig` record
-* `CacheKeyHeaders` enum

@@ -120,7 +120,7 @@ User newUser = User.builder()
     .role("USER")
     .build();
 
-// Send POST request (bidirectional converter handles serialization)
+// Send POST request (request converter handles serialization)
 HttpResult<User> result = adapter.post(newUser);
 
 // Handle result
@@ -182,24 +182,7 @@ HttpHandler deleteHandler = HttpHandler.builder()
     .uri("https://api.example.com/users/123")
     .build();
 
-// Void converter (ignores response body)
-HttpContentConverter<Void> voidConverter = new StringContentConverter<>() {
-    @Override
-    protected Optional<Void> convertString(String rawContent) {
-        return Optional.empty();
-    }
-
-    @Override
-    public HttpRequest.BodyPublisher toBodyPublisher(@Nullable Void content) {
-        return HttpRequest.BodyPublishers.noBody();
-    }
-
-    @Override
-    public ContentType contentType() {
-        return ContentType.APPLICATION_JSON;
-    }
-};
-
+// Use built-in void converter (ignores response body)
 HttpAdapter<Void> adapter = ETagAwareHttpAdapter.<Void>builder()
     .httpHandler(deleteHandler)
     .responseConverter(VoidResponseConverter.INSTANCE)
@@ -394,8 +377,9 @@ result.getErrorCategory().ifPresent(category -> {
 
 [source,java]
 ----
-// Create XML converter
-HttpContentConverter<String> xmlConverter = new StringContentConverter<>() {
+// Create XML converter (implements both interfaces for same type)
+class XmlStringConverter extends StringContentConverter<String>
+        implements HttpResponseConverter<String>, HttpRequestConverter<String> {
     @Override
     protected Optional<String> convertString(String rawContent) {
         return Optional.of(rawContent);
@@ -411,7 +395,9 @@ HttpContentConverter<String> xmlConverter = new StringContentConverter<>() {
     public ContentType contentType() {
         return ContentType.APPLICATION_XML;
     }
-};
+}
+
+XmlStringConverter xmlConverter = new XmlStringConverter();
 
 String xmlBody = """
     <?xml version="1.0"?>
@@ -429,8 +415,9 @@ HttpResult<User> result = adapter.post(xmlConverter, xmlBody);
 
 [source,java]
 ----
-// Adapter with String bidirectional converter
-HttpContentConverter<String> textConverter = new StringContentConverter<>() {
+// String converter (implements both interfaces for same type)
+class TextConverter extends StringContentConverter<String>
+        implements HttpResponseConverter<String>, HttpRequestConverter<String> {
     @Override
     protected Optional<String> convertString(String rawContent) {
         return Optional.of(rawContent);
@@ -446,11 +433,14 @@ HttpContentConverter<String> textConverter = new StringContentConverter<>() {
     public ContentType contentType() {
         return ContentType.TEXT_PLAIN;
     }
-};
+}
+
+TextConverter textConverter = new TextConverter();
 
 HttpAdapter<String> textAdapter = ETagAwareHttpAdapter.<String>builder()
     .httpHandler(handler)
     .responseConverter(textConverter)
+    .requestConverter(textConverter)
     .build();
 
 String textBody = "User registration data...";
@@ -463,16 +453,8 @@ HttpResult<String> result = textAdapter.post(textBody);
 ----
 byte[] imageData = Files.readAllBytes(Path.of("profile.png"));
 
-// Binary converter
-HttpContentConverter<byte[]> imageConverter = new HttpContentConverter<>() {
-    @Override
-    public Optional<byte[]> convert(Object rawContent) {
-        if (rawContent instanceof byte[] bytes) {
-            return Optional.of(bytes);
-        }
-        return Optional.empty();
-    }
-
+// Binary converter (implements request interface only for upload)
+class ImageRequestConverter implements HttpRequestConverter<byte[]> {
     @Override
     public HttpRequest.BodyPublisher toBodyPublisher(@Nullable byte[] content) {
         if (content == null) return HttpRequest.BodyPublishers.noBody();
@@ -480,15 +462,12 @@ HttpContentConverter<byte[]> imageConverter = new HttpContentConverter<>() {
     }
 
     @Override
-    public HttpResponse.BodyHandler<byte[]> getBodyHandler() {
-        return HttpResponse.BodyHandlers.ofByteArray();
-    }
-
-    @Override
     public ContentType contentType() {
         return ContentType.IMAGE_PNG;
     }
-};
+}
+
+ImageRequestConverter imageConverter = new ImageRequestConverter();
 
 HttpAdapter<Response> adapter = ETagAwareHttpAdapter.<Response>builder()
     .httpHandler(uploadHandler)
@@ -675,7 +654,9 @@ result.getCause().ifPresent(cause -> {
 
 [source,java]
 ----
-HttpContentConverter<User> userConverter = new StringContentConverter<>() {
+// User converter with error handling (implements both interfaces)
+class UserConverterWithErrorHandling extends StringContentConverter<User>
+        implements HttpResponseConverter<User>, HttpRequestConverter<User> {
     @Override
     protected Optional<User> convertString(String rawContent) {
         try {
@@ -697,7 +678,9 @@ HttpContentConverter<User> userConverter = new StringContentConverter<>() {
     public ContentType contentType() {
         return ContentType.APPLICATION_JSON;
     }
-};
+}
+
+UserConverterWithErrorHandling userConverter = new UserConverterWithErrorHandling();
 
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)

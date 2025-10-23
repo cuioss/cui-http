@@ -40,10 +40,10 @@ try {
         throw new UrlSecurityException("Request body contains invalid content");
     }
 
-    // Send validated content
-    HttpResult<User> result = HttpMethod.POST.send(
-        adapter,
-        HttpRequestBodyPublisher.json(),
+    // Send validated content (POST with explicit JSON request converter)
+    JsonRequestConverter<String> jsonRequestConverter = new JsonRequestConverter<>(String.class);
+    HttpResult<User> result = adapter.post(
+        jsonRequestConverter,
         validatedJson.get()
     );
 } catch (UrlSecurityException e) {
@@ -101,7 +101,7 @@ for (Map.Entry<String, String> entry : headers.entrySet()) {
 }
 
 // Send request with validated headers
-HttpResult<User> result = HttpMethod.GET.send(adapter, headers);
+HttpResult<User> result = adapter.get(headers);
 ----
 
 === Headers to Validate
@@ -115,7 +115,7 @@ Always validate user-provided values for:
 
 Never validate (framework-controlled):
 
-* `Content-Type` (set by HttpRequestBodyPublisher)
+* `Content-Type` (set by request converter)
 * `If-None-Match` (set by ETag caching)
 * `User-Agent` (set by HttpClient)
 
@@ -208,32 +208,17 @@ Validate body size before sending:
 ----
 private static final int MAX_REQUEST_BODY_SIZE = 10 * 1024 * 1024; // 10 MB
 
-public <R> HttpResult<T> send(HttpMethod method,
-                               HttpRequestBodyPublisher<R> bodyPublisher,
-                               @Nullable R requestBody,
-                               Map<String, String> additionalHeaders) {
+// Validate before sending
+User newUser = buildUser();
+String jsonBody = toJson(newUser);
 
-    // Validate body size
-    if (requestBody instanceof String str && str.length() > MAX_REQUEST_BODY_SIZE) {
-        return new HttpResult.Failure<>(
-            "Request body exceeds maximum size",
-            null,  // no exception
-            null   // no HTTP status (validation failed before request)
-        );
-        // category() will return INVALID_CONTENT (default)
-    }
-
-    if (requestBody instanceof byte[] bytes && bytes.length > MAX_REQUEST_BODY_SIZE) {
-        return new HttpResult.Failure<>(
-            "Request body exceeds maximum size",
-            null,  // no exception
-            null   // no HTTP status (validation failed before request)
-        );
-        // category() will return INVALID_CONTENT (default)
-    }
-
-    return sendDirect(method, bodyPublisher, requestBody, additionalHeaders);
+if (jsonBody.length() > MAX_REQUEST_BODY_SIZE) {
+    LOGGER.error("Request body exceeds maximum size: {} bytes", jsonBody.length());
+    throw new IllegalArgumentException("Request body too large");
 }
+
+// Safe to send
+HttpResult<User> result = adapter.post(newUser);
 ----
 
 == Sensitive Data in ETag Cache
