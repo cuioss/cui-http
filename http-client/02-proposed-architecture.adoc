@@ -1,7 +1,9 @@
 = Proposed Architecture
 :toc: left
+:toc-title: Table of Contents
 :toclevels: 3
 :sectnums:
+:source-highlighter: highlight.js
 
 == Component Layers
 

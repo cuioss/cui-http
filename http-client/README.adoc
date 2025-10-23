@@ -1,7 +1,9 @@
 = HTTP Client Extension Documentation
 :toc: left
-:toclevels: 2
+:toc-title: Table of Contents
+:toclevels: 3
 :sectnums:
+:source-highlighter: highlight.js
 
 == Navigation
 
@@ -16,6 +18,8 @@
 
 . link:07-usage-examples.adoc[Usage Examples] - 24 complete examples
 . link:09-security-considerations.adoc[Security] - Best practices
+
+NOTE: Document 08 is reserved for future testing guidelines. Current test requirements are documented in link:06-implementation-plan.adoc[Implementation Plan].
 
 == Architecture
 
@@ -192,10 +196,13 @@ See link:04-etag-aware-adapter.adoc#_304_not_modified_handling[304 Implementatio
 |Document |Content
 
 |README |This file - navigation and quick reference
+|01-current-architecture |Analysis of existing architecture and integration points
 |02-proposed-architecture |Design patterns, async architecture, and data flows
 |03-core-components |`HttpAdapter<T>` interface with async-first design
 |04-etag-aware-adapter |Base adapter implementation with ETag caching
 |05-resilient-adapter |Non-blocking retry with exponential backoff and `CompletableFuture`
+|06-implementation-plan |Step-by-step implementation roadmap and test requirements
 |07-usage-examples |24 complete code examples (async and blocking patterns)
+|08-testing-guidelines |_Reserved for future testing guidelines_
 |09-security-considerations |Security best practices
 |===

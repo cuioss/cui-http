@@ -1,7 +1,9 @@
 = Implementation Plan
 :toc: left
+:toc-title: Table of Contents
 :toclevels: 3
 :sectnums:
+:source-highlighter: highlight.js
 
 == Phase 1: Core Infrastructure
 

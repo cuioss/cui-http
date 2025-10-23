@@ -1,7 +1,9 @@
 = Current Architecture Analysis
 :toc: left
+:toc-title: Table of Contents
 :toclevels: 3
 :sectnums:
+:source-highlighter: highlight.js
 
 == Overview
 

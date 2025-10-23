@@ -1,7 +1,9 @@
 = ETagAwareHttpAdapter
 :toc: left
+:toc-title: Table of Contents
 :toclevels: 3
 :sectnums:
+:source-highlighter: highlight.js
 
 Base HTTP adapter with built-in, configurable ETag caching.
 
