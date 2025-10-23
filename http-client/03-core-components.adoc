@@ -575,32 +575,28 @@ class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 class ResilientHttpAdapter<T> implements HttpAdapter<T> {
 
     private boolean shouldRetry(HttpMethod method, HttpResult<T> result) {
-        // Version 1.0: Retry all transient failures
         if (result.isSuccess()) {
+            return false;
+        }
+
+        // Check idempotency configuration (v1.0)
+        if (config.idempotentOnly() && !method.isIdempotent()) {
+            LOGGER.warn("Skipping retry for non-idempotent method: {}", method.methodName());
             return false;
         }
 
         HttpErrorCategory category = result.category();
         return category.isRetryable();
-
-        // Version 1.1 (planned): Check idempotency
-        // if (config.idempotentOnly() && !method.isIdempotent()) {
-        //     LOGGER.warn("Skipping retry for non-idempotent method: {}", method.methodName());
-        //     return false;
-        // }
-        // return category.isRetryable();
     }
 }
 ----
 
 === Future Enhancements
 
-**Version 1.1 Planned:**
+**Planned for future versions:**
 
-* Use `isIdempotent()` in retry logic
-* Add `idempotentOnly` configuration to `RetryConfig`
 * Emit metrics per HTTP method
-* Add method-specific logging
+* Add method-specific logging (enhanced observability)
 
 **Not Planned:**
 
