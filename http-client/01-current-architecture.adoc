@@ -155,6 +155,326 @@ public interface HttpContentConverter<T> {
 * `emptyValue()` is redundant - `HttpResult<T>` uses `Optional<T>`
 * `expectedContentType()` enables validation and documentation
 
+==== Migration Strategy
+
+**Phase 1: Deprecation (Version 1.x)**
+
+1. Mark `HttpContentConverter.emptyValue()` as `@Deprecated`
+2. Add default implementation returning `null`:
++
+[source,java]
+----
+@Deprecated(since = "1.0", forRemoval = true)
+default T emptyValue() {
+    return null;  // Not used by new HttpResult<T> design
+}
+----
+
+3. Add new `expectedContentType()` method with default:
++
+[source,java]
+----
+default ContentType expectedContentType() {
+    return ContentType.TEXT_PLAIN;  // Safe default
+}
+----
+
+4. Update documentation marking method as deprecated
+5. Provide migration examples in release notes
+
+**Phase 2: New Interfaces (Version 1.x)**
+
+Introduce new interfaces alongside old one:
+
+[source,java]
+----
+// New response converter
+public interface HttpResponseConverter<T> {
+    Optional<T> convert(Object rawContent);
+    HttpResponse.BodyHandler<?> getBodyHandler();
+    ContentType contentType();
+}
+
+// New request converter
+public interface HttpRequestConverter<R> {
+    HttpRequest.BodyPublisher toBodyPublisher(@Nullable R content);
+    ContentType contentType();
+}
+----
+
+**Phase 3: Backward Compatibility Adapters (Version 1.x)**
+
+Provide bridge classes for existing code:
+
+[source,java]
+----
+/**
+ * Adapter wrapping legacy HttpContentConverter as HttpResponseConverter.
+ *
+ * @deprecated Use HttpResponseConverter directly. This adapter will be
+ *             removed when HttpContentConverter is removed in version 2.0.
+ */
+@Deprecated(since = "1.0", forRemoval = true)
+public final class LegacyConverterAdapter<T> implements HttpResponseConverter<T> {
+
+    private final HttpContentConverter<T> legacy;
+    private final ContentType contentType;
+
+    public LegacyConverterAdapter(HttpContentConverter<T> legacy, ContentType contentType) {
+        this.legacy = legacy;
+        this.contentType = contentType;
+    }
+
+    @Override
+    public Optional<T> convert(Object rawContent) {
+        return legacy.convert(rawContent);
+    }
+
+    @Override
+    public HttpResponse.BodyHandler<?> getBodyHandler() {
+        return legacy.getBodyHandler();
+    }
+
+    @Override
+    public ContentType contentType() {
+        return contentType;
+    }
+}
+----
+
+**Phase 4: Update Existing Implementations (Version 1.x)**
+
+Update `StringContentConverter` base class:
+
+[source,java]
+----
+// Old
+public abstract class StringContentConverter<T> implements HttpContentConverter<T> {
+    @Override
+    public T emptyValue() {
+        return null;  // Implementations override
+    }
+}
+
+// New (implements both old and new interfaces during migration)
+public abstract class StringContentConverter<T>
+    implements HttpContentConverter<T>, HttpResponseConverter<T> {
+
+    @Deprecated
+    @Override
+    public T emptyValue() {
+        return null;  // Not used
+    }
+
+    @Override
+    public ContentType contentType() {
+        return expectedContentType();
+    }
+
+    @Override
+    public ContentType expectedContentType() {
+        return contentType();  // Delegate to new method
+    }
+}
+----
+
+**Phase 5: Removal (Version 2.0)**
+
+1. Remove `HttpContentConverter` interface entirely
+2. Remove `LegacyConverterAdapter`
+3. Update `StringContentConverter` to only implement `HttpResponseConverter`
+4. Update all adapter APIs to use new interfaces
+
+==== Migration Examples
+
+**Example 1: Simple Converter (No Request Support)**
+
+*Before (1.0):*
+[source,java]
+----
+public class UserConverter implements HttpContentConverter<User> {
+    @Override
+    public Optional<User> convert(Object rawContent) {
+        // Parse JSON to User
+        return Optional.ofNullable(parseJson((String) rawContent, User.class));
+    }
+
+    @Override
+    public HttpResponse.BodyHandler<?> getBodyHandler() {
+        return HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8);
+    }
+
+    @Override
+    public User emptyValue() {
+        return User.EMPTY;  // This is never actually used!
+    }
+}
+----
+
+*After (1.0+ with deprecation, 2.0+ required):*
+[source,java]
+----
+public class UserResponseConverter implements HttpResponseConverter<User> {
+    @Override
+    public Optional<User> convert(Object rawContent) {
+        // Parse JSON to User
+        return Optional.ofNullable(parseJson((String) rawContent, User.class));
+    }
+
+    @Override
+    public HttpResponse.BodyHandler<?> getBodyHandler() {
+        return HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8);
+    }
+
+    @Override
+    public ContentType contentType() {
+        return ContentType.APPLICATION_JSON;
+    }
+
+    // NO emptyValue() - HttpResult<T> uses Optional<T>
+}
+----
+
+**Example 2: Bidirectional Converter (Request + Response)**
+
+*Before (not supported):*
+[source,java]
+----
+// Had to create custom request body handling outside converter
+String jsonBody = toJson(user);
+// Pass as String to HTTP client
+----
+
+*After (1.0+, 2.0+):*
+[source,java]
+----
+public class UserConverter
+    implements HttpResponseConverter<User>, HttpRequestConverter<User> {
+
+    // Response conversion
+    @Override
+    public Optional<User> convert(Object rawContent) {
+        return Optional.ofNullable(parseJson((String) rawContent, User.class));
+    }
+
+    @Override
+    public HttpResponse.BodyHandler<?> getBodyHandler() {
+        return HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8);
+    }
+
+    @Override
+    public ContentType contentType() {
+        return ContentType.APPLICATION_JSON;
+    }
+
+    // Request conversion (NEW)
+    @Override
+    public HttpRequest.BodyPublisher toBodyPublisher(@Nullable User content) {
+        if (content == null) {
+            return HttpRequest.BodyPublishers.noBody();
+        }
+        String json = toJson(content);
+        return HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8);
+    }
+}
+
+// Usage with new HttpAdapter
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .responseConverter(userConverter)  // Response conversion
+    .requestConverter(userConverter)    // Request conversion (same instance!)
+    .build();
+
+// Now POST works with type safety
+HttpResult<User> result = adapter.postBlocking(newUser);
+----
+
+**Example 3: Using Legacy Adapter Bridge (Temporary)**
+
+*During Migration (1.x only):*
+[source,java]
+----
+// Old converter still works via adapter
+HttpContentConverter<User> oldConverter = new OldUserConverter();
+
+// Wrap for new API
+HttpResponseConverter<User> newConverter = new LegacyConverterAdapter<>(
+    oldConverter,
+    ContentType.APPLICATION_JSON
+);
+
+// Use in new adapter
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .responseConverter(newConverter)
+    .build();
+----
+
+==== Migration Checklist
+
+**For Library Users:**
+
+- [ ] Update all custom `HttpContentConverter` implementations to `HttpResponseConverter`
+- [ ] Remove `emptyValue()` method implementations
+- [ ] Add `contentType()` method returning appropriate `ContentType`
+- [ ] For bidirectional converters, implement `HttpRequestConverter` as well
+- [ ] Update adapter builders to use `responseConverter` and `requestConverter`
+- [ ] Test all converters with new `HttpAdapter` interface
+- [ ] Remove usage of `LegacyConverterAdapter` before version 2.0
+
+**For Library Maintainers:**
+
+- [ ] Mark `HttpContentConverter.emptyValue()` as `@Deprecated` in version 1.0
+- [ ] Add default implementation for `emptyValue()` returning `null`
+- [ ] Create `HttpResponseConverter` and `HttpRequestConverter` interfaces
+- [ ] Create `LegacyConverterAdapter` for backward compatibility
+- [ ] Update `StringContentConverter` to implement both interfaces
+- [ ] Update all documentation and examples
+- [ ] Add migration guide to release notes
+- [ ] Remove deprecated interfaces in version 2.0
+
+==== Deprecation Timeline
+
+[cols="1,3"]
+|===
+|Version |Changes
+
+|1.0
+|• New interfaces introduced (`HttpResponseConverter`, `HttpRequestConverter`) +
+• `HttpContentConverter.emptyValue()` deprecated +
+• `LegacyConverterAdapter` provided +
+• All existing code continues to work
+
+|1.x
+|• Warnings in logs for deprecated usage +
+• Documentation promotes new interfaces +
+• Examples updated to new interfaces
+
+|2.0
+|• `HttpContentConverter` removed +
+• `LegacyConverterAdapter` removed +
+• Breaking change for unmigrated code
+|===
+
+==== Impact Assessment
+
+**High Impact:**
+
+* All custom converter implementations must be updated
+* Existing `StringContentConverter` subclasses need modification
+* Bidirectional converters (request + response) require new patterns
+
+**Medium Impact:**
+
+* Adapter builder calls change (`.responseConverter()` instead of `.contentConverter()`)
+* Import statements change (`HttpResponseConverter` instead of `HttpContentConverter`)
+
+**Low Impact:**
+
+* Users relying only on built-in converters (minimal changes)
+* Runtime behavior identical (only interface changes)
+* No performance impact
+
 === HttpResult
 
 *Location:* `src/main/java/de/cuioss/http/client/result/HttpResult.java`
@@ -173,6 +493,84 @@ public sealed interface HttpResult<T>
     Optional<String> getETag();
     Optional<Integer> getHttpStatus();
     Optional<HttpErrorCategory> getErrorCategory();
+
+    // ========== Status Code Convenience Methods ==========
+
+    /**
+     * Checks if response has specific HTTP status code.
+     *
+     * @param statusCode Expected HTTP status code
+     * @return true if status matches, false otherwise
+     */
+    default boolean hasStatusCode(int statusCode) {
+        return getHttpStatus().orElse(-1) == statusCode;
+    }
+
+    /**
+     * Checks if response is 412 Precondition Failed (ETag mismatch).
+     * Common in optimistic locking when If-Match header doesn't match current ETag.
+     *
+     * @return true if status is 412
+     */
+    default boolean isPreconditionFailed() {
+        return hasStatusCode(412);
+    }
+
+    /**
+     * Checks if response is 404 Not Found.
+     *
+     * @return true if status is 404
+     */
+    default boolean isNotFound() {
+        return hasStatusCode(404);
+    }
+
+    /**
+     * Checks if response is 409 Conflict.
+     * Different from 412: 409 indicates state conflict, 412 indicates ETag mismatch.
+     *
+     * @return true if status is 409
+     */
+    default boolean isConflict() {
+        return hasStatusCode(409);
+    }
+
+    /**
+     * Checks if response is 304 Not Modified (cached content valid).
+     * Note: ETagAwareHttpAdapter handles this automatically, returning Success.
+     *
+     * @return true if status is 304
+     */
+    default boolean isNotModified() {
+        return hasStatusCode(304);
+    }
+
+    /**
+     * Checks if response is 401 Unauthorized (authentication required).
+     *
+     * @return true if status is 401
+     */
+    default boolean isUnauthorized() {
+        return hasStatusCode(401);
+    }
+
+    /**
+     * Checks if response is 403 Forbidden (authenticated but not allowed).
+     *
+     * @return true if status is 403
+     */
+    default boolean isForbidden() {
+        return hasStatusCode(403);
+    }
+
+    /**
+     * Checks if response is 422 Unprocessable Entity (validation failed).
+     *
+     * @return true if status is 422
+     */
+    default boolean isUnprocessableEntity() {
+        return hasStatusCode(422);
+    }
 }
 ----
 

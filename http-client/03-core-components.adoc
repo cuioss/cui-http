@@ -323,6 +323,298 @@ The old all-or-nothing approach had limitations:
 .cacheKeyHeaderFilter(CacheKeyHeaderFilter.NONE)  // Same as old NONE
 ----
 
+== HttpMethod Enum
+
+*Package:* `de.cuioss.http.client.adapter` (package-private)
+
+*Purpose:* Internal enum for HTTP method classification and retry decisions.
+
+**Visibility:** Package-private - not exposed in public API. Users interact with methods via `HttpAdapter` interface (`get()`, `post()`, etc.) rather than passing `HttpMethod` values.
+
+=== Enum Definition
+
+[source,java]
+----
+package de.cuioss.http.client.adapter;
+
+/**
+ * HTTP methods as defined by RFC 7231 and RFC 5789.
+ * Package-private - used internally by adapter implementations.
+ *
+ * @since 1.0
+ */
+enum HttpMethod {
+    /**
+     * GET - Retrieve resource (safe, idempotent, cacheable).
+     */
+    GET(true, true, "GET"),
+
+    /**
+     * POST - Create resource or submit data (unsafe, non-idempotent).
+     */
+    POST(false, false, "POST"),
+
+    /**
+     * PUT - Replace resource (unsafe, idempotent).
+     */
+    PUT(false, true, "PUT"),
+
+    /**
+     * DELETE - Remove resource (unsafe, idempotent).
+     */
+    DELETE(false, true, "DELETE"),
+
+    /**
+     * PATCH - Partially update resource (unsafe, non-idempotent).
+     */
+    PATCH(false, false, "PATCH"),
+
+    /**
+     * HEAD - Retrieve headers only (safe, idempotent, cacheable).
+     */
+    HEAD(true, true, "HEAD"),
+
+    /**
+     * OPTIONS - Query supported methods (safe, idempotent).
+     */
+    OPTIONS(true, true, "OPTIONS");
+
+    private final boolean safe;
+    private final boolean idempotent;
+    private final String name;
+
+    HttpMethod(boolean safe, boolean idempotent, String name) {
+        this.safe = safe;
+        this.idempotent = idempotent;
+        this.name = name;
+    }
+
+    /**
+     * Returns true if method is safe (read-only, no side effects).
+     * Safe methods: GET, HEAD, OPTIONS
+     */
+    public boolean isSafe() {
+        return safe;
+    }
+
+    /**
+     * Returns true if method is idempotent (multiple identical requests
+     * have same effect as single request).
+     * Idempotent methods: GET, PUT, DELETE, HEAD, OPTIONS
+     */
+    public boolean isIdempotent() {
+        return idempotent;
+    }
+
+    /**
+     * Returns HTTP method name as string (e.g., "GET", "POST").
+     */
+    public String methodName() {
+        return name;
+    }
+}
+----
+
+=== HTTP Method Properties
+
+[cols="1,1,1,3"]
+|===
+|Method |Safe? |Idempotent? |Use Case
+
+|**GET**
+|✅ Yes
+|✅ Yes
+|Retrieve resource, query data
+
+|**POST**
+|❌ No
+|❌ No
+|Create resource, submit form, non-idempotent action
+
+|**PUT**
+|❌ No
+|✅ Yes
+|Replace entire resource with new representation
+
+|**DELETE**
+|❌ No
+|✅ Yes
+|Remove resource
+
+|**PATCH**
+|❌ No
+|❌ No
+|Partial update, apply delta
+
+|**HEAD**
+|✅ Yes
+|✅ Yes
+|Check resource existence, get metadata
+
+|**OPTIONS**
+|✅ Yes
+|✅ Yes
+|Query supported methods, CORS preflight
+|===
+
+=== Why Package-Private?
+
+**Design Decision:** `HttpMethod` is intentionally package-private for several reasons:
+
+1. **Method-Specific API:** Users call `adapter.get()`, `adapter.post()`, etc. - more type-safe than `adapter.execute(HttpMethod.GET)`
+
+2. **Internal Classification:** Used by adapter implementations for:
+   - Retry decisions (idempotent methods safe to retry)
+   - Request body validation (GET/HEAD don't have bodies)
+   - Logging and metrics
+
+3. **API Simplicity:** Reduces public surface area - users don't need to understand enum
+
+4. **Flexibility:** Internal enum can be modified without breaking public API
+
+5. **Consistency:** Matches pattern of other HTTP client libraries (method-specific calls)
+
+=== Usage in Adapter Implementation
+
+[source,java]
+----
+// Internal adapter implementation (example)
+class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
+
+    @Override
+    public CompletableFuture<HttpResult<T>> get(Map<String, String> headers) {
+        return execute(HttpMethod.GET, null, headers);
+    }
+
+    @Override
+    public CompletableFuture<HttpResult<T>> post(@Nullable T body, Map<String, String> headers) {
+        return execute(HttpMethod.POST, body, headers);
+    }
+
+    private CompletableFuture<HttpResult<T>> execute(
+        HttpMethod method,
+        @Nullable T body,
+        Map<String, String> headers
+    ) {
+        // Validate safe methods don't have bodies (RFC 7231)
+        if (method.isSafe() && body != null) {
+            throw new IllegalArgumentException(
+                method.methodName() + " is safe and cannot have a body"
+            );
+        }
+
+        // Validate body methods have request converter
+        if (!method.isSafe() && body != null && requestConverter == null) {
+            throw new IllegalStateException(
+                method.methodName() + " with body requires request converter"
+            );
+        }
+
+        // ========== ETag Caching (GET only) ==========
+
+        // Only cache GET requests
+        boolean shouldCache = etagCachingEnabled && method == HttpMethod.GET;
+
+        // Check cache for GET requests
+        CacheEntry cachedEntry = null;
+        if (shouldCache) {
+            String cacheKey = buildCacheKey(uri, headers);
+            cachedEntry = cache.get(cacheKey);
+        }
+
+        // Build request
+        HttpRequest.Builder builder = httpHandler.requestBuilder()
+            .method(method.methodName(), buildBodyPublisher(body));
+
+        // Add custom headers
+        headers.forEach(builder::header);
+
+        // Add If-None-Match for GET if cache entry exists
+        if (cachedEntry != null) {
+            builder.header("If-None-Match", cachedEntry.etag());
+        }
+
+        // ========== Execute Request ==========
+
+        return httpClient.sendAsync(builder.build(), responseConverter.getBodyHandler())
+            .thenApply(response -> {
+                int statusCode = response.statusCode();
+
+                // Handle 304 Not Modified (GET only)
+                if (statusCode == 304 && cachedEntry != null) {
+                    // Return cached content (safe: we hold local reference)
+                    return HttpResult.success(cachedEntry.content(), cachedEntry.etag(), 304);
+                }
+
+                // Extract ETag from ALL responses (POST, PUT, DELETE, GET)
+                String etag = response.headers().firstValue("ETag").orElse(null);
+
+                // Convert response body
+                Optional<T> content = responseConverter.convert(response.body());
+
+                // Cache successful GET responses with ETag
+                if (shouldCache && statusCode == 200 && etag != null && content.isPresent()) {
+                    cache.put(cacheKey, new CacheEntry(content.get(), etag));
+                }
+
+                // Return result with ETag (all methods return ETag if present)
+                return HttpResult.success(content.orElse(null), etag, statusCode);
+            })
+            .exceptionally(ex -> {
+                return HttpResult.failure("Request failed: " + ex.getMessage(), ex, null);
+            });
+    }
+}
+----
+
+=== Usage in Retry Logic
+
+[source,java]
+----
+// Internal retry logic (example)
+class ResilientHttpAdapter<T> implements HttpAdapter<T> {
+
+    private boolean shouldRetry(HttpMethod method, HttpResult<T> result) {
+        // Version 1.0: Retry all transient failures
+        if (result.isSuccess()) {
+            return false;
+        }
+
+        HttpErrorCategory category = result.category();
+        return category.isRetryable();
+
+        // Version 1.1 (planned): Check idempotency
+        // if (config.idempotentOnly() && !method.isIdempotent()) {
+        //     LOGGER.warn("Skipping retry for non-idempotent method: {}", method.methodName());
+        //     return false;
+        // }
+        // return category.isRetryable();
+    }
+}
+----
+
+=== Future Enhancements
+
+**Version 1.1 Planned:**
+
+* Use `isIdempotent()` in retry logic
+* Add `idempotentOnly` configuration to `RetryConfig`
+* Emit metrics per HTTP method
+* Add method-specific logging
+
+**Not Planned:**
+
+* Making enum public (users don't need it)
+* Adding TRACE, CONNECT methods (rarely used)
+* Custom method support (violates HTTP semantics)
+
+=== RFC References
+
+* **RFC 7231** - HTTP/1.1 Semantics (GET, POST, PUT, DELETE, HEAD, OPTIONS)
+* **RFC 5789** - PATCH Method for HTTP
+* **RFC 7231 Section 4.2.1** - Safe Methods
+* **RFC 7231 Section 4.2.2** - Idempotent Methods
+
 == ContentType Enum
 
 *Package:* `de.cuioss.http.client`
@@ -668,6 +960,78 @@ public interface HttpAdapter<T> {
     default HttpResult<T> deleteBlocking() { return delete().join(); }
 }
 ----
+
+=== Method Naming Convention
+
+**Why async methods don't have an `Async` suffix:**
+
+This API uses an **async-first design philosophy** where non-blocking operation is the default, primary behavior. The naming convention reflects this priority:
+
+* **Primary methods** (`get()`, `post()`, etc.) return `CompletableFuture<HttpResult<T>>` - non-blocking by default
+* **Convenience methods** (`getBlocking()`, `postBlocking()`, etc.) add the `Blocking` suffix to indicate deviation from the default
+
+**Design Rationale:**
+
+[cols="2,3"]
+|===
+|Consideration |Decision
+
+|Modern HTTP clients are inherently async
+|`java.net.http.HttpClient` uses `sendAsync()` as the foundation
+
+|Most use cases benefit from async
+|Reduces thread blocking, improves scalability, better resource utilization
+
+|Blocking is the exception, not the rule
+|Mark the less-common pattern (blocking) with a suffix
+
+|Consistency with reactive patterns
+|Reactive frameworks (Project Reactor, RxJava) use blocking suffix: `.block()`, `.toBlocking()`
+
+|API guidance
+|Method names guide developers toward better practices (async-first)
+
+|Cognitive clarity
+|If you see `adapter.get()` you MUST check the return type - this is intentional
+
+|CompletableFuture is explicit
+|Return type `CompletableFuture<T>` makes async nature unmistakable
+|===
+
+**Comparison with `java.net.http.HttpClient`:**
+
+Java's `HttpClient` uses `sendAsync()` for async and `send()` for blocking because:
+
+* It was designed as a blocking-first API (compatibility with traditional Java I/O)
+* `send()` existed first (blocking was the "default" in Java 11)
+* Async was added as an alternative, hence `sendAsync()`
+
+Our adapter inverts this:
+
+* Async-first architecture from day one
+* Blocking methods are convenience wrappers (`.join()` on CompletableFuture)
+* Guidance toward modern, scalable patterns
+
+**Usage Pattern:**
+
+[source,java]
+----
+// Primary async pattern (recommended)
+CompletableFuture<HttpResult<User>> future = adapter.get();
+future.thenAccept(result -> {
+    if (result.isSuccess()) {
+        processUser(result.getContent().orElseThrow());
+    }
+});
+
+// Blocking convenience (simple synchronous cases)
+HttpResult<User> result = adapter.getBlocking();
+if (result.isSuccess()) {
+    processUser(result.getContent().orElseThrow());
+}
+----
+
+**Important:** Always check return types. If you see `CompletableFuture<T>`, you're working with async code and must handle it appropriately (`.thenAccept()`, `.thenApply()`, `.exceptionally()`, etc.). Never call `.get()` or `.join()` on a CompletableFuture unless you specifically need blocking behavior.
 
 === Adapter Builder Configuration
 
@@ -1123,7 +1487,7 @@ HttpResult<User> result = adapter.post(
 );
 
 if (result.isSuccess()) {
-    User createdUser = result.getValue().orElseThrow();
+    User createdUser = result.getContent().orElseThrow();
     LOGGER.info("Created user with ID: {}", createdUser.getId());
 }
 ----

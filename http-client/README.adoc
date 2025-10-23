@@ -42,6 +42,53 @@ CompletableFuture<HttpResponse<String>>
 All layers are non-blocking - zero threads blocked during I/O or retries
 ----
 
+== Terminology
+
+Understanding the distinction between **Handler** and **Adapter**:
+
+[cols="1,3"]
+|===
+|Term |Definition
+
+|**HttpHandler**
+|Low-level HTTP execution component. Configures SSL/TLS context, timeouts, connection pooling, and provides `HttpRequest.Builder`. Wraps `java.net.http.HttpClient`.
+
+|**HttpAdapter**
+|High-level typed operations interface. Provides method-specific API (`get()`, `post()`, etc.) returning `CompletableFuture<HttpResult<T>>`. Handles request/response conversion, error handling, and async execution.
+
+|**ETagAwareHttpAdapter**
+|Base adapter implementation with built-in ETag caching. Adds conditional requests (If-None-Match) and 304 handling.
+
+|**ResilientHttpAdapter**
+|Decorator adapter that adds retry logic with exponential backoff. Wraps any `HttpAdapter` to add resilience.
+|===
+
+**Conceptual Layers:**
+
+* **Handler** = Configuration + Low-level HTTP mechanics
+* **Adapter** = Business logic + Type safety + HTTP method semantics
+* **Decorator** = Cross-cutting concerns (caching, retry, auth, validation)
+
+**Example:**
+
+[source,java]
+----
+// Handler: Low-level HTTP configuration
+HttpHandler handler = HttpHandler.builder()
+    .uri("https://api.example.com")
+    .connectionTimeoutSeconds(5)
+    .build();
+
+// Adapter: High-level typed operations
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)  // Uses handler for actual HTTP calls
+    .responseConverter(userConverter)
+    .build();
+
+// Use adapter for business operations
+CompletableFuture<HttpResult<User>> future = adapter.get();
+----
+
 == Key Decisions
 
 [cols="1,2"]
@@ -74,7 +121,7 @@ CompletableFuture<HttpResult<User>> futureResult = adapter.get();
 // Handle asynchronously (recommended)
 futureResult.thenAccept(result -> {
     if (result.isSuccess()) {
-        processUser(result.getValue().orElseThrow());
+        processUser(result.getContent().orElseThrow());
     }
 });
 
@@ -107,7 +154,7 @@ CompletableFuture<HttpResult<User>> future = resilient.get();
 // Handle asynchronously (recommended)
 future.thenAccept(result -> {
     if (result.isSuccess()) {
-        processUser(result.getValue().orElseThrow());
+        processUser(result.getContent().orElseThrow());
     }
 });
 
@@ -181,13 +228,13 @@ HttpResult<User> result2 = option2.getBlocking();
 
 == 304 Not Modified Handling
 
-The adapter uses structural correctness: cache entry retrieved at request start, reference held throughout. This guarantees:
+The adapter uses a safe request flow pattern: cache entry retrieved at request start, reference held throughout. This guarantees:
 
 * 304 response returns `Success` with cached content
 * Thread-safe: local reference immune to concurrent cache modifications
-* No defensive null checks needed
+* Safe by design: 304 can only occur when cache entry exists
 
-See link:04-etag-aware-adapter.adoc#_304_not_modified_handling[304 Implementation]
+See link:04-etag-aware-adapter.adoc#_304_not_modified_handling_pattern[304 Implementation]
 
 == Documents
 

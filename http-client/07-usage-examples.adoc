@@ -68,8 +68,8 @@ futureResult.thenAccept(result -> {
             LOGGER.info("Loaded user: {}", user.getName()));
 
         // Check if served from cache
-        if (result.getHttpStatus().orElse(0) == 304) {
-            LOGGER.debug("Content served from ETag cache");
+        if (result.isNotModified()) {
+            LOGGER.debug("Content served from ETag cache (304 Not Modified)");
         }
     } else {
         result.getErrorMessage().ifPresent(LOGGER::error);
@@ -338,7 +338,7 @@ CompletableFuture<HttpResult<User>> futureResult = resilientAdapter.post(newUser
 
 // Chain async operations
 futureResult
-    .thenApply(result -> result.getValue().orElse(null))
+    .thenApply(result -> result.getContent().orElse(null))
     .thenAccept(createdUser -> LOGGER.info("User created: {}", createdUser))
     .exceptionally(ex -> {
         LOGGER.error("Async operation failed", ex);
@@ -768,3 +768,123 @@ loadUserWithFallback("user123")
     });
 ----
 
+== Example 25: Optimistic Locking with ETags
+
+Use ETags from POST/PUT responses for optimistic concurrency control:
+
+[source,java]
+----
+// Step 1: Create resource (POST)
+User newUser = new User("Alice", "alice@example.com");
+HttpResult<User> createResult = adapter.postBlocking(newUser);
+
+if (createResult.isSuccess()) {
+    User created = createResult.getContent().orElseThrow();
+    String etag = createResult.getETag().orElseThrow();  // ✅ ETag from POST response
+    LOGGER.info("Created user with ETag: {}", etag);
+
+    // Step 2: Update with optimistic locking (PUT with If-Match)
+    User updated = created.withEmail("alice.new@example.com");
+    Map<String, String> headers = Map.of("If-Match", etag);
+    
+    HttpResult<User> updateResult = adapter.put(updated, headers);
+    
+    // Step 3: Handle result using type-safe methods
+    if (updateResult.isSuccess()) {
+        LOGGER.info("Update succeeded");
+        String newETag = updateResult.getETag().orElseThrow();  // New ETag version
+        LOGGER.info("New ETag: {}", newETag);
+        
+    } else if (updateResult.isPreconditionFailed()) {
+        // ✅ Type-safe check for 412 Precondition Failed
+        LOGGER.warn("Optimistic lock failed - resource was modified by someone else");
+        
+        // Re-fetch current state
+        HttpResult<User> current = adapter.getBlocking();
+        if (current.isSuccess()) {
+            String latestETag = current.getETag().orElseThrow();
+            User latestUser = current.getContent().orElseThrow();
+            
+            // Option 1: Retry with fresh ETag
+            LOGGER.info("Retrying with fresh ETag: {}", latestETag);
+            Map<String, String> freshHeaders = Map.of("If-Match", latestETag);
+            HttpResult<User> retry = adapter.put(updated, freshHeaders);
+            
+            // Option 2: Merge changes (application-specific logic)
+            User merged = mergeChanges(updated, latestUser);
+            HttpResult<User> mergedResult = adapter.put(merged, freshHeaders);
+        }
+        
+    } else if (updateResult.isNotFound()) {
+        // ✅ Type-safe check for 404 Not Found
+        LOGGER.error("Resource was deleted");
+        
+    } else if (updateResult.isConflict()) {
+        // ✅ Type-safe check for 409 Conflict
+        LOGGER.warn("State conflict detected");
+        
+    } else {
+        // Other errors
+        LOGGER.error("Update failed: {}", updateResult.getErrorMessage().orElse("Unknown"));
+    }
+}
+----
+
+**Key Benefits:**
+
+* ✅ `isPreconditionFailed()` - Type-safe, readable, no magic numbers
+* ✅ `isNotFound()` / `isConflict()` - Clear intent, easier to maintain
+* ✅ Works with both Success and Failure results
+* ✅ POST/PUT/DELETE all return ETags for version tracking
+* ✅ Prevents lost updates in concurrent scenarios
+
+**Concurrent Update Scenario:**
+
+[source,java]
+----
+// Thread 1: POST creates user
+HttpResult<User> result1 = adapter.post(newUser);
+String etagV1 = result1.getETag().orElseThrow();  // "v1"
+
+// Thread 2: Also has reference to same resource
+String etagV1Copy = etagV1;  // Same ETag
+
+// Thread 1: Updates successfully
+Map<String, String> headers1 = Map.of("If-Match", etagV1);
+HttpResult<User> update1 = adapter.put(updatedUser1, headers1);
+// Returns 200 OK, new ETag "v2"
+
+// Thread 2: Tries to update with stale ETag
+Map<String, String> headers2 = Map.of("If-Match", etagV1Copy);  // Still "v1"
+HttpResult<User> update2 = adapter.put(updatedUser2, headers2);
+
+// ✅ Type-safe check for optimistic lock failure
+if (update2.isPreconditionFailed()) {
+    LOGGER.warn("ETag mismatch: expected current, got stale version");
+    // Handle conflict: re-fetch, merge, retry
+}
+----
+
+**Other Useful Status Methods:**
+
+[source,java]
+----
+// Authentication
+if (result.isUnauthorized()) {  // 401
+    refreshAuthToken();
+}
+
+if (result.isForbidden()) {  // 403
+    LOGGER.error("User lacks permission");
+}
+
+// Validation
+if (result.isUnprocessableEntity()) {  // 422
+    displayValidationErrors(result);
+}
+
+// General status check
+if (result.hasStatusCode(429)) {  // Rate limited
+    backoffAndRetry();
+}
+----

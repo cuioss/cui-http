@@ -14,7 +14,7 @@
 |File |Description
 
 |`HttpMethod.java`
-|HTTP method enum with buildRequest() and send() methods
+|Package-private enum for HTTP method classification (safe, idempotent properties)
 
 |`ContentType.java`
 |Content type enum with charset support

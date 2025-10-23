@@ -52,7 +52,8 @@ public record RetryConfig(
     Duration initialDelay,
     double multiplier,
     Duration maxDelay,
-    double jitter
+    double jitter,
+    boolean idempotentOnly
 ) {
 
     /**
@@ -77,6 +78,7 @@ public record RetryConfig(
         private double multiplier = 2.0;
         private Duration maxDelay = Duration.ofMinutes(1);
         private double jitter = 0.1;
+        private boolean idempotentOnly = false;
 
         public Builder maxAttempts(int maxAttempts) {
             if (maxAttempts < 1) {
@@ -118,8 +120,20 @@ public record RetryConfig(
             return this;
         }
 
+        /**
+         * Only retry idempotent methods (GET, PUT, DELETE, HEAD, OPTIONS).
+         * POST and PATCH will never be retried when enabled.
+         *
+         * @param idempotentOnly true to skip retry for POST/PATCH
+         * @return builder for chaining
+         */
+        public Builder idempotentOnly(boolean idempotentOnly) {
+            this.idempotentOnly = idempotentOnly;
+            return this;
+        }
+
         public RetryConfig build() {
-            return new RetryConfig(maxAttempts, initialDelay, multiplier, maxDelay, jitter);
+            return new RetryConfig(maxAttempts, initialDelay, multiplier, maxDelay, jitter, idempotentOnly);
         }
     }
 }
@@ -150,6 +164,10 @@ public record RetryConfig(
 |`jitter`
 |`0.1` (10%)
 |0.0 to 1.0 (0% to 100%, validated)
+
+|`idempotentOnly`
+|`false`
+|true or false (retries all methods if false, only idempotent methods if true)
 |===
 
 **Notes:**
@@ -159,6 +177,7 @@ public record RetryConfig(
 * `multiplier`: Each retry delay multiplied by this value (2.0 = doubling)
 * `maxDelay`: Cap on delay regardless of exponential growth
 * `jitter`: Randomization to prevent thundering herd (0.1 = ±10%)
+* `idempotentOnly`: When true, only retry GET/PUT/DELETE/HEAD/OPTIONS; skip POST/PATCH
 
 === Why These Defaults?
 
@@ -180,6 +199,9 @@ public record RetryConfig(
 
 |**jitter: 10%**
 |Prevents thundering herd when many clients fail simultaneously. 10% provides sufficient randomization without excessive variance. Based on AWS recommendations.
+
+|**idempotentOnly: false**
+|Conservative default: retries all methods. Users must explicitly opt-in to idempotent-only retry to prevent accidental POST/PATCH retries. Change to true if your application uses idempotency keys or wants strict safety.
 |===
 
 **References:**
@@ -218,6 +240,272 @@ public Duration calculateDelay(int attemptNumber) {
     return Duration.ofMillis(Math.min(delayMs, maxDelay.toMillis()));
 }
 ----
+
+== Idempotency Considerations
+
+**CRITICAL SAFETY WARNING:** Retrying non-idempotent operations can cause unintended side effects.
+
+=== HTTP Method Idempotency
+
+[cols="1,1,3"]
+|===
+|Method |Idempotent? |Retry Safety
+
+|**GET**
+|✅ Yes
+|Safe to retry - reads don't change state
+
+|**HEAD**
+|✅ Yes
+|Safe to retry - metadata only, no state change
+
+|**OPTIONS**
+|✅ Yes
+|Safe to retry - queries capabilities, no state change
+
+|**PUT**
+|✅ Yes
+|Safe to retry - multiple identical PUTs produce same result
+
+|**DELETE**
+|✅ Yes*
+|Usually safe - DELETE on non-existent resource typically succeeds
+
+|**POST**
+|❌ No
+|**UNSAFE** - May create duplicate resources
+
+|**PATCH**
+|❌ No
+|**UNSAFE** - May apply changes multiple times
+|===
+
+*DELETE idempotency depends on server implementation (404 vs 204 for non-existent resources)
+
+=== Risks of Retrying Non-Idempotent Operations
+
+==== POST Risk: Duplicate Resource Creation
+
+[source,java]
+----
+// DANGEROUS: Retry on network timeout might create duplicates
+HttpAdapter<Order> adapter = ResilientHttpAdapter.wrap(baseAdapter);
+
+Order order = new Order(items, totalPrice);
+HttpResult<Order> result = adapter.postBlocking(order);
+
+// Scenario:
+// Attempt 1: Request sent, server creates order, response lost (network timeout)
+// Attempt 2: Retry creates SECOND order with same data
+// Result: Customer charged twice!
+----
+
+**Impact:** Duplicate orders, payments, emails, database records.
+
+==== PATCH Risk: Applying Changes Multiple Times
+
+[source,java]
+----
+// DANGEROUS: Retry might apply increment twice
+PatchRequest adjustInventory = new PatchRequest("increment", "quantity", 5);
+adapter.patchBlocking(adjustInventory);
+
+// Scenario:
+// Attempt 1: Server increments quantity by 5, response lost
+// Attempt 2: Retry increments quantity by 5 AGAIN
+// Result: Quantity increased by 10 instead of 5!
+----
+
+**Impact:** Incorrect state, data corruption, inconsistent balances.
+
+=== Mitigation Strategies
+
+==== Option 1: Only Retry Idempotent Methods (Recommended)
+
+Configure `ResilientHttpAdapter` to skip retry for POST/PATCH:
+
+[source,java]
+----
+RetryConfig config = RetryConfig.builder()
+    .maxAttempts(5)
+    .idempotentOnly(true)  // Only retry GET, PUT, DELETE, HEAD, OPTIONS
+    .build();
+
+HttpAdapter<User> adapter = ResilientHttpAdapter.wrap(baseAdapter, config);
+
+// POST/PATCH execute once, GET/PUT/DELETE retry on failure
+----
+
+**Status:** Available in version 1.0.
+
+==== Option 2: Use Idempotency Keys
+
+Implement idempotency at application level using unique keys:
+
+[source,java]
+----
+// Generate unique idempotency key per operation
+String idempotencyKey = UUID.randomUUID().toString();
+
+Map<String, String> headers = Map.of(
+    "Idempotency-Key", idempotencyKey
+);
+
+HttpResult<Order> result = adapter.post(order, headers);
+
+// Server uses key to detect duplicate requests
+// Retry with same key returns original result, doesn't create duplicate
+----
+
+**Server Implementation:**
+[source,java]
+----
+// Server-side pseudocode
+if (cache.containsKey(idempotencyKey)) {
+    return cache.get(idempotencyKey);  // Return cached result
+}
+
+Order created = createOrder(request);
+cache.put(idempotencyKey, created);
+return created;
+----
+
+**Standards:**
+
+* Stripe API uses `Idempotency-Key` header
+* Many REST APIs support similar patterns
+* Requires server-side implementation
+
+==== Option 3: Don't Use ResilientHttpAdapter for POST/PATCH
+
+Only wrap safe operations:
+
+[source,java]
+----
+// Base adapter without retry
+HttpAdapter<Order> postAdapter = ETagAwareHttpAdapter.<Order>builder()
+    .httpHandler(handler)
+    .responseConverter(orderConverter)
+    .build();
+
+// Resilient adapter only for GET (safe to retry)
+HttpAdapter<Order> getAdapter = ResilientHttpAdapter.wrap(postAdapter);
+
+// Use appropriate adapter per operation
+HttpResult<Order> created = postAdapter.postBlocking(newOrder);  // No retry
+HttpResult<Order> fetched = getAdapter.getBlocking();            // With retry
+----
+
+==== Option 4: Use Conditional Requests
+
+For PUT/PATCH, use `If-Match` with ETags:
+
+[source,java]
+----
+// Fetch current resource with ETag
+HttpResult<User> current = adapter.getBlocking();
+String etag = current.getETag().orElseThrow();
+
+// Update with conditional header
+Map<String, String> headers = Map.of(
+    "If-Match", etag
+);
+
+HttpResult<User> updated = adapter.put(modifiedUser, headers);
+
+// Retry fails with 412 Precondition Failed if resource changed
+// Prevents lost update problem
+----
+
+=== Current Implementation Behavior
+
+**As of Version 1.0:**
+
+* `ResilientHttpAdapter` uses `HttpMethod` enum internally for type-safe method tracking
+* Supports `idempotentOnly` configuration via `RetryConfig.builder().idempotentOnly(true)`
+* When `idempotentOnly=false` (default), retries **ALL** HTTP methods
+* When `idempotentOnly=true`, only retries idempotent methods (GET, PUT, DELETE, HEAD, OPTIONS)
+* POST and PATCH are automatically skipped when `idempotentOnly=true`
+
+**Recommendation:**
+
+* ✅ Use `ResilientHttpAdapter` with `idempotentOnly=true` for safe retry behavior
+* ✅ Use `idempotentOnly=false` (default) only when using idempotency keys or accepting retry risks
+* ⚠️ Use with caution for PUT (idempotent by HTTP spec, but verify server behavior)
+* 💡 For POST/PATCH, either use idempotency keys OR configure `idempotentOnly=true`
+
+=== Examples
+
+==== Safe: Retry GET
+
+[source,java]
+----
+// Safe - reads are idempotent
+HttpAdapter<User> adapter = ResilientHttpAdapter.wrap(baseAdapter);
+HttpResult<User> user = adapter.getBlocking();  // Retry on network failure
+----
+
+==== Safe: Retry PUT with Idempotency
+
+[source,java]
+----
+// Safe - PUT is idempotent by HTTP spec
+HttpAdapter<User> adapter = ResilientHttpAdapter.wrap(baseAdapter);
+HttpResult<User> updated = adapter.putBlocking(user);  // Same result on retry
+----
+
+==== Unsafe: Retry POST without Protection
+
+[source,java]
+----
+// UNSAFE - may create duplicates
+HttpAdapter<Order> adapter = ResilientHttpAdapter.wrap(baseAdapter);
+HttpResult<Order> order = adapter.postBlocking(newOrder);  // ⚠️ Risk of duplicates
+----
+
+==== Safe: POST with Idempotency Key
+
+[source,java]
+----
+// Safe - idempotency key prevents duplicates
+HttpAdapter<Order> adapter = ResilientHttpAdapter.wrap(baseAdapter);
+
+String idempotencyKey = UUID.randomUUID().toString();
+Map<String, String> headers = Map.of("Idempotency-Key", idempotencyKey);
+
+HttpResult<Order> order = adapter.post(newOrder, headers);  // ✅ Safe to retry
+----
+
+==== Safe: No Retry for POST
+
+[source,java]
+----
+// Safe - no retry wrapper
+HttpAdapter<Order> adapter = ETagAwareHttpAdapter.<Order>builder()
+    .httpHandler(handler)
+    .responseConverter(orderConverter)
+    .build();
+
+HttpResult<Order> order = adapter.postBlocking(newOrder);  // ✅ No retry
+----
+
+=== Roadmap
+
+**Completed in version 1.0:**
+
+1. ✅ Added `idempotentOnly` boolean to `RetryConfig`
+2. ✅ Added `HttpMethod` enum with `isIdempotent()` classification
+3. ✅ Skip retry for POST/PATCH when `idempotentOnly=true`
+4. ✅ Comprehensive idempotency documentation with mitigation strategies
+
+**Planned for future versions:**
+
+1. Metrics and observability hooks (retry count, success rate per method)
+2. Circuit breaker pattern integration
+3. Adaptive retry strategies based on response headers (Retry-After)
+4. Per-method retry configuration override
+
+See `06-implementation-plan.adoc` for detailed roadmap.
 
 == ResilientHttpAdapter Implementation
 
@@ -266,70 +554,70 @@ public class ResilientHttpAdapter<T> implements HttpAdapter<T> {
 
     @Override
     public CompletableFuture<HttpResult<T>> get(Map<String, String> additionalHeaders) {
-        return executeWithRetry(() -> delegate.get(additionalHeaders), "GET", 1);
+        return executeWithRetry(() -> delegate.get(additionalHeaders), HttpMethod.GET, 1);
     }
 
     @Override
     public CompletableFuture<HttpResult<T>> post(@Nullable T requestBody, Map<String, String> additionalHeaders) {
-        return executeWithRetry(() -> delegate.post(requestBody, additionalHeaders), "POST", 1);
+        return executeWithRetry(() -> delegate.post(requestBody, additionalHeaders), HttpMethod.POST, 1);
     }
 
     @Override
     public CompletableFuture<HttpResult<T>> put(@Nullable T requestBody, Map<String, String> additionalHeaders) {
-        return executeWithRetry(() -> delegate.put(requestBody, additionalHeaders), "PUT", 1);
+        return executeWithRetry(() -> delegate.put(requestBody, additionalHeaders), HttpMethod.PUT, 1);
     }
 
     @Override
     public CompletableFuture<HttpResult<T>> patch(@Nullable T requestBody, Map<String, String> additionalHeaders) {
-        return executeWithRetry(() -> delegate.patch(requestBody, additionalHeaders), "PATCH", 1);
+        return executeWithRetry(() -> delegate.patch(requestBody, additionalHeaders), HttpMethod.PATCH, 1);
     }
 
     @Override
     public CompletableFuture<HttpResult<T>> delete(Map<String, String> additionalHeaders) {
-        return executeWithRetry(() -> delegate.delete(additionalHeaders), "DELETE", 1);
+        return executeWithRetry(() -> delegate.delete(additionalHeaders), HttpMethod.DELETE, 1);
     }
 
     @Override
     public CompletableFuture<HttpResult<T>> delete(@Nullable T requestBody, Map<String, String> additionalHeaders) {
-        return executeWithRetry(() -> delegate.delete(requestBody, additionalHeaders), "DELETE", 1);
+        return executeWithRetry(() -> delegate.delete(requestBody, additionalHeaders), HttpMethod.DELETE, 1);
     }
 
     @Override
     public CompletableFuture<HttpResult<T>> head(Map<String, String> additionalHeaders) {
-        return executeWithRetry(() -> delegate.head(additionalHeaders), "HEAD", 1);
+        return executeWithRetry(() -> delegate.head(additionalHeaders), HttpMethod.HEAD, 1);
     }
 
     @Override
     public CompletableFuture<HttpResult<T>> options(Map<String, String> additionalHeaders) {
-        return executeWithRetry(() -> delegate.options(additionalHeaders), "OPTIONS", 1);
+        return executeWithRetry(() -> delegate.options(additionalHeaders), HttpMethod.OPTIONS, 1);
     }
 
     @Override
     public <R> CompletableFuture<HttpResult<T>> post(HttpRequestConverter<R> requestConverter,
                                                        @Nullable R requestBody,
                                                        Map<String, String> additionalHeaders) {
-        return executeWithRetry(() -> delegate.post(requestConverter, requestBody, additionalHeaders), "POST", 1);
+        return executeWithRetry(() -> delegate.post(requestConverter, requestBody, additionalHeaders), HttpMethod.POST, 1);
     }
 
     @Override
     public <R> CompletableFuture<HttpResult<T>> put(HttpRequestConverter<R> requestConverter,
                                                       @Nullable R requestBody,
                                                       Map<String, String> additionalHeaders) {
-        return executeWithRetry(() -> delegate.put(requestConverter, requestBody, additionalHeaders), "PUT", 1);
+        return executeWithRetry(() -> delegate.put(requestConverter, requestBody, additionalHeaders), HttpMethod.PUT, 1);
     }
 
     @Override
     public <R> CompletableFuture<HttpResult<T>> patch(HttpRequestConverter<R> requestConverter,
                                                         @Nullable R requestBody,
                                                         Map<String, String> additionalHeaders) {
-        return executeWithRetry(() -> delegate.patch(requestConverter, requestBody, additionalHeaders), "PATCH", 1);
+        return executeWithRetry(() -> delegate.patch(requestConverter, requestBody, additionalHeaders), HttpMethod.PATCH, 1);
     }
 
     @Override
     public <R> CompletableFuture<HttpResult<T>> delete(HttpRequestConverter<R> requestConverter,
                                                          @Nullable R requestBody,
                                                          Map<String, String> additionalHeaders) {
-        return executeWithRetry(() -> delegate.delete(requestConverter, requestBody, additionalHeaders), "DELETE", 1);
+        return executeWithRetry(() -> delegate.delete(requestConverter, requestBody, additionalHeaders), HttpMethod.DELETE, 1);
     }
 
     /**
@@ -338,16 +626,16 @@ public class ResilientHttpAdapter<T> implements HttpAdapter<T> {
      * additional thread wrapping is needed.
      *
      * @param operation Supplier that returns CompletableFuture of the HTTP operation
-     * @param methodName HTTP method name for logging
+     * @param method HTTP method for logging and idempotency checking
      * @param attempt Current attempt number (1-based)
      * @return CompletableFuture containing the result or recursive retry
      */
     private CompletableFuture<HttpResult<T>> executeWithRetry(
             Supplier<CompletableFuture<HttpResult<T>>> operation,
-            String methodName,
+            HttpMethod method,
             int attempt) {
 
-        LOGGER.debug("Attempt {}/{} for {} request", attempt, config.maxAttempts(), methodName);
+        LOGGER.debug("Attempt {}/{} for {} request", attempt, config.maxAttempts(), method.methodName());
 
         // Delegate is already async - no supplyAsync needed!
         return operation.get()
@@ -355,21 +643,28 @@ public class ResilientHttpAdapter<T> implements HttpAdapter<T> {
                     // Success - return immediately
                     if (result.isSuccess()) {
                         if (attempt > 1) {
-                            LOGGER.debug("{} request succeeded on attempt {}", methodName, attempt);
+                            LOGGER.debug("{} request succeeded on attempt {}", method.methodName(), attempt);
                         }
+                        return CompletableFuture.completedFuture(result);
+                    }
+
+                    // Idempotency check - skip retry for non-idempotent methods if configured
+                    if (config.idempotentOnly() && !method.isIdempotent()) {
+                        LOGGER.warn("Skipping retry for non-idempotent method: {} (idempotentOnly=true)",
+                            method.methodName());
                         return CompletableFuture.completedFuture(result);
                     }
 
                     // Non-retryable failure - return immediately
                     if (!result.isRetryable()) {
                         LOGGER.debug("{} request failed with non-retryable error: {}",
-                            methodName, result.getErrorCategory().orElse(null));
+                            method.methodName(), result.getErrorCategory().orElse(null));
                         return CompletableFuture.completedFuture(result);
                     }
 
                     // Max attempts reached
                     if (attempt >= config.maxAttempts()) {
-                        LOGGER.warn("{} request failed after {} attempts", methodName, config.maxAttempts());
+                        LOGGER.warn("{} request failed after {} attempts", method.methodName(), config.maxAttempts());
                         return CompletableFuture.completedFuture(result);
                     }
 
@@ -377,7 +672,7 @@ public class ResilientHttpAdapter<T> implements HttpAdapter<T> {
                     Duration delay = config.calculateDelay(attempt);
 
                     LOGGER.warn("{} request failed on attempt {}, retrying after {}ms",
-                        methodName, attempt, delay.toMillis());
+                        method.methodName(), attempt, delay.toMillis());
 
                     int nextAttempt = attempt + 1;
 
@@ -389,7 +684,7 @@ public class ResilientHttpAdapter<T> implements HttpAdapter<T> {
                     // Schedule next attempt after delay - no nested futures
                     return CompletableFuture
                         .supplyAsync(() -> null, delayedExecutor)
-                        .thenCompose(ignored -> executeWithRetry(operation, methodName, nextAttempt));
+                        .thenCompose(ignored -> executeWithRetry(operation, method, nextAttempt));
                 });
     }
 }
@@ -416,7 +711,7 @@ CompletableFuture<HttpResult<User>> futureResult = resilientAdapter.get();
 // Handle result asynchronously (recommended)
 futureResult.thenAccept(result -> {
     if (result.isSuccess()) {
-        User user = result.getValue().orElseThrow();
+        User user = result.getContent().orElseThrow();
         // Process user
     } else {
         LOGGER.error("Request failed: {}", result.getErrorMessage());
@@ -445,7 +740,7 @@ HttpAdapter<User> resilientAdapter = ResilientHttpAdapter.wrap(baseAdapter, cust
 // Chain async operations
 User newUser = User.builder().name("John").build();
 resilientAdapter.post(newUser, headers)
-    .thenApply(result -> result.getValue().orElse(null))
+    .thenApply(result -> result.getContent().orElse(null))
     .thenAccept(savedUser -> LOGGER.info("User saved: {}", savedUser))
     .exceptionally(ex -> {
         LOGGER.error("Async operation failed", ex);

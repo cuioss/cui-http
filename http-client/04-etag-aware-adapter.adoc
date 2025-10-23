@@ -7,9 +7,9 @@
 
 Base HTTP adapter with built-in, configurable ETag caching.
 
-== Structural Correctness Pattern
+== 304 Not Modified Handling Pattern
 
-Correctness achieved through program structure rather than runtime validation:
+Safe 304 handling achieved through request flow design rather than defensive null checks:
 
 [source,java]
 ----
@@ -288,11 +288,13 @@ The `cacheKeyHeaderFilter` setting affects efficiency and memory usage:
 === CacheKeyHeaderFilter.ALL (Default)
 
 **Pros:**
+
 * ✅ Efficient in multi-user scenarios: Separate cache per user avoids wasted If-None-Match requests
 * ✅ Defense-in-depth: Protects against buggy server ETags (e.g., user-agnostic ETags)
 * ✅ Safe for shared adapter instances
 
 **Cons:**
+
 * ❌ Token refresh cache bloat: Each token creates new cache entry for same resource
 * ❌ Memory grows unbounded without manual clearing
 
@@ -307,21 +309,25 @@ The `cacheKeyHeaderFilter` setting affects efficiency and memory usage:
 === CacheKeyHeaderFilter.NONE (URI Only)
 
 **Pros:**
+
 * ✅ No token refresh cache bloat: Same URI = same cache entry
 * ✅ Higher cache hit rate
 * ✅ Better memory efficiency
 
 **Cons:**
+
 * ❌ Multi-user inefficiency: Different users' ETags won't match → server sends full 200 responses
 * ❌ Ignores ALL headers including content-affecting ones (Accept-Language, etc.)
 * ❌ Relies on server implementing user-aware ETags correctly
 
 **Safe for:**
+
 * Single-user mobile/desktop apps
 * Service accounts (one token)
 * Per-user adapter instances
 
 **Unsafe for:**
+
 * Shared adapter instances across multiple users
 * Multi-tenant web servers
 
@@ -507,6 +513,7 @@ public HttpAdapter<User> createAdapterForUser(String userId) {
 ----
 
 **Benefits:**
+
 * No cross-user cache pollution (each user has own adapter)
 * Can use `CacheKeyHeaderFilter.NONE` safely
 * Automatic cache cleanup on logout

@@ -23,6 +23,7 @@ java.net.http.HttpClient
 ----
 
 **Key characteristics:**
+
 * Single `ETagAwareHttpAdapter` with built-in ETag caching (configurable)
 * Method-specific API (`adapter.get()`, `adapter.post()`, etc.)
 * Separate `HttpResponseConverter<T>` and `HttpRequestConverter<R>` interfaces for request and response conversion
