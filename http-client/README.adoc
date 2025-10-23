@@ -10,7 +10,7 @@
 . link:02-proposed-architecture.adoc[Architecture] - Design patterns and layers
 . link:03-core-components.adoc[Components] - Interface specifications
 . link:04-etag-aware-adapter.adoc[ETag Adapter] - Base adapter with caching
-. link:05-resilient-adapter.adoc[Resilient Adapter] - Retry logic with async
+. link:05-resilient-adapter.adoc[Resilient Adapter] - Non-blocking async retry with exponential backoff
 
 === Usage & Examples
 
@@ -22,16 +22,20 @@
 [source]
 ----
 Client Code
-    ↓
-HttpAdapter.{get()|post()|put()|delete()|...}
-    ↓
-ResilientHttpAdapter (optional retry)
-    ↓
-ETagAwareHttpAdapter (base + ETag caching)
-    ↓
-HttpHandler (SSL, timeouts)
-    ↓
-java.net.http.HttpClient
+    ↓ calls
+HttpAdapter.get() → CompletableFuture<HttpResult<T>>
+    ↓ delegates to (if wrapped)
+ResilientHttpAdapter (optional async retry with exponential backoff)
+    ↓ delegates to (returns CompletableFuture)
+ETagAwareHttpAdapter (base adapter + ETag caching)
+    ↓ uses (returns CompletableFuture)
+HttpHandler (SSL, timeouts, connection pooling)
+    ↓ calls (async)
+java.net.http.HttpClient.sendAsync()
+    ↓ returns
+CompletableFuture<HttpResponse<String>>
+
+All layers are non-blocking - zero threads blocked during I/O or retries
 ----
 
 == Key Decisions
@@ -42,10 +46,11 @@ java.net.http.HttpClient
 
 |HTTP Methods |Method-specific API (`adapter.get()`, `adapter.post()`, etc.)
 |ETag Caching |Built into `ETagAwareHttpAdapter` (default enabled, configurable)
-|Retry Logic |`ResilientHttpAdapter` with `RetryConfig` record - async with CompletableFuture
+|Retry Logic |`ResilientHttpAdapter` with `RetryConfig` - non-blocking async with exponential backoff
 |Content Conversion |Separate `HttpResponseConverter<T>` and `HttpRequestConverter<R>` interfaces
 |Content Types |`ContentType` enum
-|Async First |All operations return `CompletableFuture<HttpResult<T>>` with blocking convenience methods
+|Async First |All operations return `CompletableFuture<HttpResult<T>>` - zero blocked threads
+|Blocking Convenience |`*Blocking()` methods available for simple synchronous use cases
 |===
 
 == Quick Examples
@@ -121,22 +126,22 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
 
 == Adapter Composition Order
 
-Order matters when composing multiple adapters:
+Order matters when composing multiple adapters. All compositions maintain non-blocking async behavior:
 
 [cols="2,2,2"]
 |===
 |Pattern |Behavior |Use When
 
 |`Retry(Auth(Base))`
-|Retries entire operation including auth
+|Retries entire operation including auth (all async)
 |Auth failures are transient
 
 |`Auth(Retry(Base))`
-|Retries requests, reuses auth
+|Retries requests, reuses auth (all async)
 |Auth is stable
 
 |`Base → Retry → Auth`
-|Standard composition
+|Standard composition (all async)
 |Recommended default
 |===
 
@@ -187,10 +192,10 @@ See link:04-etag-aware-adapter.adoc#_304_not_modified_handling[304 Implementatio
 |Document |Content
 
 |README |This file - navigation and quick reference
-|02-proposed-architecture |Design patterns and data flows
-|03-core-components |Interface specifications
-|04-etag-aware-adapter |Base adapter implementation
-|05-resilient-adapter |Retry implementation
-|07-usage-examples |Code examples
+|02-proposed-architecture |Design patterns, async architecture, and data flows
+|03-core-components |`HttpAdapter<T>` interface with async-first design
+|04-etag-aware-adapter |Base adapter implementation with ETag caching
+|05-resilient-adapter |Non-blocking retry with exponential backoff and `CompletableFuture`
+|07-usage-examples |24 complete code examples (async and blocking patterns)
 |09-security-considerations |Security best practices
 |===
