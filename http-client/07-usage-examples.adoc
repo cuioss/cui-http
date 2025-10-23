@@ -216,7 +216,7 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
     .responseConverter(userConverter)
     .requestConverter(userConverter)
-    .build();  // Default: CacheKeyHeaders.ALL
+    .build();  // Default: CacheKeyHeaderFilter.ALL
 
 // ⚠️ EFFICIENCY NOTE: Authorization headers are included in cache key by default.
 //
@@ -226,7 +226,7 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
 //
 // Single-user scenario (mobile app, desktop):
 //   ❌ Cache bloat: Token refresh creates duplicate entries
-//   ✅ Solution: Use CacheKeyHeaders.NONE (see Example 6b below)
+//   ✅ Solution: Use CacheKeyHeaderFilter.NONE or excluding("Authorization") (see Example 6b)
 
 // Add Authorization header
 Map<String, String> headers = Map.of(
@@ -245,7 +245,7 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
     .responseConverter(userConverter)
     .requestConverter(userConverter)
-    .cacheKeyHeaders(CacheKeyHeaders.NONE)  // URI only, ignore Authorization
+    .cacheKeyHeaderFilter(CacheKeyHeaderFilter.NONE)  // URI only, ignore all headers
     .build();
 
 // Token refresh doesn't create duplicate cache entries

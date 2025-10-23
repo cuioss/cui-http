@@ -7,11 +7,11 @@
 
 This document provides complete specifications for all core components introduced in the HTTP method extension.
 
-== CacheKeyHeaders Enum
+== CacheKeyHeaderFilter Interface
 
 *Package:* `de.cuioss.http.client.adapter`
 
-*Purpose:* Configure which headers are included in ETag cache keys.
+*Purpose:* Fine-grained control over which HTTP headers are included in ETag cache keys using functional predicates.
 
 === Interface Definition
 
@@ -19,122 +19,307 @@ This document provides complete specifications for all core components introduce
 ----
 package de.cuioss.http.client.adapter;
 
+import java.util.Set;
+import java.util.function.Predicate;
+
 /**
- * Strategy for including HTTP headers in ETag cache keys.
+ * Strategy for determining which HTTP headers should be included in cache keys.
  *
- * <p>Cache keys uniquely identify cached responses. Including headers
- * creates separate cache entries per header combination, excluding
- * headers shares cache entries across different header values.
+ * <p>Headers included in cache keys create separate cache entries per header
+ * combination. Headers excluded from cache keys allow cache sharing across
+ * different header values.
+ *
+ * <p>This functional interface allows fine-grained control beyond simple all-or-nothing
+ * choices, solving the token refresh cache bloat problem while maintaining security.
  *
  * @since 1.0
  */
-public enum CacheKeyHeaders {
+@FunctionalInterface
+public interface CacheKeyHeaderFilter {
+
     /**
-     * Include all additional headers in cache key (default).
+     * Determines if the given header should be included in the cache key.
+     *
+     * @param headerName The HTTP header name (case-insensitive)
+     * @return true if header should be included in cache key, false otherwise
+     */
+    boolean includeInCacheKey(String headerName);
+
+    // ========== PRESET FILTERS ==========
+
+    /**
+     * Include all headers in cache key (default, safest).
      *
      * <p><b>Use when:</b>
      * <ul>
      *   <li>Adapter is shared across multiple users</li>
-     *   <li>Headers affect response content (Authorization, Accept-Language)</li>
-     *   <li>You want defense-in-depth against buggy server ETags</li>
+     *   <li>Headers affect response content</li>
+     *   <li>Defense-in-depth against server ETag bugs</li>
      * </ul>
      *
-     * <p><b>Benefits:</b>
-     * <ul>
-     *   <li>Safe for multi-user scenarios (no cross-user cache pollution)</li>
-     *   <li>Efficient: Avoids wasted If-None-Match requests when ETags won't match</li>
-     *   <li>Defense against server ETag bugs (user-agnostic ETags)</li>
-     * </ul>
-     *
-     * <p><b>Drawback:</b>
-     * <ul>
-     *   <li>Token refresh creates duplicate cache entries (cache bloat)</li>
-     * </ul>
+     * <p><b>Trade-off:</b> Token refresh creates cache bloat
      */
-    ALL,
+    CacheKeyHeaderFilter ALL = header -> true;
 
     /**
      * Exclude all headers from cache key (URI only).
      *
      * <p><b>Use ONLY when:</b>
      * <ul>
-     *   <li>Adapter is NOT shared across users (single-user client)</li>
-     *   <li>Server implements user-aware ETags correctly</li>
-     *   <li>Headers don't affect response content (or server includes in ETag)</li>
+     *   <li>Single-user client (not shared)</li>
+     *   <li>Server implements user-aware ETags</li>
      * </ul>
      *
-     * <p><b>Benefits:</b>
-     * <ul>
-     *   <li>No cache bloat from token refresh</li>
-     *   <li>Higher cache hit rate for same resource with varying headers</li>
-     * </ul>
+     * <p><b>Risk:</b> Multi-user scenarios may cache wrong content
+     */
+    CacheKeyHeaderFilter NONE = header -> false;
+
+    // ========== FACTORY METHODS ==========
+
+    /**
+     * Exclude specific headers from cache key, include all others.
      *
-     * <p><b>Risks:</b>
-     * <ul>
-     *   <li>In multi-user scenarios: Wasted bandwidth (ETag mismatches)</li>
-     *   <li>Relies on server implementing user-aware ETags correctly</li>
-     *   <li>May cache wrong content if server doesn't include header-dependent
-     *       data in ETag (e.g., Accept-Language)</li>
-     * </ul>
+     * <p><b>Solves token refresh cache bloat</b> by excluding Authorization
+     * while keeping content-affecting headers like Accept-Language.
      *
-     * <p><b>Example - Single User Client:</b>
+     * <p>Example:
      * <pre>{@code
-     * // Mobile app, desktop app, or service account
-     * HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
-     *     .httpHandler(handler)
-     *     .responseConverter(userConverter)
-     *     .cacheKeyHeaders(CacheKeyHeaders.NONE)  // Safe: single user
-     *     .build();
+     * // Exclude frequently-changing headers, include others
+     * .cacheKeyHeaderFilter(CacheKeyHeaderFilter.excluding(
+     *     "Authorization", "X-Request-ID", "X-Trace-ID"
+     * ))
      * }</pre>
      *
-     * <p><b>Example - Multi-User Server (UNSAFE):</b>
-     * <pre>{@code
-     * // Web API endpoint (BAD - don't do this!)
-     * HttpAdapter<User> sharedAdapter = ETagAwareHttpAdapter.<User>builder()
-     *     .httpHandler(handler)
-     *     .responseConverter(userConverter)
-     *     .cacheKeyHeaders(CacheKeyHeaders.NONE)  // ⚠️ UNSAFE: shared across users
-     *     .build();
+     * @param headerNames Case-insensitive header names to exclude
+     * @return Filter that includes all headers except specified ones
+     */
+    static CacheKeyHeaderFilter excluding(String... headerNames) {
+        Set<String> excluded = Set.of(headerNames).stream()
+            .map(String::toLowerCase)
+            .collect(java.util.stream.Collectors.toSet());
+        return header -> !excluded.contains(header.toLowerCase());
+    }
+
+    /**
+     * Include only specific headers in cache key, exclude all others.
      *
-     * // User A: GET /api/users/me → caches with key "/api/users/me"
-     * // User B: GET /api/users/me → sends If-None-Match with User A's ETag
-     * // Result: Server sends 200 (ETag mismatch) → wasted bandwidth
+     * <p><b>Whitelist approach</b> for precise control over cache key composition.
+     *
+     * <p>Example:
+     * <pre>{@code
+     * // Include only content-affecting headers
+     * .cacheKeyHeaderFilter(CacheKeyHeaderFilter.including(
+     *     "Accept-Language", "Accept-Encoding"
+     * ))
+     * }</pre>
+     *
+     * @param headerNames Case-insensitive header names to include
+     * @return Filter that includes only specified headers
+     */
+    static CacheKeyHeaderFilter including(String... headerNames) {
+        Set<String> included = Set.of(headerNames).stream()
+            .map(String::toLowerCase)
+            .collect(java.util.stream.Collectors.toSet());
+        return header -> included.contains(header.toLowerCase());
+    }
+
+    /**
+     * Exclude headers matching a prefix (case-insensitive).
+     *
+     * <p>Example:
+     * <pre>{@code
+     * // Exclude all X- headers (trace IDs, custom headers)
+     * .cacheKeyHeaderFilter(CacheKeyHeaderFilter.excludingPrefix("X-"))
+     * }</pre>
+     *
+     * @param prefix Case-insensitive prefix to match
+     * @return Filter that excludes headers starting with prefix
+     */
+    static CacheKeyHeaderFilter excludingPrefix(String prefix) {
+        String lowerPrefix = prefix.toLowerCase();
+        return header -> !header.toLowerCase().startsWith(lowerPrefix);
+    }
+
+    /**
+     * Custom predicate-based filter for complex logic.
+     *
+     * <p>Example:
+     * <pre>{@code
+     * .cacheKeyHeaderFilter(CacheKeyHeaderFilter.matching(
+     *     header -> !header.startsWith("X-") && !header.equals("Authorization")
+     * ))
+     * }</pre>
+     *
+     * @param predicate Custom header inclusion logic
+     * @return Filter using the predicate
+     */
+    static CacheKeyHeaderFilter matching(Predicate<String> predicate) {
+        return predicate::test;
+    }
+
+    // ========== COMPOSITION ==========
+
+    /**
+     * Combines this filter with another using logical AND.
+     * Header is included only if both filters return true.
+     *
+     * <p>Example:
+     * <pre>{@code
+     * CacheKeyHeaderFilter filter = CacheKeyHeaderFilter
+     *     .excluding("Authorization")
+     *     .and(CacheKeyHeaderFilter.excludingPrefix("X-"));
      * }</pre>
      */
-    NONE;
+    default CacheKeyHeaderFilter and(CacheKeyHeaderFilter other) {
+        return header -> this.includeInCacheKey(header) && other.includeInCacheKey(header);
+    }
+
+    /**
+     * Combines this filter with another using logical OR.
+     * Header is included if either filter returns true.
+     */
+    default CacheKeyHeaderFilter or(CacheKeyHeaderFilter other) {
+        return header -> this.includeInCacheKey(header) || other.includeInCacheKey(header);
+    }
+
+    /**
+     * Negates this filter.
+     *
+     * <p>Example:
+     * <pre>{@code
+     * // Include all EXCEPT Accept-Language
+     * CacheKeyHeaderFilter.including("Accept-Language").negate()
+     * }</pre>
+     */
+    default CacheKeyHeaderFilter negate() {
+        return header -> !this.includeInCacheKey(header);
+    }
 }
 ----
 
-=== Decision Guide
+=== Common Use Cases
 
-[cols="2,2,2"]
+[cols="2,3,2"]
 |===
-|Scenario |Recommended Setting |Rationale
+|Scenario |Filter Configuration |Rationale
 
-|Multi-user web server
-|`CacheKeyHeaders.ALL`
-|Separate cache per user, efficient If-None-Match
+|Multi-user web server (default)
+|`CacheKeyHeaderFilter.ALL`
+|Safe: separate cache per user
 
 |Single-user mobile app
-|`CacheKeyHeaders.NONE`
+|`CacheKeyHeaderFilter.NONE`
 |No token refresh cache bloat
 
-|Service account (one token)
-|`CacheKeyHeaders.NONE`
+|Token refresh cache bloat fix
+|`CacheKeyHeaderFilter.excluding("Authorization")`
+|**Best of both worlds**: keeps Accept-Language, excludes Auth
+
+|Service account
+|`CacheKeyHeaderFilter.NONE`
 |Token rarely changes
 
-|Desktop application
-|`CacheKeyHeaders.NONE`
-|One user per app instance
+|Content negotiation only
+|`CacheKeyHeaderFilter.including("Accept-Language", "Accept-Encoding")`
+|Precise control over cache keys
+
+|Exclude debug/trace headers
+|`CacheKeyHeaderFilter.excludingPrefix("X-")`
+|Clean cache keys without noise
 
 |Multi-tenant SaaS
-|`CacheKeyHeaders.ALL`
+|`CacheKeyHeaderFilter.ALL`
 |Defense against cross-tenant leakage
 
-|Per-user adapter instances
-|`CacheKeyHeaders.NONE`
-|Already isolated per user
+|Complex requirements
+|`CacheKeyHeaderFilter.matching(header -> ...)`
+|Full custom logic
 |===
+
+=== Usage Examples
+
+==== Example 1: Solve Token Refresh Cache Bloat
+
+[source,java]
+----
+// Problem: ALL causes cache bloat on token refresh
+// Solution: Exclude Authorization, keep content-affecting headers
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .responseConverter(userConverter)
+    .cacheKeyHeaderFilter(CacheKeyHeaderFilter.excluding("Authorization"))
+    .build();
+
+// Now:
+// - Accept-Language IS included → separate cache per language ✓
+// - Authorization NOT included → token refresh doesn't bloat cache ✓
+----
+
+==== Example 2: Exclude All Trace Headers
+
+[source,java]
+----
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .responseConverter(userConverter)
+    .cacheKeyHeaderFilter(
+        CacheKeyHeaderFilter.excludingPrefix("X-")
+            .and(CacheKeyHeaderFilter.excluding("Authorization"))
+    )
+    .build();
+----
+
+==== Example 3: Whitelist Content Headers Only
+
+[source,java]
+----
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .responseConverter(userConverter)
+    .cacheKeyHeaderFilter(CacheKeyHeaderFilter.including(
+        "Accept-Language",
+        "Accept-Encoding",
+        "Accept-Charset"
+    ))
+    .build();
+----
+
+==== Example 4: Custom Logic
+
+[source,java]
+----
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .responseConverter(userConverter)
+    .cacheKeyHeaderFilter(CacheKeyHeaderFilter.matching(header -> {
+        // Include Accept-* headers
+        if (header.startsWith("Accept-")) return true;
+        // Exclude auth and trace headers
+        if (header.equals("Authorization")) return false;
+        if (header.startsWith("X-")) return false;
+        // Include everything else
+        return true;
+    }))
+    .build();
+----
+
+=== Migration from Binary Choice
+
+The old all-or-nothing approach had limitations:
+
+[source,java]
+----
+// OLD: Binary choice (cache bloat OR potential mismatches)
+// .cacheKeyHeaderFilter(CacheKeyHeaderFilter.ALL)   // Problem: token refresh bloat
+// .cacheKeyHeaderFilter(CacheKeyHeaderFilter.NONE)  // Problem: multi-user risks
+
+// NEW: Fine-grained control (best of both worlds)
+.cacheKeyHeaderFilter(CacheKeyHeaderFilter.excluding("Authorization"))
+
+// Or use presets for simple cases
+.cacheKeyHeaderFilter(CacheKeyHeaderFilter.ALL)   // Same as old ALL
+.cacheKeyHeaderFilter(CacheKeyHeaderFilter.NONE)  // Same as old NONE
+----
 
 == ContentType Enum
 

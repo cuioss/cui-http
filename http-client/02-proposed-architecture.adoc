@@ -184,9 +184,9 @@ Handles request serialization (R → HTTP). Implementations define how to conver
 
 Type-safe MIME types (APPLICATION_JSON, TEXT_PLAIN, etc.) with charset support.
 
-=== CacheKeyHeaders Enum
+=== CacheKeyHeaderFilter Interface
 
-Configure which headers are included in ETag cache keys (`ALL` or `NONE`).
+Fine-grained control over which headers are included in ETag cache keys using functional predicates. Preset filters (`ALL`, `NONE`) or custom logic (`excluding()`, `including()`, `matching()`).
 
 === HttpErrorCategory
 
@@ -247,7 +247,7 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
     .responseConverter(userConverter)
     .requestConverter(userConverter)
-    .cacheKeyHeaders(CacheKeyHeaders.NONE)  // URI only, ignore Authorization
+    .cacheKeyHeaderFilter(CacheKeyHeaderFilter.NONE)  // URI only, ignore all headers
     .build();
 // Token refresh doesn't create duplicate cache entries
 ----

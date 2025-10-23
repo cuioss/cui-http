@@ -148,7 +148,7 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
     .responseConverter(userConverter)
     .etagCachingEnabled(true)         // Default: true
-    .cacheKeyHeaders(CacheKeyHeaders.ALL)  // Default: ALL (include all headers)
+    .cacheKeyHeaderFilter(CacheKeyHeaderFilter.ALL)  // Default: ALL (include all headers)
     .build();
 ----
 
@@ -174,38 +174,39 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
 |`true`
 |Enable/disable ETag caching entirely
 
-|`cacheKeyHeaders`
-|`CacheKeyHeaders.ALL`
-|Include headers in cache key (ALL) or use URI only (NONE)
+|`cacheKeyHeaderFilter`
+|`CacheKeyHeaderFilter.ALL`
+|Predicate determining which headers to include in cache key (ALL, NONE, or custom filter)
 |===
 
 == Cache Key Generation
 
 === Algorithm
 
-The cache key is generated based on the `cacheKeyHeaders` setting:
+The cache key is generated based on the `cacheKeyHeaderFilter`:
 
 [source,java]
 ----
-String cacheKey = generateCacheKey(uri, additionalHeaders, cacheKeyHeaders);
+String cacheKey = generateCacheKey(uri, additionalHeaders, cacheKeyHeaderFilter);
 
 private String generateCacheKey(URI uri,
                                  Map<String, String> headers,
-                                 CacheKeyHeaders strategy) {
+                                 CacheKeyHeaderFilter filter) {
     StringBuilder key = new StringBuilder(uri.toString());
 
-    // Include headers based on strategy
-    if (strategy == CacheKeyHeaders.ALL && !headers.isEmpty()) {
+    if (!headers.isEmpty()) {
         // Sort headers by key for consistency
         List<String> sortedKeys = new ArrayList<>(headers.keySet());
         Collections.sort(sortedKeys);
 
         for (String headerName : sortedKeys) {
-            key.append('|').append(headerName)
-               .append('=').append(headers.get(headerName));
+            // Apply filter predicate to each header
+            if (filter.includeInCacheKey(headerName)) {
+                key.append('|').append(headerName)
+                   .append('=').append(headers.get(headerName));
+            }
         }
     }
-    // If NONE: use URI only (don't append headers)
 
     return key.toString();
 }
@@ -214,50 +215,75 @@ private String generateCacheKey(URI uri,
 === Key Components
 
 * **URI**: From HttpHandler (fixed per adapter instance) - always included
-* **Additional headers**: Included only if `cacheKeyHeaders == CacheKeyHeaders.ALL`
+* **Filtered headers**: Only headers where `filter.includeInCacheKey(name)` returns true
 * **Separator**: `|` character separates URI from headers
+* **Sorting**: Headers sorted alphabetically for consistency
 
-=== Examples with CacheKeyHeaders.ALL (Default)
+=== Examples with CacheKeyHeaderFilter.ALL (Default)
 
 [source]
 ----
 // Simple GET (no additional headers)
 "https://api.example.com/users"
 
-// GET with Authorization header
+// GET with Authorization header (included by ALL)
 "https://api.example.com/users|Authorization=Bearer token123"
 
-// GET with multiple headers (sorted alphabetically)
+// GET with multiple headers (sorted alphabetically, all included)
 "https://api.example.com/users|Authorization=Bearer token123|X-Request-ID=abc-123"
 ----
 
-=== Examples with CacheKeyHeaders.NONE
+=== Examples with CacheKeyHeaderFilter.NONE
 
 [source]
 ----
 // All requests to same URI use same cache key, regardless of headers:
 
-// User A
+// User A with Authorization: Bearer token-A
 "https://api.example.com/users"
 
-// User B (different token, same cache key!)
+// User B with Authorization: Bearer token-B (same cache key!)
 "https://api.example.com/users"
 
 // Different request ID (same cache key)
 "https://api.example.com/users"
 ----
 
+=== Examples with CacheKeyHeaderFilter.excluding("Authorization")
+
+[source]
+----
+// Solves token refresh cache bloat while keeping content-affecting headers
+
+// Request with Authorization + Accept-Language
+.get(Map.of(
+    "Authorization", "Bearer token-A",
+    "Accept-Language", "en-US"
+))
+→ "https://api.example.com/users|Accept-Language=en-US"
+// Authorization excluded, Accept-Language included
+
+// Same user after token refresh
+.get(Map.of(
+    "Authorization", "Bearer token-B",  // Changed!
+    "Accept-Language", "en-US"
+))
+→ "https://api.example.com/users|Accept-Language=en-US"
+// Same cache key! No bloat despite token change
+----
+
 === Important Notes
 
 * HTTP method is **not** part of cache key (only GET requests are cached)
-* Headers are sorted to ensure `{A, B}` and `{B, A}` produce the same key (when ALL)
+* Headers are sorted to ensure `{A, B}` and `{B, A}` produce the same key
 * Request body is **not** part of cache key (POST/PUT/DELETE never cached)
+* Filter is evaluated once per header during cache key generation (low overhead)
 
-**⚠️ Cache Key Strategy Trade-offs:**
+**⚠️ Cache Key Filter Trade-offs:**
 
-The `cacheKeyHeaders` setting affects efficiency and memory usage:
+The `cacheKeyHeaderFilter` setting affects efficiency and memory usage:
 
-=== CacheKeyHeaders.ALL (Default)
+=== CacheKeyHeaderFilter.ALL (Default)
 
 **Pros:**
 * ✅ Efficient in multi-user scenarios: Separate cache per user avoids wasted If-None-Match requests
@@ -268,14 +294,15 @@ The `cacheKeyHeaders` setting affects efficiency and memory usage:
 * ❌ Token refresh cache bloat: Each token creates new cache entry for same resource
 * ❌ Memory grows unbounded without manual clearing
 
-**Mitigation strategies for single-user clients:**
+**Solutions for token refresh cache bloat:**
 
-. **Use CacheKeyHeaders.NONE** - Recommended for single-user scenarios (see below)
-. **Periodic cache clearing** - Call `adapter.clearETagCache()` after token refresh
+. **Use `CacheKeyHeaderFilter.excluding("Authorization")`** - **Recommended!** Keeps content-affecting headers, excludes auth
+. **Use `CacheKeyHeaderFilter.NONE`** - For single-user scenarios only
+. **Periodic cache clearing** - Call `adapter.clearETagCache()` after token refresh (less ideal)
 . **Disable caching** - Set `etagCachingEnabled(false)`
 . **Separate adapter per token** - Create new adapter on token refresh
 
-=== CacheKeyHeaders.NONE (URI Only)
+=== CacheKeyHeaderFilter.NONE (URI Only)
 
 **Pros:**
 * ✅ No token refresh cache bloat: Same URI = same cache entry
@@ -284,6 +311,7 @@ The `cacheKeyHeaders` setting affects efficiency and memory usage:
 
 **Cons:**
 * ❌ Multi-user inefficiency: Different users' ETags won't match → server sends full 200 responses
+* ❌ Ignores ALL headers including content-affecting ones (Accept-Language, etc.)
 * ❌ Relies on server implementing user-aware ETags correctly
 
 **Safe for:**
@@ -294,6 +322,8 @@ The `cacheKeyHeaders` setting affects efficiency and memory usage:
 **Unsafe for:**
 * Shared adapter instances across multiple users
 * Multi-tenant web servers
+
+**Better alternative:** Use `CacheKeyHeaderFilter.excluding("Authorization")` to avoid losing content-affecting headers
 
 == Usage Examples
 
@@ -328,7 +358,7 @@ For mobile apps, desktop apps, or service accounts where token refresh causes ca
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
     .responseConverter(userConverter)
-    .cacheKeyHeaders(CacheKeyHeaders.NONE)  // URI only, ignore Authorization
+    .cacheKeyHeaderFilter(CacheKeyHeaderFilter.NONE)  // URI only, ignore all headers
     .build();
 
 // Token refresh doesn't create duplicate cache entries
@@ -357,7 +387,7 @@ public class UserSession {
         this.userAdapter = ETagAwareHttpAdapter.<User>builder()
             .httpHandler(handler)
             .responseConverter(converter)
-            .cacheKeyHeaders(CacheKeyHeaders.NONE)  // Safe: adapter not shared
+            .cacheKeyHeaderFilter(CacheKeyHeaderFilter.NONE)  // Safe: adapter not shared
             .build();
     }
 
@@ -402,7 +432,7 @@ Best for mobile apps, desktop apps, or service accounts with token refresh:
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
     .responseConverter(userConverter)
-    .cacheKeyHeaders(CacheKeyHeaders.NONE)  // URI only
+    .cacheKeyHeaderFilter(CacheKeyHeaderFilter.NONE)  // URI only
     .build();
 
 // Token refresh doesn't affect cache
@@ -413,9 +443,9 @@ public void refreshAccessToken() {
 }
 ----
 
-==== Strategy 1b: Clear on Token Refresh (If Using CacheKeyHeaders.ALL)
+==== Strategy 1b: Clear on Token Refresh (If Using CacheKeyHeaderFilter.ALL)
 
-Alternative if you must use `CacheKeyHeaders.ALL` (e.g., multi-user server):
+Alternative if you must use `CacheKeyHeaderFilter.ALL` (e.g., multi-user server with no better option):
 
 [source,java]
 ----
@@ -467,7 +497,7 @@ public HttpAdapter<User> createAdapterForUser(String userId) {
     return ETagAwareHttpAdapter.<User>builder()
         .httpHandler(handler)
         .responseConverter(userConverter)
-        .cacheKeyHeaders(CacheKeyHeaders.NONE)  // Safe: not shared across users
+        .cacheKeyHeaderFilter(CacheKeyHeaderFilter.NONE)  // Safe: not shared across users
         .build();
 }
 
@@ -476,9 +506,9 @@ public HttpAdapter<User> createAdapterForUser(String userId) {
 
 **Benefits:**
 * No cross-user cache pollution (each user has own adapter)
-* Can use `CacheKeyHeaders.NONE` safely
+* Can use `CacheKeyHeaderFilter.NONE` safely
 * Automatic cache cleanup on logout
-* Better than shared adapter with `CacheKeyHeaders.ALL`
+* Better than shared adapter with `CacheKeyHeaderFilter.ALL`
 
 ==== Memory Monitoring
 

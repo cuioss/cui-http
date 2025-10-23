@@ -119,7 +119,7 @@ HttpResult<User> result = resilient.getBlocking();
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
     .responseConverter(userConverter)
-    .cacheKeyHeaders(CacheKeyHeaders.NONE)  // URI only, ignore Authorization
+    .cacheKeyHeaderFilter(CacheKeyHeaderFilter.NONE)  // URI only, ignore all headers
     .build();
 // Token refresh doesn't create duplicate cache entries
 ----

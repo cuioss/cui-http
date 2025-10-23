@@ -493,4 +493,4 @@ exports de.cuioss.http.client.request;   // NEW
 * ✅ Add method-specific `HttpAdapter<T>` interface (`get()`, `post()`, etc.)
 * ✅ Implement If-None-Match prevention (only send when cache exists)
 * ✅ Handle 304 as application success, not failure
-* ✅ Add `CacheKeyHeaders` enum for cache key configuration
+* ✅ Add `CacheKeyHeaderFilter` interface for fine-grained cache key configuration
