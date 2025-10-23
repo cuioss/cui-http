@@ -151,6 +151,7 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .responseConverter(userConverter)
     .etagCachingEnabled(true)         // Default: true
     .cacheKeyHeaderFilter(CacheKeyHeaderFilter.ALL)  // Default: ALL (include all headers)
+    .maxCacheSize(1000)               // Default: 1000 (LRU eviction when exceeded)
     .build();
 ----
 
@@ -179,6 +180,10 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
 |`cacheKeyHeaderFilter`
 |`CacheKeyHeaderFilter.ALL`
 |Predicate determining which headers to include in cache key (ALL, NONE, or custom filter)
+
+|`maxCacheSize`
+|`1000`
+|Maximum number of cache entries. When exceeded, least recently used (LRU) entries are evicted automatically
 |===
 
 == Cache Key Generation
@@ -287,8 +292,11 @@ The `cacheKeyHeaderFilter` setting affects efficiency and memory usage:
 
 === CacheKeyHeaderFilter.ALL (Default)
 
+**Why ALL is the default:** This is the most secure approach. It prevents cross-user cache pollution in shared adapter instances and provides defense-in-depth against server ETag implementation bugs.
+
 **Pros:**
 
+* ✅ **Security-first:** Prevents cross-user cache pollution in multi-tenant scenarios
 * ✅ Efficient in multi-user scenarios: Separate cache per user avoids wasted If-None-Match requests
 * ✅ Defense-in-depth: Protects against buggy server ETags (e.g., user-agnostic ETags)
 * ✅ Safe for shared adapter instances
@@ -296,7 +304,7 @@ The `cacheKeyHeaderFilter` setting affects efficiency and memory usage:
 **Cons:**
 
 * ❌ Token refresh cache bloat: Each token creates new cache entry for same resource
-* ❌ Memory grows unbounded without manual clearing
+* ❌ Cache churn: Frequent token refreshes can cause LRU eviction of still-valid entries
 
 **Solutions for token refresh cache bloat:**
 
@@ -407,12 +415,13 @@ public class UserSession {
 
 === Cache Lifecycle
 
-The ETag cache has an **unbounded, indefinite lifetime**:
+The ETag cache management:
 
-* **No TTL (Time-To-Live)** - Entries never expire automatically
-* **No size limit** - Cache grows unbounded with unique cache keys
-* **Manual clearing only** - Must explicitly call `clearETagCache()`
-* **No LRU eviction** - Least-recently-used entries are not removed
+* **No TTL (Time-To-Live)** - Entries never expire based on time
+* **Size-based LRU eviction** - Default max 1000 entries. When exceeded, least recently used entries are evicted automatically
+* **Configurable size limit** - Use `.maxCacheSize(n)` builder parameter to adjust (default: 1000)
+* **Manual clearing** - Call `clearETagCache()` to remove all entries immediately
+* **Thread-safe** - All cache operations are concurrent-safe
 
 === When to Clear Cache
 
@@ -427,6 +436,38 @@ adapter.clearETagCache();
 **Clear on:** User logout, token refresh, periodic maintenance, configuration change, memory pressure.
 
 **Thread-safe:** In-flight requests hold local cache references. Clearing cache doesn't affect them.
+
+=== Automatic LRU Eviction
+
+The cache automatically evicts least recently used (LRU) entries when `maxCacheSize` is exceeded:
+
+[source,java]
+----
+// Configure custom cache size
+HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .responseConverter(userConverter)
+    .maxCacheSize(500)  // Limit to 500 entries instead of default 1000
+    .build();
+
+// Cache grows to 500 entries...
+// On 501st entry: oldest (least recently accessed) entry is evicted
+// Cache size remains at 500
+----
+
+**LRU Behavior:**
+
+* **Access order tracking** - Each cache hit (304 response) updates the entry's access time
+* **Automatic eviction** - When size exceeds `maxCacheSize`, oldest entry removed
+* **No manual intervention** - Eviction happens transparently during cache writes
+* **Thread-safe** - Concurrent evictions don't affect in-flight requests
+
+**Choosing cache size:**
+
+* **Default (1000)** - Good for most applications (typical web app with ~100-300 unique URIs)
+* **Small (100-500)** - Mobile apps, embedded systems, memory-constrained environments
+* **Large (5000+)** - High-traffic servers with many unique endpoints
+* **Disable size limit** - Use `.maxCacheSize(Integer.MAX_VALUE)` for unbounded cache (not recommended)
 
 === Cache Management Strategies
 

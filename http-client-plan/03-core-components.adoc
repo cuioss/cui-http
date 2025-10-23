@@ -325,25 +325,25 @@ The old all-or-nothing approach had limitations:
 
 == HttpMethod Enum
 
-*Package:* `de.cuioss.http.client.adapter` (package-private)
+*Package:* `de.cuioss.http.client`
 
-*Purpose:* Internal enum for HTTP method classification and retry decisions.
+*Purpose:* Public enum for HTTP method classification, retry decisions, and logging.
 
-**Visibility:** Package-private - not exposed in public API. Users interact with methods via `HttpAdapter` interface (`get()`, `post()`, etc.) rather than passing `HttpMethod` values.
+**Visibility:** Public - available for logging and debugging. Users typically interact with methods via `HttpAdapter` interface (`get()`, `post()`, etc.) rather than passing `HttpMethod` values directly.
 
 === Enum Definition
 
 [source,java]
 ----
-package de.cuioss.http.client.adapter;
+package de.cuioss.http.client;
 
 /**
  * HTTP methods as defined by RFC 7231 and RFC 5789.
- * Package-private - used internally by adapter implementations.
+ * Public for logging and debugging purposes.
  *
  * @since 1.0
  */
-enum HttpMethod {
+public enum HttpMethod {
     /**
      * GET - Retrieve resource (safe, idempotent, cacheable).
      */
@@ -600,7 +600,6 @@ class ResilientHttpAdapter<T> implements HttpAdapter<T> {
 
 **Not Planned:**
 
-* Making enum public (users don't need it)
 * Adding TRACE, CONNECT methods (rarely used)
 * Custom method support (violates HTTP semantics)
 
@@ -1246,8 +1245,16 @@ public interface HttpResponseConverter<T> {
     /**
      * Converts HTTP response body to typed object.
      *
+     * <p><strong>Error Handling Contract:</strong>
+     * <ul>
+     *   <li>On success: Return {@code Optional.of(parsedObject)}</li>
+     *   <li>On parsing failure: Return {@code Optional.empty()} - adapter will create
+     *       {@code HttpResult.failure()} with {@code HttpErrorCategory.INVALID_CONTENT}</li>
+     *   <li>Never throw exceptions - return {@code Optional.empty()} instead</li>
+     * </ul>
+     *
      * @param rawContent Raw response content from HTTP response
-     * @return Converted object, or empty if conversion failed
+     * @return Converted object, or {@code Optional.empty()} if conversion failed
      */
     Optional<T> convert(Object rawContent);
 
@@ -1290,10 +1297,22 @@ public interface HttpRequestConverter<R> {
     /**
      * Converts typed object to HTTP request body publisher.
      *
-     * <p>If content is null, implementations should return a no-body publisher.
+     * <p><strong>Null Handling Contract:</strong> If content is null, implementations
+     * MUST return {@code HttpRequest.BodyPublishers.noBody()}. This is used for
+     * requests that don't require a body (e.g., GET, DELETE).
+     *
+     * <p><strong>Error Handling Contract:</strong>
+     * <ul>
+     *   <li>On null content: Return {@code HttpRequest.BodyPublishers.noBody()}</li>
+     *   <li>On serialization failure: Throw {@code IllegalArgumentException} with cause -
+     *       adapter will create {@code HttpResult.failure()} with {@code HttpErrorCategory.INVALID_CONTENT}</li>
+     *   <li>Never return {@code noBody()} for serialization failures - throw instead</li>
+     * </ul>
      *
      * @param content The content to serialize, may be null
-     * @return BodyPublisher for the HTTP request
+     * @return BodyPublisher for the HTTP request. Never null.
+     *         Returns {@code HttpRequest.BodyPublishers.noBody()} for null content only.
+     * @throws IllegalArgumentException if serialization fails
      */
     HttpRequest.BodyPublisher toBodyPublisher(@Nullable R content);
 
@@ -1349,7 +1368,7 @@ public class JsonConverter<T> extends StringContentConverter<T>
             return HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8);
         } catch (JsonProcessingException e) {
             LOGGER.warn("JSON serialization failed", e);
-            return HttpRequest.BodyPublishers.noBody();
+            throw new IllegalArgumentException("Failed to serialize request body to JSON", e);
         }
     }
 

@@ -5,6 +5,17 @@
 :sectnums:
 :source-highlighter: highlight.js
 
+[IMPORTANT]
+====
+**Breaking Change Policy - Pre-1.0 Project**
+
+This is a pre-1.0 project. Breaking changes are acceptable and expected.
+
+This plan will **replace** the existing `ResilientHttpHandler` implementation entirely, not deprecate or refactor it. The old implementation will be removed.
+
+All dependent projects (e.g., cui-jwt) must migrate before the 1.0 release.
+====
+
 == Navigation
 
 === Architecture & Design
