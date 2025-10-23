@@ -353,7 +353,7 @@ public class ResilientHttpAdapter<T> implements HttpAdapter<T> {
                     // Success - return immediately
                     if (result.isSuccess()) {
                         if (attempt > 1) {
-                            LOGGER.info("{} request succeeded on attempt {}", methodName, attempt);
+                            LOGGER.debug("{} request succeeded on attempt {}", methodName, attempt);
                         }
                         return CompletableFuture.completedFuture(result);
                     }
@@ -367,7 +367,7 @@ public class ResilientHttpAdapter<T> implements HttpAdapter<T> {
 
                     // Max attempts reached
                     if (attempt >= config.maxAttempts()) {
-                        LOGGER.error("{} request failed after {} attempts", methodName, config.maxAttempts());
+                        LOGGER.warn("{} request failed after {} attempts", methodName, config.maxAttempts());
                         return CompletableFuture.completedFuture(result);
                     }
 

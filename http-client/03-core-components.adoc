@@ -971,7 +971,7 @@ public class JsonConverter<T> extends StringContentConverter<T>
             T value = objectMapper.readValue(rawContent, type);
             return Optional.ofNullable(value);
         } catch (JsonProcessingException e) {
-            LOGGER.error("JSON deserialization failed", e);
+            LOGGER.warn("JSON deserialization failed", e);
             return Optional.empty();
         }
     }
@@ -986,7 +986,7 @@ public class JsonConverter<T> extends StringContentConverter<T>
             String json = objectMapper.writeValueAsString(content);
             return HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8);
         } catch (JsonProcessingException e) {
-            LOGGER.error("JSON serialization failed", e);
+            LOGGER.warn("JSON serialization failed", e);
             return HttpRequest.BodyPublishers.noBody();
         }
     }
