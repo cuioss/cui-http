@@ -45,12 +45,12 @@ java.net.http.HttpClient
 |Retry Logic |`ResilientHttpAdapter` with `RetryConfig` record - async with CompletableFuture
 |Content Conversion |Separate `HttpResponseConverter<T>` and `HttpRequestConverter<R>` interfaces
 |Content Types |`ContentType` enum
-|Async First |All operations return `CompletableFuture<HttpResult<T>>`
+|Async First |All operations return `CompletableFuture<HttpResult<T>>` with blocking convenience methods
 |===
 
 == Quick Examples
 
-=== GET Request
+=== GET Request (Async)
 
 [source,java]
 ----
@@ -59,7 +59,18 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .responseConverter(userConverter)
     .build();
 
-HttpResult<User> result = adapter.get();
+// Async execution
+CompletableFuture<HttpResult<User>> futureResult = adapter.get();
+
+// Handle asynchronously (recommended)
+futureResult.thenAccept(result -> {
+    if (result.isSuccess()) {
+        processUser(result.getValue().orElseThrow());
+    }
+});
+
+// Or blocking for simple cases
+HttpResult<User> result = adapter.getBlocking();
 ----
 
 === POST with JSON
@@ -67,7 +78,12 @@ HttpResult<User> result = adapter.get();
 [source,java]
 ----
 User newUser = User.builder().name("John").email("john@example.com").build();
-HttpResult<User> result = adapter.post(newUser);
+
+// Async
+CompletableFuture<HttpResult<User>> futureResult = adapter.post(newUser);
+
+// Or blocking
+HttpResult<User> result = adapter.postBlocking(newUser);
 ----
 
 === With Retry
@@ -76,15 +92,18 @@ HttpResult<User> result = adapter.post(newUser);
 ----
 HttpAdapter<User> resilient = ResilientHttpAdapter.wrap(baseAdapter);
 
-// Async execution - returns CompletableFuture
+// Async execution with retry - returns CompletableFuture
 CompletableFuture<HttpResult<User>> future = resilient.get();
 
-// Handle asynchronously
+// Handle asynchronously (recommended)
 future.thenAccept(result -> {
     if (result.isSuccess()) {
         processUser(result.getValue().orElseThrow());
     }
 });
+
+// Or blocking
+HttpResult<User> result = resilient.getBlocking();
 ----
 
 === Single-User Client (No Token Bloat)
@@ -143,6 +162,10 @@ HttpAdapter<User> option2 = new BearerTokenAdapter<>(
 // Both return CompletableFuture for async execution
 CompletableFuture<HttpResult<User>> future1 = option1.get();
 CompletableFuture<HttpResult<User>> future2 = option2.get();
+
+// Or use blocking methods
+HttpResult<User> result1 = option1.getBlocking();
+HttpResult<User> result2 = option2.getBlocking();
 ----
 
 **Rule:** Place stable concerns outside, variable concerns inside retry loop.

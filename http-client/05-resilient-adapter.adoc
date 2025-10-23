@@ -5,12 +5,12 @@
 
 == Overview
 
-`ResilientHttpAdapter` is an async decorator that adds retry logic with exponential backoff to any `HttpAdapter` implementation. It uses `CompletableFuture` for non-blocking retries with virtual threads.
+`ResilientHttpAdapter` is an async decorator that adds retry logic with exponential backoff to any `HttpAdapter` implementation. It uses `CompletableFuture` for fully non-blocking retries.
 
 == Design Goals
 
 * *Async-First* - CompletableFuture-based, non-blocking retries
-* *Virtual Threads* - Leverages Java 21+ virtual threads for scalability
+* *Zero Blocking* - No threads blocked during delays or retries
 * *Composition* - Wraps any HttpAdapter implementation
 * *Single Algorithm* - Exponential backoff with jitter (industry best practice)
 * *Fail-Fast* - No retry for non-retryable errors (CLIENT_ERROR)
@@ -30,7 +30,7 @@ Any HttpAdapter implementation
 
 CompletableFuture<HttpResult<T>>
     ↓ non-blocking delays using
-Virtual Threads + delayedExecutor
+CompletableFuture.delayedExecutor
 ----
 
 == RetryConfig Record
@@ -228,13 +228,14 @@ import de.cuioss.tools.logging.CuiLogger;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.*;
+import java.util.function.Supplier;
 
 import static java.util.Objects.requireNonNull;
 
 /**
- * Wraps any HttpAdapter to add async retry support with exponential backoff.
+ * Wraps any HttpAdapter to add retry support with exponential backoff.
  * Retries transient failures (NETWORK_ERROR, SERVER_ERROR) up to configured attempts.
- * Uses CompletableFuture and virtual threads for non-blocking operation.
+ * All operations are non-blocking using CompletableFuture.
  */
 public class ResilientHttpAdapter<T> implements HttpAdapter<T> {
     private static final CuiLogger LOGGER = new CuiLogger(ResilientHttpAdapter.class);
@@ -262,84 +263,131 @@ public class ResilientHttpAdapter<T> implements HttpAdapter<T> {
     }
 
     @Override
-    public <R> CompletableFuture<HttpResult<T>> send(
-            HttpMethod method,
-            HttpRequestBodyPublisher<R> bodyPublisher,
-            @Nullable R requestBody,
-            Map<String, String> additionalHeaders) {
+    public CompletableFuture<HttpResult<T>> get(Map<String, String> additionalHeaders) {
+        return executeWithRetry(() -> delegate.get(additionalHeaders), "GET", 1);
+    }
 
-        String operationName = method.methodName() + " request";
-        return executeAttempt(method, bodyPublisher, requestBody, additionalHeaders,
-                             operationName, 1);
+    @Override
+    public CompletableFuture<HttpResult<T>> post(@Nullable T requestBody, Map<String, String> additionalHeaders) {
+        return executeWithRetry(() -> delegate.post(requestBody, additionalHeaders), "POST", 1);
+    }
+
+    @Override
+    public CompletableFuture<HttpResult<T>> put(@Nullable T requestBody, Map<String, String> additionalHeaders) {
+        return executeWithRetry(() -> delegate.put(requestBody, additionalHeaders), "PUT", 1);
+    }
+
+    @Override
+    public CompletableFuture<HttpResult<T>> patch(@Nullable T requestBody, Map<String, String> additionalHeaders) {
+        return executeWithRetry(() -> delegate.patch(requestBody, additionalHeaders), "PATCH", 1);
+    }
+
+    @Override
+    public CompletableFuture<HttpResult<T>> delete(Map<String, String> additionalHeaders) {
+        return executeWithRetry(() -> delegate.delete(additionalHeaders), "DELETE", 1);
+    }
+
+    @Override
+    public CompletableFuture<HttpResult<T>> delete(@Nullable T requestBody, Map<String, String> additionalHeaders) {
+        return executeWithRetry(() -> delegate.delete(requestBody, additionalHeaders), "DELETE", 1);
+    }
+
+    @Override
+    public CompletableFuture<HttpResult<T>> head(Map<String, String> additionalHeaders) {
+        return executeWithRetry(() -> delegate.head(additionalHeaders), "HEAD", 1);
+    }
+
+    @Override
+    public CompletableFuture<HttpResult<T>> options(Map<String, String> additionalHeaders) {
+        return executeWithRetry(() -> delegate.options(additionalHeaders), "OPTIONS", 1);
+    }
+
+    @Override
+    public <R> CompletableFuture<HttpResult<T>> post(HttpRequestConverter<R> requestConverter,
+                                                       @Nullable R requestBody,
+                                                       Map<String, String> additionalHeaders) {
+        return executeWithRetry(() -> delegate.post(requestConverter, requestBody, additionalHeaders), "POST", 1);
+    }
+
+    @Override
+    public <R> CompletableFuture<HttpResult<T>> put(HttpRequestConverter<R> requestConverter,
+                                                      @Nullable R requestBody,
+                                                      Map<String, String> additionalHeaders) {
+        return executeWithRetry(() -> delegate.put(requestConverter, requestBody, additionalHeaders), "PUT", 1);
+    }
+
+    @Override
+    public <R> CompletableFuture<HttpResult<T>> patch(HttpRequestConverter<R> requestConverter,
+                                                        @Nullable R requestBody,
+                                                        Map<String, String> additionalHeaders) {
+        return executeWithRetry(() -> delegate.patch(requestConverter, requestBody, additionalHeaders), "PATCH", 1);
+    }
+
+    @Override
+    public <R> CompletableFuture<HttpResult<T>> delete(HttpRequestConverter<R> requestConverter,
+                                                         @Nullable R requestBody,
+                                                         Map<String, String> additionalHeaders) {
+        return executeWithRetry(() -> delegate.delete(requestConverter, requestBody, additionalHeaders), "DELETE", 1);
     }
 
     /**
-     * Executes a single retry attempt using virtual threads with async delays.
+     * Executes HTTP operation with retry support using non-blocking delays.
+     * The delegate call is already async (returns CompletableFuture), so no
+     * additional thread wrapping is needed.
      *
-     * @param method HTTP method
-     * @param bodyPublisher request body publisher
-     * @param requestBody request body
-     * @param additionalHeaders additional headers
-     * @param operationName operation name for logging
-     * @param attempt current attempt number (1-based)
-     * @return CompletableFuture containing the result of this attempt or recursive retry
+     * @param operation Supplier that returns CompletableFuture of the HTTP operation
+     * @param methodName HTTP method name for logging
+     * @param attempt Current attempt number (1-based)
+     * @return CompletableFuture containing the result or recursive retry
      */
-    private <R> CompletableFuture<HttpResult<T>> executeAttempt(
-            HttpMethod method,
-            HttpRequestBodyPublisher<R> bodyPublisher,
-            @Nullable R requestBody,
-            Map<String, String> additionalHeaders,
-            String operationName,
+    private CompletableFuture<HttpResult<T>> executeWithRetry(
+            Supplier<CompletableFuture<HttpResult<T>>> operation,
+            String methodName,
             int attempt) {
 
-        // Execute operation on virtual thread
-        return CompletableFuture
-                .supplyAsync(() -> {
-                    LOGGER.debug("Attempt {}/{} for {}", attempt, config.maxAttempts(), operationName);
-                    return delegate.send(method, bodyPublisher, requestBody, additionalHeaders);
-                }, Executors.newVirtualThreadPerTaskExecutor())
+        LOGGER.debug("Attempt {}/{} for {} request", attempt, config.maxAttempts(), methodName);
+
+        // Delegate is already async - no supplyAsync needed!
+        return operation.get()
                 .thenCompose(result -> {
                     // Success - return immediately
                     if (result.isSuccess()) {
                         if (attempt > 1) {
-                            LOGGER.info("{} succeeded on attempt {}", operationName, attempt);
+                            LOGGER.info("{} request succeeded on attempt {}", methodName, attempt);
                         }
                         return CompletableFuture.completedFuture(result);
                     }
 
                     // Non-retryable failure - return immediately
                     if (!result.isRetryable()) {
-                        LOGGER.debug("{} failed with non-retryable error: {}",
-                            operationName, result.getErrorCategory().orElse(null));
+                        LOGGER.debug("{} request failed with non-retryable error: {}",
+                            methodName, result.getErrorCategory().orElse(null));
                         return CompletableFuture.completedFuture(result);
                     }
 
                     // Max attempts reached
                     if (attempt >= config.maxAttempts()) {
-                        LOGGER.error("{} failed after {} attempts", operationName, config.maxAttempts());
+                        LOGGER.error("{} request failed after {} attempts", methodName, config.maxAttempts());
                         return CompletableFuture.completedFuture(result);
                     }
 
                     // Retryable failure - calculate delay and schedule retry
                     Duration delay = config.calculateDelay(attempt);
 
-                    LOGGER.warn("{} failed on attempt {}, retrying after {}ms",
-                        operationName, attempt, delay.toMillis());
+                    LOGGER.warn("{} request failed on attempt {}, retrying after {}ms",
+                        methodName, attempt, delay.toMillis());
 
                     int nextAttempt = attempt + 1;
 
-                    // Use CompletableFuture.delayedExecutor with virtual threads
+                    // Non-blocking delay using delayedExecutor
                     Executor delayedExecutor = CompletableFuture.delayedExecutor(
-                        delay.toMillis(), TimeUnit.MILLISECONDS,
-                        Executors.newVirtualThreadPerTaskExecutor()
+                        delay.toMillis(), TimeUnit.MILLISECONDS
                     );
 
-                    // Schedule next attempt after delay
+                    // Schedule next attempt after delay - no nested futures
                     return CompletableFuture
-                        .supplyAsync(() -> executeAttempt(method, bodyPublisher, requestBody,
-                                                         additionalHeaders, operationName, nextAttempt),
-                                    delayedExecutor)
-                        .thenCompose(future -> future);
+                        .supplyAsync(() -> null, delayedExecutor)
+                        .thenCompose(ignored -> executeWithRetry(operation, methodName, nextAttempt));
                 });
     }
 }
@@ -358,20 +406,12 @@ HttpAdapter<User> baseAdapter = ETagAwareHttpAdapter.<User>builder()
     .build();
 
 // Wrap with retry using defaults (5 attempts, 1s initial, 2.0 multiplier, 1min max, 10% jitter)
-HttpAdapter<User> resilientAdapter = ResilientHttpAdapter.wrap(
-    baseAdapter,
-    RetryConfig.defaults()
-);
+HttpAdapter<User> resilientAdapter = ResilientHttpAdapter.wrap(baseAdapter);
 
-// Async execution - returns CompletableFuture
-CompletableFuture<HttpResult<User>> futureResult = resilientAdapter.send(
-    HttpMethod.GET,
-    HttpRequestBodyPublisher.empty(),
-    null,
-    Map.of()
-);
+// Async execution - all adapter methods return CompletableFuture
+CompletableFuture<HttpResult<User>> futureResult = resilientAdapter.get();
 
-// Handle result asynchronously
+// Handle result asynchronously (recommended)
 futureResult.thenAccept(result -> {
     if (result.isSuccess()) {
         User user = result.getValue().orElseThrow();
@@ -381,8 +421,8 @@ futureResult.thenAccept(result -> {
     }
 });
 
-// Or block if needed (not recommended in async contexts)
-HttpResult<User> result = futureResult.join();
+// Or use blocking convenience method for simple cases
+HttpResult<User> result = resilientAdapter.getBlocking();
 ----
 
 === Custom Configuration
@@ -401,7 +441,8 @@ RetryConfig customRetry = RetryConfig.builder()
 HttpAdapter<User> resilientAdapter = ResilientHttpAdapter.wrap(baseAdapter, customRetry);
 
 // Chain async operations
-resilientAdapter.send(HttpMethod.POST, bodyPublisher, user, headers)
+User newUser = User.builder().name("John").build();
+resilientAdapter.post(newUser, headers)
     .thenApply(result -> result.getValue().orElse(null))
     .thenAccept(savedUser -> LOGGER.info("User saved: {}", savedUser))
     .exceptionally(ex -> {
@@ -423,9 +464,9 @@ RetryConfig minimal = RetryConfig.builder()
 HttpAdapter<User> adapter = ResilientHttpAdapter.wrap(baseAdapter, minimal);
 
 // Parallel async requests
-CompletableFuture<HttpResult<User>> user1 = adapter.send(/*...*/);
-CompletableFuture<HttpResult<User>> user2 = adapter.send(/*...*/);
-CompletableFuture<HttpResult<User>> user3 = adapter.send(/*...*/);
+CompletableFuture<HttpResult<User>> user1 = adapter.get(Map.of("X-User-Id", "1"));
+CompletableFuture<HttpResult<User>> user2 = adapter.get(Map.of("X-User-Id", "2"));
+CompletableFuture<HttpResult<User>> user3 = adapter.get(Map.of("X-User-Id", "3"));
 
 // Wait for all to complete
 CompletableFuture.allOf(user1, user2, user3)
@@ -445,8 +486,8 @@ RetryConfig aggressive = RetryConfig.builder()
 
 HttpAdapter<CriticalData> adapter = ResilientHttpAdapter.wrap(baseAdapter, aggressive);
 
-// Timeout on the future, not on individual attempts
-CompletableFuture<HttpResult<CriticalData>> future = adapter.send(/*...*/);
+// Timeout on the entire retry cycle (not individual attempts)
+CompletableFuture<HttpResult<CriticalData>> future = adapter.get();
 CompletableFuture<HttpResult<CriticalData>> withTimeout =
     future.orTimeout(10, TimeUnit.MINUTES);
 
@@ -480,70 +521,76 @@ With defaults (initial=1s, multiplier=2.0, jitter=10%):
 
 [source]
 ----
-Attempt 1: Execute on virtual thread
+Attempt 1: delegate.get() returns CompletableFuture
   ↓ CompletableFuture completes with failure (retryable)
 Schedule retry: ~1000ms using delayedExecutor (1s * 2^0 * 1.05)
+  ↓ Non-blocking delay
 
-Attempt 2: Execute on new virtual thread after delay
+Attempt 2: delegate.get() returns CompletableFuture (after delay)
   ↓ CompletableFuture completes with failure (retryable)
 Schedule retry: ~2100ms using delayedExecutor (1s * 2^1 * 1.05)
+  ↓ Non-blocking delay
 
-Attempt 3: Execute on new virtual thread after delay
+Attempt 3: delegate.get() returns CompletableFuture (after delay)
   ↓ CompletableFuture completes with failure (retryable)
 Schedule retry: ~4200ms using delayedExecutor (1s * 2^2 * 1.05)
+  ↓ Non-blocking delay
 
-Attempt 4: Execute on new virtual thread after delay
+Attempt 4: delegate.get() returns CompletableFuture (after delay)
   ↓ CompletableFuture completes with failure (retryable)
 Schedule retry: ~8400ms using delayedExecutor (1s * 2^3 * 1.05)
+  ↓ Non-blocking delay
 
-Attempt 5: Execute on new virtual thread after delay (final)
+Attempt 5: delegate.get() returns CompletableFuture (after delay, final)
   ↓ CompletableFuture completes with result (success or failure)
 ----
 
 **Key Points:**
 
-* No blocking - delays use `CompletableFuture.delayedExecutor`
-* Each attempt runs on a fresh virtual thread
+* Zero blocking - delays use `CompletableFuture.delayedExecutor`
+* No thread pools needed - CompletableFuture handles scheduling
+* Delegate operations are already async (no supplyAsync wrapping)
 * Jitter adds randomness (±10%) to prevent thundering herd
-* Caller's thread never blocks during retries
+* Caller's thread returns immediately
 
 == Async Execution Model
 
-=== Virtual Threads
+=== Non-Blocking Delays
 
 [source,java]
 ----
-// Each attempt executes on a new virtual thread
-Executors.newVirtualThreadPerTaskExecutor()
-
-// Delays use scheduled executor with virtual threads
+// Delays use CompletableFuture.delayedExecutor (no threads blocked)
 CompletableFuture.delayedExecutor(
     delay.toMillis(),
-    TimeUnit.MILLISECONDS,
-    Executors.newVirtualThreadPerTaskExecutor()
+    TimeUnit.MILLISECONDS
 )
+
+// Chain next attempt after delay completes
+CompletableFuture
+    .supplyAsync(() -> null, delayedExecutor)
+    .thenCompose(ignored -> executeWithRetry(operation, methodName, nextAttempt))
 ----
 
 **Benefits:**
 
-* Millions of concurrent operations possible
-* No thread pool exhaustion
+* Zero threads blocked during delays
+* Millions of concurrent retry operations possible
 * Minimal memory overhead per request
 * Natural backpressure handling
+* No thread pool management needed
 
 === CompletableFuture Chaining
 
 [source,java]
 ----
-// Pattern: attempt → evaluate → retry or complete
-CompletableFuture
-    .supplyAsync(() -> delegate.send(...), virtualThreadExecutor)
+// Pattern: attempt → evaluate → retry or complete (no blocking!)
+return operation.get()  // Already returns CompletableFuture
     .thenCompose(result -> {
         if (shouldRetry(result)) {
-            // Schedule next attempt after delay
+            // Schedule next attempt after non-blocking delay
             return CompletableFuture
-                .supplyAsync(() -> executeAttempt(...), delayedExecutor)
-                .thenCompose(future -> future);
+                .supplyAsync(() -> null, delayedExecutor)
+                .thenCompose(ignored -> executeWithRetry(operation, methodName, nextAttempt));
         }
         return CompletableFuture.completedFuture(result);
     });
@@ -552,9 +599,11 @@ CompletableFuture
 **Advantages:**
 
 * Non-blocking throughout entire retry cycle
+* No fake async (supplyAsync wrapping of sync calls)
 * Compositional - can chain with other async operations
 * Timeout-friendly - use `orTimeout()` or `completeOnTimeout()`
 * Exception-safe - use `exceptionally()` or `handle()`
+* Tail-recursive via `thenCompose()` - no stack overflow
 
 == Thread Safety
 
@@ -562,7 +611,7 @@ CompletableFuture
 * All fields are final and immutable
 * Each request gets independent async execution chain
 * No shared state between requests
-* Virtual threads eliminate traditional thread pool concerns
+* No thread pool management - uses CompletableFuture's internal scheduling
 
 == Composition
 
@@ -580,12 +629,7 @@ HttpAdapter<User> adapter = ResilientHttpAdapter.wrap(
 );
 
 // Async execution with retry + caching
-CompletableFuture<HttpResult<User>> future = adapter.send(
-    HttpMethod.GET,
-    HttpRequestBodyPublisher.empty(),
-    null,
-    headers
-);
+CompletableFuture<HttpResult<User>> future = adapter.get(headers);
 ----
 
 === Multiple Async Operations
@@ -593,13 +637,9 @@ CompletableFuture<HttpResult<User>> future = adapter.send(
 [source,java]
 ----
 // Execute multiple operations in parallel
+List<String> userIds = List.of("123", "456", "789");
 List<CompletableFuture<HttpResult<User>>> futures = userIds.stream()
-    .map(id -> resilientAdapter.send(
-        HttpMethod.GET,
-        HttpRequestBodyPublisher.empty(),
-        null,
-        Map.of("X-User-Id", id)
-    ))
+    .map(id -> resilientAdapter.get(Map.of("X-User-Id", id)))
     .toList();
 
 // Wait for all and collect results
@@ -620,7 +660,7 @@ CompletableFuture<List<HttpResult<User>>> allResults =
 |Caller thread never blocks during retries - uses CompletableFuture
 
 |**Scalable**
-|Virtual threads enable millions of concurrent retry operations
+|Non-blocking CompletableFuture enables millions of concurrent retry operations
 
 |**Compositional**
 |Can chain with other async operations using `thenCompose()`, `thenApply()`, etc.
@@ -629,10 +669,10 @@ CompletableFuture<List<HttpResult<User>>> allResults =
 |Easy to add timeouts with `orTimeout()` or `completeOnTimeout()`
 
 |**Resource-efficient**
-|No thread pool exhaustion - virtual threads are cheap
+|No thread blocking during delays - uses scheduled executor
 
 |**Modern Java**
-|Leverages Java 21+ features (virtual threads, structured concurrency patterns)
+|Leverages CompletableFuture async patterns and non-blocking I/O
 
 |**Testable**
 |Easy to test with `CompletableFuture` test utilities
@@ -650,8 +690,8 @@ CompletableFuture<List<HttpResult<User>>> allResults =
 * ✅ Jitter applied correctly (via RetryConfig.calculateDelay)
 * ✅ maxDelay cap enforced (via RetryConfig.calculateDelay)
 * ✅ CompletableFuture composition
-* ✅ Virtual thread execution
 * ✅ Non-blocking delays using delayedExecutor
+* ✅ No blocking cascade - delegate already async
 * ✅ Success on first attempt (immediate future completion)
 * ✅ Success on retry attempt (after async delay)
 * ✅ Failure after max attempts
@@ -674,8 +714,8 @@ CompletableFuture<List<HttpResult<User>>> allResults =
 |Enables non-blocking, compositional async operations
 
 |Execution model
-|Virtual threads
-|Scalable, millions of concurrent operations, no thread pool limits
+|CompletableFuture with non-blocking delays
+|True async, zero blocked threads, millions of concurrent operations
 
 |Delay mechanism
 |CompletableFuture.delayedExecutor

@@ -30,25 +30,33 @@ java.net.http.HttpClient
 [source,java]
 ----
 public interface HttpAdapter<T> {
-    // No-body methods
-    HttpResult<T> get(Map<String, String> additionalHeaders);
-    HttpResult<T> delete(Map<String, String> additionalHeaders);
+    // No-body methods (async)
+    CompletableFuture<HttpResult<T>> get(Map<String, String> additionalHeaders);
+    CompletableFuture<HttpResult<T>> delete(Map<String, String> additionalHeaders);
     // ... head(), options()
 
     // Body methods (T → T, same type for request and response)
-    HttpResult<T> post(@Nullable T requestBody, Map<String, String> additionalHeaders);
-    HttpResult<T> put(@Nullable T requestBody, Map<String, String> additionalHeaders);
+    CompletableFuture<HttpResult<T>> post(@Nullable T requestBody, Map<String, String> additionalHeaders);
+    CompletableFuture<HttpResult<T>> put(@Nullable T requestBody, Map<String, String> additionalHeaders);
     // ... patch(), delete(T, Map)
 
     // Body methods (R → T, different request type)
-    <R> HttpResult<T> post(HttpRequestConverter<R> requestConverter,
+    <R> CompletableFuture<HttpResult<T>> post(HttpRequestConverter<R> requestConverter,
                            @Nullable R requestBody,
                            Map<String, String> additionalHeaders);
     // ... put(R), patch(R)
+
+    // Blocking convenience methods
+    default HttpResult<T> getBlocking(Map<String, String> additionalHeaders) {
+        return get(additionalHeaders).join();
+    }
+    // ... similar for other methods
 }
 ----
 
-**Purpose:** Enable composition and extensions with method-specific type-safe APIs
+**Purpose:** Enable composition and extensions with method-specific type-safe async APIs
+
+**Design:** Async-first with blocking convenience methods for simple cases
 
 See link:03-core-components.adoc#_httpadapter_interface[Full Specification]
 
@@ -211,7 +219,11 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .requestConverter(userConverter)
     .build();  // ETag ON by default
 
-HttpResult<User> result = adapter.get();
+// Async execution
+CompletableFuture<HttpResult<User>> futureResult = adapter.get();
+
+// Or blocking for simple cases
+HttpResult<User> result = adapter.getBlocking();
 ----
 
 === Disable ETag
@@ -253,5 +265,10 @@ HttpAdapter<User> baseAdapter = ETagAwareHttpAdapter.<User>builder()
 HttpAdapter<User> resilientAdapter = ResilientHttpAdapter.wrap(baseAdapter);
 
 User newUser = User.builder().name("John").build();
-HttpResult<User> result = resilientAdapter.post(newUser);
+
+// Async execution with retry
+CompletableFuture<HttpResult<User>> futureResult = resilientAdapter.post(newUser);
+
+// Or blocking
+HttpResult<User> result = resilientAdapter.postBlocking(newUser);
 ----

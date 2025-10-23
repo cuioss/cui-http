@@ -45,7 +45,7 @@ class UserConverter extends StringContentConverter<User>
 UserConverter userConverter = new UserConverter();
 ----
 
-== Example 1: Simple GET Request
+== Example 1: Simple GET Request (Async)
 
 [source,java]
 ----
@@ -56,24 +56,32 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .requestConverter(userConverter)
     .build();
 
-// Send GET request
-HttpResult<User> result = adapter.get();
+// Send GET request (async) - returns CompletableFuture
+CompletableFuture<HttpResult<User>> futureResult = adapter.get();
 
-// Handle result
-if (result.isSuccess()) {
-    result.getContent().ifPresent(user ->
-        LOGGER.info("Loaded user: {}", user.getName()));
+// Handle result asynchronously (recommended)
+futureResult.thenAccept(result -> {
+    if (result.isSuccess()) {
+        result.getContent().ifPresent(user ->
+            LOGGER.info("Loaded user: {}", user.getName()));
 
-    // Check if served from cache
-    if (result.getHttpStatus().orElse(0) == 304) {
-        LOGGER.debug("Content served from ETag cache");
+        // Check if served from cache
+        if (result.getHttpStatus().orElse(0) == 304) {
+            LOGGER.debug("Content served from ETag cache");
+        }
+    } else {
+        result.getErrorMessage().ifPresent(LOGGER::error);
     }
-} else {
-    result.getErrorMessage().ifPresent(LOGGER::error);
+});
+
+// Or use blocking method for simple cases
+HttpResult<User> result = adapter.getBlocking();
+if (result.isSuccess()) {
+    LOGGER.info("User: {}", result.getContent().map(User::getName).orElse("N/A"));
 }
 ----
 
-== Example 2: GET with Pattern Matching
+== Example 2: GET with Pattern Matching (Blocking)
 
 [source,java]
 ----
@@ -83,7 +91,8 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .requestConverter(userConverter)
     .build();
 
-HttpResult<User> result = adapter.get();
+// Use blocking method for pattern matching
+HttpResult<User> result = adapter.getBlocking();
 
 // Pattern matching (Java 17+)
 switch (result) {
