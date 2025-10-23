@@ -144,7 +144,7 @@ Order matters when composing multiple adapters. All compositions maintain non-bl
 |Retries requests, reuses auth (all async)
 |Auth is stable
 
-|`Base → Retry → Auth`
+|`Auth(Retry(Base))`
 |Standard composition (all async)
 |Recommended default
 |===

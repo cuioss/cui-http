@@ -1067,7 +1067,7 @@ public class CreateUserRequestConverter implements HttpRequestConverter<CreateUs
 // Usage with explicit request converter
 HttpAdapter<Void> adapter = ETagAwareHttpAdapter.<Void>builder()
     .httpHandler(handler)
-    .responseConverter(new VoidConverter())  // Discard response
+    .responseConverter(VoidResponseConverter.INSTANCE)  // Discard response
     .build();
 
 CreateUserRequest request = new CreateUserRequest("john@example.com");

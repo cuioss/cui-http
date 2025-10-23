@@ -259,9 +259,9 @@ public HttpErrorCategory toErrorCategory() {
     return switch (this) {
         case CLIENT_ERROR -> HttpErrorCategory.CLIENT_ERROR;
         case SERVER_ERROR -> HttpErrorCategory.SERVER_ERROR;
-        case REDIRECTION -> HttpErrorCategory.REDIRECTION;  // NEW
         case SUCCESS -> throw new IllegalStateException(
             "SUCCESS is not an error");
+        case REDIRECTION -> HttpErrorCategory.INVALID_CONTENT;  // Rare, handled by adapter
         case INFORMATIONAL, UNKNOWN -> HttpErrorCategory.INVALID_CONTENT;
     };
 }

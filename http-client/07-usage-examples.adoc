@@ -701,14 +701,8 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
 
 HttpResult<User> result = adapter.get();
 
-if (result.isSuccess() && result.getContent().isEmpty()) {
-    LOGGER.warn("Response received but content could not be parsed");
-    // Check error category
-    result.getErrorCategory().ifPresent(category -> {
-        if (category == HttpErrorCategory.INVALID_CONTENT) {
-            LOGGER.error("Invalid content format received");
-        }
-    });
+if (!result.isSuccess() && result.getErrorCategory().filter(HttpErrorCategory.INVALID_CONTENT::equals).isPresent()) {
+    LOGGER.warn("Response received but content could not be parsed, error category is INVALID_CONTENT");
 }
 ----
 
