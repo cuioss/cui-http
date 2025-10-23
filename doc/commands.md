@@ -114,3 +114,83 @@ _(No acceptable warnings defined)_
 2. **Pre-commit Validation:** Add hooks to validate cross-document anchor references before commits
 3. **Documentation Standards:** Document explicit anchor ID conventions in project standards
 4. **Cross-Directory Reviews:** When reviewing subdirectories with parent/sibling references, include related files in scope or explicitly flag dependencies
+
+## setup-project-permissions
+
+### Last Execution
+
+- **Date**: 2025-10-23
+- **Action**: Complete rebuild of permission settings
+- **Changes**: Removed 82 permissions, added 3 project-specific permissions
+- **Security**: Fixed JSON syntax error (missing comma), removed dangerous permissions
+
+### Removed Permissions
+
+**Security Risks Removed:**
+- `Read(//Users/oliver/**)` - Entire home directory access (CRITICAL SECURITY RISK)
+- `Read(//tmp/**)` - System temp directory access
+- `Bash(rm:*)` - Unrestricted file deletion
+
+**Redundant Permissions Removed (already in global settings):**
+- 30+ Bash commands (git, grep, find, cat, etc.)
+- WebFetch domains (covered by global `domain:*`)
+- CUI standards paths (covered by global `Read(//~/git/cui-llm-rules/**)`)
+- 50+ other permissions already globally available
+
+### Current Permissions
+
+**Allow List (3 permissions - project-specific only):**
+- `Edit(//~/git/cui-http/**)` - Edit project files
+- `Read(//~/git/cui-http/**)` - Read project files
+- `Write(//~/git/cui-http/**)` - Create new project files
+
+**Deny List (4 permissions - security):**
+- `Read(//tmp/**)` - Block system temp access
+- `Read(//private/tmp/**)` - Block private temp access
+- `Write(//tmp/**)` - Block temp file creation
+- `Write(//private/tmp/**)`- Block private temp writes
+
+**Ask List (1 permission - safety):**
+- `Write(//.claude/settings.local.json)` - Require approval for settings changes
+
+### User-Approved Permissions
+
+_(No suspicious permissions approved - clean slate)_
+
+### Architecture
+
+**Global Settings** (`~/.claude/settings.json`):
+- Common development tools (Bash commands, git, mvn, npm, etc.)
+- CUI standards access (`Read(//~/git/cui-llm-rules/**)`)
+- Universal web access (`WebFetch(domain:*)`)
+- Claude tools (`SlashCommand`, agents, commands)
+
+**Local Settings** (`./.claude/settings.local.json`):
+- **ONLY** project-specific permissions (cui-http)
+- Minimal footprint (3 allow, 4 deny, 1 ask)
+- Clean separation of concerns
+
+### Notes
+
+**Fixed Issues:**
+1. **JSON Syntax Error**: Line 72 missing comma - caused parsing failures
+2. **Path Format**: Converted all `/Users/oliver/` to `~/` for portability
+3. **Security**: Removed home directory wildcard access
+4. **Redundancy**: Eliminated 79 permissions already covered globally
+5. **Temp Files**: Explicitly denied system temp access (Maven should use `target/`)
+
+**Rationale for Clean Rebuild:**
+- Original file had 82 permissions (79 redundant, 3 dangerous)
+- Invalid JSON syntax prevented reliable parsing
+- Simpler to rebuild than to incrementally fix all issues
+- New structure follows global/local separation principle
+
+## ./mvnw -Ppre-commit clean install
+
+### Last Execution Duration
+- **Duration**: 60000ms (1 minute)
+- **Last Updated**: 2025-10-23 (initial baseline)
+
+### Acceptable Warnings
+- `[WARNING] Using platform encoding (UTF-8 actually) to copy filtered resources`
+- `[WARNING] Parameter 'session' is deprecated`
