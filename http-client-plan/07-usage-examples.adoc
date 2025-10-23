@@ -489,7 +489,9 @@ HttpAdapter<Response> adapter = ETagAwareHttpAdapter.<Response>builder()
 HttpResult<Response> result = adapter.post(imageConverter, imageData);
 ----
 
-== Example 14: Clear ETag Cache
+== Example 14: Clear ETag Cache (Rarely Needed)
+
+Manual cache clearing is rarely needed with automatic eviction. Use only for:
 
 [source,java]
 ----
@@ -499,11 +501,16 @@ ETagAwareHttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .requestConverter(userConverter)
     .build();
 
-// Use adapter...
+// Use adapter normally
 HttpResult<User> result = adapter.get();
 
-// Later, clear cache
-adapter.clearETagCache();
+// Clear cache on user logout (valid use case)
+void onUserLogout() {
+    adapter.clearETagCache();  // Remove user-specific cached data
+}
+
+// ❌ NOT needed for memory management - automatic eviction handles this
+// ❌ NOT needed for periodic maintenance - cache self-manages
 ----
 
 == Example 15: Fallback Content on Failure

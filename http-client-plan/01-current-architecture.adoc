@@ -263,17 +263,19 @@ public abstract class StringContentConverter<T>
     @Deprecated
     @Override
     public T emptyValue() {
-        return null;  // Not used
+        return null;  // Not used by new adapters
     }
 
+    /**
+     * Subclasses must implement this to declare expected content type.
+     * Used by both old and new converter interfaces.
+     */
     @Override
-    public ContentType contentType() {
-        return expectedContentType();
-    }
+    public abstract ContentType contentType();
 
     @Override
     public ContentType expectedContentType() {
-        return contentType();  // Delegate to new method
+        return contentType();  // Delegates to single implementation
     }
 }
 ----
@@ -887,7 +889,7 @@ exports de.cuioss.http.client.request;   // NEW
 === Proposed Solutions
 
 * ✅ Replace `ResilientHttpHandler` with `ETagAwareHttpAdapter` + `ResilientHttpAdapter`
-* ✅ Add `HttpMethod` enum (internal-only, package-private)
+* ✅ Add `HttpMethod` enum (public for logging and debugging)
 * ✅ Add `ContentType` enum
 * ✅ Make `HttpContentConverter<T>` bidirectional (request + response)
 * ✅ Add method-specific `HttpAdapter<T>` interface (`get()`, `post()`, etc.)

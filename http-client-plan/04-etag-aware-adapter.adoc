@@ -13,27 +13,32 @@ Safe 304 handling achieved through request flow design rather than defensive nul
 
 [source,java]
 ----
-public HttpResult<T> send(...) {
+// Internal implementation (called by get(), post(), etc.)
+private CompletableFuture<HttpResult<T>> send(HttpMethod method, ...) {
     // 1. Retrieve cache entry BEFORE sending request
     CacheEntry cachedEntry = cache.get(cacheKey);
 
     // 2. Build request with conditional header IF cache exists
-    HttpRequest.Builder builder = handler.requestBuilder();
+    HttpRequest.Builder builder = httpHandler.requestBuilder()
+        .method(method.methodName(), ...);
+
     if (cachedEntry != null) {
         builder.header("If-None-Match", cachedEntry.etag());
     }
 
-    // 3. Send request
-    HttpResponse<?> response = httpClient.send(builder.build(), ...);
-
-    // 4. Handle 304
-    if (response.statusCode() == 304) {
-        // cachedEntry MUST be non-null here!
-        // We only sent If-None-Match if cachedEntry existed.
-        // Server only sends 304 if If-None-Match was present.
-        // Therefore: cachedEntry cannot be null.
-        return HttpResult.success(cachedEntry.content(), cachedEntry.etag(), 304);
-    }
+    // 3. Send request asynchronously
+    return httpClient.sendAsync(builder.build(), responseConverter.getBodyHandler())
+        .thenApply(response -> {
+            // 4. Handle 304
+            if (response.statusCode() == 304) {
+                // cachedEntry MUST be non-null here!
+                // We only sent If-None-Match if cachedEntry existed.
+                // Server only sends 304 if If-None-Match was present.
+                // Therefore: cachedEntry cannot be null.
+                return HttpResult.success(cachedEntry.content(), cachedEntry.etag(), 304);
+            }
+            // ... handle other status codes
+        });
 }
 ----
 
@@ -151,7 +156,7 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .responseConverter(userConverter)
     .etagCachingEnabled(true)         // Default: true
     .cacheKeyHeaderFilter(CacheKeyHeaderFilter.ALL)  // Default: ALL (include all headers)
-    .maxCacheSize(1000)               // Default: 1000 (LRU eviction when exceeded)
+    .maxCacheSize(1000)               // Default: 1000 (timestamp-based eviction)
     .build();
 ----
 
@@ -183,7 +188,7 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
 
 |`maxCacheSize`
 |`1000`
-|Maximum number of cache entries. When exceeded, least recently used (LRU) entries are evicted automatically
+|Maximum number of cache entries. When exceeded, 10% oldest entries (by timestamp) are removed
 |===
 
 == Cache Key Generation
@@ -310,9 +315,10 @@ The `cacheKeyHeaderFilter` setting affects efficiency and memory usage:
 
 . **Use `CacheKeyHeaderFilter.excluding("Authorization")`** - **Recommended!** Keeps content-affecting headers, excludes auth
 . **Use `CacheKeyHeaderFilter.NONE`** - For single-user scenarios only
-. **Periodic cache clearing** - Call `adapter.clearETagCache()` after token refresh (less ideal)
 . **Disable caching** - Set `etagCachingEnabled(false)`
 . **Separate adapter per token** - Create new adapter on token refresh
+
+**Note:** Manual cache clearing on token refresh is NOT recommended. The automatic eviction will handle memory, and manual clearing loses all cached responses unnecessarily.
 
 === CacheKeyHeaderFilter.NONE (URI Only)
 
@@ -418,10 +424,10 @@ public class UserSession {
 The ETag cache management:
 
 * **No TTL (Time-To-Live)** - Entries never expire based on time
-* **Size-based LRU eviction** - Default max 1000 entries. When exceeded, least recently used entries are evicted automatically
-* **Configurable size limit** - Use `.maxCacheSize(n)` builder parameter to adjust (default: 1000)
+* **Timestamp-based eviction** - When cache exceeds maxCacheSize, remove 10% oldest entries
+* **Configurable size limit** - Use `.maxCacheSize(n)` builder parameter (default: 1000)
 * **Manual clearing** - Call `clearETagCache()` to remove all entries immediately
-* **Thread-safe** - All cache operations are concurrent-safe
+* **Thread-safe** - Uses `ConcurrentHashMap` for true concurrent access (no locks)
 
 === When to Clear Cache
 
@@ -429,38 +435,123 @@ The ETag cache management:
 ----
 ETagAwareHttpAdapter<User> adapter = ...;
 
-// Clear cache manually
+// Clear cache manually (rarely needed with automatic eviction)
 adapter.clearETagCache();
 ----
 
-**Clear on:** User logout, token refresh, periodic maintenance, configuration change, memory pressure.
+**When to use manual clearing:**
+
+* **User logout** - Clear user-specific cached data
+* **Configuration change** - Application settings changed (e.g., switching servers)
+* **Token refresh with CacheKeyHeaderFilter.ALL** - Prevent cache key bloat (but prefer using `CacheKeyHeaderFilter.NONE` or `.excluding("Authorization")` instead)
+
+**Not needed for:**
+
+* ❌ Memory pressure - Automatic eviction handles this
+* ❌ Periodic maintenance - Cache self-manages at maxCacheSize
 
 **Thread-safe:** In-flight requests hold local cache references. Clearing cache doesn't affect them.
 
-=== Automatic LRU Eviction
+=== Cache Implementation
 
-The cache automatically evicts least recently used (LRU) entries when `maxCacheSize` is exceeded:
+The cache uses `ConcurrentHashMap` for true concurrent access:
 
 [source,java]
 ----
-// Configure custom cache size
-HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
-    .httpHandler(handler)
-    .responseConverter(userConverter)
-    .maxCacheSize(500)  // Limit to 500 entries instead of default 1000
-    .build();
+// Cache entry record
+public record CacheEntry<T>(
+    T content,              // Already converted response
+    String etag,            // ETag from server
+    long timestamp          // System.currentTimeMillis() when added
+) {}
 
-// Cache grows to 500 entries...
-// On 501st entry: oldest (least recently accessed) entry is evicted
-// Cache size remains at 500
+// Cache implementation
+private final ConcurrentHashMap<String, CacheEntry<T>> cache;
+private final int maxCacheSize;
+
+public ETagAwareHttpAdapter(..., int maxCacheSize) {
+    this.maxCacheSize = maxCacheSize;
+    this.cache = new ConcurrentHashMap<>();
+}
 ----
 
-**LRU Behavior:**
+**Implementation Details:**
 
-* **Access order tracking** - Each cache hit (304 response) updates the entry's access time
-* **Automatic eviction** - When size exceeds `maxCacheSize`, oldest entry removed
-* **No manual intervention** - Eviction happens transparently during cache writes
-* **Thread-safe** - Concurrent evictions don't affect in-flight requests
+* **Data structure**: `ConcurrentHashMap<String, CacheEntry<T>>`
+* **Thread-safety**: Fully concurrent - no synchronized blocks needed
+* **Cache entry**: Record with `{T content, String etag, long timestamp}`
+* **Eviction**: Timestamp-based (stored in CacheEntry), not insertion-order based
+* **Zero dependencies**: Uses only Java standard library
+* **Performance**: Better concurrency than `Collections.synchronizedMap()`
+
+=== Adding to Cache with Automatic Eviction
+
+Single method handles both adding entries and eviction:
+
+[source,java]
+----
+/**
+ * Add entry to cache and check for eviction.
+ * Called every time a successful GET response with ETag is cached.
+ */
+private void putInCache(String cacheKey, CacheEntry<T> entry) {
+    // Add to cache
+    cache.put(cacheKey, entry);
+
+    // Check if eviction needed
+    checkAndEvict();
+}
+
+/**
+ * Check cache size and evict oldest 10% if limit exceeded.
+ */
+private void checkAndEvict() {
+    if (cache.size() > maxCacheSize) {
+        int entriesToRemove = (int) (maxCacheSize * 0.1);  // Remove 10%
+
+        // Sort by timestamp, remove oldest
+        // ConcurrentHashMap's iterator is weakly consistent - safe for concurrent modification
+        cache.entrySet().stream()
+            .sorted(Map.Entry.comparingByValue((e1, e2) ->
+                Long.compare(e1.timestamp(), e2.timestamp())))
+            .limit(entriesToRemove)
+            .map(Map.Entry::getKey)
+            .collect(Collectors.toList())
+            .forEach(cache::remove);
+    }
+}
+----
+
+**Usage in adapter:**
+
+[source,java]
+----
+// In execute() method after successful GET response with ETag:
+if (statusCode == 200 && etag != null && content.isPresent()) {
+    CacheEntry<T> entry = new CacheEntry<>(
+        content.get(),
+        etag,
+        System.currentTimeMillis()
+    );
+    putInCache(cacheKey, entry);  // Add + automatic eviction check
+}
+----
+
+**Eviction Behavior:**
+
+* **Trigger**: EVERY time `putInCache()` is called (every successful GET with ETag)
+* **Threshold**: Eviction happens when cache size > `maxCacheSize` (100%)
+* **Batch removal**: Remove 10% of maxCacheSize oldest entries (by timestamp)
+* **Result**: Cache goes from ~101% → ~90% of maxCacheSize
+* **Timestamp-based**: Oldest = earliest timestamp, not access-based
+* **Simple**: No complex tracking needed
+* **Thread-safe**: ConcurrentHashMap with weakly-consistent iterators - no locks needed
+* **Automatic**: No manual eviction calls needed
+
+**Example:** maxCacheSize = 1000
+- Cache has 1001 entries → remove 100 oldest → cache = 901 entries
+- Next 99 additions can happen without eviction
+- At 1001 again → evict 100 → back to 901
 
 **Choosing cache size:**
 
@@ -494,35 +585,26 @@ public void refreshAccessToken() {
 
 ==== Strategy 1b: Clear on Token Refresh (If Using CacheKeyHeaderFilter.ALL)
 
-Alternative if you must use `CacheKeyHeaderFilter.ALL` (e.g., multi-user server with no better option):
+**⚠️ Not Recommended** - Prefer Strategy 1 (URI-only cache keys) instead.
+
+If you must use `CacheKeyHeaderFilter.ALL` and token changes frequently:
 
 [source,java]
 ----
 public void refreshAccessToken() {
     String newToken = authService.refreshToken();
 
-    // Clear ETag cache to prevent bloat from old token cache keys
+    // Clear ETag cache to prevent cache key bloat from old token
+    // Downside: Loses all cached responses, increases server load
     userAdapter.clearETagCache();
 
     this.currentToken = newToken;
 }
 ----
 
-==== Strategy 2: Periodic Clearing
+**Why this is suboptimal:** Automatic eviction already manages memory. Manual clearing throws away valid cached responses, forcing server to resend all data. Better to use `CacheKeyHeaderFilter.NONE` or `.excluding("Authorization")`.
 
-For long-running applications:
-
-[source,java]
-----
-// Schedule periodic cache clearing (e.g., every 1 hour)
-ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
-scheduler.scheduleAtFixedRate(
-    () -> adapter.clearETagCache(),
-    1, 1, TimeUnit.HOURS
-);
-----
-
-==== Strategy 3: Disable Caching for High-Churn Endpoints
+==== Strategy 2: Disable Caching for High-Churn Endpoints
 
 For APIs with frequently-changing headers:
 
@@ -535,7 +617,7 @@ HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .build();
 ----
 
-==== Strategy 4: Separate Adapter Per User (Recommended for Multi-User)
+==== Strategy 3: Separate Adapter Per User (Recommended for Multi-User)
 
 For multi-user scenarios, create one adapter instance per user/session:
 
@@ -559,24 +641,6 @@ public HttpAdapter<User> createAdapterForUser(String userId) {
 * Can use `CacheKeyHeaderFilter.NONE` safely
 * Automatic cache cleanup on logout
 * Better than shared adapter with `CacheKeyHeaderFilter.ALL`
-
-==== Memory Monitoring
-
-Monitor cache size in production:
-
-[source,java]
-----
-// Log cache statistics periodically
-LOGGER.debug("ETag cache entries: {}", adapter.getCacheSize());
-
-// Alert if cache grows too large
-if (adapter.getCacheSize() > 10000) {
-    LOGGER.warn("ETag cache size exceeded threshold, clearing");
-    adapter.clearETagCache();
-}
-----
-
-**Note:** `getCacheSize()` method should be added to `ETagAwareHttpAdapter` for monitoring.
 
 == Thread Safety
 

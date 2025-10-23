@@ -78,7 +78,7 @@ public record RetryConfig(
         private double multiplier = 2.0;
         private Duration maxDelay = Duration.ofMinutes(1);
         private double jitter = 0.1;
-        private boolean idempotentOnly = false;
+        private boolean idempotentOnly = true;  // Safe by default: only retry idempotent methods
 
         public Builder maxAttempts(int maxAttempts) {
             if (maxAttempts < 1) {
@@ -166,8 +166,8 @@ public record RetryConfig(
 |0.0 to 1.0 (0% to 100%, validated)
 
 |`idempotentOnly`
-|`false`
-|true or false (retries all methods if false, only idempotent methods if true)
+|`true`
+|true or false (only retries idempotent methods if true, retries all methods if false)
 |===
 
 **Notes:**
@@ -200,8 +200,8 @@ public record RetryConfig(
 |**jitter: 10%**
 |Prevents thundering herd when many clients fail simultaneously. 10% provides sufficient randomization without excessive variance. Based on AWS recommendations.
 
-|**idempotentOnly: false**
-|Conservative default: retries all methods. Users must explicitly opt-in to idempotent-only retry to prevent accidental POST/PATCH retries. Change to true if your application uses idempotency keys or wants strict safety.
+|**idempotentOnly: true**
+|Safe by default: only retries idempotent methods (GET/PUT/DELETE/HEAD/OPTIONS), preventing accidental duplicate operations from POST/PATCH retries. Users must explicitly opt-in to retry non-idempotent methods by setting to false when they have idempotency keys or accept the risks. Follows fail-safe principle and matches industry best practices (AWS SDK, Google Cloud SDK).
 |===
 
 **References:**
@@ -422,17 +422,17 @@ HttpResult<User> updated = adapter.put(modifiedUser, headers);
 **As of Version 1.0:**
 
 * `ResilientHttpAdapter` uses `HttpMethod` enum internally for type-safe method tracking
-* Supports `idempotentOnly` configuration via `RetryConfig.builder().idempotentOnly(true)`
-* When `idempotentOnly=false` (default), retries **ALL** HTTP methods
-* When `idempotentOnly=true`, only retries idempotent methods (GET, PUT, DELETE, HEAD, OPTIONS)
+* Supports `idempotentOnly` configuration via `RetryConfig.builder().idempotentOnly(false)`
+* When `idempotentOnly=true` (default), only retries idempotent methods (GET, PUT, DELETE, HEAD, OPTIONS)
+* When `idempotentOnly=false`, retries **ALL** HTTP methods
 * POST and PATCH are automatically skipped when `idempotentOnly=true`
 
 **Recommendation:**
 
-* ✅ Use `ResilientHttpAdapter` with `idempotentOnly=true` for safe retry behavior
-* ✅ Use `idempotentOnly=false` (default) only when using idempotency keys or accepting retry risks
+* ✅ Use default `idempotentOnly=true` for safe retry behavior (prevents duplicate operations)
+* ✅ Use `idempotentOnly=false` only when using idempotency keys or accepting retry risks
 * ⚠️ Use with caution for PUT (idempotent by HTTP spec, but verify server behavior)
-* 💡 For POST/PATCH, either use idempotency keys OR configure `idempotentOnly=true`
+* 💡 For POST/PATCH retry, you must use idempotency keys AND explicitly set `idempotentOnly=false` (they are NOT retried by default)
 
 === Examples
 
@@ -458,8 +458,12 @@ HttpResult<User> updated = adapter.putBlocking(user);  // Same result on retry
 
 [source,java]
 ----
-// UNSAFE - may create duplicates
-HttpAdapter<Order> adapter = ResilientHttpAdapter.wrap(baseAdapter);
+// UNSAFE - may create duplicates (requires explicit opt-in)
+RetryConfig unsafeConfig = RetryConfig.builder()
+    .idempotentOnly(false)  // ⚠️ REQUIRED to retry POST - unsafe!
+    .build();
+
+HttpAdapter<Order> adapter = ResilientHttpAdapter.wrap(baseAdapter, unsafeConfig);
 HttpResult<Order> order = adapter.postBlocking(newOrder);  // ⚠️ Risk of duplicates
 ----
 
@@ -468,12 +472,16 @@ HttpResult<Order> order = adapter.postBlocking(newOrder);  // ⚠️ Risk of dup
 [source,java]
 ----
 // Safe - idempotency key prevents duplicates
-HttpAdapter<Order> adapter = ResilientHttpAdapter.wrap(baseAdapter);
+RetryConfig safeConfig = RetryConfig.builder()
+    .idempotentOnly(false)  // Explicitly enable POST retry
+    .build();
+
+HttpAdapter<Order> adapter = ResilientHttpAdapter.wrap(baseAdapter, safeConfig);
 
 String idempotencyKey = UUID.randomUUID().toString();
 Map<String, String> headers = Map.of("Idempotency-Key", idempotencyKey);
 
-HttpResult<Order> order = adapter.post(newOrder, headers);  // ✅ Safe to retry
+HttpResult<Order> order = adapter.post(newOrder, headers);  // ✅ Safe to retry with idempotency key
 ----
 
 ==== Safe: No Retry for POST

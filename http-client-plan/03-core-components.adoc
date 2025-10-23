@@ -457,22 +457,25 @@ public enum HttpMethod {
 |Query supported methods, CORS preflight
 |===
 
-=== Why Package-Private?
+=== Why Public?
 
-**Design Decision:** `HttpMethod` is intentionally package-private for several reasons:
+**Design Decision:** `HttpMethod` is public for transparency and debugging:
 
-1. **Method-Specific API:** Users call `adapter.get()`, `adapter.post()`, etc. - more type-safe than `adapter.execute(HttpMethod.GET)`
+1. **Method-Specific API:** While users typically call `adapter.get()`, `adapter.post()`, etc. (more type-safe than `adapter.execute(HttpMethod.GET)`), the enum is public for:
+   - Logging and debugging purposes
+   - Error messages that reference the method type
+   - Advanced use cases requiring method introspection
 
 2. **Internal Classification:** Used by adapter implementations for:
    - Retry decisions (idempotent methods safe to retry)
    - Request body validation (GET/HEAD don't have bodies)
    - Logging and metrics
 
-3. **API Simplicity:** Reduces public surface area - users don't need to understand enum
+3. **Transparency:** Users can understand method semantics (safe, idempotent, cacheable properties)
 
-4. **Flexibility:** Internal enum can be modified without breaking public API
+4. **Debugging:** Error messages and logs can reference `HttpMethod` enum values clearly
 
-5. **Consistency:** Matches pattern of other HTTP client libraries (method-specific calls)
+5. **Consistency:** Matches pattern of method-specific API while maintaining visibility for debugging
 
 === Usage in Adapter Implementation
 
@@ -480,6 +483,18 @@ public enum HttpMethod {
 ----
 // Internal adapter implementation (example)
 class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
+
+    private final HttpHandler httpHandler;
+    private final HttpClient httpClient;
+    private final HttpResponseConverter<T> responseConverter;
+    // ... other fields ...
+
+    public ETagAwareHttpAdapter(HttpHandler httpHandler,
+                                HttpResponseConverter<T> responseConverter) {
+        this.httpHandler = httpHandler;
+        this.httpClient = httpHandler.createHttpClient();  // Get HttpClient once
+        this.responseConverter = responseConverter;
+    }
 
     @Override
     public CompletableFuture<HttpResult<T>> get(Map<String, String> headers) {
