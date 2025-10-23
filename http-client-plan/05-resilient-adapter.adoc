@@ -72,6 +72,11 @@ public record RetryConfig(
         return builder().build();
     }
 
+    /**
+     * Builder for RetryConfig.
+     * Validation strategy: Parameters validated in setter methods for immediate feedback.
+     * Cross-parameter validation (if needed) performed in build() method.
+     */
     public static class Builder {
         private int maxAttempts = 5;
         private Duration initialDelay = Duration.ofSeconds(1);
@@ -204,6 +209,22 @@ public record RetryConfig(
 |Safe by default: only retries idempotent methods (GET/PUT/DELETE/HEAD/OPTIONS), preventing accidental duplicate operations from POST/PATCH retries. Users must explicitly opt-in to retry non-idempotent methods by setting to false when they have idempotency keys or accept the risks. Follows fail-safe principle and matches industry best practices (AWS SDK, Google Cloud SDK).
 |===
 
+**⚠️ IMPORTANT - POST with Idempotency Keys:**
+If your API uses idempotency keys (e.g., `Idempotency-Key` header for POST requests to prevent duplicate operations), you must set `idempotentOnly(false)` to enable retry for POST:
+
+[source,java]
+----
+RetryConfig config = RetryConfig.builder()
+    .idempotentOnly(false)  // Required to retry POST with idempotency keys
+    .build();
+
+HttpAdapter<Order> resilient = ResilientHttpAdapter.wrap(baseAdapter, config);
+
+// POST with idempotency key - safe to retry even with idempotentOnly=false
+Map<String, String> headers = Map.of("Idempotency-Key", UUID.randomUUID().toString());
+HttpResult<Order> result = resilient.postBlocking(order, headers);
+----
+
 **References:**
 
 * AWS SDK retry strategies
@@ -220,6 +241,9 @@ The record includes a method to calculate delays:
 /**
  * Calculates delay for given attempt using exponential backoff with jitter.
  * Formula: initialDelay * (multiplier ^ (attempt - 1)) * (1 ± jitter)
+ *
+ * <p>Thread-safe: This method is safe to call concurrently from multiple threads.
+ * Uses ThreadLocalRandom for thread-local randomization without contention.
  *
  * @param attemptNumber current attempt (1-based)
  * @return calculated delay with jitter applied, capped at maxDelay

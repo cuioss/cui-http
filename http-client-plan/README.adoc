@@ -175,67 +175,57 @@ HttpResult<User> result = resilient.getBlocking();
 
 === Single-User Client (No Token Bloat)
 
+**⚠️ IMPORTANT:** If your application uses authentication tokens (e.g., `Authorization: Bearer <token>`) that refresh periodically, the default `CacheKeyHeaderFilter.ALL` will create cache bloat because each new token creates a new cache entry for the same resource.
+
 [source,java]
 ----
-// Mobile app, desktop app, or service account
+// Single-user scenarios: Mobile app, desktop app, or service account
 HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
     .httpHandler(handler)
     .responseConverter(userConverter)
-    .cacheKeyHeaderFilter(CacheKeyHeaderFilter.NONE)  // URI only, ignore all headers
+    // Recommended: Exclude auth headers while keeping content-affecting headers
+    .cacheKeyHeaderFilter(CacheKeyHeaderFilter.excluding("Authorization"))
     .build();
+
+// Alternative for simple single-user cases (ignores all headers):
+// .cacheKeyHeaderFilter(CacheKeyHeaderFilter.NONE)
+
 // Token refresh doesn't create duplicate cache entries
 ----
 
-== Adapter Composition Order
+== Adapter Composition
 
-Order matters when composing multiple adapters. All compositions maintain non-blocking async behavior:
-
-[cols="2,2,2"]
-|===
-|Pattern |Behavior |Use When
-
-|`Retry(Auth(Base))`
-|Retries entire operation including auth (all async)
-|Auth failures are transient
-
-|`Auth(Retry(Base))`
-|Retries requests, reuses auth (all async)
-|Auth is stable
-
-|`Auth(Retry(Base))`
-|Standard composition (all async)
-|Recommended default
-|===
-
-Example trade-offs:
+Adapters can be composed by wrapping to add cross-cutting concerns. Custom decorators can be implemented by wrapping the `HttpAdapter` interface:
 
 [source,java]
 ----
-// Option 1: Retry includes auth
-// Pro: Handles auth token race conditions
-// Con: More token refresh calls
-HttpAdapter<User> option1 = ResilientHttpAdapter.wrap(
-    new BearerTokenAdapter<>(baseAdapter, tokenSupplier)
-);
+// Example: Compose retry with base adapter
+HttpAdapter<User> baseAdapter = ETagAwareHttpAdapter.<User>builder()
+    .httpHandler(handler)
+    .responseConverter(userConverter)
+    .build();
 
-// Option 2: Auth wraps retry
-// Pro: Fewer token refresh calls
-// Con: Auth failures not retried
-HttpAdapter<User> option2 = new BearerTokenAdapter<>(
-    ResilientHttpAdapter.wrap(baseAdapter),
-    tokenSupplier
-);
+HttpAdapter<User> resilient = ResilientHttpAdapter.wrap(baseAdapter);
 
-// Both return CompletableFuture for async execution
-CompletableFuture<HttpResult<User>> future1 = option1.get();
-CompletableFuture<HttpResult<User>> future2 = option2.get();
+// Custom decorators can be implemented by wrapping HttpAdapter
+// Example pattern for custom decorator:
+class CustomDecorator<T> implements HttpAdapter<T> {
+    private final HttpAdapter<T> delegate;
 
-// Or use blocking methods
-HttpResult<User> result1 = option1.getBlocking();
-HttpResult<User> result2 = option2.getBlocking();
+    CustomDecorator(HttpAdapter<T> delegate) {
+        this.delegate = delegate;
+    }
+
+    @Override
+    public CompletableFuture<HttpResult<T>> get(Map<String, String> headers) {
+        // Add custom logic before/after delegation
+        return delegate.get(headers);
+    }
+    // ... implement other methods ...
+}
 ----
 
-**Rule:** Place stable concerns outside, variable concerns inside retry loop.
+**Rule:** Composition order matters - place stable concerns outside, variable concerns inside.
 
 == 304 Not Modified Handling
 

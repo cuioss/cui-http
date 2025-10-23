@@ -485,14 +485,16 @@ public enum HttpMethod {
 class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
     private final HttpHandler httpHandler;
-    private final HttpClient httpClient;
+    private final HttpClient httpClient;  // Created once in constructor for thread-safe reuse
     private final HttpResponseConverter<T> responseConverter;
     // ... other fields ...
 
     public ETagAwareHttpAdapter(HttpHandler httpHandler,
                                 HttpResponseConverter<T> responseConverter) {
         this.httpHandler = httpHandler;
-        this.httpClient = httpHandler.createHttpClient();  // Get HttpClient once
+        // IMPORTANT: Create HttpClient once in constructor and store as final field
+        // This ensures thread-safe reuse across all requests
+        this.httpClient = httpHandler.createHttpClient();
         this.responseConverter = responseConverter;
     }
 
@@ -1588,36 +1590,7 @@ HttpResult<Void> healthCheck = adapter.head();
 boolean isHealthy = healthCheck.isSuccess();
 ----
 
-==== VoidRequestConverter (No Body Requests)
-
-For operations where request has no body:
-
-[source,java]
-----
-package de.cuioss.http.client.converter;
-
-/**
- * Built-in converter for requests with no body.
- * Returns no-body publisher for any input.
- */
-public final class VoidRequestConverter implements HttpRequestConverter<Void> {
-
-    /** Singleton instance */
-    public static final VoidRequestConverter INSTANCE = new VoidRequestConverter();
-
-    private VoidRequestConverter() {} // Use INSTANCE
-
-    @Override
-    public HttpRequest.BodyPublisher toBodyPublisher(@Nullable Void content) {
-        return HttpRequest.BodyPublishers.noBody();
-    }
-
-    @Override
-    public ContentType contentType() {
-        return ContentType.APPLICATION_JSON;  // Doesn't matter
-    }
-}
-----
+**Note:** Methods without request bodies (GET, HEAD, OPTIONS) do not require a request converter. The adapter will use `HttpRequest.BodyPublishers.noBody()` directly for these methods.
 
 == Module Exports
 

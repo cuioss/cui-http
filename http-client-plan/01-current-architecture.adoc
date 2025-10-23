@@ -32,6 +32,7 @@ public class HttpHandler {
     public HttpClient createHttpClient();
 
     // Provides request builder with base configuration
+    // Thread-safe: returns new builder instance per call, safe for concurrent use
     public HttpRequest.Builder requestBuilder();
 
     // Convenience methods
@@ -244,7 +245,7 @@ public final class LegacyConverterAdapter<T> implements HttpResponseConverter<T>
 
 **Phase 4: Update Existing Implementations (Version 1.x)**
 
-Update `StringContentConverter` base class:
+Update `StringContentConverter` base class to implement only the new interface. For backward compatibility with code still using the old interface, provide a wrapper adapter:
 
 [source,java]
 ----
@@ -256,29 +257,45 @@ public abstract class StringContentConverter<T> implements HttpContentConverter<
     }
 }
 
-// New (implements both old and new interfaces during migration)
-public abstract class StringContentConverter<T>
-    implements HttpContentConverter<T>, HttpResponseConverter<T> {
-
-    @Deprecated
-    @Override
-    public T emptyValue() {
-        return null;  // Not used by new adapters
-    }
-
+// New (only implements new interface - cleaner migration)
+public abstract class StringContentConverter<T> implements HttpResponseConverter<T> {
     /**
      * Subclasses must implement this to declare expected content type.
-     * Used by both old and new converter interfaces.
      */
     @Override
     public abstract ContentType contentType();
+}
+
+// Legacy adapter for backward compatibility (package-private)
+@Deprecated
+class LegacyConverterAdapter<T> implements HttpContentConverter<T> {
+    private final HttpResponseConverter<T> delegate;
+
+    LegacyConverterAdapter(HttpResponseConverter<T> delegate) {
+        this.delegate = delegate;
+    }
 
     @Override
-    public ContentType expectedContentType() {
-        return contentType();  // Delegates to single implementation
+    public Optional<T> convert(Object rawContent) {
+        return delegate.fromResponse(null); // Legacy conversion
+    }
+
+    @Override
+    public T emptyValue() {
+        return null;
+    }
+
+    @Override
+    public ContentType contentType() {
+        return delegate.expectedContentType();
     }
 }
 ----
+
+This simpler approach:
+- Avoids dual interface implementation confusion
+- Provides clear separation between old and new code
+- Makes migration path obvious: update converters to new interface, use adapter wrapper only where legacy code requires old interface
 
 **Phase 5: Removal (Version 2.0)**
 

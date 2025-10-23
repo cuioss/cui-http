@@ -14,25 +14,13 @@
 |File |Description
 
 |`HttpMethod.java`
-|Package-private enum for HTTP method classification (safe, idempotent properties)
+|Public enum for HTTP method classification (safe, idempotent properties) - public for logging and debugging
 
 |`ContentType.java`
 |Content type enum with charset support
 
 |`HttpAdapter.java`
 |Adapter interface
-
-|`HttpRequestBodyPublisher.java`
-|Request body publisher interface
-
-|`NoBodyPublisher.java`
-|No-body implementation (singleton)
-
-|`StringBodyPublisher.java`
-|String body publisher with charset
-
-|`ByteArrayBodyPublisher.java`
-|Byte array body publisher
 
 |`ETagAwareHttpAdapter.java`
 |Base adapter with built-in ETag caching
@@ -93,15 +81,6 @@
 |`ContentTypeTest`
 |Enum values, toHeaderValue(), charset handling
 
-|`HttpRequestBodyPublisherTest`
-|Factory methods, all implementations
-
-|`StringBodyPublisherTest`
-|String conversion, charset handling, null handling
-
-|`ByteArrayBodyPublisherTest`
-|Byte array conversion, null handling
-
 |`ETagAwareHttpAdapterTest`
 |All request types, ETag caching, 304 handling
 
@@ -145,11 +124,27 @@ Using `MockWebServer` for realistic HTTP scenarios:
 === Coverage Requirements
 
 * Minimum 80% overall coverage (CUI standard)
-* 100% coverage for critical paths:
-** ETag caching logic
-** 304 Not Modified handling
-** Retry logic
-** Error categorization
+* 100% coverage for critical paths (specific code flows requiring complete test coverage):
+** **ETag cache lookup and 304 handling:**
+   - Cache entry retrieval at request start
+   - If-None-Match header injection when entry exists
+   - 304 response handling (return cached content)
+   - Cache update on 200 responses
+   - Cache eviction logic (size check and oldest entry removal)
+** **Retry decision logic:**
+   - Error category classification (NETWORK, SERVER_ERROR, etc.)
+   - Idempotency check (method classification)
+   - Retry attempt counting and termination
+   - Delay calculation with exponential backoff and jitter
+** **Request/response converter invocation:**
+   - Request body serialization (HttpRequestConverter.toBodyPublisher())
+   - Response body deserialization (HttpResponseConverter.fromResponse())
+   - Error handling for serialization failures → INVALID_CONTENT
+** **Error categorization mapping:**
+   - HTTP status codes → HttpErrorCategory
+   - Network exceptions → NETWORK
+   - Timeout exceptions → TIMEOUT
+   - All error categories tested
 
 == Phase 3: Documentation
 

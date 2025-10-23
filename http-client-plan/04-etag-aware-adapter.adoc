@@ -76,7 +76,10 @@ This approach is more reliable than runtime null checks, which can mask bugs.
 ETags are extracted from **all** HTTP responses (GET, POST, PUT, DELETE) and preserved in `HttpResult`, but only GET responses are **cached** for 304 Not Modified handling. This distinction is important:
 
 * **Extraction** - ETag header read from response and stored in HttpResult (all methods)
-* **Caching** - Response body stored for 304 reuse (GET only)
+  - Primary focus: 2xx successful responses
+  - 4xx/5xx error responses: ETags are also extracted if present (enables conditional updates after errors)
+  - ETags from error responses are NOT cached
+* **Caching** - Response body stored for 304 reuse (GET with 2xx status only)
 
 This enables **optimistic locking patterns** for subsequent updates:
 
@@ -294,6 +297,9 @@ private String generateCacheKey(URI uri,
 **⚠️ Cache Key Filter Trade-offs:**
 
 The `cacheKeyHeaderFilter` setting affects efficiency and memory usage:
+
+**⚠️ IMPORTANT - Token Refresh Scenario:**
+If your application uses authentication tokens (e.g., `Authorization: Bearer <token>`) that refresh periodically, the default `CacheKeyHeaderFilter.ALL` will create cache bloat because each new token creates a new cache entry for the same resource. **For single-user clients with token refresh, use `CacheKeyHeaderFilter.excluding("Authorization")` instead.** See solutions below.
 
 === CacheKeyHeaderFilter.ALL (Default)
 
@@ -547,6 +553,12 @@ if (statusCode == 200 && etag != null && content.isPresent()) {
 * **Simple**: No complex tracking needed
 * **Thread-safe**: ConcurrentHashMap with weakly-consistent iterators - no locks needed
 * **Automatic**: No manual eviction calls needed
+
+**Performance Note for High-Throughput Scenarios:**
+For applications with very high request rates (>1000 requests/sec), the eviction check on every putInCache() call may introduce overhead. In such cases, consider:
+- Increasing `maxCacheSize` to reduce eviction frequency
+- Disabling caching entirely if hit rate is low
+- Using a dedicated cache layer (Redis, etc.) for shared multi-instance deployments
 
 **Example:** maxCacheSize = 1000
 - Cache has 1001 entries → remove 100 oldest → cache = 901 entries
