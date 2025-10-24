@@ -626,13 +626,13 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - Existing file: `src/main/java/module-info.java`
 
 **Checklist:**
-- [ ] Read and understand all references above
-- [ ] If unclear, ask user for clarification (DO NOT guess)
-- [ ] Read existing module-info.java
-- [ ] Add export: `exports de.cuioss.http.client.adapter;`
-- [ ] Verify all other required exports exist
-- [ ] Run `project-builder` agent to verify build passes
-- [ ] Analyze build results - if issues found, fix and re-run
+- [x] Read and understand all references above
+- [x] If unclear, ask user for clarification (DO NOT guess)
+- [x] Read existing module-info.java
+- [x] Add export: `exports de.cuioss.http.client.adapter;`
+- [x] Verify all other required exports exist
+- [x] Run `project-builder` agent to verify build passes
+- [x] Analyze build results - if issues found, fix and re-run
 - [ ] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**

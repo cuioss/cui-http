@@ -22,6 +22,7 @@ module de.cuioss.http {
 
     // Client HTTP utilities
     exports de.cuioss.http.client;
+    exports de.cuioss.http.client.adapter;
     exports de.cuioss.http.client.converter;
     exports de.cuioss.http.client.handler;
     exports de.cuioss.http.client.result;
