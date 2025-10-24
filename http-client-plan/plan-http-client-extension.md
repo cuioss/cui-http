@@ -389,37 +389,37 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - 304 handling pattern: lines 10-60
 
 **Checklist:**
-- [ ] Read and understand all references above
-- [ ] If unclear, ask user for clarification (DO NOT guess)
-- [ ] In send() method, add `.thenApply()` to CompletableFuture chain
-- [ ] Extract HTTP status code from response
-- [ ] Handle 304 Not Modified: check if statusCode == 304 AND cachedEntry != null
-- [ ] For 304: return `HttpResult.success(cachedEntry.content(), cachedEntry.etag(), 304)`
-- [ ] Extract ETag from response headers (all methods, not just GET)
-- [ ] Convert response body using `responseConverter.convert(response.body())`
-- [ ] Handle conversion failure: return Failure with INVALID_CONTENT
-- [ ] Cache successful GET responses: if method is GET AND statusCode is 200 AND etag present AND content present
-- [ ] Create CacheEntry with content, etag, timestamp
-- [ ] Call `putInCache(cacheKey, entry)`
-- [ ] For success: return `HttpResult.success(content.orElse(null), etag, statusCode)`
-- [ ] Add `.exceptionally()` to handle exceptions
-- [ ] Classify exceptions: IOException → NETWORK_ERROR, others → CONFIGURATION_ERROR
-- [ ] Return Failure with appropriate error category
-- [ ] Implement helper: `putInCache(String key, CacheEntry<T> entry)`
-- [ ] Add entry to cache
-- [ ] Call `checkAndEvict()`
-- [ ] Implement helper: `checkAndEvict()`
-- [ ] If cache.size() > maxCacheSize: remove oldest 10% by timestamp
-- [ ] Use weakly-consistent iterator (safe for concurrent modification)
-- [ ] Add unit tests for 304 handling
-- [ ] Test 304 returns Success with cached content
-- [ ] Test 304 preserves status code (not converted to 200)
-- [ ] Test ETag extraction from all HTTP methods
-- [ ] Test cache update on successful GET with ETag
-- [ ] Test cache eviction when size exceeded
-- [ ] Test exception handling (IOException, parsing failure)
-- [ ] Run `project-builder` agent to verify build passes
-- [ ] Analyze build results - if issues found, fix and re-run
+- [x] Read and understand all references above
+- [x] If unclear, ask user for clarification (DO NOT guess)
+- [x] In send() method, add `.thenApply()` to CompletableFuture chain
+- [x] Extract HTTP status code from response
+- [x] Handle 304 Not Modified: check if statusCode == 304 AND cachedEntry != null
+- [x] For 304: return `HttpResult.success(cachedEntry.content(), cachedEntry.etag(), 304)`
+- [x] Extract ETag from response headers (all methods, not just GET)
+- [x] Convert response body using `responseConverter.convert(response.body())`
+- [x] Handle conversion failure: return Failure with INVALID_CONTENT
+- [x] Cache successful GET responses: if method is GET AND statusCode is 200 AND etag present AND content present
+- [x] Create CacheEntry with content, etag, timestamp
+- [x] Call `putInCache(cacheKey, entry)`
+- [x] For success: return `HttpResult.success(content.orElse(null), etag, statusCode)`
+- [x] Add `.exceptionally()` to handle exceptions
+- [x] Classify exceptions: IOException → NETWORK_ERROR, others → CONFIGURATION_ERROR
+- [x] Return Failure with appropriate error category
+- [x] Implement helper: `putInCache(String key, CacheEntry<T> entry)`
+- [x] Add entry to cache
+- [x] Call `checkAndEvict()`
+- [x] Implement helper: `checkAndEvict()`
+- [x] If cache.size() > maxCacheSize: remove oldest 10% by timestamp
+- [x] Use weakly-consistent iterator (safe for concurrent modification)
+- [x] Add unit tests for 304 handling
+- [x] Test 304 returns Success with cached content
+- [x] Test 304 preserves status code (not converted to 200)
+- [x] Test ETag extraction from all HTTP methods
+- [x] Test cache update on successful GET with ETag
+- [x] Test cache eviction when size exceeded
+- [x] Test exception handling (IOException, parsing failure)
+- [x] Run `project-builder` agent to verify build passes
+- [x] Analyze build results - if issues found, fix and re-run
 - [ ] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**

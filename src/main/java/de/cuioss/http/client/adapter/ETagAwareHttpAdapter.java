@@ -15,6 +15,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
@@ -402,9 +403,77 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             // Execute async request (no blocking!)
             return httpClient.sendAsync(request, responseConverter.getBodyHandler())
                 .thenApply(response -> {
-                    // Response handling will be implemented in Task 10
-                    // For now, return a placeholder to allow compilation
-                    throw new UnsupportedOperationException("Response handling not yet implemented - Task 10");
+                    int statusCode = response.statusCode();
+
+                    // Handle 304 Not Modified - return cached content
+                    if (statusCode == 304 && cachedEntry != null) {
+                        LOGGER.debug("304 Not Modified - returning cached content");
+                        return HttpResult.success(cachedEntry.content(), cachedEntry.etag(), 304);
+                    }
+
+                    // Extract ETag from response (all methods, not just GET)
+                    @Nullable String etag = response.headers()
+                        .firstValue("ETag")
+                        .orElse(null);
+
+                    // Convert response body
+                    Optional<T> content = responseConverter.convert(response.body());
+
+                    // Handle conversion failure
+                    if (content.isEmpty() && statusCode >= 200 && statusCode < 300) {
+                        LOGGER.warn("Response conversion failed for status {}", statusCode);
+                        return HttpResult.<T>failure(
+                            "Failed to convert response body",
+                            null,
+                            HttpErrorCategory.INVALID_CONTENT
+                        );
+                    }
+
+                    // Cache successful GET responses with ETag
+                    if (method == HttpMethod.GET && statusCode == 200 && etag != null && content.isPresent()) {
+                        CacheEntry<T> newEntry = new CacheEntry<>(content.get(), etag, System.currentTimeMillis());
+                        putInCache(cacheKey, newEntry);
+                        LOGGER.debug("Cached GET response with ETag: {}", etag);
+                    }
+
+                    // Return success for 2xx status codes
+                    if (statusCode >= 200 && statusCode < 300) {
+                        return HttpResult.success(content.orElse(null), etag, statusCode);
+                    }
+
+                    // Return failure for error status codes
+                    HttpErrorCategory errorCategory;
+                    if (statusCode >= 400 && statusCode < 500) {
+                        errorCategory = HttpErrorCategory.CLIENT_ERROR;
+                    } else if (statusCode >= 500 && statusCode < 600) {
+                        errorCategory = HttpErrorCategory.SERVER_ERROR;
+                    } else {
+                        // 3xx (other than 304), 1xx, or unknown codes
+                        errorCategory = HttpErrorCategory.INVALID_CONTENT;
+                    }
+
+                    return HttpResult.<T>failure(
+                        String.format("HTTP %d: %s", statusCode, method.methodName()),
+                        null,
+                        errorCategory
+                    );
+                })
+                .exceptionally(throwable -> {
+                    // Classify exceptions
+                    HttpErrorCategory category;
+                    if (throwable instanceof java.io.IOException) {
+                        category = HttpErrorCategory.NETWORK_ERROR;
+                        LOGGER.warn("Network error during {} request: {}", method.methodName(), throwable.getMessage());
+                    } else {
+                        category = HttpErrorCategory.CONFIGURATION_ERROR;
+                        LOGGER.error("Configuration error during {} request: {}", method.methodName(), throwable.getMessage());
+                    }
+
+                    return HttpResult.<T>failure(
+                        String.format("Request failed: %s", throwable.getMessage()),
+                        throwable,
+                        category
+                    );
                 });
 
         } catch (Exception e) {
@@ -482,6 +551,66 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         }
 
         return requestConverter.toBodyPublisher(body);
+    }
+
+    /**
+     * Adds entry to cache and triggers eviction if needed.
+     *
+     * <p>
+     * Thread-safe: ConcurrentHashMap allows concurrent puts.
+     * Eviction uses weakly-consistent iterator safe for concurrent modification.
+     * </p>
+     *
+     * @param key Cache key
+     * @param entry Cache entry to store
+     */
+    private void putInCache(String key, CacheEntry<T> entry) {
+        if (!etagCachingEnabled) {
+            return;
+        }
+
+        cache.put(key, entry);
+        checkAndEvict();
+    }
+
+    /**
+     * Evicts oldest 10% of entries when cache size exceeds maxCacheSize.
+     *
+     * <p>
+     * Thread-safe: Uses weakly-consistent iterator that doesn't throw
+     * ConcurrentModificationException. In-flight requests holding local references
+     * are unaffected by eviction.
+     * </p>
+     */
+    private void checkAndEvict() {
+        if (cache.size() <= maxCacheSize) {
+            return;
+        }
+
+        int evictionCount = maxCacheSize / 10; // Remove oldest 10%
+        if (evictionCount == 0) {
+            evictionCount = 1; // Always remove at least one entry
+        }
+
+        // Find oldest entries by timestamp
+        var oldestEntries = cache.entrySet().stream()
+            .sorted(Map.Entry.comparingByValue(
+                (e1, e2) -> Long.compare(e1.timestamp(), e2.timestamp())
+            ))
+            .limit(evictionCount)
+            .map(Map.Entry::getKey)
+            .toList();
+
+        // Remove oldest entries
+        int removed = 0;
+        for (String key : oldestEntries) {
+            if (cache.remove(key) != null) {
+                removed++;
+            }
+        }
+
+        LOGGER.debug("Cache eviction: removed {} oldest entries (cache size: {} → {})",
+                     removed, cache.size() + removed, cache.size());
     }
 
     /**
