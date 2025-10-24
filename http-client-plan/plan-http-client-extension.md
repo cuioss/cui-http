@@ -773,7 +773,7 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - [x] Document token refresh cache bloat solution (CacheKeyHeaderFilter.excluding)
 - [x] Run `project-builder` agent to verify build passes
 - [x] Analyze build results - if issues found, fix and re-run
-- [ ] Commit changes using `commit-current-changes` agent
+- [x] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
 - All public APIs have complete Javadoc
@@ -795,18 +795,18 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - `http-client-plan/06-implementation-plan.adoc` lines 162-195
 
 **Checklist:**
-- [ ] Read and understand all references above
-- [ ] If unclear, ask user for clarification (DO NOT guess)
-- [ ] Create security integration examples in Javadoc
-- [ ] Document header validation using HTTPHeaderValidationPipeline
-- [ ] Document body validation before POST/PUT
-- [ ] Document Content-Type validation in converters
-- [ ] Add example: ValidatingHttpAdapter decorator pattern
-- [ ] Document when to validate (before request, not in adapter)
-- [ ] Document URL validation (already integrated in HttpHandler)
-- [ ] Add security best practices section to package-info.java
-- [ ] Run `project-builder` agent to verify build passes
-- [ ] Analyze build results - if issues found, fix and re-run
+- [x] Read and understand all references above
+- [x] If unclear, ask user for clarification (DO NOT guess)
+- [x] Create security integration examples in Javadoc
+- [x] Document header validation using HTTPHeaderValidationPipeline
+- [x] Document body validation before POST/PUT
+- [x] Document Content-Type validation in converters
+- [x] Add example: ValidatingHttpAdapter decorator pattern
+- [x] Document when to validate (before request, not in adapter)
+- [x] Document URL validation (already integrated in HttpHandler)
+- [x] Add security best practices section to package-info.java
+- [x] Run `project-builder` agent to verify build passes
+- [x] Analyze build results - if issues found, fix and re-run
 - [ ] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**

@@ -225,23 +225,185 @@
  *
  * <h2>Security Integration</h2>
  *
- * <p>Adapters integrate with existing HTTP security validation:
- * <ul>
- *   <li><b>URL validation:</b> Already performed by {@link de.cuioss.http.client.handler.HttpHandler HttpHandler}</li>
- *   <li><b>Header validation:</b> Use {@code HTTPHeaderValidationPipeline} before passing headers to adapter</li>
- *   <li><b>Body validation:</b> Validate in converter's {@code convert()} method</li>
- * </ul>
+ * <p>Adapters integrate with existing HTTP security validation pipelines. <b>IMPORTANT:</b> Validation happens
+ * BEFORE passing data to the adapter, not inside the adapter itself. This follows the fail-secure principle.
  *
- * <p>Example:
+ * <h3>URL Validation (Automatic)</h3>
+ *
+ * <p>URL security validation is performed automatically by {@link de.cuioss.http.client.handler.HttpHandler HttpHandler}
+ * during construction. All URLs are validated for directory traversal, CVE exploits, and XSS attacks.
+ *
  * <pre>{@code
- * // Validate headers before request
- * HTTPHeaderValidationPipeline headerValidator = new HTTPHeaderValidationPipeline();
- * headerValidator.validate(headerName).orElseThrow();  // Throws on injection attack
+ * // URL validation happens here - throws UrlSecurityException on attack
+ * HttpHandler handler = HttpHandler.builder()
+ *     .uri("https://api.example.com/users")  // Validated automatically
+ *     .build();
+ * }</pre>
  *
- * // Then pass to adapter
- * Map<String, String> headers = Map.of("X-Custom", headerValue);
+ * <h3>Header Validation (Manual, Before Request)</h3>
+ *
+ * <p>Custom headers must be validated BEFORE passing to the adapter using {@code HTTPHeaderValidationPipeline}.
+ * This prevents header injection attacks, CRLF injection, and HTTP request smuggling.
+ *
+ * <pre>{@code
+ * import de.cuioss.http.security.pipeline.HTTPHeaderValidationPipeline;
+ * import de.cuioss.http.security.UrlSecurityException;
+ *
+ * HTTPHeaderValidationPipeline headerValidator = new HTTPHeaderValidationPipeline();
+ *
+ * // Validate each user-provided header value
+ * Map<String, String> headers = new HashMap<>();
+ * headers.put("Authorization", "Bearer " + token);
+ * headers.put("X-Custom-Header", userProvidedValue);
+ *
+ * for (Map.Entry<String, String> entry : headers.entrySet()) {
+ *     Optional<String> validated = headerValidator.validate(entry.getValue());
+ *     if (validated.isEmpty()) {
+ *         throw new UrlSecurityException("Invalid header: " + entry.getKey());
+ *     }
+ * }
+ *
+ * // Safe to use with adapter
  * HttpResult<User> result = adapter.get(headers).join();
  * }</pre>
+ *
+ * <p><b>Headers to validate:</b> Authorization, X-Request-ID, X-Correlation-ID, any custom headers from user input.
+ * <br><b>Headers NOT to validate:</b> Content-Type (set by converter), If-None-Match (set by adapter), User-Agent (set by HttpClient).
+ *
+ * <h3>Request Body Validation (Manual, Before Request)</h3>
+ *
+ * <p>POST/PUT/PATCH request bodies must be validated BEFORE sending using {@code URLParameterValidationPipeline}.
+ * This prevents SQL injection, XSS scripts, path traversal, and malicious Unicode.
+ *
+ * <pre>{@code
+ * import de.cuioss.http.security.pipeline.URLParameterValidationPipeline;
+ *
+ * URLParameterValidationPipeline bodyValidator = new URLParameterValidationPipeline();
+ *
+ * // Build JSON body
+ * String jsonBody = buildUserJson(user);
+ *
+ * // Validate before sending
+ * Optional<String> validatedJson = bodyValidator.validate(jsonBody);
+ * if (validatedJson.isEmpty()) {
+ *     throw new UrlSecurityException("Request body contains invalid content");
+ * }
+ *
+ * // Send validated content
+ * HttpResult<User> result = adapter.post(userConverter, validatedJson.get());
+ * }</pre>
+ *
+ * <h3>Content-Type Validation (Automatic, in Converter)</h3>
+ *
+ * <p>Response Content-Type validation happens in the converter's {@code convert()} method. If the server
+ * returns unexpected Content-Type or malformed data, the converter returns {@code Optional.empty()},
+ * resulting in {@code HttpErrorCategory.INVALID_CONTENT}.
+ *
+ * <pre>{@code
+ * public class UserConverter extends StringContentConverter<User> {
+ *     @Override
+ *     protected Optional<User> convertString(String rawContent) {
+ *         try {
+ *             return Optional.ofNullable(parseJson(rawContent));
+ *         } catch (JsonParseException e) {
+ *             // Parsing failure → returns Optional.empty()
+ *             // Adapter converts to INVALID_CONTENT error
+ *             return Optional.empty();
+ *         }
+ *     }
+ *
+ *     @Override
+ *     public ContentType contentType() {
+ *         return ContentType.APPLICATION_JSON;  // Expected type
+ *     }
+ * }
+ * }</pre>
+ *
+ * <h3>Example: ValidatingHttpAdapter Decorator Pattern</h3>
+ *
+ * <p>For automatic validation, wrap the adapter with a validating decorator:
+ *
+ * <pre>{@code
+ * import de.cuioss.http.client.adapter.HttpAdapter;
+ * import de.cuioss.http.security.pipeline.HTTPHeaderValidationPipeline;
+ * import de.cuioss.http.security.pipeline.URLParameterValidationPipeline;
+ *
+ * public class ValidatingHttpAdapter<T> implements HttpAdapter<T> {
+ *     private final HttpAdapter<T> delegate;
+ *     private final URLParameterValidationPipeline bodyValidator;
+ *     private final HTTPHeaderValidationPipeline headerValidator;
+ *
+ *     public ValidatingHttpAdapter(HttpAdapter<T> delegate) {
+ *         this.delegate = delegate;
+ *         this.bodyValidator = new URLParameterValidationPipeline();
+ *         this.headerValidator = new HTTPHeaderValidationPipeline();
+ *     }
+ *
+ *     @Override
+ *     public CompletableFuture<HttpResult<T>> get(Map<String, String> headers) {
+ *         // Validate headers before delegating
+ *         validateHeaders(headers);
+ *         return delegate.get(headers);
+ *     }
+ *
+ *     @Override
+ *     public CompletableFuture<HttpResult<T>> post(@Nullable T body, Map<String, String> headers) {
+ *         // Validate headers and body before delegating
+ *         validateHeaders(headers);
+ *         // Body validation would require serialization - depends on use case
+ *         return delegate.post(body, headers);
+ *     }
+ *
+ *     private void validateHeaders(Map<String, String> headers) {
+ *         for (Map.Entry<String, String> entry : headers.entrySet()) {
+ *             Optional<String> validated = headerValidator.validate(entry.getValue());
+ *             if (validated.isEmpty()) {
+ *                 throw new UrlSecurityException("Invalid header: " + entry.getKey());
+ *             }
+ *         }
+ *     }
+ *     // ... other methods
+ * }
+ *
+ * // Usage
+ * HttpAdapter<User> base = ETagAwareHttpAdapter.<User>builder()
+ *     .httpHandler(handler)
+ *     .responseConverter(userConverter)
+ *     .build();
+ *
+ * HttpAdapter<User> validating = new ValidatingHttpAdapter<>(base);
+ * HttpAdapter<User> resilient = ResilientHttpAdapter.wrap(validating);
+ *
+ * // Now all requests automatically validated
+ * HttpResult<User> result = resilient.get(headers).join();
+ * }</pre>
+ *
+ * <h3>Security Best Practices</h3>
+ *
+ * <ul>
+ *   <li><b>Always use HTTPS:</b> Set {@code sslContextProvider} with {@code trustAllCertificates(false)}</li>
+ *   <li><b>Validate ALL user input:</b> Headers, body content, URL parameters - never trust user input</li>
+ *   <li><b>Configure timeouts:</b> Use {@code connectionTimeoutSeconds} and {@code readTimeoutSeconds} to prevent resource exhaustion</li>
+ *   <li><b>Disable ETag caching for sensitive data:</b> Use {@code etagCachingEnabled(false)} for PII, credentials, financial data</li>
+ *   <li><b>Limit request body size:</b> Check content length before sending to prevent memory exhaustion</li>
+ *   <li><b>Use reasonable retry limits:</b> Max 3-5 attempts to prevent retry amplification attacks</li>
+ *   <li><b>Sanitize logs:</b> Redact Authorization headers, API keys, PII from debug logs</li>
+ *   <li><b>Don't retry authentication failures:</b> 4xx errors indicate client problems, not transient failures</li>
+ * </ul>
+ *
+ * <h3>Security Checklist</h3>
+ *
+ * <p>Before deploying to production, verify:
+ * <ul>
+ *   <li>All request bodies validated with {@code URLParameterValidationPipeline}</li>
+ *   <li>All custom headers validated with {@code HTTPHeaderValidationPipeline}</li>
+ *   <li>HTTPS enabled with certificate verification (not {@code trustAllCertificates(true)})</li>
+ *   <li>Connection and read timeouts configured</li>
+ *   <li>Request size limits enforced (e.g., max 10 MB)</li>
+ *   <li>ETag caching disabled for sensitive endpoints ({@code etagCachingEnabled(false)})</li>
+ *   <li>Retry strategy configured (max 3-5 attempts, exponential backoff, jitter)</li>
+ *   <li>Logging sanitized (no PII, credentials, or sensitive data in logs)</li>
+ * </ul>
  *
  * @see de.cuioss.http.client.adapter.HttpAdapter
  * @see de.cuioss.http.client.adapter.ETagAwareHttpAdapter
