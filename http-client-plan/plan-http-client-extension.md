@@ -158,7 +158,7 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - [x] Test toBodyPublisher() throws IllegalArgumentException on serialization failure
 - [x] Run `project-builder` agent to verify build passes
 - [x] Analyze build results - if issues found, fix and re-run
-- [ ] Commit changes using `commit-current-changes` agent
+- [x] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
 - HttpRequestConverter interface exists with two methods
@@ -178,21 +178,21 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - Package: `de.cuioss.http.client.converter`
 
 **Checklist:**
-- [ ] Read and understand all references above
-- [ ] If unclear, ask user for clarification (DO NOT guess)
-- [ ] Create `VoidResponseConverter` class in `src/main/java/de/cuioss/http/client/converter/VoidResponseConverter.java`
-- [ ] Implement `HttpResponseConverter<Void>` interface
-- [ ] Add singleton INSTANCE field
-- [ ] Implement convert() to return Optional.empty() always
-- [ ] Implement getBodyHandler() to return BodyHandlers.discarding()
-- [ ] Implement contentType() to return APPLICATION_JSON (doesn't matter, body discarded)
-- [ ] Make constructor private (use INSTANCE)
-- [ ] Add comprehensive Javadoc with DELETE/HEAD use cases
-- [ ] Create unit tests in `VoidResponseConverterTest`
-- [ ] Test convert() always returns Optional.empty()
-- [ ] Test getBodyHandler() returns discarding handler
-- [ ] Run `project-builder` agent to verify build passes
-- [ ] Analyze build results - if issues found, fix and re-run
+- [x] Read and understand all references above
+- [x] If unclear, ask user for clarification (DO NOT guess)
+- [x] Create `VoidResponseConverter` class in `src/main/java/de/cuioss/http/client/converter/VoidResponseConverter.java`
+- [x] Implement `HttpResponseConverter<Void>` interface
+- [x] Add singleton INSTANCE field
+- [x] Implement convert() to return Optional.empty() always
+- [x] Implement getBodyHandler() to return BodyHandlers.discarding()
+- [x] Implement contentType() to return APPLICATION_JSON (doesn't matter, body discarded)
+- [x] Make constructor private (use INSTANCE)
+- [x] Add comprehensive Javadoc with DELETE/HEAD use cases
+- [x] Create unit tests in `VoidResponseConverterTest`
+- [x] Test convert() always returns Optional.empty()
+- [x] Test getBodyHandler() returns discarding handler
+- [x] Run `project-builder` agent to verify build passes
+- [x] Analyze build results - if issues found, fix and re-run
 - [ ] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
