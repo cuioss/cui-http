@@ -237,7 +237,7 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - [x] Test composition (and, or, negate)
 - [x] Run `project-builder` agent to verify build passes
 - [x] Analyze build results - if issues found, fix and re-run
-- [ ] Commit changes using `commit-current-changes` agent
+- [x] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
 - CacheKeyHeaderFilter interface exists with all factory methods
@@ -259,22 +259,22 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - Package: `de.cuioss.http.client.adapter`
 
 **Checklist:**
-- [ ] Read and understand all references above
-- [ ] If unclear, ask user for clarification (DO NOT guess)
-- [ ] Create `HttpAdapter<T>` interface in `src/main/java/de/cuioss/http/client/adapter/HttpAdapter.java`
-- [ ] Add async methods: `get()`, `post()`, `put()`, `patch()`, `delete()`, `head()`, `options()`
-- [ ] All async methods return `CompletableFuture<HttpResult<T>>`
-- [ ] Add overloads for: no headers, with headers Map
-- [ ] Add body methods with same type T (requires configured request converter)
-- [ ] Add body methods with different type R (explicit converter parameter)
-- [ ] Add blocking convenience methods: `getBlocking()`, `postBlocking()`, etc.
-- [ ] Blocking methods use default implementation calling `asyncMethod().join()`
-- [ ] Add comprehensive Javadoc explaining async-first philosophy
-- [ ] Document why async methods don't have "Async" suffix
-- [ ] Create basic interface tests in `HttpAdapterTest`
-- [ ] Test blocking methods delegate to async methods
-- [ ] Run `project-builder` agent to verify build passes
-- [ ] Analyze build results - if issues found, fix and re-run
+- [x] Read and understand all references above
+- [x] If unclear, ask user for clarification (DO NOT guess)
+- [x] Create `HttpAdapter<T>` interface in `src/main/java/de/cuioss/http/client/adapter/HttpAdapter.java`
+- [x] Add async methods: `get()`, `post()`, `put()`, `patch()`, `delete()`, `head()`, `options()`
+- [x] All async methods return `CompletableFuture<HttpResult<T>>`
+- [x] Add overloads for: no headers, with headers Map
+- [x] Add body methods with same type T (requires configured request converter)
+- [x] Add body methods with different type R (explicit converter parameter)
+- [x] Add blocking convenience methods: `getBlocking()`, `postBlocking()`, etc.
+- [x] Blocking methods use default implementation calling `asyncMethod().join()`
+- [x] Add comprehensive Javadoc explaining async-first philosophy
+- [x] Document why async methods don't have "Async" suffix
+- [x] Create basic interface tests in `HttpAdapterTest`
+- [x] Test blocking methods delegate to async methods
+- [x] Run `project-builder` agent to verify build passes
+- [x] Analyze build results - if issues found, fix and re-run
 - [ ] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
