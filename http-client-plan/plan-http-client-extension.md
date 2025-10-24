@@ -633,7 +633,7 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - [x] Verify all other required exports exist
 - [x] Run `project-builder` agent to verify build passes
 - [x] Analyze build results - if issues found, fix and re-run
-- [ ] Commit changes using `commit-current-changes` agent
+- [x] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
 - de.cuioss.http.client.adapter exported
