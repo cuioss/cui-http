@@ -1,3 +1,18 @@
+/*
+ * Copyright © 2025 CUI-OpenSource-Software (info@cuioss.de)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package de.cuioss.http.client.converter;
 
 import de.cuioss.http.client.ContentType;
@@ -54,7 +69,7 @@ class HttpRequestConverterTest {
             if (content == null) {
                 return HttpRequest.BodyPublishers.noBody();
             }
-            throw new IllegalArgumentException("Serialization failed", new RuntimeException("Underlying cause"));
+            throw new IllegalArgumentException("Serialization failed", /*~~(TODO: Use specific not RuntimeException. Suppress: // cui-rewrite:disable InvalidExceptionUsageRecipe)~~>*/new RuntimeException("Underlying cause"));
         }
 
         @Override
@@ -64,7 +79,7 @@ class HttpRequestConverterTest {
     }
 
     @Test
-    void testToBodyPublisher_returnsNoBodyForNull() {
+    void toBodyPublisherReturnsNoBodyForNull() {
         // GIVEN
         var converter = new StringRequestConverter();
 
@@ -78,7 +93,7 @@ class HttpRequestConverterTest {
     }
 
     @Test
-    void testToBodyPublisher_returnsBodyPublisherForValidContent() {
+    void toBodyPublisherReturnsBodyPublisherForValidContent() {
         // GIVEN
         var converter = new StringRequestConverter();
         String content = "test content";
@@ -92,16 +107,16 @@ class HttpRequestConverterTest {
     }
 
     @Test
-    void testToBodyPublisher_throwsIllegalArgumentExceptionOnSerializationFailure() {
+    void toBodyPublisherThrowsIllegalArgumentExceptionOnSerializationFailure() {
         // GIVEN
         var converter = new FailingRequestConverter();
         Object content = new Object();
 
         // WHEN & THEN
         IllegalArgumentException exception = assertThrows(
-            IllegalArgumentException.class,
-            () -> converter.toBodyPublisher(content),
-            "Should throw IllegalArgumentException on serialization failure"
+                IllegalArgumentException.class,
+                () -> converter.toBodyPublisher(content),
+                "Should throw IllegalArgumentException on serialization failure"
         );
 
         assertEquals("Serialization failed", exception.getMessage());
@@ -109,7 +124,7 @@ class HttpRequestConverterTest {
     }
 
     @Test
-    void testToBodyPublisher_doesNotThrowForNull_evenWithFailingConverter() {
+    void toBodyPublisherDoesNotThrowForNullEvenWithFailingConverter() {
         // GIVEN
         var converter = new FailingRequestConverter();
 
@@ -122,7 +137,7 @@ class HttpRequestConverterTest {
     }
 
     @Test
-    void testContentType_returnsNonNull() {
+    void contentTypeReturnsNonNull() {
         // GIVEN
         var converter = new StringRequestConverter();
 
@@ -135,7 +150,7 @@ class HttpRequestConverterTest {
     }
 
     @Test
-    void testContentType_jsonConverter() {
+    void contentTypeJsonConverter() {
         // GIVEN
         var converter = new FailingRequestConverter();
 
@@ -147,23 +162,23 @@ class HttpRequestConverterTest {
     }
 
     @Test
-    void testToBodyPublisher_withSimulatedFailure() {
+    void toBodyPublisherWithSimulatedFailure() {
         // GIVEN
         var converter = new StringRequestConverter(true);
         String content = "will fail";
 
         // WHEN & THEN
         IllegalArgumentException exception = assertThrows(
-            IllegalArgumentException.class,
-            () -> converter.toBodyPublisher(content),
-            "Should throw on serialization failure"
+                IllegalArgumentException.class,
+                () -> converter.toBodyPublisher(content),
+                "Should throw on serialization failure"
         );
 
         assertEquals("Simulated serialization failure", exception.getMessage());
     }
 
     @Test
-    void testToBodyPublisher_emptyStringIsNotNull() {
+    void toBodyPublisherEmptyStringIsNotNull() {
         // GIVEN
         var converter = new StringRequestConverter();
         String content = "";

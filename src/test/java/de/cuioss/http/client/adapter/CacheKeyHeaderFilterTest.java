@@ -1,9 +1,24 @@
+/*
+ * Copyright © 2025 CUI-OpenSource-Software (info@cuioss.de)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package de.cuioss.http.client.adapter;
+
+import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for {@link CacheKeyHeaderFilter}.
@@ -15,7 +30,7 @@ class CacheKeyHeaderFilterTest {
     // ========== PRESET FILTERS TESTS ==========
 
     @Test
-    void testAll_includesAllHeaders() {
+    void allIncludesAllHeaders() {
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter.ALL;
 
         assertTrue(filter.includeInCacheKey("Authorization"));
@@ -26,7 +41,7 @@ class CacheKeyHeaderFilterTest {
     }
 
     @Test
-    void testNone_excludesAllHeaders() {
+    void noneExcludesAllHeaders() {
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter.NONE;
 
         assertFalse(filter.includeInCacheKey("Authorization"));
@@ -39,7 +54,7 @@ class CacheKeyHeaderFilterTest {
     // ========== EXCLUDING TESTS ==========
 
     @Test
-    void testExcluding_createsBlacklistFilter() {
+    void excludingCreatesBlacklistFilter() {
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter.excluding("Authorization", "X-Request-ID");
 
         // Excluded headers
@@ -53,7 +68,7 @@ class CacheKeyHeaderFilterTest {
     }
 
     @Test
-    void testExcluding_caseInsensitive() {
+    void excludingCaseInsensitive() {
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter.excluding("authorization");
 
         assertFalse(filter.includeInCacheKey("Authorization"));
@@ -63,7 +78,7 @@ class CacheKeyHeaderFilterTest {
     }
 
     @Test
-    void testExcluding_emptyArray() {
+    void excludingEmptyArray() {
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter.excluding();
 
         // No headers excluded, all included
@@ -75,7 +90,7 @@ class CacheKeyHeaderFilterTest {
     // ========== INCLUDING TESTS ==========
 
     @Test
-    void testIncluding_createsWhitelistFilter() {
+    void includingCreatesWhitelistFilter() {
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter.including("Accept-Language", "Accept-Encoding");
 
         // Included headers
@@ -89,7 +104,7 @@ class CacheKeyHeaderFilterTest {
     }
 
     @Test
-    void testIncluding_caseInsensitive() {
+    void includingCaseInsensitive() {
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter.including("accept-language");
 
         assertTrue(filter.includeInCacheKey("Accept-Language"));
@@ -99,7 +114,7 @@ class CacheKeyHeaderFilterTest {
     }
 
     @Test
-    void testIncluding_emptyArray() {
+    void includingEmptyArray() {
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter.including();
 
         // No headers included, all excluded
@@ -111,7 +126,7 @@ class CacheKeyHeaderFilterTest {
     // ========== EXCLUDING PREFIX TESTS ==========
 
     @Test
-    void testExcludingPrefix_filtersHeadersByPrefix() {
+    void excludingPrefixFiltersHeadersByPrefix() {
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter.excludingPrefix("X-");
 
         // Excluded (X- prefix)
@@ -126,7 +141,7 @@ class CacheKeyHeaderFilterTest {
     }
 
     @Test
-    void testExcludingPrefix_caseInsensitive() {
+    void excludingPrefixCaseInsensitive() {
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter.excludingPrefix("x-");
 
         assertFalse(filter.includeInCacheKey("X-Request-ID"));
@@ -135,7 +150,7 @@ class CacheKeyHeaderFilterTest {
     }
 
     @Test
-    void testExcludingPrefix_exactMatch() {
+    void excludingPrefixExactMatch() {
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter.excludingPrefix("Accept");
 
         // Excluded (starts with Accept)
@@ -151,9 +166,9 @@ class CacheKeyHeaderFilterTest {
     // ========== MATCHING TESTS ==========
 
     @Test
-    void testMatching_customPredicate() {
+    void matchingCustomPredicate() {
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter.matching(
-            header -> !header.startsWith("X-") && !header.equals("Authorization")
+                header -> !header.startsWith("X-") && !"Authorization".equals(header)
         );
 
         // Excluded by predicate
@@ -166,9 +181,9 @@ class CacheKeyHeaderFilterTest {
     }
 
     @Test
-    void testMatching_complexPredicate() {
+    void matchingComplexPredicate() {
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter.matching(
-            header -> header.startsWith("Accept-") || header.equals("Content-Type")
+                header -> header.startsWith("Accept-") || "Content-Type".equals(header)
         );
 
         // Included by predicate
@@ -184,10 +199,10 @@ class CacheKeyHeaderFilterTest {
     // ========== COMPOSITION: AND TESTS ==========
 
     @Test
-    void testAnd_combinesFiltersWithLogicalAnd() {
+    void andCombinesFiltersWithLogicalAnd() {
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter
-            .excluding("Authorization")
-            .and(CacheKeyHeaderFilter.excludingPrefix("X-"));
+                .excluding("Authorization")
+                .and(CacheKeyHeaderFilter.excludingPrefix("X-"));
 
         // Excluded by first filter (Authorization)
         assertFalse(filter.includeInCacheKey("Authorization"));
@@ -202,10 +217,10 @@ class CacheKeyHeaderFilterTest {
     }
 
     @Test
-    void testAnd_requiresBothTrue() {
+    void andRequiresBothTrue() {
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter
-            .including("Accept-Language", "Authorization")
-            .and(CacheKeyHeaderFilter.excluding("Authorization"));
+                .including("Accept-Language", "Authorization")
+                .and(CacheKeyHeaderFilter.excluding("Authorization"));
 
         // Authorization: included by first, excluded by second → false
         assertFalse(filter.includeInCacheKey("Authorization"));
@@ -220,10 +235,10 @@ class CacheKeyHeaderFilterTest {
     // ========== COMPOSITION: OR TESTS ==========
 
     @Test
-    void testOr_combinesFiltersWithLogicalOr() {
+    void orCombinesFiltersWithLogicalOr() {
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter
-            .including("Accept-Language")
-            .or(CacheKeyHeaderFilter.including("Authorization"));
+                .including("Accept-Language")
+                .or(CacheKeyHeaderFilter.including("Authorization"));
 
         // Included by first filter
         assertTrue(filter.includeInCacheKey("Accept-Language"));
@@ -237,10 +252,10 @@ class CacheKeyHeaderFilterTest {
     }
 
     @Test
-    void testOr_requiresEitherTrue() {
+    void orRequiresEitherTrue() {
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter
-            .excluding("Authorization")
-            .or(CacheKeyHeaderFilter.excludingPrefix("X-"));
+                .excluding("Authorization")
+                .or(CacheKeyHeaderFilter.excludingPrefix("X-"));
 
         // Excluded by first, included by second → true
         assertTrue(filter.includeInCacheKey("Authorization"));
@@ -255,10 +270,10 @@ class CacheKeyHeaderFilterTest {
     // ========== COMPOSITION: NEGATE TESTS ==========
 
     @Test
-    void testNegate_invertsFilter() {
+    void negateInvertsFilter() {
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter
-            .including("Accept-Language")
-            .negate();
+                .including("Accept-Language")
+                .negate();
 
         // Was included, now excluded
         assertFalse(filter.includeInCacheKey("Accept-Language"));
@@ -270,7 +285,7 @@ class CacheKeyHeaderFilterTest {
     }
 
     @Test
-    void testNegate_doubleNegation() {
+    void negateDoubleNegation() {
         CacheKeyHeaderFilter original = CacheKeyHeaderFilter.excluding("Authorization");
         CacheKeyHeaderFilter doubleNegated = original.negate().negate();
 
@@ -282,12 +297,12 @@ class CacheKeyHeaderFilterTest {
     // ========== COMPLEX COMPOSITION TESTS ==========
 
     @Test
-    void testComplexComposition_andOrNegate() {
+    void complexCompositionAndOrNegate() {
         // Include Accept-* headers, exclude Authorization, but always include Content-Type
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter
-            .matching(header -> header.startsWith("Accept-"))
-            .and(CacheKeyHeaderFilter.excluding("Authorization"))
-            .or(CacheKeyHeaderFilter.including("Content-Type"));
+                .matching(header -> header.startsWith("Accept-"))
+                .and(CacheKeyHeaderFilter.excluding("Authorization"))
+                .or(CacheKeyHeaderFilter.including("Content-Type"));
 
         // Accept-* headers (included by first part)
         assertTrue(filter.includeInCacheKey("Accept-Language"));
@@ -304,11 +319,11 @@ class CacheKeyHeaderFilterTest {
     }
 
     @Test
-    void testComplexComposition_multipleExclusions() {
+    void complexCompositionMultipleExclusions() {
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter
-            .excluding("Authorization")
-            .and(CacheKeyHeaderFilter.excludingPrefix("X-"))
-            .and(CacheKeyHeaderFilter.excluding("User-Agent"));
+                .excluding("Authorization")
+                .and(CacheKeyHeaderFilter.excludingPrefix("X-"))
+                .and(CacheKeyHeaderFilter.excluding("User-Agent"));
 
         // All exclusions respected
         assertFalse(filter.includeInCacheKey("Authorization"));
@@ -323,7 +338,7 @@ class CacheKeyHeaderFilterTest {
     // ========== REAL-WORLD SCENARIOS ==========
 
     @Test
-    void testRealWorldScenario_tokenRefreshCacheBloatSolution() {
+    void realWorldScenarioTokenRefreshCacheBloatSolution() {
         // Exclude Authorization to prevent cache bloat on token refresh,
         // but keep content-affecting headers
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter.excluding("Authorization");
@@ -338,11 +353,11 @@ class CacheKeyHeaderFilterTest {
     }
 
     @Test
-    void testRealWorldScenario_excludeTraceHeaders() {
+    void realWorldScenarioExcludeTraceHeaders() {
         // Exclude all trace/debug headers
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter
-            .excluding("Authorization")
-            .and(CacheKeyHeaderFilter.excludingPrefix("X-"));
+                .excluding("Authorization")
+                .and(CacheKeyHeaderFilter.excludingPrefix("X-"));
 
         // Trace headers excluded
         assertFalse(filter.includeInCacheKey("X-Request-ID"));
@@ -358,12 +373,12 @@ class CacheKeyHeaderFilterTest {
     }
 
     @Test
-    void testRealWorldScenario_contentNegotiationOnly() {
+    void realWorldScenarioContentNegotiationOnly() {
         // Include only content negotiation headers
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter.including(
-            "Accept-Language",
-            "Accept-Encoding",
-            "Accept-Charset"
+                "Accept-Language",
+                "Accept-Encoding",
+                "Accept-Charset"
         );
 
         // Content negotiation headers included

@@ -1,14 +1,32 @@
+/*
+ * Copyright © 2025 CUI-OpenSource-Software (info@cuioss.de)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package de.cuioss.http.client.adapter;
 
 import de.cuioss.http.client.ContentType;
+import de.cuioss.http.client.converter.HttpRequestConverter;
 import de.cuioss.http.client.converter.HttpResponseConverter;
-import de.cuioss.http.client.converter.VoidResponseConverter;
 import de.cuioss.http.client.handler.HttpHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -24,85 +42,85 @@ class ETagAwareHttpAdapterTest {
     void setUp() {
         // Create test handler with mock URI
         handler = HttpHandler.builder()
-            .uri("https://api.example.com/test")
-            .build();
+                .uri("https://api.example.com/test")
+                .build();
 
         responseConverter = new TestResponseConverter();
     }
 
     @Test
-    void testBuilderRequiresHttpHandler() {
+    void builderRequiresHttpHandler() {
         var builder = ETagAwareHttpAdapter.<String>builder()
-            .responseConverter(responseConverter);
+                .responseConverter(responseConverter);
 
         assertThrows(NullPointerException.class, builder::build,
-                     "Builder should require httpHandler");
+                "Builder should require httpHandler");
     }
 
     @Test
-    void testBuilderRequiresResponseConverter() {
+    void builderRequiresResponseConverter() {
         var builder = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler);
+                .httpHandler(handler);
 
         assertThrows(NullPointerException.class, builder::build,
-                     "Builder should require responseConverter");
+                "Builder should require responseConverter");
     }
 
     @Test
-    void testBuilderDefaultValues() {
+    void builderDefaultValues() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .build();
 
         assertNotNull(adapter, "Adapter should be built with defaults");
     }
 
     @Test
-    void testBuilderWithAllParameters() {
+    void builderWithAllParameters() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .requestConverter(new TestRequestConverter())
-            .etagCachingEnabled(false)
-            .cacheKeyHeaderFilter(CacheKeyHeaderFilter.NONE)
-            .maxCacheSize(500)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .requestConverter(new TestRequestConverter())
+                .etagCachingEnabled(false)
+                .cacheKeyHeaderFilter(CacheKeyHeaderFilter.NONE)
+                .maxCacheSize(500)
+                .build();
 
         assertNotNull(adapter, "Adapter should be built with all parameters");
     }
 
     @Test
-    void testBuilderValidatesMaxCacheSize() {
+    void builderValidatesMaxCacheSize() {
         var builder = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter);
+                .httpHandler(handler)
+                .responseConverter(responseConverter);
 
         assertThrows(IllegalArgumentException.class, () -> builder.maxCacheSize(0),
-                     "Builder should reject zero maxCacheSize");
+                "Builder should reject zero maxCacheSize");
         assertThrows(IllegalArgumentException.class, () -> builder.maxCacheSize(-1),
-                     "Builder should reject negative maxCacheSize");
+                "Builder should reject negative maxCacheSize");
     }
 
     @Test
-    void testBuilderValidatesCacheKeyHeaderFilter() {
+    void builderValidatesCacheKeyHeaderFilter() {
         var builder = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter);
+                .httpHandler(handler)
+                .responseConverter(responseConverter);
 
         assertThrows(NullPointerException.class, () -> builder.cacheKeyHeaderFilter(null),
-                     "Builder should reject null cacheKeyHeaderFilter");
+                "Builder should reject null cacheKeyHeaderFilter");
     }
 
     @Test
-    void testStatusCodeOnlyFactory() {
+    void statusCodeOnlyFactory() {
         HttpAdapter<Void> adapter = ETagAwareHttpAdapter.statusCodeOnly(handler);
 
         assertNotNull(adapter, "statusCodeOnly should create adapter");
     }
 
     @Test
-    void testStatusCodeOnlyUsesVoidConverter() {
+    void statusCodeOnlyUsesVoidConverter() {
         // statusCodeOnly should use VoidResponseConverter
         HttpAdapter<Void> adapter = ETagAwareHttpAdapter.statusCodeOnly(handler);
 
@@ -111,48 +129,48 @@ class ETagAwareHttpAdapterTest {
     }
 
     @Test
-    void testClearETagCache() {
+    void clearETagCache() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .build();
 
         // Should not throw even on empty cache
         assertDoesNotThrow(adapter::clearETagCache);
     }
 
     @Test
-    void testBuilderChaining() {
+    void builderChaining() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .etagCachingEnabled(true)
-            .cacheKeyHeaderFilter(CacheKeyHeaderFilter.ALL)
-            .maxCacheSize(1000)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .etagCachingEnabled(true)
+                .cacheKeyHeaderFilter(CacheKeyHeaderFilter.ALL)
+                .maxCacheSize(1000)
+                .build();
 
         assertNotNull(adapter, "Builder chaining should work");
     }
 
     @Test
-    void testBuilderWithRequestConverter() {
+    void builderWithRequestConverter() {
         var requestConverter = new TestRequestConverter();
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .requestConverter(requestConverter)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .requestConverter(requestConverter)
+                .build();
 
         assertNotNull(adapter, "Builder should accept request converter");
     }
 
     @Test
-    void testBuilderWithNullRequestConverter() {
+    void builderWithNullRequestConverter() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .requestConverter(null)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .requestConverter(null)
+                .build();
 
         assertNotNull(adapter, "Builder should accept null request converter");
     }
@@ -160,11 +178,11 @@ class ETagAwareHttpAdapterTest {
     // === Task 9: Request Execution Tests ===
 
     @Test
-    void testGetMethodCreatesRequest() {
+    void getMethodCreatesRequest() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .build();
 
         // GET should create a CompletableFuture
         var future = adapter.get();
@@ -172,24 +190,24 @@ class ETagAwareHttpAdapterTest {
     }
 
     @Test
-    void testGetMethodWithHeadersCreatesRequest() {
+    void getMethodWithHeadersCreatesRequest() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .build();
 
-        var headers = java.util.Map.of("Accept", "application/json");
+        var headers = Map.of("Accept", "application/json");
         var future = adapter.get(headers);
         assertNotNull(future, "GET with headers should return non-null CompletableFuture");
     }
 
     @Test
-    void testSafeMethodsRejectBody() {
+    void safeMethodsRejectBody() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .requestConverter(new TestRequestConverter())
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .requestConverter(new TestRequestConverter())
+                .build();
 
         // Note: We can't directly test send() as it's private, but we can verify
         // that the adapter is properly constructed for safe method validation
@@ -197,81 +215,81 @@ class ETagAwareHttpAdapterTest {
     }
 
     @Test
-    void testCacheKeyGenerationWithAllFilter() {
+    void cacheKeyGenerationWithAllFilter() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .cacheKeyHeaderFilter(CacheKeyHeaderFilter.ALL)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .cacheKeyHeaderFilter(CacheKeyHeaderFilter.ALL)
+                .build();
 
         assertNotNull(adapter, "Adapter with ALL filter should be created");
     }
 
     @Test
-    void testCacheKeyGenerationWithNoneFilter() {
+    void cacheKeyGenerationWithNoneFilter() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .cacheKeyHeaderFilter(CacheKeyHeaderFilter.NONE)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .cacheKeyHeaderFilter(CacheKeyHeaderFilter.NONE)
+                .build();
 
         assertNotNull(adapter, "Adapter with NONE filter should be created");
     }
 
     @Test
-    void testCacheKeyGenerationWithExcludingFilter() {
+    void cacheKeyGenerationWithExcludingFilter() {
         var filter = CacheKeyHeaderFilter.excluding("Authorization");
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .cacheKeyHeaderFilter(filter)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .cacheKeyHeaderFilter(filter)
+                .build();
 
         assertNotNull(adapter, "Adapter with excluding filter should be created");
     }
 
     @Test
-    void testCacheKeyGenerationWithIncludingFilter() {
+    void cacheKeyGenerationWithIncludingFilter() {
         var filter = CacheKeyHeaderFilter.including("Accept", "Content-Type");
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .cacheKeyHeaderFilter(filter)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .cacheKeyHeaderFilter(filter)
+                .build();
 
         assertNotNull(adapter, "Adapter with including filter should be created");
     }
 
     @Test
-    void testBodyPublisherCreationWithoutConverter() {
+    void bodyPublisherCreationWithoutConverter() {
         // Adapter without request converter should handle body gracefully
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .requestConverter(null)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .requestConverter(null)
+                .build();
 
         assertNotNull(adapter, "Adapter without request converter should be created");
     }
 
     @Test
-    void testBodyPublisherCreationWithConverter() {
+    void bodyPublisherCreationWithConverter() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .requestConverter(new TestRequestConverter())
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .requestConverter(new TestRequestConverter())
+                .build();
 
         assertNotNull(adapter, "Adapter with request converter should be created");
     }
 
     @Test
-    void testEtagCachingDisabled() {
+    void etagCachingDisabled() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .etagCachingEnabled(false)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .etagCachingEnabled(false)
+                .build();
 
         // With caching disabled, GET should still work
         var future = adapter.get();
@@ -279,15 +297,15 @@ class ETagAwareHttpAdapterTest {
     }
 
     @Test
-    void testCacheKeyConsistencyWithSameHeaders() {
+    void cacheKeyConsistencyWithSameHeaders() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .cacheKeyHeaderFilter(CacheKeyHeaderFilter.ALL)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .cacheKeyHeaderFilter(CacheKeyHeaderFilter.ALL)
+                .build();
 
-        var headers1 = java.util.Map.of("Accept", "application/json", "Authorization", "Bearer token");
-        var headers2 = java.util.Map.of("Authorization", "Bearer token", "Accept", "application/json");
+        var headers1 = Map.of("Accept", "application/json", "Authorization", "Bearer token");
+        var headers2 = Map.of("Authorization", "Bearer token", "Accept", "application/json");
 
         // Both should generate requests (cache key generation happens internally)
         var future1 = adapter.get(headers1);
@@ -300,48 +318,48 @@ class ETagAwareHttpAdapterTest {
     // === Task 11: HTTP Method Implementation Tests ===
 
     @Test
-    void testPostMethodWithBody() {
+    void postMethodWithBody() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .requestConverter(new TestRequestConverter())
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .requestConverter(new TestRequestConverter())
+                .build();
 
         var future = adapter.post("test body");
         assertNotNull(future, "POST should return non-null CompletableFuture");
     }
 
     @Test
-    void testPostMethodWithBodyAndHeaders() {
+    void postMethodWithBodyAndHeaders() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .requestConverter(new TestRequestConverter())
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .requestConverter(new TestRequestConverter())
+                .build();
 
-        var headers = java.util.Map.of("Content-Type", "text/plain");
+        var headers = Map.of("Content-Type", "text/plain");
         var future = adapter.post("test body", headers);
         assertNotNull(future, "POST with headers should return non-null CompletableFuture");
     }
 
     @Test
-    void testPostMethodWithNullBody() {
+    void postMethodWithNullBody() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .requestConverter(new TestRequestConverter())
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .requestConverter(new TestRequestConverter())
+                .build();
 
         var future = adapter.post(null);
         assertNotNull(future, "POST with null body should return non-null CompletableFuture");
     }
 
     @Test
-    void testPostMethodWithExplicitConverter() {
+    void postMethodWithExplicitConverter() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .build();
 
         var customConverter = new TestRequestConverter();
         var future = adapter.post(customConverter, "test body");
@@ -349,49 +367,49 @@ class ETagAwareHttpAdapterTest {
     }
 
     @Test
-    void testPostMethodWithExplicitConverterAndHeaders() {
+    void postMethodWithExplicitConverterAndHeaders() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .build();
 
         var customConverter = new TestRequestConverter();
-        var headers = java.util.Map.of("Content-Type", "text/plain");
+        var headers = Map.of("Content-Type", "text/plain");
         var future = adapter.post(customConverter, "test body", headers);
         assertNotNull(future, "POST with explicit converter and headers should return non-null CompletableFuture");
     }
 
     @Test
-    void testPutMethodWithBody() {
+    void putMethodWithBody() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .requestConverter(new TestRequestConverter())
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .requestConverter(new TestRequestConverter())
+                .build();
 
         var future = adapter.put("test body");
         assertNotNull(future, "PUT should return non-null CompletableFuture");
     }
 
     @Test
-    void testPutMethodWithBodyAndHeaders() {
+    void putMethodWithBodyAndHeaders() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .requestConverter(new TestRequestConverter())
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .requestConverter(new TestRequestConverter())
+                .build();
 
-        var headers = java.util.Map.of("Content-Type", "text/plain");
+        var headers = Map.of("Content-Type", "text/plain");
         var future = adapter.put("test body", headers);
         assertNotNull(future, "PUT with headers should return non-null CompletableFuture");
     }
 
     @Test
-    void testPutMethodWithExplicitConverter() {
+    void putMethodWithExplicitConverter() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .build();
 
         var customConverter = new TestRequestConverter();
         var future = adapter.put(customConverter, "test body");
@@ -399,36 +417,36 @@ class ETagAwareHttpAdapterTest {
     }
 
     @Test
-    void testPatchMethodWithBody() {
+    void patchMethodWithBody() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .requestConverter(new TestRequestConverter())
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .requestConverter(new TestRequestConverter())
+                .build();
 
         var future = adapter.patch("test body");
         assertNotNull(future, "PATCH should return non-null CompletableFuture");
     }
 
     @Test
-    void testPatchMethodWithBodyAndHeaders() {
+    void patchMethodWithBodyAndHeaders() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .requestConverter(new TestRequestConverter())
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .requestConverter(new TestRequestConverter())
+                .build();
 
-        var headers = java.util.Map.of("Content-Type", "text/plain");
+        var headers = Map.of("Content-Type", "text/plain");
         var future = adapter.patch("test body", headers);
         assertNotNull(future, "PATCH with headers should return non-null CompletableFuture");
     }
 
     @Test
-    void testPatchMethodWithExplicitConverter() {
+    void patchMethodWithExplicitConverter() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .build();
 
         var customConverter = new TestRequestConverter();
         var future = adapter.patch(customConverter, "test body");
@@ -436,59 +454,59 @@ class ETagAwareHttpAdapterTest {
     }
 
     @Test
-    void testDeleteMethodNoBody() {
+    void deleteMethodNoBody() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .build();
 
         var future = adapter.delete();
         assertNotNull(future, "DELETE should return non-null CompletableFuture");
     }
 
     @Test
-    void testDeleteMethodNoBodyWithHeaders() {
+    void deleteMethodNoBodyWithHeaders() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .build();
 
-        var headers = java.util.Map.of("Authorization", "Bearer token");
+        var headers = Map.of("Authorization", "Bearer token");
         var future = adapter.delete(headers);
         assertNotNull(future, "DELETE with headers should return non-null CompletableFuture");
     }
 
     @Test
-    void testDeleteMethodWithBody() {
+    void deleteMethodWithBody() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .requestConverter(new TestRequestConverter())
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .requestConverter(new TestRequestConverter())
+                .build();
 
         var future = adapter.delete("test body");
         assertNotNull(future, "DELETE with body should return non-null CompletableFuture");
     }
 
     @Test
-    void testDeleteMethodWithBodyAndHeaders() {
+    void deleteMethodWithBodyAndHeaders() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .requestConverter(new TestRequestConverter())
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .requestConverter(new TestRequestConverter())
+                .build();
 
-        var headers = java.util.Map.of("Authorization", "Bearer token");
+        var headers = Map.of("Authorization", "Bearer token");
         var future = adapter.delete("test body", headers);
         assertNotNull(future, "DELETE with body and headers should return non-null CompletableFuture");
     }
 
     @Test
-    void testDeleteMethodWithExplicitConverter() {
+    void deleteMethodWithExplicitConverter() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .build();
 
         var customConverter = new TestRequestConverter();
         var future = adapter.delete(customConverter, "test body");
@@ -496,66 +514,66 @@ class ETagAwareHttpAdapterTest {
     }
 
     @Test
-    void testHeadMethod() {
+    void headMethod() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .build();
 
         var future = adapter.head();
         assertNotNull(future, "HEAD should return non-null CompletableFuture");
     }
 
     @Test
-    void testHeadMethodWithHeaders() {
+    void headMethodWithHeaders() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .build();
 
-        var headers = java.util.Map.of("Accept", "application/json");
+        var headers = Map.of("Accept", "application/json");
         var future = adapter.head(headers);
         assertNotNull(future, "HEAD with headers should return non-null CompletableFuture");
     }
 
     @Test
-    void testOptionsMethod() {
+    void optionsMethod() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .build();
 
         var future = adapter.options();
         assertNotNull(future, "OPTIONS should return non-null CompletableFuture");
     }
 
     @Test
-    void testOptionsMethodWithHeaders() {
+    void optionsMethodWithHeaders() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .build();
 
-        var headers = java.util.Map.of("Origin", "https://example.com");
+        var headers = Map.of("Origin", "https://example.com");
         var future = adapter.options(headers);
         assertNotNull(future, "OPTIONS with headers should return non-null CompletableFuture");
     }
 
     @Test
-    void testGenericBodyMethodsWithDifferentTypes() {
+    void genericBodyMethodsWithDifferentTypes() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .build();
 
         // Test with Integer body type (different from String response type)
-        var intConverter = new de.cuioss.http.client.converter.HttpRequestConverter<Integer>() {
+        var intConverter = new HttpRequestConverter<Integer>() {
             @Override
-            public java.net.http.HttpRequest.BodyPublisher toBodyPublisher(Integer content) {
+            public HttpRequest.BodyPublisher toBodyPublisher(Integer content) {
                 if (content == null) {
-                    return java.net.http.HttpRequest.BodyPublishers.noBody();
+                    return HttpRequest.BodyPublishers.noBody();
                 }
-                return java.net.http.HttpRequest.BodyPublishers.ofString(content.toString());
+                return HttpRequest.BodyPublishers.ofString(content.toString());
             }
 
             @Override
@@ -576,28 +594,28 @@ class ETagAwareHttpAdapterTest {
     }
 
     @Test
-    void testAllMethodsReturnCompletableFuture() {
+    void allMethodsReturnCompletableFuture() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
-            .httpHandler(handler)
-            .responseConverter(responseConverter)
-            .requestConverter(new TestRequestConverter())
-            .build();
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .requestConverter(new TestRequestConverter())
+                .build();
 
         // All methods should return CompletableFuture (async-first design)
-        assertTrue(adapter.get() instanceof java.util.concurrent.CompletableFuture,
-                   "GET should return CompletableFuture");
-        assertTrue(adapter.post("body") instanceof java.util.concurrent.CompletableFuture,
-                   "POST should return CompletableFuture");
-        assertTrue(adapter.put("body") instanceof java.util.concurrent.CompletableFuture,
-                   "PUT should return CompletableFuture");
-        assertTrue(adapter.patch("body") instanceof java.util.concurrent.CompletableFuture,
-                   "PATCH should return CompletableFuture");
-        assertTrue(adapter.delete() instanceof java.util.concurrent.CompletableFuture,
-                   "DELETE should return CompletableFuture");
-        assertTrue(adapter.head() instanceof java.util.concurrent.CompletableFuture,
-                   "HEAD should return CompletableFuture");
-        assertTrue(adapter.options() instanceof java.util.concurrent.CompletableFuture,
-                   "OPTIONS should return CompletableFuture");
+        assertTrue(adapter.get() instanceof CompletableFuture,
+                "GET should return CompletableFuture");
+        assertTrue(adapter.post("body") instanceof CompletableFuture,
+                "POST should return CompletableFuture");
+        assertTrue(adapter.put("body") instanceof CompletableFuture,
+                "PUT should return CompletableFuture");
+        assertTrue(adapter.patch("body") instanceof CompletableFuture,
+                "PATCH should return CompletableFuture");
+        assertTrue(adapter.delete() instanceof CompletableFuture,
+                "DELETE should return CompletableFuture");
+        assertTrue(adapter.head() instanceof CompletableFuture,
+                "HEAD should return CompletableFuture");
+        assertTrue(adapter.options() instanceof CompletableFuture,
+                "OPTIONS should return CompletableFuture");
     }
 
     /**
@@ -626,13 +644,13 @@ class ETagAwareHttpAdapterTest {
     /**
      * Test implementation of HttpRequestConverter for testing.
      */
-    private static class TestRequestConverter implements de.cuioss.http.client.converter.HttpRequestConverter<String> {
+    private static class TestRequestConverter implements HttpRequestConverter<String> {
         @Override
-        public java.net.http.HttpRequest.BodyPublisher toBodyPublisher(String content) {
+        public HttpRequest.BodyPublisher toBodyPublisher(String content) {
             if (content == null) {
-                return java.net.http.HttpRequest.BodyPublishers.noBody();
+                return HttpRequest.BodyPublishers.noBody();
             }
-            return java.net.http.HttpRequest.BodyPublishers.ofString(content);
+            return HttpRequest.BodyPublishers.ofString(content);
         }
 
         @Override

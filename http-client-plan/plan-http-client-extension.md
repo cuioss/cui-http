@@ -511,7 +511,7 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - [x] Test maxDelay cap enforced
 - [x] Run `project-builder` agent to verify build passes
 - [x] Analyze build results - if issues found, fix and re-run
-- [ ] Commit changes using `commit-current-changes` agent
+- [x] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
 - RetryConfig record exists with all fields
@@ -534,39 +534,39 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - Package: `de.cuioss.http.client.adapter`
 
 **Checklist:**
-- [ ] Read and understand all references above
-- [ ] If unclear, ask user for clarification (DO NOT guess)
-- [ ] Create `ResilientHttpAdapter<T>` class implementing `HttpAdapter<T>`
-- [ ] Add final fields: `HttpAdapter<T> delegate`, `RetryConfig config`
-- [ ] Create constructor taking delegate and config
-- [ ] Add static factory: `wrap(HttpAdapter<T> delegate)` using defaults
-- [ ] Add static factory: `wrap(HttpAdapter<T> delegate, RetryConfig config)`
-- [ ] Implement all HttpAdapter methods delegating to `executeWithRetry()`
-- [ ] Implement private method: `executeWithRetry(Supplier<CompletableFuture<HttpResult<T>>> operation, HttpMethod method, int attempt)`
-- [ ] Return type: `CompletableFuture<HttpResult<T>>`
-- [ ] Call operation.get() to execute (already async, no supplyAsync needed)
-- [ ] Add `.thenCompose()` to handle result
-- [ ] If success: return completed future immediately
-- [ ] If idempotentOnly=true and method non-idempotent: skip retry
-- [ ] If non-retryable error: return failure immediately
-- [ ] If max attempts reached: return failure immediately
-- [ ] If retryable: calculate delay using config.calculateDelay()
-- [ ] Schedule retry using `CompletableFuture.delayedExecutor()` (non-blocking!)
-- [ ] Recursively call executeWithRetry() after delay
-- [ ] Use tail recursion via thenCompose (no stack overflow)
-- [ ] Add logging: DEBUG for attempts, WARN for retries, WARN for exhaustion
-- [ ] Create unit tests in `ResilientHttpAdapterTest` (minimum 80% coverage)
-- [ ] Test retry on NETWORK_ERROR
-- [ ] Test retry on SERVER_ERROR
-- [ ] Test no retry on CLIENT_ERROR
-- [ ] Test max attempts respected
-- [ ] Test idempotentOnly=true skips POST/PATCH
-- [ ] Test idempotentOnly=false retries all methods
-- [ ] Test async delays (no blocking)
-- [ ] Test success on first attempt
-- [ ] Test success on retry attempt
-- [ ] Run `project-builder` agent to verify build passes
-- [ ] Analyze build results - if issues found, fix and re-run
+- [x] Read and understand all references above
+- [x] If unclear, ask user for clarification (DO NOT guess)
+- [x] Create `ResilientHttpAdapter<T>` class implementing `HttpAdapter<T>`
+- [x] Add final fields: `HttpAdapter<T> delegate`, `RetryConfig config`
+- [x] Create constructor taking delegate and config
+- [x] Add static factory: `wrap(HttpAdapter<T> delegate)` using defaults
+- [x] Add static factory: `wrap(HttpAdapter<T> delegate, RetryConfig config)`
+- [x] Implement all HttpAdapter methods delegating to `executeWithRetry()`
+- [x] Implement private method: `executeWithRetry(Supplier<CompletableFuture<HttpResult<T>>> operation, HttpMethod method, int attempt)`
+- [x] Return type: `CompletableFuture<HttpResult<T>>`
+- [x] Call operation.get() to execute (already async, no supplyAsync needed)
+- [x] Add `.thenCompose()` to handle result
+- [x] If success: return completed future immediately
+- [x] If idempotentOnly=true and method non-idempotent: skip retry
+- [x] If non-retryable error: return failure immediately
+- [x] If max attempts reached: return failure immediately
+- [x] If retryable: calculate delay using config.calculateDelay()
+- [x] Schedule retry using `CompletableFuture.delayedExecutor()` (non-blocking!)
+- [x] Recursively call executeWithRetry() after delay
+- [x] Use tail recursion via thenCompose (no stack overflow)
+- [x] Add logging: DEBUG for attempts, WARN for retries, WARN for exhaustion
+- [x] Create unit tests in `ResilientHttpAdapterTest` (minimum 80% coverage)
+- [x] Test retry on NETWORK_ERROR
+- [x] Test retry on SERVER_ERROR
+- [x] Test no retry on CLIENT_ERROR
+- [x] Test max attempts respected
+- [x] Test idempotentOnly=true skips POST/PATCH
+- [x] Test idempotentOnly=false retries all methods
+- [x] Test async delays (no blocking)
+- [x] Test success on first attempt
+- [x] Test success on retry attempt
+- [x] Run `project-builder` agent to verify build passes
+- [x] Analyze build results - if issues found, fix and re-run
 - [ ] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**

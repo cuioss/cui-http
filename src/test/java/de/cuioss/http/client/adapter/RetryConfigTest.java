@@ -1,15 +1,25 @@
+/*
+ * Copyright © 2025 CUI-OpenSource-Software (info@cuioss.de)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package de.cuioss.http.client.adapter;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Unit tests for {@link RetryConfig}.
@@ -35,13 +45,13 @@ class RetryConfigTest {
     void shouldCreateConfigurationUsingBuilder() {
         // when
         RetryConfig config = RetryConfig.builder()
-            .maxAttempts(3)
-            .initialDelay(Duration.ofMillis(500))
-            .multiplier(1.5)
-            .maxDelay(Duration.ofSeconds(30))
-            .jitter(0.2)
-            .idempotentOnly(false)
-            .build();
+                .maxAttempts(3)
+                .initialDelay(Duration.ofMillis(500))
+                .multiplier(1.5)
+                .maxDelay(Duration.ofSeconds(30))
+                .jitter(0.2)
+                .idempotentOnly(false)
+                .build();
 
         // then
         assertEquals(3, config.maxAttempts());
@@ -70,11 +80,11 @@ class RetryConfigTest {
     void shouldValidateMaxAttempts() {
         // when/then - zero not allowed
         assertThrows(IllegalArgumentException.class,
-            () -> RetryConfig.builder().maxAttempts(0));
+                () -> RetryConfig.builder().maxAttempts(0));
 
         // when/then - negative not allowed
         assertThrows(IllegalArgumentException.class,
-            () -> RetryConfig.builder().maxAttempts(-1));
+                () -> RetryConfig.builder().maxAttempts(-1));
 
         // when/then - 1 is valid (minimum)
         assertDoesNotThrow(() -> RetryConfig.builder().maxAttempts(1).build());
@@ -84,15 +94,15 @@ class RetryConfigTest {
     void shouldValidateInitialDelay() {
         // when/then - null not allowed
         assertThrows(IllegalArgumentException.class,
-            () -> RetryConfig.builder().initialDelay(null));
+                () -> RetryConfig.builder().initialDelay(null));
 
         // when/then - zero not allowed
         assertThrows(IllegalArgumentException.class,
-            () -> RetryConfig.builder().initialDelay(Duration.ZERO));
+                () -> RetryConfig.builder().initialDelay(Duration.ZERO));
 
         // when/then - negative not allowed
         assertThrows(IllegalArgumentException.class,
-            () -> RetryConfig.builder().initialDelay(Duration.ofSeconds(-1)));
+                () -> RetryConfig.builder().initialDelay(Duration.ofSeconds(-1)));
 
         // when/then - positive is valid
         assertDoesNotThrow(() -> RetryConfig.builder().initialDelay(Duration.ofMillis(1)).build());
@@ -102,15 +112,15 @@ class RetryConfigTest {
     void shouldValidateMultiplier() {
         // when/then - less than 1.0 not allowed
         assertThrows(IllegalArgumentException.class,
-            () -> RetryConfig.builder().multiplier(0.9));
+                () -> RetryConfig.builder().multiplier(0.9));
 
         // when/then - zero not allowed
         assertThrows(IllegalArgumentException.class,
-            () -> RetryConfig.builder().multiplier(0.0));
+                () -> RetryConfig.builder().multiplier(0.0));
 
         // when/then - negative not allowed
         assertThrows(IllegalArgumentException.class,
-            () -> RetryConfig.builder().multiplier(-1.0));
+                () -> RetryConfig.builder().multiplier(-1.0));
 
         // when/then - 1.0 is valid (minimum, linear backoff)
         assertDoesNotThrow(() -> RetryConfig.builder().multiplier(1.0).build());
@@ -123,15 +133,15 @@ class RetryConfigTest {
     void shouldValidateMaxDelay() {
         // when/then - null not allowed
         assertThrows(IllegalArgumentException.class,
-            () -> RetryConfig.builder().maxDelay(null));
+                () -> RetryConfig.builder().maxDelay(null));
 
         // when/then - zero not allowed
         assertThrows(IllegalArgumentException.class,
-            () -> RetryConfig.builder().maxDelay(Duration.ZERO));
+                () -> RetryConfig.builder().maxDelay(Duration.ZERO));
 
         // when/then - negative not allowed
         assertThrows(IllegalArgumentException.class,
-            () -> RetryConfig.builder().maxDelay(Duration.ofSeconds(-1)));
+                () -> RetryConfig.builder().maxDelay(Duration.ofSeconds(-1)));
 
         // when/then - positive is valid
         assertDoesNotThrow(() -> RetryConfig.builder().maxDelay(Duration.ofMillis(1)).build());
@@ -141,11 +151,11 @@ class RetryConfigTest {
     void shouldValidateJitter() {
         // when/then - negative not allowed
         assertThrows(IllegalArgumentException.class,
-            () -> RetryConfig.builder().jitter(-0.1));
+                () -> RetryConfig.builder().jitter(-0.1));
 
         // when/then - greater than 1.0 not allowed
         assertThrows(IllegalArgumentException.class,
-            () -> RetryConfig.builder().jitter(1.1));
+                () -> RetryConfig.builder().jitter(1.1));
 
         // when/then - 0.0 is valid (no jitter)
         assertDoesNotThrow(() -> RetryConfig.builder().jitter(0.0).build());
@@ -161,11 +171,11 @@ class RetryConfigTest {
     void shouldCalculateExponentialBackoff() {
         // given - config with no jitter for predictable testing
         RetryConfig config = RetryConfig.builder()
-            .initialDelay(Duration.ofSeconds(1))
-            .multiplier(2.0)
-            .maxDelay(Duration.ofMinutes(10))
-            .jitter(0.0)  // No jitter for exact calculation
-            .build();
+                .initialDelay(Duration.ofSeconds(1))
+                .multiplier(2.0)
+                .maxDelay(Duration.ofMinutes(10))
+                .jitter(0.0)  // No jitter for exact calculation
+                .build();
 
         // when/then - attempt 1: 1s * 2^0 = 1s
         Duration delay1 = config.calculateDelay(1);
@@ -192,11 +202,11 @@ class RetryConfigTest {
     void shouldApplyMaxDelayCap() {
         // given - config with small max delay
         RetryConfig config = RetryConfig.builder()
-            .initialDelay(Duration.ofSeconds(1))
-            .multiplier(2.0)
-            .maxDelay(Duration.ofSeconds(5))  // Cap at 5 seconds
-            .jitter(0.0)  // No jitter
-            .build();
+                .initialDelay(Duration.ofSeconds(1))
+                .multiplier(2.0)
+                .maxDelay(Duration.ofSeconds(5))  // Cap at 5 seconds
+                .jitter(0.0)  // No jitter
+                .build();
 
         // when - calculate delay for high attempt number
         // Without cap: 1s * 2^9 = 512s
@@ -210,11 +220,11 @@ class RetryConfigTest {
     void shouldApplyJitterRandomization() {
         // given - config with 50% jitter
         RetryConfig config = RetryConfig.builder()
-            .initialDelay(Duration.ofSeconds(1))
-            .multiplier(1.0)  // No exponential growth
-            .maxDelay(Duration.ofMinutes(1))
-            .jitter(0.5)  // 50% jitter
-            .build();
+                .initialDelay(Duration.ofSeconds(1))
+                .multiplier(1.0)  // No exponential growth
+                .maxDelay(Duration.ofMinutes(1))
+                .jitter(0.5)  // 50% jitter
+                .build();
 
         // when - calculate delay multiple times (jitter is random)
         Duration delay1 = config.calculateDelay(1);
@@ -223,11 +233,11 @@ class RetryConfigTest {
 
         // then - all should be in range [500ms, 1500ms] (1000ms ± 50%)
         assertTrue(delay1.toMillis() >= 500 && delay1.toMillis() <= 1500,
-            "Delay should be within jitter range: " + delay1.toMillis());
+                "Delay should be within jitter range: " + delay1.toMillis());
         assertTrue(delay2.toMillis() >= 500 && delay2.toMillis() <= 1500,
-            "Delay should be within jitter range: " + delay2.toMillis());
+                "Delay should be within jitter range: " + delay2.toMillis());
         assertTrue(delay3.toMillis() >= 500 && delay3.toMillis() <= 1500,
-            "Delay should be within jitter range: " + delay3.toMillis());
+                "Delay should be within jitter range: " + delay3.toMillis());
 
         // Note: We can't assert they're different because random could theoretically
         // produce the same value, but the range check verifies jitter is working
@@ -237,11 +247,11 @@ class RetryConfigTest {
     void shouldApplyJitterWithin10Percent() {
         // given - config with default 10% jitter
         RetryConfig config = RetryConfig.builder()
-            .initialDelay(Duration.ofSeconds(1))
-            .multiplier(1.0)
-            .maxDelay(Duration.ofMinutes(1))
-            .jitter(0.1)  // 10% jitter
-            .build();
+                .initialDelay(Duration.ofSeconds(1))
+                .multiplier(1.0)
+                .maxDelay(Duration.ofMinutes(1))
+                .jitter(0.1)  // 10% jitter
+                .build();
 
         // when - calculate delay multiple times
         for (int i = 0; i < 100; i++) {
@@ -249,7 +259,7 @@ class RetryConfigTest {
 
             // then - should be in range [900ms, 1100ms] (1000ms ± 10%)
             assertTrue(delay.toMillis() >= 900 && delay.toMillis() <= 1100,
-                "Delay should be within 10% jitter range: " + delay.toMillis());
+                    "Delay should be within 10% jitter range: " + delay.toMillis());
         }
     }
 
@@ -257,11 +267,11 @@ class RetryConfigTest {
     void shouldCalculateDelayWithLinearBackoff() {
         // given - config with 1.0 multiplier (linear backoff)
         RetryConfig config = RetryConfig.builder()
-            .initialDelay(Duration.ofSeconds(2))
-            .multiplier(1.0)  // Linear: no exponential growth
-            .maxDelay(Duration.ofMinutes(10))
-            .jitter(0.0)
-            .build();
+                .initialDelay(Duration.ofSeconds(2))
+                .multiplier(1.0)  // Linear: no exponential growth
+                .maxDelay(Duration.ofMinutes(10))
+                .jitter(0.0)
+                .build();
 
         // when/then - all delays should be constant at 2s
         assertEquals(2000, config.calculateDelay(1).toMillis());
@@ -274,8 +284,8 @@ class RetryConfigTest {
     void shouldHandleZeroJitter() {
         // given - config with no jitter
         RetryConfig config = RetryConfig.builder()
-            .jitter(0.0)
-            .build();
+                .jitter(0.0)
+                .build();
 
         // when - calculate delay multiple times
         Duration delay1 = config.calculateDelay(1);
@@ -289,11 +299,11 @@ class RetryConfigTest {
     void shouldHandleFullJitter() {
         // given - config with maximum 100% jitter
         RetryConfig config = RetryConfig.builder()
-            .initialDelay(Duration.ofSeconds(1))
-            .multiplier(1.0)
-            .maxDelay(Duration.ofMinutes(1))
-            .jitter(1.0)  // 100% jitter: can be 0ms to 2000ms
-            .build();
+                .initialDelay(Duration.ofSeconds(1))
+                .multiplier(1.0)
+                .maxDelay(Duration.ofMinutes(1))
+                .jitter(1.0)  // 100% jitter: can be 0ms to 2000ms
+                .build();
 
         // when - calculate delay multiple times
         for (int i = 0; i < 100; i++) {
@@ -301,7 +311,7 @@ class RetryConfigTest {
 
             // then - should be in range [0ms, 2000ms] (1000ms ± 100%)
             assertTrue(delay.toMillis() >= 0 && delay.toMillis() <= 2000,
-                "Delay should be within 100% jitter range: " + delay.toMillis());
+                    "Delay should be within 100% jitter range: " + delay.toMillis());
         }
     }
 
@@ -309,8 +319,8 @@ class RetryConfigTest {
     void shouldSetIdempotentOnlyTrue() {
         // when
         RetryConfig config = RetryConfig.builder()
-            .idempotentOnly(true)
-            .build();
+                .idempotentOnly(true)
+                .build();
 
         // then
         assertTrue(config.idempotentOnly());
@@ -320,8 +330,8 @@ class RetryConfigTest {
     void shouldSetIdempotentOnlyFalse() {
         // when
         RetryConfig config = RetryConfig.builder()
-            .idempotentOnly(false)
-            .build();
+                .idempotentOnly(false)
+                .build();
 
         // then
         assertFalse(config.idempotentOnly());
@@ -358,8 +368,8 @@ class RetryConfigTest {
     void shouldCalculateDelaySequenceWithDefaults() {
         // given - default configuration
         RetryConfig config = RetryConfig.builder()
-            .jitter(0.0)  // Remove jitter for exact values
-            .build();
+                .jitter(0.0)  // Remove jitter for exact values
+                .build();
 
         // when/then - verify default sequence
         // Attempt 1: 1s * 2^0 = 1s

@@ -1,3 +1,18 @@
+/*
+ * Copyright © 2025 CUI-OpenSource-Software (info@cuioss.de)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package de.cuioss.http.client.adapter;
 
 import de.cuioss.http.client.converter.HttpRequestConverter;
@@ -258,8 +273,8 @@ public interface HttpAdapter<T> {
      * @return CompletableFuture containing result with created resource (type T) or error
      */
     <R> CompletableFuture<HttpResult<T>> post(HttpRequestConverter<R> requestConverter,
-                                               @Nullable R requestBody,
-                                               Map<String, String> additionalHeaders);
+            @Nullable R requestBody,
+            Map<String, String> additionalHeaders);
 
     /**
      * Sends POST request with explicit request converter for different type (async).
@@ -271,7 +286,7 @@ public interface HttpAdapter<T> {
      * @return CompletableFuture containing result with created resource (type T) or error
      */
     default <R> CompletableFuture<HttpResult<T>> post(HttpRequestConverter<R> requestConverter,
-                                                       @Nullable R requestBody) {
+            @Nullable R requestBody) {
         return post(requestConverter, requestBody, Map.of());
     }
 
@@ -285,8 +300,8 @@ public interface HttpAdapter<T> {
      * @return CompletableFuture containing result with updated resource (type T) or error
      */
     <R> CompletableFuture<HttpResult<T>> put(HttpRequestConverter<R> requestConverter,
-                                              @Nullable R requestBody,
-                                              Map<String, String> additionalHeaders);
+            @Nullable R requestBody,
+            Map<String, String> additionalHeaders);
 
     /**
      * Sends PUT request with explicit request converter for different type (async).
@@ -297,7 +312,7 @@ public interface HttpAdapter<T> {
      * @return CompletableFuture containing result with updated resource (type T) or error
      */
     default <R> CompletableFuture<HttpResult<T>> put(HttpRequestConverter<R> requestConverter,
-                                                      @Nullable R requestBody) {
+            @Nullable R requestBody) {
         return put(requestConverter, requestBody, Map.of());
     }
 
@@ -311,8 +326,8 @@ public interface HttpAdapter<T> {
      * @return CompletableFuture containing result with updated resource (type T) or error
      */
     <R> CompletableFuture<HttpResult<T>> patch(HttpRequestConverter<R> requestConverter,
-                                                @Nullable R requestBody,
-                                                Map<String, String> additionalHeaders);
+            @Nullable R requestBody,
+            Map<String, String> additionalHeaders);
 
     /**
      * Sends PATCH request with explicit request converter for different type (async).
@@ -323,7 +338,7 @@ public interface HttpAdapter<T> {
      * @return CompletableFuture containing result with updated resource (type T) or error
      */
     default <R> CompletableFuture<HttpResult<T>> patch(HttpRequestConverter<R> requestConverter,
-                                                        @Nullable R requestBody) {
+            @Nullable R requestBody) {
         return patch(requestConverter, requestBody, Map.of());
     }
 
@@ -337,8 +352,8 @@ public interface HttpAdapter<T> {
      * @return CompletableFuture containing result with response or error
      */
     <R> CompletableFuture<HttpResult<T>> delete(HttpRequestConverter<R> requestConverter,
-                                                 @Nullable R requestBody,
-                                                 Map<String, String> additionalHeaders);
+            @Nullable R requestBody,
+            Map<String, String> additionalHeaders);
 
     /**
      * Sends DELETE request with explicit request converter for different type (async).
@@ -349,7 +364,7 @@ public interface HttpAdapter<T> {
      * @return CompletableFuture containing result with response or error
      */
     default <R> CompletableFuture<HttpResult<T>> delete(HttpRequestConverter<R> requestConverter,
-                                                         @Nullable R requestBody) {
+            @Nullable R requestBody) {
         return delete(requestConverter, requestBody, Map.of());
     }
 

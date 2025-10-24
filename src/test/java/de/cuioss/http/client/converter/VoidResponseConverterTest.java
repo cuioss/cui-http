@@ -1,11 +1,27 @@
+/*
+ * Copyright © 2025 CUI-OpenSource-Software (info@cuioss.de)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package de.cuioss.http.client.converter;
 
-import static org.junit.jupiter.api.Assertions.*;
-
 import de.cuioss.http.client.ContentType;
+import org.junit.jupiter.api.Test;
+
 import java.net.http.HttpResponse;
 import java.util.Optional;
-import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Unit tests for {@link VoidResponseConverter}.
@@ -69,7 +85,7 @@ class VoidResponseConverterTest {
         // We can verify this by checking that it's the same type as the one we expect
         HttpResponse.BodyHandler<?> expectedHandler = HttpResponse.BodyHandlers.discarding();
         assertEquals(expectedHandler.getClass(), handler.getClass(),
-            "Should return discarding body handler");
+                "Should return discarding body handler");
     }
 
     /**
@@ -84,7 +100,7 @@ class VoidResponseConverterTest {
 
         assertNotNull(contentType, "Content type should not be null");
         assertEquals(ContentType.APPLICATION_JSON, contentType,
-            "Should return APPLICATION_JSON as default (body discarded anyway)");
+                "Should return APPLICATION_JSON as default (body discarded anyway)");
     }
 
     /**
@@ -94,7 +110,7 @@ class VoidResponseConverterTest {
     void shouldImplementHttpResponseConverterInterface() {
         VoidResponseConverter converter = VoidResponseConverter.INSTANCE;
         assertTrue(converter instanceof HttpResponseConverter,
-            "Should implement HttpResponseConverter interface");
+                "Should implement HttpResponseConverter interface");
     }
 
     /**
@@ -126,7 +142,7 @@ class VoidResponseConverterTest {
         assertNotNull(handler1, "First handler should not be null");
         assertNotNull(handler2, "Second handler should not be null");
         assertEquals(handler1.getClass(), handler2.getClass(),
-            "Should return same type of handler consistently");
+                "Should return same type of handler consistently");
     }
 
     /**
@@ -155,7 +171,7 @@ class VoidResponseConverterTest {
 
         // Verify we get empty as expected
         assertTrue(content.isEmpty(),
-            "DELETE operation should return empty content - only status matters");
+                "DELETE operation should return empty content - only status matters");
 
         // Verify body handler is efficient (discarding)
         HttpResponse.BodyHandler<?> handler = converter.getBodyHandler();
@@ -174,12 +190,12 @@ class VoidResponseConverterTest {
         Optional<Void> content = converter.convert(null);
 
         assertTrue(content.isEmpty(),
-            "HEAD operation should return empty content - only headers/status matter");
+                "HEAD operation should return empty content - only headers/status matter");
 
         // Verify efficient body handling
         HttpResponse.BodyHandler<?> handler = converter.getBodyHandler();
         assertEquals(HttpResponse.BodyHandlers.discarding().getClass(), handler.getClass(),
-            "Should use efficient discarding handler for HEAD");
+                "Should use efficient discarding handler for HEAD");
     }
 
     /**

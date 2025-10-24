@@ -323,10 +323,10 @@ permits HttpResult.Success, HttpResult.Failure {
      * @param <T> content type
      */
     record Success<T>(
-        T content,
-        @Nullable
-        String etag,
-        int httpStatus
+    T content,
+    @Nullable
+    String etag,
+    int httpStatus
     ) implements HttpResult<T> {
 
         @Override
@@ -374,16 +374,16 @@ permits HttpResult.Success, HttpResult.Failure {
      */
     @Builder
     record Failure<T>(
-        String errorMessage,
-        @Nullable
-        Throwable cause,
-        @Nullable
-        T fallbackContent,
-        HttpErrorCategory category,
-        @Nullable
-        String etag,
-        @Nullable
-        Integer httpStatus
+    String errorMessage,
+    @Nullable
+    Throwable cause,
+    @Nullable
+    T fallbackContent,
+    HttpErrorCategory category,
+    @Nullable
+    String etag,
+    @Nullable
+    Integer httpStatus
     ) implements HttpResult<T> {
 
         @Override

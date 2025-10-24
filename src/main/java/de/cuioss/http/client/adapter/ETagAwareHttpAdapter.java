@@ -1,3 +1,18 @@
+/*
+ * Copyright © 2025 CUI-OpenSource-Software (info@cuioss.de)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package de.cuioss.http.client.adapter;
 
 import de.cuioss.http.client.HttpMethod;
@@ -8,17 +23,17 @@ import de.cuioss.http.client.handler.HttpHandler;
 import de.cuioss.http.client.result.HttpErrorCategory;
 import de.cuioss.http.client.result.HttpResult;
 import de.cuioss.tools.logging.CuiLogger;
-import lombok.Getter;
 import org.jspecify.annotations.Nullable;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.Map;
 
 /**
  * HTTP adapter with built-in, configurable ETag caching for bandwidth optimization.
@@ -127,10 +142,11 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      * @param <T> Content type
      */
     public record CacheEntry<T>(
-        T content,
-        String etag,
-        long timestamp
-    ) {}
+    T content,
+    String etag,
+    long timestamp
+    ) {
+    }
 
     /**
      * Private constructor - use Builder.
@@ -147,8 +163,8 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         // Create HttpClient ONCE in constructor for thread-safe reuse
         this.httpClient = httpHandler.createHttpClient();
 
-        LOGGER.debug("Created ETagAwareHttpAdapter: etagCachingEnabled={}, maxCacheSize={}",
-                     etagCachingEnabled, maxCacheSize);
+        LOGGER.debug("Created ETagAwareHttpAdapter: etagCachingEnabled=%s, maxCacheSize=%s",
+                etagCachingEnabled, maxCacheSize);
     }
 
     /**
@@ -186,10 +202,10 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      */
     public static HttpAdapter<Void> statusCodeOnly(HttpHandler httpHandler) {
         return ETagAwareHttpAdapter.<Void>builder()
-            .httpHandler(httpHandler)
-            .responseConverter(VoidResponseConverter.INSTANCE)
-            .etagCachingEnabled(false)  // No caching for status-only operations
-            .build();
+                .httpHandler(httpHandler)
+                .responseConverter(VoidResponseConverter.INSTANCE)
+                .etagCachingEnabled(false)  // No caching for status-only operations
+                .build();
     }
 
     /**
@@ -217,7 +233,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
     public void clearETagCache() {
         int sizeBefore = cache.size();
         cache.clear();
-        LOGGER.debug("Cleared ETag cache: {} entries removed", sizeBefore);
+        LOGGER.debug("Cleared ETag cache: %s entries removed", sizeBefore);
     }
 
     @Override
@@ -356,15 +372,15 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      * @return CompletableFuture with HttpResult
      */
     private <R> CompletableFuture<HttpResult<T>> sendWithConverter(
-        HttpMethod method,
-        HttpRequestConverter<R> requestConverter,
-        @Nullable R body,
-        Map<String, String> headers
+            HttpMethod method,
+            HttpRequestConverter<R> requestConverter,
+            @Nullable R body,
+            Map<String, String> headers
     ) {
         // Validate safe methods don't have bodies
         if (method.isSafe() && body != null) {
             throw new IllegalArgumentException(
-                String.format("Safe method %s must not have a request body", method.methodName())
+                    "Safe method %s must not have a request body".formatted(method.methodName())
             );
         }
 
@@ -376,12 +392,12 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
         try {
             // Build HTTP request with explicit converter
-            HttpRequest.BodyPublisher bodyPublisher = (body == null)
-                ? HttpRequest.BodyPublishers.noBody()
-                : requestConverter.toBodyPublisher(body);
+            HttpRequest.BodyPublisher bodyPublisher = body == null
+                    ? HttpRequest.BodyPublishers.noBody()
+                    : requestConverter.toBodyPublisher(body);
 
             HttpRequest.Builder requestBuilder = httpHandler.requestBuilder()
-                .method(method.methodName(), bodyPublisher);
+                    .method(method.methodName(), bodyPublisher);
 
             // Add custom headers
             headers.forEach(requestBuilder::header);
@@ -389,96 +405,96 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             // Add If-None-Match header if cached entry exists (GET only)
             if (cachedEntry != null && method == HttpMethod.GET) {
                 requestBuilder.header("If-None-Match", cachedEntry.etag());
-                LOGGER.debug("Adding If-None-Match header for GET request: {}", cachedEntry.etag());
+                LOGGER.debug("Adding If-None-Match header for GET request: %s", cachedEntry.etag());
             }
 
             HttpRequest request = requestBuilder.build();
 
             // Execute async request (reuse response handling logic from send())
             return httpClient.sendAsync(request, responseConverter.getBodyHandler())
-                .thenApply(response -> {
-                    int statusCode = response.statusCode();
+                    .thenApply(response -> {
+                        int statusCode = response.statusCode();
 
-                    // Handle 304 Not Modified - return cached content
-                    if (statusCode == 304 && cachedEntry != null) {
-                        LOGGER.debug("304 Not Modified - returning cached content");
-                        return HttpResult.success(cachedEntry.content(), cachedEntry.etag(), 304);
-                    }
+                        // Handle 304 Not Modified - return cached content
+                        if (statusCode == 304 && cachedEntry != null) {
+                            LOGGER.debug("304 Not Modified - returning cached content");
+                            return HttpResult.success(cachedEntry.content(), cachedEntry.etag(), 304);
+                        }
 
-                    // Extract ETag from response (all methods, not just GET)
-                    @Nullable String etag = response.headers()
-                        .firstValue("ETag")
-                        .orElse(null);
+                        // Extract ETag from response (all methods, not just GET)
+                        @Nullable String etag = response.headers()
+                                .firstValue("ETag")
+                                .orElse(null);
 
-                    // Convert response body
-                    Optional<T> content = responseConverter.convert(response.body());
+                        // Convert response body
+                        Optional<T> content = responseConverter.convert(response.body());
 
-                    // Handle conversion failure
-                    if (content.isEmpty() && statusCode >= 200 && statusCode < 300) {
-                        LOGGER.warn("Response conversion failed for status {}", statusCode);
+                        // Handle conversion failure
+                        if (content.isEmpty() && statusCode >= 200 && statusCode < 300) {
+                            /*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*/LOGGER.warn("Response conversion failed for status %s", statusCode);
+                            return HttpResult.<T>failure(
+                                    "Failed to convert response body",
+                                    null,
+                                    HttpErrorCategory.INVALID_CONTENT
+                            );
+                        }
+
+                        // Cache successful GET responses with ETag
+                        if (method == HttpMethod.GET && statusCode == 200 && etag != null && content.isPresent()) {
+                            CacheEntry<T> newEntry = new CacheEntry<>(content.get(), etag, System.currentTimeMillis());
+                            putInCache(cacheKey, newEntry);
+                            LOGGER.debug("Cached GET response with ETag: %s", etag);
+                        }
+
+                        // Return success for 2xx status codes
+                        if (statusCode >= 200 && statusCode < 300) {
+                            return HttpResult.success(content.orElse(null), etag, statusCode);
+                        }
+
+                        // Return failure for error status codes
+                        HttpErrorCategory errorCategory;
+                        if (statusCode >= 400 && statusCode < 500) {
+                            errorCategory = HttpErrorCategory.CLIENT_ERROR;
+                        } else if (statusCode >= 500 && statusCode < 600) {
+                            errorCategory = HttpErrorCategory.SERVER_ERROR;
+                        } else {
+                            // 3xx (other than 304), 1xx, or unknown codes
+                            errorCategory = HttpErrorCategory.INVALID_CONTENT;
+                        }
+
                         return HttpResult.<T>failure(
-                            "Failed to convert response body",
-                            null,
-                            HttpErrorCategory.INVALID_CONTENT
+                                "HTTP %d: %s".formatted(statusCode, method.methodName()),
+                                null,
+                                errorCategory
                         );
-                    }
+                    })
+                    .exceptionally(throwable -> {
+                        // Classify exceptions
+                        HttpErrorCategory category;
+                        if (throwable instanceof IOException) {
+                            category = HttpErrorCategory.NETWORK_ERROR;
+                            /*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*/LOGGER.warn("Network error during %s request: %s", method.methodName(), throwable.getMessage());
+                        } else {
+                            category = HttpErrorCategory.CONFIGURATION_ERROR;
+                            /*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*/LOGGER.error("Configuration error during %s request: %s", method.methodName(), throwable.getMessage());
+                        }
 
-                    // Cache successful GET responses with ETag
-                    if (method == HttpMethod.GET && statusCode == 200 && etag != null && content.isPresent()) {
-                        CacheEntry<T> newEntry = new CacheEntry<>(content.get(), etag, System.currentTimeMillis());
-                        putInCache(cacheKey, newEntry);
-                        LOGGER.debug("Cached GET response with ETag: {}", etag);
-                    }
+                        return HttpResult.<T>failure(
+                                "Request failed: %s".formatted(throwable.getMessage()),
+                                throwable,
+                                category
+                        );
+                    });
 
-                    // Return success for 2xx status codes
-                    if (statusCode >= 200 && statusCode < 300) {
-                        return HttpResult.success(content.orElse(null), etag, statusCode);
-                    }
-
-                    // Return failure for error status codes
-                    HttpErrorCategory errorCategory;
-                    if (statusCode >= 400 && statusCode < 500) {
-                        errorCategory = HttpErrorCategory.CLIENT_ERROR;
-                    } else if (statusCode >= 500 && statusCode < 600) {
-                        errorCategory = HttpErrorCategory.SERVER_ERROR;
-                    } else {
-                        // 3xx (other than 304), 1xx, or unknown codes
-                        errorCategory = HttpErrorCategory.INVALID_CONTENT;
-                    }
-
-                    return HttpResult.<T>failure(
-                        String.format("HTTP %d: %s", statusCode, method.methodName()),
-                        null,
-                        errorCategory
-                    );
-                })
-                .exceptionally(throwable -> {
-                    // Classify exceptions
-                    HttpErrorCategory category;
-                    if (throwable instanceof java.io.IOException) {
-                        category = HttpErrorCategory.NETWORK_ERROR;
-                        LOGGER.warn("Network error during {} request: {}", method.methodName(), throwable.getMessage());
-                    } else {
-                        category = HttpErrorCategory.CONFIGURATION_ERROR;
-                        LOGGER.error("Configuration error during {} request: {}", method.methodName(), throwable.getMessage());
-                    }
-
-                    return HttpResult.<T>failure(
-                        String.format("Request failed: %s", throwable.getMessage()),
-                        throwable,
-                        category
-                    );
-                });
-
-        } catch (Exception e) {
+        } /*~~(TODO: Catch specific not Exception. Suppress: // cui-rewrite:disable InvalidExceptionUsageRecipe)~~>*/catch (Exception e) {
             // Any exception during request building
-            LOGGER.error("Failed to build HTTP request for {}: {}", method.methodName(), e.getMessage());
+            /*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*/LOGGER.error("Failed to build HTTP request for %s: %s", method.methodName(), e.getMessage());
             return CompletableFuture.completedFuture(
-                HttpResult.failure(
-                    "Failed to build HTTP request: " + e.getMessage(),
-                    e,
-                    HttpErrorCategory.CONFIGURATION_ERROR
-                )
+                    HttpResult.failure(
+                            "Failed to build HTTP request: " + e.getMessage(),
+                            e,
+                            HttpErrorCategory.CONFIGURATION_ERROR
+                    )
             );
         }
     }
@@ -506,7 +522,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         // Validate safe methods don't have bodies
         if (method.isSafe() && body != null) {
             throw new IllegalArgumentException(
-                String.format("Safe method %s must not have a request body", method.methodName())
+                    "Safe method %s must not have a request body".formatted(method.methodName())
             );
         }
 
@@ -519,7 +535,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         try {
             // Build HTTP request
             HttpRequest.Builder requestBuilder = httpHandler.requestBuilder()
-                .method(method.methodName(), buildBodyPublisher(body));
+                    .method(method.methodName(), buildBodyPublisher(body));
 
             // Add custom headers
             headers.forEach(requestBuilder::header);
@@ -527,96 +543,96 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             // Add If-None-Match header if cached entry exists (GET only)
             if (cachedEntry != null && method == HttpMethod.GET) {
                 requestBuilder.header("If-None-Match", cachedEntry.etag());
-                LOGGER.debug("Adding If-None-Match header for GET request: {}", cachedEntry.etag());
+                LOGGER.debug("Adding If-None-Match header for GET request: %s", cachedEntry.etag());
             }
 
             HttpRequest request = requestBuilder.build();
 
             // Execute async request (no blocking!)
             return httpClient.sendAsync(request, responseConverter.getBodyHandler())
-                .thenApply(response -> {
-                    int statusCode = response.statusCode();
+                    .thenApply(response -> {
+                        int statusCode = response.statusCode();
 
-                    // Handle 304 Not Modified - return cached content
-                    if (statusCode == 304 && cachedEntry != null) {
-                        LOGGER.debug("304 Not Modified - returning cached content");
-                        return HttpResult.success(cachedEntry.content(), cachedEntry.etag(), 304);
-                    }
+                        // Handle 304 Not Modified - return cached content
+                        if (statusCode == 304 && cachedEntry != null) {
+                            LOGGER.debug("304 Not Modified - returning cached content");
+                            return HttpResult.success(cachedEntry.content(), cachedEntry.etag(), 304);
+                        }
 
-                    // Extract ETag from response (all methods, not just GET)
-                    @Nullable String etag = response.headers()
-                        .firstValue("ETag")
-                        .orElse(null);
+                        // Extract ETag from response (all methods, not just GET)
+                        @Nullable String etag = response.headers()
+                                .firstValue("ETag")
+                                .orElse(null);
 
-                    // Convert response body
-                    Optional<T> content = responseConverter.convert(response.body());
+                        // Convert response body
+                        Optional<T> content = responseConverter.convert(response.body());
 
-                    // Handle conversion failure
-                    if (content.isEmpty() && statusCode >= 200 && statusCode < 300) {
-                        LOGGER.warn("Response conversion failed for status {}", statusCode);
+                        // Handle conversion failure
+                        if (content.isEmpty() && statusCode >= 200 && statusCode < 300) {
+                            /*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*/LOGGER.warn("Response conversion failed for status %s", statusCode);
+                            return HttpResult.<T>failure(
+                                    "Failed to convert response body",
+                                    null,
+                                    HttpErrorCategory.INVALID_CONTENT
+                            );
+                        }
+
+                        // Cache successful GET responses with ETag
+                        if (method == HttpMethod.GET && statusCode == 200 && etag != null && content.isPresent()) {
+                            CacheEntry<T> newEntry = new CacheEntry<>(content.get(), etag, System.currentTimeMillis());
+                            putInCache(cacheKey, newEntry);
+                            LOGGER.debug("Cached GET response with ETag: %s", etag);
+                        }
+
+                        // Return success for 2xx status codes
+                        if (statusCode >= 200 && statusCode < 300) {
+                            return HttpResult.success(content.orElse(null), etag, statusCode);
+                        }
+
+                        // Return failure for error status codes
+                        HttpErrorCategory errorCategory;
+                        if (statusCode >= 400 && statusCode < 500) {
+                            errorCategory = HttpErrorCategory.CLIENT_ERROR;
+                        } else if (statusCode >= 500 && statusCode < 600) {
+                            errorCategory = HttpErrorCategory.SERVER_ERROR;
+                        } else {
+                            // 3xx (other than 304), 1xx, or unknown codes
+                            errorCategory = HttpErrorCategory.INVALID_CONTENT;
+                        }
+
                         return HttpResult.<T>failure(
-                            "Failed to convert response body",
-                            null,
-                            HttpErrorCategory.INVALID_CONTENT
+                                "HTTP %d: %s".formatted(statusCode, method.methodName()),
+                                null,
+                                errorCategory
                         );
-                    }
+                    })
+                    .exceptionally(throwable -> {
+                        // Classify exceptions
+                        HttpErrorCategory category;
+                        if (throwable instanceof IOException) {
+                            category = HttpErrorCategory.NETWORK_ERROR;
+                            /*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*/LOGGER.warn("Network error during %s request: %s", method.methodName(), throwable.getMessage());
+                        } else {
+                            category = HttpErrorCategory.CONFIGURATION_ERROR;
+                            /*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*/LOGGER.error("Configuration error during %s request: %s", method.methodName(), throwable.getMessage());
+                        }
 
-                    // Cache successful GET responses with ETag
-                    if (method == HttpMethod.GET && statusCode == 200 && etag != null && content.isPresent()) {
-                        CacheEntry<T> newEntry = new CacheEntry<>(content.get(), etag, System.currentTimeMillis());
-                        putInCache(cacheKey, newEntry);
-                        LOGGER.debug("Cached GET response with ETag: {}", etag);
-                    }
+                        return HttpResult.<T>failure(
+                                "Request failed: %s".formatted(throwable.getMessage()),
+                                throwable,
+                                category
+                        );
+                    });
 
-                    // Return success for 2xx status codes
-                    if (statusCode >= 200 && statusCode < 300) {
-                        return HttpResult.success(content.orElse(null), etag, statusCode);
-                    }
-
-                    // Return failure for error status codes
-                    HttpErrorCategory errorCategory;
-                    if (statusCode >= 400 && statusCode < 500) {
-                        errorCategory = HttpErrorCategory.CLIENT_ERROR;
-                    } else if (statusCode >= 500 && statusCode < 600) {
-                        errorCategory = HttpErrorCategory.SERVER_ERROR;
-                    } else {
-                        // 3xx (other than 304), 1xx, or unknown codes
-                        errorCategory = HttpErrorCategory.INVALID_CONTENT;
-                    }
-
-                    return HttpResult.<T>failure(
-                        String.format("HTTP %d: %s", statusCode, method.methodName()),
-                        null,
-                        errorCategory
-                    );
-                })
-                .exceptionally(throwable -> {
-                    // Classify exceptions
-                    HttpErrorCategory category;
-                    if (throwable instanceof java.io.IOException) {
-                        category = HttpErrorCategory.NETWORK_ERROR;
-                        LOGGER.warn("Network error during {} request: {}", method.methodName(), throwable.getMessage());
-                    } else {
-                        category = HttpErrorCategory.CONFIGURATION_ERROR;
-                        LOGGER.error("Configuration error during {} request: {}", method.methodName(), throwable.getMessage());
-                    }
-
-                    return HttpResult.<T>failure(
-                        String.format("Request failed: %s", throwable.getMessage()),
-                        throwable,
-                        category
-                    );
-                });
-
-        } catch (Exception e) {
+        } /*~~(TODO: Catch specific not Exception. Suppress: // cui-rewrite:disable InvalidExceptionUsageRecipe)~~>*/catch (Exception e) {
             // Any exception during request building
-            LOGGER.error("Failed to build HTTP request for {}: {}", method.methodName(), e.getMessage());
+            /*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*/LOGGER.error("Failed to build HTTP request for %s: %s", method.methodName(), e.getMessage());
             return CompletableFuture.completedFuture(
-                HttpResult.failure(
-                    "Failed to build HTTP request: " + e.getMessage(),
-                    e,
-                    HttpErrorCategory.CONFIGURATION_ERROR
-                )
+                    HttpResult.failure(
+                            "Failed to build HTTP request: " + e.getMessage(),
+                            e,
+                            HttpErrorCategory.CONFIGURATION_ERROR
+                    )
             );
         }
     }
@@ -650,14 +666,14 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
         // Sort headers alphabetically for consistent cache keys
         headers.entrySet().stream()
-            .filter(entry -> filter.includeInCacheKey(entry.getKey()))
-            .sorted(Map.Entry.comparingByKey(String.CASE_INSENSITIVE_ORDER))
-            .forEach(entry -> {
-                keyBuilder.append('|');
-                keyBuilder.append(entry.getKey());
-                keyBuilder.append(':');
-                keyBuilder.append(entry.getValue());
-            });
+                .filter(entry -> filter.includeInCacheKey(entry.getKey()))
+                .sorted(Map.Entry.comparingByKey(String.CASE_INSENSITIVE_ORDER))
+                .forEach(entry -> {
+                    keyBuilder.append('|');
+                    keyBuilder.append(entry.getKey());
+                    keyBuilder.append(':');
+                    keyBuilder.append(entry.getValue());
+                });
 
         return keyBuilder.toString();
     }
@@ -726,12 +742,12 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
         // Find oldest entries by timestamp
         var oldestEntries = cache.entrySet().stream()
-            .sorted(Map.Entry.comparingByValue(
-                (e1, e2) -> Long.compare(e1.timestamp(), e2.timestamp())
-            ))
-            .limit(evictionCount)
-            .map(Map.Entry::getKey)
-            .toList();
+                .sorted(Map.Entry.comparingByValue(
+                        (e1, e2) -> Long.compare(e1.timestamp(), e2.timestamp())
+                ))
+                .limit(evictionCount)
+                .map(Map.Entry::getKey)
+                .toList();
 
         // Remove oldest entries
         int removed = 0;
@@ -741,8 +757,8 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             }
         }
 
-        LOGGER.debug("Cache eviction: removed {} oldest entries (cache size: {} → {})",
-                     removed, cache.size() + removed, cache.size());
+        LOGGER.debug("Cache eviction: removed %s oldest entries (cache size: %s → %s)",
+                removed, cache.size() + removed, cache.size());
     }
 
     /**

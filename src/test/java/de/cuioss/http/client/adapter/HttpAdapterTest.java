@@ -1,10 +1,27 @@
+/*
+ * Copyright © 2025 CUI-OpenSource-Software (info@cuioss.de)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package de.cuioss.http.client.adapter;
 
+import de.cuioss.http.client.ContentType;
 import de.cuioss.http.client.converter.HttpRequestConverter;
 import de.cuioss.http.client.result.HttpResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.net.http.HttpRequest;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
@@ -28,7 +45,7 @@ class HttpAdapterTest {
     // ========== GET TESTS ==========
 
     @Test
-    void testGetNoHeadersDelegatesToGetWithHeaders() {
+    void getNoHeadersDelegatesToGetWithHeaders() {
         var future = adapter.get();
         assertNotNull(future);
         var result = future.join();
@@ -37,14 +54,14 @@ class HttpAdapterTest {
     }
 
     @Test
-    void testGetBlockingDelegatesToGet() {
+    void getBlockingDelegatesToGet() {
         var result = adapter.getBlocking();
         assertEquals(testResult, result);
         assertTrue(adapter.getWithHeadersCalled);
     }
 
     @Test
-    void testGetBlockingNoHeadersDelegatesToGet() {
+    void getBlockingNoHeadersDelegatesToGet() {
         var result = adapter.getBlocking(Map.of("X-Test", "value"));
         assertEquals(testResult, result);
         assertTrue(adapter.getWithHeadersCalled);
@@ -53,7 +70,7 @@ class HttpAdapterTest {
     // ========== HEAD TESTS ==========
 
     @Test
-    void testHeadNoHeadersDelegatesToHeadWithHeaders() {
+    void headNoHeadersDelegatesToHeadWithHeaders() {
         var future = adapter.head();
         assertNotNull(future);
         var result = future.join();
@@ -62,7 +79,7 @@ class HttpAdapterTest {
     }
 
     @Test
-    void testHeadBlockingDelegatesToHead() {
+    void headBlockingDelegatesToHead() {
         var result = adapter.headBlocking();
         assertEquals(testResult, result);
         assertTrue(adapter.headWithHeadersCalled);
@@ -71,7 +88,7 @@ class HttpAdapterTest {
     // ========== OPTIONS TESTS ==========
 
     @Test
-    void testOptionsNoHeadersDelegatesToOptionsWithHeaders() {
+    void optionsNoHeadersDelegatesToOptionsWithHeaders() {
         var future = adapter.options();
         assertNotNull(future);
         var result = future.join();
@@ -80,7 +97,7 @@ class HttpAdapterTest {
     }
 
     @Test
-    void testOptionsBlockingDelegatesToOptions() {
+    void optionsBlockingDelegatesToOptions() {
         var result = adapter.optionsBlocking();
         assertEquals(testResult, result);
         assertTrue(adapter.optionsWithHeadersCalled);
@@ -89,7 +106,7 @@ class HttpAdapterTest {
     // ========== DELETE TESTS ==========
 
     @Test
-    void testDeleteNoHeadersDelegatesToDeleteWithHeaders() {
+    void deleteNoHeadersDelegatesToDeleteWithHeaders() {
         var future = adapter.delete();
         assertNotNull(future);
         var result = future.join();
@@ -98,7 +115,7 @@ class HttpAdapterTest {
     }
 
     @Test
-    void testDeleteBlockingDelegatesToDelete() {
+    void deleteBlockingDelegatesToDelete() {
         var result = adapter.deleteBlocking();
         assertEquals(testResult, result);
         assertTrue(adapter.deleteWithHeadersCalled);
@@ -107,7 +124,7 @@ class HttpAdapterTest {
     // ========== POST TESTS ==========
 
     @Test
-    void testPostNoHeadersDelegatesToPostWithHeaders() {
+    void postNoHeadersDelegatesToPostWithHeaders() {
         var future = adapter.post("test-body");
         assertNotNull(future);
         var result = future.join();
@@ -116,14 +133,14 @@ class HttpAdapterTest {
     }
 
     @Test
-    void testPostBlockingDelegatesToPost() {
+    void postBlockingDelegatesToPost() {
         var result = adapter.postBlocking("test-body");
         assertEquals(testResult, result);
         assertTrue(adapter.postBodyWithHeadersCalled);
     }
 
     @Test
-    void testPostWithConverterNoHeadersDelegatesToPostWithConverter() {
+    void postWithConverterNoHeadersDelegatesToPostWithConverter() {
         var converter = new TestRequestConverter();
         var future = adapter.post(converter, 123);
         assertNotNull(future);
@@ -135,7 +152,7 @@ class HttpAdapterTest {
     // ========== PUT TESTS ==========
 
     @Test
-    void testPutNoHeadersDelegatesToPutWithHeaders() {
+    void putNoHeadersDelegatesToPutWithHeaders() {
         var future = adapter.put("test-body");
         assertNotNull(future);
         var result = future.join();
@@ -144,14 +161,14 @@ class HttpAdapterTest {
     }
 
     @Test
-    void testPutBlockingDelegatesToPut() {
+    void putBlockingDelegatesToPut() {
         var result = adapter.putBlocking("test-body");
         assertEquals(testResult, result);
         assertTrue(adapter.putBodyWithHeadersCalled);
     }
 
     @Test
-    void testPutWithConverterNoHeadersDelegatesToPutWithConverter() {
+    void putWithConverterNoHeadersDelegatesToPutWithConverter() {
         var converter = new TestRequestConverter();
         var future = adapter.put(converter, 123);
         assertNotNull(future);
@@ -163,7 +180,7 @@ class HttpAdapterTest {
     // ========== PATCH TESTS ==========
 
     @Test
-    void testPatchNoHeadersDelegatesToPatchWithHeaders() {
+    void patchNoHeadersDelegatesToPatchWithHeaders() {
         var future = adapter.patch("test-body");
         assertNotNull(future);
         var result = future.join();
@@ -172,14 +189,14 @@ class HttpAdapterTest {
     }
 
     @Test
-    void testPatchBlockingDelegatesToPatch() {
+    void patchBlockingDelegatesToPatch() {
         var result = adapter.patchBlocking("test-body");
         assertEquals(testResult, result);
         assertTrue(adapter.patchBodyWithHeadersCalled);
     }
 
     @Test
-    void testPatchWithConverterNoHeadersDelegatesToPatchWithConverter() {
+    void patchWithConverterNoHeadersDelegatesToPatchWithConverter() {
         var converter = new TestRequestConverter();
         var future = adapter.patch(converter, 123);
         assertNotNull(future);
@@ -191,7 +208,7 @@ class HttpAdapterTest {
     // ========== DELETE WITH BODY TESTS ==========
 
     @Test
-    void testDeleteWithBodyNoHeadersDelegatesToDeleteWithHeaders() {
+    void deleteWithBodyNoHeadersDelegatesToDeleteWithHeaders() {
         var future = adapter.delete("test-body");
         assertNotNull(future);
         var result = future.join();
@@ -200,7 +217,7 @@ class HttpAdapterTest {
     }
 
     @Test
-    void testDeleteWithConverterNoHeadersDelegatesToDeleteWithConverter() {
+    void deleteWithConverterNoHeadersDelegatesToDeleteWithConverter() {
         var converter = new TestRequestConverter();
         var future = adapter.delete(converter, 123);
         assertNotNull(future);
@@ -283,32 +300,32 @@ class HttpAdapterTest {
 
         @Override
         public <R> CompletableFuture<HttpResult<String>> post(HttpRequestConverter<R> requestConverter,
-                                                               R requestBody,
-                                                               Map<String, String> additionalHeaders) {
+                R requestBody,
+                Map<String, String> additionalHeaders) {
             postConverterWithHeadersCalled = true;
             return CompletableFuture.completedFuture(result);
         }
 
         @Override
         public <R> CompletableFuture<HttpResult<String>> put(HttpRequestConverter<R> requestConverter,
-                                                              R requestBody,
-                                                              Map<String, String> additionalHeaders) {
+                R requestBody,
+                Map<String, String> additionalHeaders) {
             putConverterWithHeadersCalled = true;
             return CompletableFuture.completedFuture(result);
         }
 
         @Override
         public <R> CompletableFuture<HttpResult<String>> patch(HttpRequestConverter<R> requestConverter,
-                                                                R requestBody,
-                                                                Map<String, String> additionalHeaders) {
+                R requestBody,
+                Map<String, String> additionalHeaders) {
             patchConverterWithHeadersCalled = true;
             return CompletableFuture.completedFuture(result);
         }
 
         @Override
         public <R> CompletableFuture<HttpResult<String>> delete(HttpRequestConverter<R> requestConverter,
-                                                                 R requestBody,
-                                                                 Map<String, String> additionalHeaders) {
+                R requestBody,
+                Map<String, String> additionalHeaders) {
             deleteConverterWithHeadersCalled = true;
             return CompletableFuture.completedFuture(result);
         }
@@ -319,13 +336,13 @@ class HttpAdapterTest {
      */
     private static class TestRequestConverter implements HttpRequestConverter<Integer> {
         @Override
-        public java.net.http.HttpRequest.BodyPublisher toBodyPublisher(Integer content) {
-            return java.net.http.HttpRequest.BodyPublishers.noBody();
+        public HttpRequest.BodyPublisher toBodyPublisher(Integer content) {
+            return HttpRequest.BodyPublishers.noBody();
         }
 
         @Override
-        public de.cuioss.http.client.ContentType contentType() {
-            return de.cuioss.http.client.ContentType.APPLICATION_JSON;
+        public ContentType contentType() {
+            return ContentType.APPLICATION_JSON;
         }
     }
 }

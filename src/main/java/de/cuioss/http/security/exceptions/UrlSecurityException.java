@@ -101,11 +101,11 @@ public class UrlSecurityException extends RuntimeException {
      */
     @Builder
     private UrlSecurityException(UrlSecurityFailureType failureType,
-                                 ValidationType validationType,
-                                 String originalInput,
-                                 @Nullable String sanitizedInput,
-                                 @Nullable String detail,
-                                 @Nullable Throwable cause) {
+            ValidationType validationType,
+            String originalInput,
+            @Nullable String sanitizedInput,
+            @Nullable String detail,
+            @Nullable Throwable cause) {
         super(buildMessage(failureType, validationType, originalInput, detail), cause);
         this.failureType = failureType;
         this.validationType = validationType;
@@ -142,9 +142,9 @@ public class UrlSecurityException extends RuntimeException {
      * @return A formatted error message
      */
     private static String buildMessage(UrlSecurityFailureType failureType,
-                                       ValidationType validationType,
-                                       String originalInput,
-                                       @Nullable String detail) {
+            ValidationType validationType,
+            String originalInput,
+            @Nullable String detail) {
         StringBuilder sb = new StringBuilder();
         sb.append("Security validation failed [").append(validationType).append("]: ");
         sb.append(failureType.getDescription());

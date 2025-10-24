@@ -83,7 +83,7 @@ public final class URLParameterValidationPipeline extends AbstractValidationPipe
      * @throws NullPointerException if config or eventCounter is null
      */
     public URLParameterValidationPipeline(SecurityConfiguration config,
-                                          SecurityEventCounter eventCounter) {
+            SecurityEventCounter eventCounter) {
         super(createStages(config), Objects.requireNonNull(eventCounter, "EventCounter must not be null"));
     }
 

@@ -434,7 +434,7 @@ public class SecurityConfigurationBuilder {
      * @return This builder for method chaining
      */
     public SecurityConfigurationBuilder cookieSecurity(boolean requireSecure, boolean requireHttpOnly,
-                                                       int maxCount, int maxNameLength, int maxValueLength) {
+            int maxCount, int maxNameLength, int maxValueLength) {
         return requireSecureCookies(requireSecure)
                 .requireHttpOnlyCookies(requireHttpOnly)
                 .maxCookieCount(maxCount)
@@ -583,7 +583,7 @@ public class SecurityConfigurationBuilder {
      * @return This builder for method chaining
      */
     public SecurityConfigurationBuilder encoding(boolean allowNulls, boolean allowControls,
-                                                 boolean allowHighBit, boolean normalizeUni) {
+            boolean allowHighBit, boolean normalizeUni) {
         return allowNullBytes(allowNulls)
                 .allowControlCharacters(allowControls)
                 .allowExtendedAscii(allowHighBit)

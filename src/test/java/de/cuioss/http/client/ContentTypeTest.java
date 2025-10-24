@@ -1,10 +1,24 @@
+/*
+ * Copyright © 2025 CUI-OpenSource-Software (info@cuioss.de)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package de.cuioss.http.client;
 
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -14,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class ContentTypeTest {
 
     @Test
-    void testApplicationJsonHasUtf8Charset() {
+    void applicationJsonHasUtf8Charset() {
         ContentType json = ContentType.APPLICATION_JSON;
 
         assertEquals("application/json", json.mediaType());
@@ -24,7 +38,7 @@ class ContentTypeTest {
     }
 
     @Test
-    void testApplicationXmlHasUtf8Charset() {
+    void applicationXmlHasUtf8Charset() {
         ContentType xml = ContentType.APPLICATION_XML;
 
         assertEquals("application/xml", xml.mediaType());
@@ -34,7 +48,7 @@ class ContentTypeTest {
     }
 
     @Test
-    void testTextPlainHasUtf8Charset() {
+    void textPlainHasUtf8Charset() {
         ContentType text = ContentType.TEXT_PLAIN;
 
         assertEquals("text/plain", text.mediaType());
@@ -44,7 +58,7 @@ class ContentTypeTest {
     }
 
     @Test
-    void testTextHtmlHasUtf8Charset() {
+    void textHtmlHasUtf8Charset() {
         ContentType html = ContentType.TEXT_HTML;
 
         assertEquals("text/html", html.mediaType());
@@ -54,7 +68,7 @@ class ContentTypeTest {
     }
 
     @Test
-    void testTextXmlHasUtf8Charset() {
+    void textXmlHasUtf8Charset() {
         ContentType textXml = ContentType.TEXT_XML;
 
         assertEquals("text/xml", textXml.mediaType());
@@ -64,7 +78,7 @@ class ContentTypeTest {
     }
 
     @Test
-    void testTextCsvHasUtf8Charset() {
+    void textCsvHasUtf8Charset() {
         ContentType csv = ContentType.TEXT_CSV;
 
         assertEquals("text/csv", csv.mediaType());
@@ -74,7 +88,7 @@ class ContentTypeTest {
     }
 
     @Test
-    void testFormUrlencodedHasUtf8Charset() {
+    void formUrlencodedHasUtf8Charset() {
         ContentType form = ContentType.APPLICATION_FORM_URLENCODED;
 
         assertEquals("application/x-www-form-urlencoded", form.mediaType());
@@ -84,7 +98,7 @@ class ContentTypeTest {
     }
 
     @Test
-    void testImageSvgHasUtf8Charset() {
+    void imageSvgHasUtf8Charset() {
         // SVG is text-based XML format, should have charset
         ContentType svg = ContentType.IMAGE_SVG;
 
@@ -95,7 +109,7 @@ class ContentTypeTest {
     }
 
     @Test
-    void testMultipartFormDataHasNoCharset() {
+    void multipartFormDataHasNoCharset() {
         ContentType multipart = ContentType.MULTIPART_FORM_DATA;
 
         assertEquals("multipart/form-data", multipart.mediaType());
@@ -104,7 +118,7 @@ class ContentTypeTest {
     }
 
     @Test
-    void testApplicationOctetStreamHasNoCharset() {
+    void applicationOctetStreamHasNoCharset() {
         ContentType binary = ContentType.APPLICATION_OCTET_STREAM;
 
         assertEquals("application/octet-stream", binary.mediaType());
@@ -113,7 +127,7 @@ class ContentTypeTest {
     }
 
     @Test
-    void testApplicationPdfHasNoCharset() {
+    void applicationPdfHasNoCharset() {
         ContentType pdf = ContentType.APPLICATION_PDF;
 
         assertEquals("application/pdf", pdf.mediaType());
@@ -122,7 +136,7 @@ class ContentTypeTest {
     }
 
     @Test
-    void testApplicationZipHasNoCharset() {
+    void applicationZipHasNoCharset() {
         ContentType zip = ContentType.APPLICATION_ZIP;
 
         assertEquals("application/zip", zip.mediaType());
@@ -131,7 +145,7 @@ class ContentTypeTest {
     }
 
     @Test
-    void testImagePngHasNoCharset() {
+    void imagePngHasNoCharset() {
         ContentType png = ContentType.IMAGE_PNG;
 
         assertEquals("image/png", png.mediaType());
@@ -140,7 +154,7 @@ class ContentTypeTest {
     }
 
     @Test
-    void testImageJpegHasNoCharset() {
+    void imageJpegHasNoCharset() {
         ContentType jpeg = ContentType.IMAGE_JPEG;
 
         assertEquals("image/jpeg", jpeg.mediaType());
@@ -149,7 +163,7 @@ class ContentTypeTest {
     }
 
     @Test
-    void testImageGifHasNoCharset() {
+    void imageGifHasNoCharset() {
         ContentType gif = ContentType.IMAGE_GIF;
 
         assertEquals("image/gif", gif.mediaType());
@@ -158,7 +172,7 @@ class ContentTypeTest {
     }
 
     @Test
-    void testToHeaderValueIncludesCharsetForTextTypes() {
+    void toHeaderValueIncludesCharsetForTextTypes() {
         // Verify that all text-based types include charset parameter
         String jsonHeader = ContentType.APPLICATION_JSON.toHeaderValue();
         assertTrue(jsonHeader.contains("charset="));
@@ -178,7 +192,7 @@ class ContentTypeTest {
     }
 
     @Test
-    void testToHeaderValueExcludesCharsetForBinaryTypes() {
+    void toHeaderValueExcludesCharsetForBinaryTypes() {
         // Verify that binary types do NOT include charset parameter
         String pdfHeader = ContentType.APPLICATION_PDF.toHeaderValue();
         assertFalse(pdfHeader.contains("charset="));
@@ -198,7 +212,7 @@ class ContentTypeTest {
     }
 
     @Test
-    void testDefaultCharsetReturnsEmptyForBinaryTypes() {
+    void defaultCharsetReturnsEmptyForBinaryTypes() {
         // Verify Optional.empty() for all binary types
         assertFalse(ContentType.APPLICATION_PDF.defaultCharset().isPresent());
         assertFalse(ContentType.APPLICATION_ZIP.defaultCharset().isPresent());
@@ -210,7 +224,7 @@ class ContentTypeTest {
     }
 
     @Test
-    void testDefaultCharsetReturnsPresentForTextTypes() {
+    void defaultCharsetReturnsPresentForTextTypes() {
         // Verify Optional with UTF-8 for all text types
         assertTrue(ContentType.APPLICATION_JSON.defaultCharset().isPresent());
         assertTrue(ContentType.APPLICATION_XML.defaultCharset().isPresent());
@@ -223,7 +237,7 @@ class ContentTypeTest {
     }
 
     @Test
-    void testAllTextTypesUseUtf8() {
+    void allTextTypesUseUtf8() {
         // Verify all text types use UTF-8 as default charset
         assertEquals(StandardCharsets.UTF_8, ContentType.APPLICATION_JSON.defaultCharset().get());
         assertEquals(StandardCharsets.UTF_8, ContentType.APPLICATION_XML.defaultCharset().get());
@@ -236,7 +250,7 @@ class ContentTypeTest {
     }
 
     @Test
-    void testMediaTypeReturnsCorrectValue() {
+    void mediaTypeReturnsCorrectValue() {
         // Verify mediaType() returns the correct string for various types
         assertEquals("application/json", ContentType.APPLICATION_JSON.mediaType());
         assertEquals("application/xml", ContentType.APPLICATION_XML.mediaType());
@@ -256,7 +270,7 @@ class ContentTypeTest {
     }
 
     @Test
-    void testEnumValuesExist() {
+    void enumValuesExist() {
         // Verify all expected enum constants exist
         assertNotNull(ContentType.APPLICATION_JSON);
         assertNotNull(ContentType.APPLICATION_XML);
@@ -276,7 +290,7 @@ class ContentTypeTest {
     }
 
     @Test
-    void testEnumValueOf() {
+    void enumValueOf() {
         // Test that valueOf works correctly
         assertEquals(ContentType.APPLICATION_JSON, ContentType.valueOf("APPLICATION_JSON"));
         assertEquals(ContentType.TEXT_PLAIN, ContentType.valueOf("TEXT_PLAIN"));
@@ -284,7 +298,7 @@ class ContentTypeTest {
     }
 
     @Test
-    void testEnumValues() {
+    void enumValues() {
         // Test that values() returns all enum constants
         ContentType[] values = ContentType.values();
         assertEquals(15, values.length);

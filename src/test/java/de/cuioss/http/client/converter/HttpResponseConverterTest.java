@@ -1,3 +1,18 @@
+/*
+ * Copyright © 2025 CUI-OpenSource-Software (info@cuioss.de)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package de.cuioss.http.client.converter;
 
 import de.cuioss.http.client.ContentType;
@@ -82,7 +97,7 @@ class HttpResponseConverterTest {
     }
 
     @Test
-    void testConvertReturnsEmptyOnParsingFailure() {
+    void convertReturnsEmptyOnParsingFailure() {
         var converter = new FailingConverter();
 
         Optional<Integer> result = converter.convert("123");
@@ -91,7 +106,7 @@ class HttpResponseConverterTest {
     }
 
     @Test
-    void testConvertReturnsEmptyOnNullInput() {
+    void convertReturnsEmptyOnNullInput() {
         var converter = new TestStringConverter();
 
         Optional<String> result = converter.convert(null);
@@ -100,7 +115,7 @@ class HttpResponseConverterTest {
     }
 
     @Test
-    void testConvertReturnsEmptyOnWrongType() {
+    void convertReturnsEmptyOnWrongType() {
         var converter = new TestStringConverter();
 
         Optional<String> result = converter.convert(123); // Wrong type
@@ -109,7 +124,7 @@ class HttpResponseConverterTest {
     }
 
     @Test
-    void testConvertSuccessReturnsValue() {
+    void convertSuccessReturnsValue() {
         var converter = new TestStringConverter();
 
         Optional<String> result = converter.convert("test-content");
@@ -119,7 +134,7 @@ class HttpResponseConverterTest {
     }
 
     @Test
-    void testGetBodyHandlerReturnsCorrectHandler() {
+    void getBodyHandlerReturnsCorrectHandler() {
         var stringConverter = new TestStringConverter();
         var byteConverter = new ByteArrayConverter();
 
@@ -132,7 +147,7 @@ class HttpResponseConverterTest {
     }
 
     @Test
-    void testContentTypeReturnsCorrectValue() {
+    void contentTypeReturnsCorrectValue() {
         var stringConverter = new TestStringConverter();
         var failingConverter = new FailingConverter();
         var byteConverter = new ByteArrayConverter();
@@ -146,7 +161,7 @@ class HttpResponseConverterTest {
     }
 
     @Test
-    void testBinaryContentConversion() {
+    void binaryContentConversion() {
         var converter = new ByteArrayConverter();
         byte[] input = new byte[]{1, 2, 3, 4, 5};
 
@@ -157,7 +172,7 @@ class HttpResponseConverterTest {
     }
 
     @Test
-    void testBinaryContentFailsOnWrongType() {
+    void binaryContentFailsOnWrongType() {
         var converter = new ByteArrayConverter();
 
         Optional<byte[]> result = converter.convert("not-bytes");
@@ -169,7 +184,7 @@ class HttpResponseConverterTest {
      * Verify that implementations follow the contract of returning empty rather than throwing.
      */
     @Test
-    void testConverterNeverThrowsExceptions() {
+    void converterNeverThrowsExceptions() {
         var converter = new TestStringConverter();
 
         // Should not throw for any input type
@@ -209,7 +224,7 @@ class HttpResponseConverterTest {
     }
 
     @Test
-    void testJsonLikeConverterSuccess() {
+    void jsonLikeConverterSuccess() {
         var converter = new SimulatedJsonConverter();
 
         Optional<Integer> result = converter.convert("42");
@@ -219,7 +234,7 @@ class HttpResponseConverterTest {
     }
 
     @Test
-    void testJsonLikeConverterFailureReturnsEmpty() {
+    void jsonLikeConverterFailureReturnsEmpty() {
         var converter = new SimulatedJsonConverter();
 
         Optional<Integer> result = converter.convert("not-a-number");
@@ -228,7 +243,7 @@ class HttpResponseConverterTest {
     }
 
     @Test
-    void testMultipleConvertersIndependentState() {
+    void multipleConvertersIndependentState() {
         var converter1 = new TestStringConverter();
         var converter2 = new TestStringConverter();
 

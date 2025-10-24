@@ -399,10 +399,10 @@ public final class SecurityConfiguration {
      * @return true if the value is allowed, false if blocked or null
      */
     private boolean isAllowed(@Nullable String value,
-                              @Nullable Set<String> allowedSet,
-                              Set<String> blockedSet,
-                              @Nullable Set<String> allowedSetLowercase,
-                              Set<String> blockedSetLowercase) {
+            @Nullable Set<String> allowedSet,
+            Set<String> blockedSet,
+            @Nullable Set<String> allowedSetLowercase,
+            Set<String> blockedSetLowercase) {
         if (value == null) {
             return false;
         }
