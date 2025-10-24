@@ -755,24 +755,24 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - `http-client-plan/06-implementation-plan.adoc` lines 145-160
 
 **Checklist:**
-- [ ] Read and understand all references above
-- [ ] If unclear, ask user for clarification (DO NOT guess)
-- [ ] Review all new classes for Javadoc completeness
-- [ ] Ensure all public methods have @param, @return, @throws tags
-- [ ] Add class-level usage examples to all new classes
-- [ ] Add @since 1.0 tags to all new APIs
-- [ ] Create package-info.java for de.cuioss.http.client.adapter
-- [ ] Document async-first architecture
-- [ ] Create package-info.java for de.cuioss.http.client (update for new enums)
-- [ ] Add examples for GET with ETag
-- [ ] Add examples for POST with JSON
-- [ ] Add examples for retry configuration
-- [ ] Add examples for composition (retry + caching)
-- [ ] Add examples for async execution patterns
-- [ ] Add examples for blocking convenience methods
-- [ ] Document token refresh cache bloat solution (CacheKeyHeaderFilter.excluding)
-- [ ] Run `project-builder` agent to verify build passes
-- [ ] Analyze build results - if issues found, fix and re-run
+- [x] Read and understand all references above
+- [x] If unclear, ask user for clarification (DO NOT guess)
+- [x] Review all new classes for Javadoc completeness
+- [x] Ensure all public methods have @param, @return, @throws tags
+- [x] Add class-level usage examples to all new classes
+- [x] Add @since 1.0 tags to all new APIs
+- [x] Create package-info.java for de.cuioss.http.client.adapter
+- [x] Document async-first architecture
+- [x] Create package-info.java for de.cuioss.http.client (update for new enums)
+- [x] Add examples for GET with ETag
+- [x] Add examples for POST with JSON
+- [x] Add examples for retry configuration
+- [x] Add examples for composition (retry + caching)
+- [x] Add examples for async execution patterns
+- [x] Add examples for blocking convenience methods
+- [x] Document token refresh cache bloat solution (CacheKeyHeaderFilter.excluding)
+- [x] Run `project-builder` agent to verify build passes
+- [x] Analyze build results - if issues found, fix and re-run
 - [ ] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
