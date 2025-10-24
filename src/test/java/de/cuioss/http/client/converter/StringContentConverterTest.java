@@ -15,6 +15,7 @@
  */
 package de.cuioss.http.client.converter;
 
+import de.cuioss.http.client.ContentType;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -55,6 +56,16 @@ class StringContentConverterTest {
     }
 
     @Test
+    @DisplayName("Identity converter should return TEXT_PLAIN as content type")
+    void identityConverterShouldReturnTextPlainAsContentType() {
+        StringContentConverter<String> converter = StringContentConverter.identity();
+
+        ContentType contentType = converter.contentType();
+
+        assertEquals(ContentType.TEXT_PLAIN, contentType);
+    }
+
+    @Test
     @DisplayName("Identity converter should return empty string as empty value")
     void identityConverterShouldReturnEmptyStringAsEmptyValue() {
         StringContentConverter<String> converter = StringContentConverter.identity();
@@ -73,8 +84,13 @@ class StringContentConverterTest {
                 return Optional.ofNullable(rawContent);
             }
 
-            @NotNull
             @Override
+            public ContentType contentType() {
+                return ContentType.TEXT_PLAIN;
+            }
+
+            @Override
+            @NotNull
             public String emptyValue() {
                 return "";
             }
@@ -97,8 +113,13 @@ class StringContentConverterTest {
                 return Optional.ofNullable(rawContent);
             }
 
-            @NotNull
             @Override
+            public ContentType contentType() {
+                return ContentType.TEXT_PLAIN;
+            }
+
+            @Override
+            @NotNull
             public String emptyValue() {
                 return "";
             }
@@ -126,8 +147,13 @@ class StringContentConverterTest {
                 }
             }
 
-            @NotNull
             @Override
+            public ContentType contentType() {
+                return ContentType.TEXT_PLAIN;
+            }
+
+            @Override
+            @NotNull
             public Integer emptyValue() {
                 return 0;
             }
@@ -150,7 +176,55 @@ class StringContentConverterTest {
         Optional<Integer> result4 = converter.convert(null);
         assertFalse(result4.isPresent());
 
+        // Test content type
+        assertEquals(ContentType.TEXT_PLAIN, converter.contentType());
+
         // Test empty value
         assertEquals(0, converter.emptyValue());
+    }
+
+    @Test
+    @DisplayName("Subclass must implement contentType() method")
+    void subclassMustImplementContentTypeMethod() {
+        // Test that contentType() returns correct value
+        StringContentConverter<String> converter = new StringContentConverter<String>() {
+            @Override
+            protected Optional<String> convertString(String rawContent) {
+                return Optional.ofNullable(rawContent);
+            }
+
+            @Override
+            public ContentType contentType() {
+                return ContentType.APPLICATION_JSON;
+            }
+
+            @Override
+            @NotNull
+            public String emptyValue() {
+                return "";
+            }
+        };
+
+        assertEquals(ContentType.APPLICATION_JSON, converter.contentType());
+    }
+
+    @Test
+    @DisplayName("Default emptyValue() should return null for backward compatibility")
+    void defaultEmptyValueShouldReturnNull() {
+        // Test that default emptyValue() returns null
+        StringContentConverter<String> converter = new StringContentConverter<String>() {
+            @Override
+            protected Optional<String> convertString(String rawContent) {
+                return Optional.ofNullable(rawContent);
+            }
+
+            @Override
+            public ContentType contentType() {
+                return ContentType.TEXT_PLAIN;
+            }
+            // Note: NOT overriding emptyValue() to test the default implementation
+        };
+
+        assertNull(converter.emptyValue());
     }
 }

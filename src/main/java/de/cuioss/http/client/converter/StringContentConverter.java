@@ -15,6 +15,7 @@
  */
 package de.cuioss.http.client.converter;
 
+import de.cuioss.http.client.ContentType;
 import org.jspecify.annotations.NonNull;
 
 import java.net.http.HttpResponse;
@@ -28,14 +29,19 @@ import java.util.Optional;
  * This converter is suitable for text-based content types such as JSON, XML, HTML, and plain text.
  * It uses HttpResponse.BodyHandlers.ofString() with configurable charset support.
  * <p>
- * Subclasses need only implement the conversion logic and empty value provision.
+ * Subclasses need only implement the conversion logic and content type declaration.
  * The String raw type handling is managed internally.
+ * <p>
+ * <strong>Migration Note:</strong> This class implements both {@link HttpResponseConverter}
+ * (new interface) and {@link HttpContentConverter} (legacy interface) for backward compatibility.
+ * The {@link #emptyValue()} method from HttpContentConverter returns null as a default.
+ * Subclasses should override this if needed for legacy code compatibility.
  *
  * @param <T> the target type for content conversion
  * @author Oliver Wolff
  * @since 1.0
  */
-public abstract class StringContentConverter<T> implements HttpContentConverter<T> {
+public abstract class StringContentConverter<T> implements HttpResponseConverter<T>, HttpContentConverter<T> {
 
     private final Charset charset;
 
@@ -76,6 +82,34 @@ public abstract class StringContentConverter<T> implements HttpContentConverter<
     protected abstract Optional<T> convertString(String rawContent);
 
     /**
+     * Returns the expected content type for responses.
+     * <p>
+     * Subclasses must implement this to declare their expected content type.
+     * This content type is used to set the {@code Accept} header in requests.
+     *
+     * @return Content type (e.g., APPLICATION_JSON, TEXT_XML, TEXT_PLAIN)
+     */
+    @Override
+    public abstract ContentType contentType();
+
+    /**
+     * Provides a semantically correct empty value for this content type.
+     * <p>
+     * Default implementation returns null. Subclasses should override this
+     * if they need to support legacy code that relies on {@link HttpContentConverter#emptyValue()}.
+     * <p>
+     * <strong>Note:</strong> This method is part of the legacy {@link HttpContentConverter}
+     * interface and is provided for backward compatibility only. New code using
+     * {@link HttpResponseConverter} does not require this method.
+     *
+     * @return empty value for type T, may be null
+     */
+    @Override
+    public T emptyValue() {
+        return null;
+    }
+
+    /**
      * Identity converter for String content (no conversion needed).
      * <p>
      * This is the most basic String converter that returns the input unchanged,
@@ -88,6 +122,11 @@ public abstract class StringContentConverter<T> implements HttpContentConverter<
             @Override
             protected Optional<String> convertString(String rawContent) {
                 return Optional.ofNullable(rawContent);
+            }
+
+            @Override
+            public ContentType contentType() {
+                return ContentType.TEXT_PLAIN;
             }
 
             @Override

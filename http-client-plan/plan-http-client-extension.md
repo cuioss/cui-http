@@ -651,16 +651,16 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - Existing file: `src/main/java/de/cuioss/http/client/converter/StringContentConverter.java`
 
 **Checklist:**
-- [ ] Read and understand all references above
-- [ ] If unclear, ask user for clarification (DO NOT guess)
-- [ ] Read existing StringContentConverter class
-- [ ] Change class to implement `HttpResponseConverter<T>` instead of HttpContentConverter
-- [ ] Add abstract method: `ContentType contentType()` (subclasses must implement)
-- [ ] Update existing convert() and getBodyHandler() methods (no changes to signatures)
-- [ ] Update unit tests in StringContentConverterTest
-- [ ] Test contentType() requires subclass implementation
-- [ ] Run `project-builder` agent to verify build passes
-- [ ] Analyze build results - if issues found, fix and re-run
+- [x] Read and understand all references above
+- [x] If unclear, ask user for clarification (DO NOT guess)
+- [x] Read existing StringContentConverter class
+- [x] Change class to implement `HttpResponseConverter<T>` instead of HttpContentConverter
+- [x] Add abstract method: `ContentType contentType()` (subclasses must implement)
+- [x] Update existing convert() and getBodyHandler() methods (no changes to signatures)
+- [x] Update unit tests in StringContentConverterTest
+- [x] Test contentType() requires subclass implementation
+- [x] Run `project-builder` agent to verify build passes
+- [x] Analyze build results - if issues found, fix and re-run
 - [ ] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
