@@ -567,7 +567,7 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - [x] Test success on retry attempt
 - [x] Run `project-builder` agent to verify build passes
 - [x] Analyze build results - if issues found, fix and re-run
-- [ ] Commit changes using `commit-current-changes` agent
+- [x] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
 - ResilientHttpAdapter wraps any HttpAdapter
