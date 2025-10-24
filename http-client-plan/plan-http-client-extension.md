@@ -146,18 +146,18 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - Package: `de.cuioss.http.client.converter`
 
 **Checklist:**
-- [ ] Read and understand all references above
-- [ ] If unclear, ask user for clarification (DO NOT guess)
-- [ ] Create `HttpRequestConverter<R>` interface in `src/main/java/de/cuioss/http/client/converter/HttpRequestConverter.java`
-- [ ] Add method: `HttpRequest.BodyPublisher toBodyPublisher(@Nullable R content)`
-- [ ] Add method: `ContentType contentType()`
-- [ ] Document null handling contract: return noBody() for null, throw IllegalArgumentException on serialization failure
-- [ ] Add comprehensive Javadoc with usage examples
-- [ ] Create unit tests in `HttpRequestConverterTest`
-- [ ] Test toBodyPublisher() returns noBody() for null input
-- [ ] Test toBodyPublisher() throws IllegalArgumentException on serialization failure
-- [ ] Run `project-builder` agent to verify build passes
-- [ ] Analyze build results - if issues found, fix and re-run
+- [x] Read and understand all references above
+- [x] If unclear, ask user for clarification (DO NOT guess)
+- [x] Create `HttpRequestConverter<R>` interface in `src/main/java/de/cuioss/http/client/converter/HttpRequestConverter.java`
+- [x] Add method: `HttpRequest.BodyPublisher toBodyPublisher(@Nullable R content)`
+- [x] Add method: `ContentType contentType()`
+- [x] Document null handling contract: return noBody() for null, throw IllegalArgumentException on serialization failure
+- [x] Add comprehensive Javadoc with usage examples
+- [x] Create unit tests in `HttpRequestConverterTest`
+- [x] Test toBodyPublisher() returns noBody() for null input
+- [x] Test toBodyPublisher() throws IllegalArgumentException on serialization failure
+- [x] Run `project-builder` agent to verify build passes
+- [x] Analyze build results - if issues found, fix and re-run
 - [ ] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
