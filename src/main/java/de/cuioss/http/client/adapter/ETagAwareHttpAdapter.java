@@ -462,10 +462,13 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
                             errorCategory = HttpErrorCategory.INVALID_CONTENT;
                         }
 
-                        return HttpResult.<T>failure(
+                        return HttpResult.<T>failureWithFallback(
                                 "HTTP %d: %s".formatted(statusCode, method.methodName()),
                                 null,
-                                errorCategory
+                                null, // no fallback content
+                                errorCategory,
+                                null, // no cached ETag
+                                statusCode // include HTTP status code
                         );
                     })
                     .exceptionally(throwable -> {
@@ -600,10 +603,13 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
                             errorCategory = HttpErrorCategory.INVALID_CONTENT;
                         }
 
-                        return HttpResult.<T>failure(
+                        return HttpResult.<T>failureWithFallback(
                                 "HTTP %d: %s".formatted(statusCode, method.methodName()),
                                 null,
-                                errorCategory
+                                null, // no fallback content
+                                errorCategory,
+                                null, // no cached ETag
+                                statusCode // include HTTP status code
                         );
                     })
                     .exceptionally(throwable -> {

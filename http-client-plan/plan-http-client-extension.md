@@ -689,7 +689,7 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - [x] Document replacement: HttpResponseConverter and HttpRequestConverter
 - [x] Run `project-builder` agent to verify build passes
 - [x] Analyze build results - if issues found, fix and re-run
-- [ ] Commit changes using `commit-current-changes` agent
+- [x] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
 - HttpContentConverter marked @Deprecated
@@ -708,28 +708,28 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - Testing guidelines: section on integration tests
 
 **Checklist:**
-- [ ] Read and understand all references above
-- [ ] If unclear, ask user for clarification (DO NOT guess)
-- [ ] Create integration test class: `ETagAwareHttpAdapterIntegrationTest`
-- [ ] Set up MockWebServer in @BeforeEach
-- [ ] Tear down MockWebServer in @AfterEach
-- [ ] Test GET with ETag: first request 200 with ETag, second request sends If-None-Match, receives 304, returns Success with cached content
-- [ ] Test POST request: body sent with Content-Type, response converted, ETag extracted but not cached
-- [ ] Test PUT request: idempotent behavior, successful update
-- [ ] Test DELETE request: no body sent, 204 response handled
-- [ ] Test network failure: server not responding, IOException caught, returns NETWORK_ERROR failure
-- [ ] Test server error: 503 response, returns SERVER_ERROR failure with status code
-- [ ] Test client error: 404 response, returns CLIENT_ERROR failure with status code
-- [ ] Create integration test class: `ResilientHttpAdapterIntegrationTest`
-- [ ] Test retry on network failure: attempt 1 fails with IOException, attempt 2 succeeds
-- [ ] Test retry on server error: attempt 1 returns 503, attempt 2 returns 200
-- [ ] Test no retry on client error: 404 returned immediately, no retry attempts
-- [ ] Test composition: ResilientHttpAdapter wraps ETagAwareHttpAdapter, retry + caching work together
-- [ ] Test 304 not retried: ETagAwareHttpAdapter returns Success for 304, ResilientHttpAdapter doesn't retry
-- [ ] Run all integration tests
-- [ ] Verify test coverage ≥ 80% overall, 100% for critical paths
-- [ ] Run `project-builder` agent to verify build passes
-- [ ] Analyze build results - if issues found, fix and re-run
+- [x] Read and understand all references above
+- [x] If unclear, ask user for clarification (DO NOT guess)
+- [x] Create integration test class: `ETagAwareHttpAdapterIntegrationTest`
+- [x] Set up MockWebServer in @BeforeEach
+- [x] Tear down MockWebServer in @AfterEach
+- [x] Test GET with ETag: first request 200 with ETag, second request sends If-None-Match, receives 304, returns Success with cached content
+- [x] Test POST request: body sent with Content-Type, response converted, ETag extracted but not cached
+- [x] Test PUT request: idempotent behavior, successful update
+- [x] Test DELETE request: no body sent, 204 response handled
+- [x] Test network failure: server not responding, IOException caught, returns NETWORK_ERROR failure
+- [x] Test server error: 503 response, returns SERVER_ERROR failure with status code
+- [x] Test client error: 404 response, returns CLIENT_ERROR failure with status code
+- [x] Create integration test class: `ResilientHttpAdapterIntegrationTest`
+- [x] Test retry on network failure: attempt 1 fails with IOException, attempt 2 succeeds
+- [x] Test retry on server error: attempt 1 returns 503, attempt 2 returns 200
+- [x] Test no retry on client error: 404 returned immediately, no retry attempts
+- [x] Test composition: ResilientHttpAdapter wraps ETagAwareHttpAdapter, retry + caching work together
+- [x] Test 304 not retried: ETagAwareHttpAdapter returns Success for 304, ResilientHttpAdapter doesn't retry
+- [x] Run all integration tests
+- [x] Verify test coverage ≥ 80% overall, 100% for critical paths
+- [x] Run `project-builder` agent to verify build passes
+- [x] Analyze build results - if issues found, fix and re-run
 - [ ] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
