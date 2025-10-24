@@ -483,34 +483,34 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - Package: `de.cuioss.http.client.adapter`
 
 **Checklist:**
-- [ ] Read and understand all references above
-- [ ] If unclear, ask user for clarification (DO NOT guess)
-- [ ] Create `RetryConfig` record in `src/main/java/de/cuioss/http/client/adapter/RetryConfig.java`
-- [ ] Add record components: `int maxAttempts`, `Duration initialDelay`, `double multiplier`, `Duration maxDelay`, `double jitter`, `boolean idempotentOnly`
-- [ ] Create nested Builder class
-- [ ] Set builder defaults: maxAttempts=5, initialDelay=1s, multiplier=2.0, maxDelay=1min, jitter=0.1, idempotentOnly=true
-- [ ] Implement builder validation in setter methods
-- [ ] Validate maxAttempts >= 1
-- [ ] Validate initialDelay positive
-- [ ] Validate multiplier >= 1.0
-- [ ] Validate maxDelay positive
-- [ ] Validate jitter between 0.0 and 1.0
-- [ ] Add static factory: `defaults()` returning default configuration
-- [ ] Add static factory: `builder()` returning new Builder
-- [ ] Add method: `calculateDelay(int attemptNumber)` with exponential backoff formula
-- [ ] Use ThreadLocalRandom for jitter (thread-safe)
-- [ ] Apply jitter: delay * (1 ± jitter)
-- [ ] Cap delay at maxDelay
-- [ ] Add comprehensive Javadoc explaining defaults and rationale
-- [ ] Add @SuppressWarnings("java:S2245") for random in jitter
-- [ ] Create unit tests in `RetryConfigTest` (minimum 80% coverage)
-- [ ] Test builder validation (negative values, out of range)
-- [ ] Test default values
-- [ ] Test calculateDelay() exponential backoff
-- [ ] Test jitter randomization
-- [ ] Test maxDelay cap enforced
-- [ ] Run `project-builder` agent to verify build passes
-- [ ] Analyze build results - if issues found, fix and re-run
+- [x] Read and understand all references above
+- [x] If unclear, ask user for clarification (DO NOT guess)
+- [x] Create `RetryConfig` record in `src/main/java/de/cuioss/http/client/adapter/RetryConfig.java`
+- [x] Add record components: `int maxAttempts`, `Duration initialDelay`, `double multiplier`, `Duration maxDelay`, `double jitter`, `boolean idempotentOnly`
+- [x] Create nested Builder class
+- [x] Set builder defaults: maxAttempts=5, initialDelay=1s, multiplier=2.0, maxDelay=1min, jitter=0.1, idempotentOnly=true
+- [x] Implement builder validation in setter methods
+- [x] Validate maxAttempts >= 1
+- [x] Validate initialDelay positive
+- [x] Validate multiplier >= 1.0
+- [x] Validate maxDelay positive
+- [x] Validate jitter between 0.0 and 1.0
+- [x] Add static factory: `defaults()` returning default configuration
+- [x] Add static factory: `builder()` returning new Builder
+- [x] Add method: `calculateDelay(int attemptNumber)` with exponential backoff formula
+- [x] Use ThreadLocalRandom for jitter (thread-safe)
+- [x] Apply jitter: delay * (1 ± jitter)
+- [x] Cap delay at maxDelay
+- [x] Add comprehensive Javadoc explaining defaults and rationale
+- [x] Add @SuppressWarnings("java:S2245") for random in jitter
+- [x] Create unit tests in `RetryConfigTest` (minimum 80% coverage)
+- [x] Test builder validation (negative values, out of range)
+- [x] Test default values
+- [x] Test calculateDelay() exponential backoff
+- [x] Test jitter randomization
+- [x] Test maxDelay cap enforced
+- [x] Run `project-builder` agent to verify build passes
+- [x] Analyze build results - if issues found, fix and re-run
 - [ ] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
