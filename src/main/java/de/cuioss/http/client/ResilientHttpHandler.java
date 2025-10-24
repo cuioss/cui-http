@@ -15,7 +15,7 @@
  */
 package de.cuioss.http.client;
 
-import de.cuioss.http.client.converter.HttpContentConverter;
+import de.cuioss.http.client.converter.HttpResponseConverter;
 import de.cuioss.http.client.handler.HttpHandler;
 import de.cuioss.http.client.handler.HttpStatusFamily;
 import de.cuioss.http.client.result.HttpErrorCategory;
@@ -51,7 +51,7 @@ public class ResilientHttpHandler<T> {
     private static final CuiLogger LOGGER = new CuiLogger(ResilientHttpHandler.class);
     private final HttpHandler httpHandler;
     private final RetryStrategy retryStrategy;
-    private final HttpContentConverter<T> contentConverter;
+    private final HttpResponseConverter<T> contentConverter;
     private final ReentrantLock lock = new ReentrantLock();
 
     private HttpResult<T> cachedResult; // Guarded by lock, no volatile needed
@@ -68,7 +68,7 @@ public class ResilientHttpHandler<T> {
      * @param contentConverter the converter for HTTP content, never null
      * @throws NullPointerException if any parameter is null
      */
-    public ResilientHttpHandler(@NonNull HttpHandler httpHandler, @NonNull RetryStrategy retryStrategy, @NonNull HttpContentConverter<T> contentConverter) {
+    public ResilientHttpHandler(@NonNull HttpHandler httpHandler, @NonNull RetryStrategy retryStrategy, @NonNull HttpResponseConverter<T> contentConverter) {
         this.httpHandler = httpHandler;
         this.retryStrategy = retryStrategy;
         this.contentConverter = contentConverter;

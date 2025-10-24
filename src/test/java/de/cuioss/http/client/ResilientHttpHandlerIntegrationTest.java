@@ -15,7 +15,7 @@
  */
 package de.cuioss.http.client;
 
-import de.cuioss.http.client.converter.HttpContentConverter;
+import de.cuioss.http.client.converter.HttpResponseConverter;
 import de.cuioss.http.client.converter.StringContentConverter;
 import de.cuioss.http.client.dispatcher.TestContentDispatcher;
 import de.cuioss.http.client.handler.HttpHandler;
@@ -217,7 +217,7 @@ class ResilientHttpHandlerIntegrationTest {
             HttpHandler httpHandler = HttpHandler.builder().url(url).build();
 
             // Converter that always returns empty Optional to simulate conversion failure
-            HttpContentConverter<String> failingConverter = new HttpContentConverter<>() {
+            HttpResponseConverter<String> failingConverter = new HttpResponseConverter<>() {
                 @Override
                 public Optional<String> convert(Object rawContent) {
                     return Optional.empty();
@@ -229,8 +229,8 @@ class ResilientHttpHandlerIntegrationTest {
                 }
 
                 @Override
-                public String emptyValue() {
-                    return "";
+                public de.cuioss.http.client.ContentType contentType() {
+                    return de.cuioss.http.client.ContentType.TEXT_PLAIN;
                 }
             };
 

@@ -671,9 +671,9 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 
 ---
 
-### Task 17: Deprecate HttpContentConverter
+### Task 17: Remove HttpContentConverter (BREAKING CHANGE - Pre-1.0)
 
-**Goal:** Mark legacy converter interface as deprecated
+**Goal:** Remove legacy converter interface entirely (pre-1.0 breaking change)
 
 **References:**
 - Specification: `http-client-plan/01-current-architecture.adoc` lines 161-476
@@ -682,20 +682,21 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 **Checklist:**
 - [x] Read and understand all references above
 - [x] If unclear, ask user for clarification (DO NOT guess)
-- [x] Read existing HttpContentConverter interface
-- [x] Add @Deprecated annotation with since="1.0", forRemoval=true
-- [x] Add default implementation for emptyValue() returning null
-- [x] Add Javadoc explaining deprecation and migration path
-- [x] Document replacement: HttpResponseConverter and HttpRequestConverter
+- [x] Remove HttpContentConverter.java file entirely
+- [x] Update StringContentConverter to ONLY implement HttpResponseConverter
+- [x] Remove StringContentConverter's emptyValue() method and dual-interface support
+- [x] Find all usages of HttpContentConverter in codebase
+- [x] Update all usages to use HttpResponseConverter and HttpRequestConverter
 - [x] Run `project-builder` agent to verify build passes
 - [x] Analyze build results - if issues found, fix and re-run
-- [x] Commit changes using `commit-current-changes` agent
+- [ ] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
-- HttpContentConverter marked @Deprecated
-- emptyValue() has default implementation returning null
-- Javadoc explains migration to new interfaces
-- Existing code still compiles with deprecation warnings
+- HttpContentConverter.java file deleted
+- StringContentConverter implements ONLY HttpResponseConverter
+- No @Deprecated annotations anywhere in the codebase
+- All code uses new HttpResponseConverter/HttpRequestConverter interfaces
+- Build passes with zero compilation errors
 
 ---
 
@@ -730,7 +731,7 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - [x] Verify test coverage ≥ 80% overall, 100% for critical paths
 - [x] Run `project-builder` agent to verify build passes
 - [x] Analyze build results - if issues found, fix and re-run
-- [ ] Commit changes using `commit-current-changes` agent
+- [x] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
 - Integration tests use MockWebServer for realistic HTTP

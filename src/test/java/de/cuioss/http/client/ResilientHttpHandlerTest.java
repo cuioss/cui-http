@@ -15,7 +15,7 @@
  */
 package de.cuioss.http.client;
 
-import de.cuioss.http.client.converter.HttpContentConverter;
+import de.cuioss.http.client.converter.HttpResponseConverter;
 import de.cuioss.http.client.converter.StringContentConverter;
 import de.cuioss.http.client.handler.HttpHandler;
 import de.cuioss.http.client.retry.RetryStrategy;
@@ -63,7 +63,7 @@ class ResilientHttpHandlerTest {
         void shouldCreateHandlerWithRequiredParameters() {
             HttpHandler httpHandler = HttpHandler.builder().url(TEST_URL).build();
             RetryStrategy retryStrategy = RetryStrategy.none();
-            HttpContentConverter<String> converter = StringContentConverter.identity();
+            HttpResponseConverter<String> converter = StringContentConverter.identity();
 
             ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
                     httpHandler, retryStrategy, converter);
@@ -77,7 +77,7 @@ class ResilientHttpHandlerTest {
         @DisplayName("Should create handler without retry strategy")
         void shouldCreateHandlerWithoutRetry() {
             HttpHandler httpHandler = HttpHandler.builder().url(TEST_URL).build();
-            HttpContentConverter<String> converter = StringContentConverter.identity();
+            HttpResponseConverter<String> converter = StringContentConverter.identity();
 
             ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
                     httpHandler, RetryStrategy.none(), converter);
@@ -128,17 +128,17 @@ class ResilientHttpHandlerTest {
     class ContentConverterTests {
 
         @Test
-        @DisplayName("Should use converter's empty value as fallback")
-        void shouldUseConverterEmptyValueAsFallback() {
+        @DisplayName("Should use converter with identity converter")
+        void shouldUseIdentityConverter() {
             HttpHandler httpHandler = HttpHandler.builder().url(TEST_URL).build();
-            HttpContentConverter<String> converter = StringContentConverter.identity();
+            HttpResponseConverter<String> converter = StringContentConverter.identity();
 
             ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
                     httpHandler, RetryStrategy.none(), converter);
 
             assertNotNull(handler, "Handler should be created with identity converter");
-            // The empty value behavior is tested through integration tests
-            // as it requires actual HTTP operations to trigger fallback paths
+            // Converter behavior is tested through integration tests
+            // as it requires actual HTTP operations
         }
 
         @Test
@@ -146,8 +146,8 @@ class ResilientHttpHandlerTest {
         void shouldHandleCustomConverters() {
             HttpHandler httpHandler = HttpHandler.builder().url(TEST_URL).build();
 
-            // Custom converter that always returns "CUSTOM_EMPTY"
-            HttpContentConverter<String> customConverter = new HttpContentConverter<String>() {
+            // Custom converter for testing
+            HttpResponseConverter<String> customConverter = new HttpResponseConverter<String>() {
                 @Override
                 public HttpResponse.BodyHandler<?> getBodyHandler() {
                     return HttpResponse.BodyHandlers.ofString();
@@ -158,10 +158,9 @@ class ResilientHttpHandlerTest {
                     return Optional.ofNullable((String) rawContent);
                 }
 
-                @NonNull
                 @Override
-                public String emptyValue() {
-                    return "CUSTOM_EMPTY";
+                public de.cuioss.http.client.ContentType contentType() {
+                    return de.cuioss.http.client.ContentType.TEXT_PLAIN;
                 }
             };
 
@@ -169,14 +168,14 @@ class ResilientHttpHandlerTest {
                     httpHandler, RetryStrategy.none(), customConverter);
 
             assertNotNull(handler, "Handler should accept custom converter");
-            // Empty value usage is verified through integration tests
+            // Converter usage is verified through integration tests
         }
 
         @Test
         @DisplayName("Should work with identity string converter")
         void shouldWorkWithIdentityConverter() {
             HttpHandler httpHandler = HttpHandler.builder().url(TEST_URL).build();
-            HttpContentConverter<String> converter = StringContentConverter.identity();
+            HttpResponseConverter<String> converter = StringContentConverter.identity();
 
             ResilientHttpHandler<String> handler = new ResilientHttpHandler<>(
                     httpHandler, RetryStrategy.none(), converter);

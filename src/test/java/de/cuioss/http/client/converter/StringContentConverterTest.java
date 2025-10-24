@@ -16,7 +16,6 @@
 package de.cuioss.http.client.converter;
 
 import de.cuioss.http.client.ContentType;
-import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -65,15 +64,6 @@ class StringContentConverterTest {
         assertEquals(ContentType.TEXT_PLAIN, contentType);
     }
 
-    @Test
-    @DisplayName("Identity converter should return empty string as empty value")
-    void identityConverterShouldReturnEmptyStringAsEmptyValue() {
-        StringContentConverter<String> converter = StringContentConverter.identity();
-
-        String emptyValue = converter.emptyValue();
-
-        assertEquals("", emptyValue);
-    }
 
     @Test
     @DisplayName("Should use UTF-8 charset by default")
@@ -87,12 +77,6 @@ class StringContentConverterTest {
             @Override
             public ContentType contentType() {
                 return ContentType.TEXT_PLAIN;
-            }
-
-            @Override
-            @NotNull
-            public String emptyValue() {
-                return "";
             }
         };
 
@@ -116,12 +100,6 @@ class StringContentConverterTest {
             @Override
             public ContentType contentType() {
                 return ContentType.TEXT_PLAIN;
-            }
-
-            @Override
-            @NotNull
-            public String emptyValue() {
-                return "";
             }
         };
 
@@ -151,12 +129,6 @@ class StringContentConverterTest {
             public ContentType contentType() {
                 return ContentType.TEXT_PLAIN;
             }
-
-            @Override
-            @NotNull
-            public Integer emptyValue() {
-                return 0;
-            }
         };
 
         // Test successful conversion
@@ -178,9 +150,6 @@ class StringContentConverterTest {
 
         // Test content type
         assertEquals(ContentType.TEXT_PLAIN, converter.contentType());
-
-        // Test empty value
-        assertEquals(0, converter.emptyValue());
     }
 
     @Test
@@ -197,34 +166,8 @@ class StringContentConverterTest {
             public ContentType contentType() {
                 return ContentType.APPLICATION_JSON;
             }
-
-            @Override
-            @NotNull
-            public String emptyValue() {
-                return "";
-            }
         };
 
         assertEquals(ContentType.APPLICATION_JSON, converter.contentType());
-    }
-
-    @Test
-    @DisplayName("Default emptyValue() should return null for backward compatibility")
-    void defaultEmptyValueShouldReturnNull() {
-        // Test that default emptyValue() returns null
-        StringContentConverter<String> converter = new StringContentConverter<String>() {
-            @Override
-            protected Optional<String> convertString(String rawContent) {
-                return Optional.ofNullable(rawContent);
-            }
-
-            @Override
-            public ContentType contentType() {
-                return ContentType.TEXT_PLAIN;
-            }
-            // Note: NOT overriding emptyValue() to test the default implementation
-        };
-
-        assertNull(converter.emptyValue());
     }
 }
