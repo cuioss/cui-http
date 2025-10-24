@@ -807,7 +807,7 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - [x] Add security best practices section to package-info.java
 - [x] Run `project-builder` agent to verify build passes
 - [x] Analyze build results - if issues found, fix and re-run
-- [ ] Commit changes using `commit-current-changes` agent
+- [x] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
 - Security validation integration documented
@@ -827,20 +827,20 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - Project standards: `/Users/oliver/git/cui-http/CLAUDE.md`
 
 **Checklist:**
-- [ ] Read and understand all references above
-- [ ] If unclear, ask user for clarification (DO NOT guess)
-- [ ] Run pre-commit checks: `./mvnw -Ppre-commit clean verify`
-- [ ] Verify all tests pass
-- [ ] Verify code formatting correct
-- [ ] Verify static analysis passes
-- [ ] Verify coverage ≥ 80% overall, 100% for critical paths
-- [ ] Run coverage report: `./mvnw -Pcoverage clean verify`
-- [ ] Check coverage report for any gaps
-- [ ] Run dependency analysis: `./mvnw dependency:analyze`
-- [ ] Fix any warnings or errors found
-- [ ] Re-run checks until all pass
-- [ ] Run `project-builder` agent for final verification
-- [ ] Analyze build results - if issues found, fix and re-run
+- [x] Read and understand all references above
+- [x] If unclear, ask user for clarification (DO NOT guess)
+- [x] Run pre-commit checks: `./mvnw -Ppre-commit clean verify`
+- [x] Verify all tests pass
+- [x] Verify code formatting correct
+- [x] Verify static analysis passes
+- [x] Verify coverage ≥ 80% overall, 100% for critical paths
+- [x] Run coverage report: `./mvnw -Pcoverage clean verify`
+- [x] Check coverage report for any gaps
+- [x] Run dependency analysis: `./mvnw dependency:analyze`
+- [x] Fix any warnings or errors found
+- [x] Re-run checks until all pass
+- [x] Run `project-builder` agent for final verification
+- [x] Analyze build results - if issues found, fix and re-run
 - [ ] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**

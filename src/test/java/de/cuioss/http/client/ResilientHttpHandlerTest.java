@@ -20,7 +20,6 @@ import de.cuioss.http.client.converter.StringContentConverter;
 import de.cuioss.http.client.handler.HttpHandler;
 import de.cuioss.http.client.retry.RetryStrategy;
 import de.cuioss.test.juli.junit5.EnableTestLogger;
-import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -159,8 +158,8 @@ class ResilientHttpHandlerTest {
                 }
 
                 @Override
-                public de.cuioss.http.client.ContentType contentType() {
-                    return de.cuioss.http.client.ContentType.TEXT_PLAIN;
+                public ContentType contentType() {
+                    return ContentType.TEXT_PLAIN;
                 }
             };
 

@@ -229,8 +229,8 @@ class ResilientHttpHandlerIntegrationTest {
                 }
 
                 @Override
-                public de.cuioss.http.client.ContentType contentType() {
-                    return de.cuioss.http.client.ContentType.TEXT_PLAIN;
+                public ContentType contentType() {
+                    return ContentType.TEXT_PLAIN;
                 }
             };
 

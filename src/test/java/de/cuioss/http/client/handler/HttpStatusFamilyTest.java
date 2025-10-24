@@ -303,8 +303,8 @@ class HttpStatusFamilyTest {
         @DisplayName("SUCCESS should throw IllegalStateException")
         void successShouldThrowException() {
             IllegalStateException exception = assertThrows(
-                IllegalStateException.class,
-                () -> HttpStatusFamily.SUCCESS.toErrorCategory()
+                    IllegalStateException.class,
+                    () -> HttpStatusFamily.SUCCESS.toErrorCategory()
             );
             assertEquals("SUCCESS is not an error", exception.getMessage());
         }

@@ -32,7 +32,6 @@ import org.junit.jupiter.api.Test;
 
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -290,7 +289,7 @@ class ETagAwareHttpAdapterIntegrationTest {
         @Override
         public HttpRequest.BodyPublisher toBodyPublisher(@Nullable String content) {
             return content == null ? HttpRequest.BodyPublishers.noBody()
-                                    : HttpRequest.BodyPublishers.ofString(content);
+                    : HttpRequest.BodyPublishers.ofString(content);
         }
 
         @Override
