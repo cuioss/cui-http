@@ -93,7 +93,7 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - [x] Test methodName() returns correct string
 - [x] Run `project-builder` agent to verify build passes
 - [x] Analyze build results - if issues found, fix and re-run
-- [ ] Commit changes using `commit-current-changes` agent
+- [x] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
 - HttpMethod enum exists with all HTTP methods
@@ -113,20 +113,20 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - Package: `de.cuioss.http.client.converter`
 
 **Checklist:**
-- [ ] Read and understand all references above
-- [ ] If unclear, ask user for clarification (DO NOT guess)
-- [ ] Create `HttpResponseConverter<T>` interface in `src/main/java/de/cuioss/http/client/converter/HttpResponseConverter.java`
-- [ ] Add method: `Optional<T> convert(Object rawContent)`
-- [ ] Add method: `HttpResponse.BodyHandler<?> getBodyHandler()`
-- [ ] Add method: `ContentType contentType()`
-- [ ] Document error handling contract: return Optional.empty() on failure, never throw
-- [ ] Add comprehensive Javadoc with usage examples
-- [ ] Create unit tests in `HttpResponseConverterTest`
-- [ ] Test convert() returns Optional.empty() on parsing failure
-- [ ] Test getBodyHandler() returns correct handler
-- [ ] Run `project-builder` agent to verify build passes
-- [ ] Analyze build results - if issues found, fix and re-run
-- [ ] Commit changes using `commit-current-changes` agent
+- [x] Read and understand all references above
+- [x] If unclear, ask user for clarification (DO NOT guess)
+- [x] Create `HttpResponseConverter<T>` interface in `src/main/java/de/cuioss/http/client/converter/HttpResponseConverter.java`
+- [x] Add method: `Optional<T> convert(Object rawContent)`
+- [x] Add method: `HttpResponse.BodyHandler<?> getBodyHandler()`
+- [x] Add method: `ContentType contentType()`
+- [x] Document error handling contract: return Optional.empty() on failure, never throw
+- [x] Add comprehensive Javadoc with usage examples
+- [x] Create unit tests in `HttpResponseConverterTest`
+- [x] Test convert() returns Optional.empty() on parsing failure
+- [x] Test getBodyHandler() returns correct handler
+- [x] Run `project-builder` agent to verify build passes
+- [x] Analyze build results - if issues found, fix and re-run
+- [x] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
 - HttpResponseConverter interface exists with three methods
