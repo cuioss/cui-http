@@ -591,21 +591,21 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - Existing file: `src/main/java/de/cuioss/http/client/handler/HttpStatusFamily.java`
 
 **Checklist:**
-- [ ] Read and understand all references above
-- [ ] If unclear, ask user for clarification (DO NOT guess)
-- [ ] Read existing HttpStatusFamily enum
-- [ ] Add method: `toErrorCategory()` returning HttpErrorCategory
-- [ ] Map CLIENT_ERROR → HttpErrorCategory.CLIENT_ERROR
-- [ ] Map SERVER_ERROR → HttpErrorCategory.SERVER_ERROR
-- [ ] Map SUCCESS → throw IllegalStateException("SUCCESS is not an error")
-- [ ] Map REDIRECTION → HttpErrorCategory.INVALID_CONTENT (rare, most handled by HttpClient)
-- [ ] Map INFORMATIONAL, UNKNOWN → HttpErrorCategory.INVALID_CONTENT
-- [ ] Add comprehensive Javadoc explaining mapping
-- [ ] Update unit tests in HttpStatusFamilyTest
-- [ ] Test all mappings
-- [ ] Test SUCCESS throws IllegalStateException
-- [ ] Run `project-builder` agent to verify build passes
-- [ ] Analyze build results - if issues found, fix and re-run
+- [x] Read and understand all references above
+- [x] If unclear, ask user for clarification (DO NOT guess)
+- [x] Read existing HttpStatusFamily enum
+- [x] Add method: `toErrorCategory()` returning HttpErrorCategory
+- [x] Map CLIENT_ERROR → HttpErrorCategory.CLIENT_ERROR
+- [x] Map SERVER_ERROR → HttpErrorCategory.SERVER_ERROR
+- [x] Map SUCCESS → throw IllegalStateException("SUCCESS is not an error")
+- [x] Map REDIRECTION → HttpErrorCategory.INVALID_CONTENT (rare, most handled by HttpClient)
+- [x] Map INFORMATIONAL, UNKNOWN → HttpErrorCategory.INVALID_CONTENT
+- [x] Add comprehensive Javadoc explaining mapping
+- [x] Update unit tests in HttpStatusFamilyTest
+- [x] Test all mappings
+- [x] Test SUCCESS throws IllegalStateException
+- [x] Run `project-builder` agent to verify build passes
+- [x] Analyze build results - if issues found, fix and re-run
 - [ ] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**

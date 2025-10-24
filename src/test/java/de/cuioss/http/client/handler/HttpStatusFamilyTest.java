@@ -15,6 +15,7 @@
  */
 package de.cuioss.http.client.handler;
 
+import de.cuioss.http.client.result.HttpErrorCategory;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -261,6 +262,75 @@ class HttpStatusFamilyTest {
         @DisplayName("toString should format correctly for UNKNOWN")
         void toStringShouldFormatCorrectlyForUnknown() {
             assertEquals("Unknown", HttpStatusFamily.UNKNOWN.toString());
+        }
+    }
+
+    @Nested
+    @DisplayName("toErrorCategory Tests")
+    class ToErrorCategoryTests {
+
+        @Test
+        @DisplayName("CLIENT_ERROR should map to HttpErrorCategory.CLIENT_ERROR")
+        void clientErrorShouldMapToClientErrorCategory() {
+            assertEquals(HttpErrorCategory.CLIENT_ERROR, HttpStatusFamily.CLIENT_ERROR.toErrorCategory());
+        }
+
+        @Test
+        @DisplayName("SERVER_ERROR should map to HttpErrorCategory.SERVER_ERROR")
+        void serverErrorShouldMapToServerErrorCategory() {
+            assertEquals(HttpErrorCategory.SERVER_ERROR, HttpStatusFamily.SERVER_ERROR.toErrorCategory());
+        }
+
+        @Test
+        @DisplayName("REDIRECTION should map to HttpErrorCategory.INVALID_CONTENT")
+        void redirectionShouldMapToInvalidContent() {
+            assertEquals(HttpErrorCategory.INVALID_CONTENT, HttpStatusFamily.REDIRECTION.toErrorCategory());
+        }
+
+        @Test
+        @DisplayName("INFORMATIONAL should map to HttpErrorCategory.INVALID_CONTENT")
+        void informationalShouldMapToInvalidContent() {
+            assertEquals(HttpErrorCategory.INVALID_CONTENT, HttpStatusFamily.INFORMATIONAL.toErrorCategory());
+        }
+
+        @Test
+        @DisplayName("UNKNOWN should map to HttpErrorCategory.INVALID_CONTENT")
+        void unknownShouldMapToInvalidContent() {
+            assertEquals(HttpErrorCategory.INVALID_CONTENT, HttpStatusFamily.UNKNOWN.toErrorCategory());
+        }
+
+        @Test
+        @DisplayName("SUCCESS should throw IllegalStateException")
+        void successShouldThrowException() {
+            IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> HttpStatusFamily.SUCCESS.toErrorCategory()
+            );
+            assertEquals("SUCCESS is not an error", exception.getMessage());
+        }
+
+        @Test
+        @DisplayName("All non-SUCCESS families should map without exception")
+        void allNonSuccessFamiliesShouldMapWithoutException() {
+            assertDoesNotThrow(() -> HttpStatusFamily.CLIENT_ERROR.toErrorCategory());
+            assertDoesNotThrow(() -> HttpStatusFamily.SERVER_ERROR.toErrorCategory());
+            assertDoesNotThrow(() -> HttpStatusFamily.REDIRECTION.toErrorCategory());
+            assertDoesNotThrow(() -> HttpStatusFamily.INFORMATIONAL.toErrorCategory());
+            assertDoesNotThrow(() -> HttpStatusFamily.UNKNOWN.toErrorCategory());
+        }
+
+        @Test
+        @DisplayName("SERVER_ERROR category should be retryable")
+        void serverErrorCategoryShouldBeRetryable() {
+            HttpErrorCategory category = HttpStatusFamily.SERVER_ERROR.toErrorCategory();
+            assertTrue(category.isRetryable(), "SERVER_ERROR should map to retryable category");
+        }
+
+        @Test
+        @DisplayName("CLIENT_ERROR category should not be retryable")
+        void clientErrorCategoryShouldNotBeRetryable() {
+            HttpErrorCategory category = HttpStatusFamily.CLIENT_ERROR.toErrorCategory();
+            assertFalse(category.isRetryable(), "CLIENT_ERROR should map to non-retryable category");
         }
     }
 }
