@@ -298,27 +298,27 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - Package: `de.cuioss.http.client.adapter`
 
 **Checklist:**
-- [ ] Read and understand all references above
-- [ ] If unclear, ask user for clarification (DO NOT guess)
-- [ ] Create `ETagAwareHttpAdapter<T>` class implementing `HttpAdapter<T>`
-- [ ] Add final fields: `HttpHandler httpHandler`, `HttpClient httpClient`, `HttpResponseConverter<T> responseConverter`, `HttpRequestConverter<T> requestConverter`, `boolean etagCachingEnabled`, `CacheKeyHeaderFilter cacheKeyHeaderFilter`, `int maxCacheSize`
-- [ ] Create CacheEntry record: `record CacheEntry<T>(T content, String etag, long timestamp)`
-- [ ] Add cache field: `ConcurrentHashMap<String, CacheEntry<T>> cache`
-- [ ] Create HttpClient ONCE in constructor (store as final field for thread-safe reuse)
-- [ ] Create Builder class with fields matching adapter parameters
-- [ ] Implement builder methods with validation
-- [ ] Set builder defaults: etagCachingEnabled=true, cacheKeyHeaderFilter=ALL, maxCacheSize=1000
-- [ ] Implement build() method that constructs adapter
-- [ ] Add static factory: `statusCodeOnly(HttpHandler)` using VoidResponseConverter
-- [ ] Add method: `clearETagCache()`
-- [ ] Add comprehensive class-level Javadoc with examples
-- [ ] Create test class `ETagAwareHttpAdapterTest`
-- [ ] Test builder validation (null handler, null converter)
-- [ ] Test default builder values
-- [ ] Test statusCodeOnly() factory method
-- [ ] Run `project-builder` agent to verify build passes
-- [ ] Analyze build results - if issues found, fix and re-run
-- [ ] Commit changes using `commit-current-changes` agent
+- [x] Read and understand all references above
+- [x] If unclear, ask user for clarification (DO NOT guess)
+- [x] Create `ETagAwareHttpAdapter<T>` class implementing `HttpAdapter<T>`
+- [x] Add final fields: `HttpHandler httpHandler`, `HttpClient httpClient`, `HttpResponseConverter<T> responseConverter`, `HttpRequestConverter<T> requestConverter`, `boolean etagCachingEnabled`, `CacheKeyHeaderFilter cacheKeyHeaderFilter`, `int maxCacheSize`
+- [x] Create CacheEntry record: `record CacheEntry<T>(T content, String etag, long timestamp)`
+- [x] Add cache field: `ConcurrentHashMap<String, CacheEntry<T>> cache`
+- [x] Create HttpClient ONCE in constructor (store as final field for thread-safe reuse)
+- [x] Create Builder class with fields matching adapter parameters
+- [x] Implement builder methods with validation
+- [x] Set builder defaults: etagCachingEnabled=true, cacheKeyHeaderFilter=ALL, maxCacheSize=1000
+- [x] Implement build() method that constructs adapter
+- [x] Add static factory: `statusCodeOnly(HttpHandler)` using VoidResponseConverter
+- [x] Add method: `clearETagCache()`
+- [x] Add comprehensive class-level Javadoc with examples
+- [x] Create test class `ETagAwareHttpAdapterTest`
+- [x] Test builder validation (null handler, null converter)
+- [x] Test default builder values
+- [x] Test statusCodeOnly() factory method
+- [x] Run `project-builder` agent to verify build passes
+- [x] Analyze build results - if issues found, fix and re-run
+- [x] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
 - ETagAwareHttpAdapter class exists with all fields
