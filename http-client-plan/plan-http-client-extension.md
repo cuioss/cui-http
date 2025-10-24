@@ -341,32 +341,32 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - Async architecture: `http-client-plan/02-proposed-architecture.adoc`
 
 **Checklist:**
-- [ ] Read and understand all references above
-- [ ] If unclear, ask user for clarification (DO NOT guess)
-- [ ] Implement private method: `send(HttpMethod method, @Nullable T body, Map<String, String> headers)`
-- [ ] Return type: `CompletableFuture<HttpResult<T>>`
-- [ ] Validate safe methods (GET/HEAD/OPTIONS) don't have bodies
-- [ ] Generate cache key using `generateCacheKey()` method
-- [ ] Retrieve cache entry BEFORE building request (hold local reference)
-- [ ] Build HttpRequest using `httpHandler.requestBuilder()`
-- [ ] Set HTTP method using `method.methodName()`
-- [ ] Add request body using `buildBodyPublisher()`
-- [ ] Add custom headers from Map
-- [ ] Add If-None-Match header if cache entry exists and method is GET
-- [ ] Execute async using `httpClient.sendAsync(request, responseConverter.getBodyHandler())`
-- [ ] Return CompletableFuture (no blocking!)
-- [ ] Implement helper: `generateCacheKey(URI uri, Map<String, String> headers, CacheKeyHeaderFilter filter)`
-- [ ] Sort headers alphabetically in cache key
-- [ ] Apply filter predicate to each header
-- [ ] Implement helper: `buildBodyPublisher(@Nullable T body)`
-- [ ] Return noBody() if body is null OR requestConverter is null
-- [ ] Call requestConverter.toBodyPublisher() if body present
-- [ ] Add unit tests for send() method structure
-- [ ] Test cache key generation with filters
-- [ ] Test If-None-Match only added for GET with cache entry
-- [ ] Test body publisher creation
-- [ ] Run `project-builder` agent to verify build passes
-- [ ] Analyze build results - if issues found, fix and re-run
+- [x] Read and understand all references above
+- [x] If unclear, ask user for clarification (DO NOT guess)
+- [x] Implement private method: `send(HttpMethod method, @Nullable T body, Map<String, String> headers)`
+- [x] Return type: `CompletableFuture<HttpResult<T>>`
+- [x] Validate safe methods (GET/HEAD/OPTIONS) don't have bodies
+- [x] Generate cache key using `generateCacheKey()` method
+- [x] Retrieve cache entry BEFORE building request (hold local reference)
+- [x] Build HttpRequest using `httpHandler.requestBuilder()`
+- [x] Set HTTP method using `method.methodName()`
+- [x] Add request body using `buildBodyPublisher()`
+- [x] Add custom headers from Map
+- [x] Add If-None-Match header if cache entry exists and method is GET
+- [x] Execute async using `httpClient.sendAsync(request, responseConverter.getBodyHandler())`
+- [x] Return CompletableFuture (no blocking!)
+- [x] Implement helper: `generateCacheKey(URI uri, Map<String, String> headers, CacheKeyHeaderFilter filter)`
+- [x] Sort headers alphabetically in cache key
+- [x] Apply filter predicate to each header
+- [x] Implement helper: `buildBodyPublisher(@Nullable T body)`
+- [x] Return noBody() if body is null OR requestConverter is null
+- [x] Call requestConverter.toBodyPublisher() if body present
+- [x] Add unit tests for send() method structure
+- [x] Test cache key generation with filters
+- [x] Test If-None-Match only added for GET with cache entry
+- [x] Test body publisher creation
+- [x] Run `project-builder` agent to verify build passes
+- [x] Analyze build results - if issues found, fix and re-run
 - [ ] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**

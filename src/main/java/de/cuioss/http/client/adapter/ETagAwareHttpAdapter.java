@@ -5,12 +5,15 @@ import de.cuioss.http.client.converter.HttpRequestConverter;
 import de.cuioss.http.client.converter.HttpResponseConverter;
 import de.cuioss.http.client.converter.VoidResponseConverter;
 import de.cuioss.http.client.handler.HttpHandler;
+import de.cuioss.http.client.result.HttpErrorCategory;
 import de.cuioss.http.client.result.HttpResult;
 import de.cuioss.tools.logging.CuiLogger;
 import lombok.Getter;
 import org.jspecify.annotations.Nullable;
 
+import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -223,8 +226,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
     @Override
     public CompletableFuture<HttpResult<T>> get(Map<String, String> headers) {
-        // TODO: Implement in Task 9
-        throw new UnsupportedOperationException("Not yet implemented - Task 9");
+        return send(HttpMethod.GET, null, headers);
     }
 
     @Override
@@ -346,6 +348,140 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
     public CompletableFuture<HttpResult<T>> options(Map<String, String> headers) {
         // TODO: Implement in Task 11
         throw new UnsupportedOperationException("Not yet implemented - Task 11");
+    }
+
+    /**
+     * Core request execution method with async CompletableFuture.
+     *
+     * <p>
+     * Implements the structural 304 Not Modified handling pattern:
+     * </p>
+     * <ol>
+     *   <li>Retrieve cache entry BEFORE building request (local reference held)</li>
+     *   <li>Add If-None-Match header if cache entry exists (GET only)</li>
+     *   <li>Execute request asynchronously via HttpClient</li>
+     *   <li>Handle 304 using cached entry (structurally guaranteed non-null)</li>
+     * </ol>
+     *
+     * @param method HTTP method (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS)
+     * @param body Request body (nullable, ignored for GET/HEAD/OPTIONS)
+     * @param headers Additional HTTP headers
+     * @return CompletableFuture with HttpResult (never null)
+     * @throws IllegalArgumentException if safe methods (GET/HEAD/OPTIONS) called with body
+     */
+    private CompletableFuture<HttpResult<T>> send(HttpMethod method, @Nullable T body, Map<String, String> headers) {
+        // Validate safe methods don't have bodies
+        if (method.isSafe() && body != null) {
+            throw new IllegalArgumentException(
+                String.format("Safe method %s must not have a request body", method.methodName())
+            );
+        }
+
+        // Generate cache key (only meaningful for GET with caching enabled)
+        String cacheKey = generateCacheKey(httpHandler.getUri(), headers, cacheKeyHeaderFilter);
+
+        // Retrieve cache entry BEFORE building request (hold local reference for 304 handling)
+        @Nullable CacheEntry<T> cachedEntry = etagCachingEnabled ? cache.get(cacheKey) : null;
+
+        try {
+            // Build HTTP request
+            HttpRequest.Builder requestBuilder = httpHandler.requestBuilder()
+                .method(method.methodName(), buildBodyPublisher(body));
+
+            // Add custom headers
+            headers.forEach(requestBuilder::header);
+
+            // Add If-None-Match header if cached entry exists (GET only)
+            if (cachedEntry != null && method == HttpMethod.GET) {
+                requestBuilder.header("If-None-Match", cachedEntry.etag());
+                LOGGER.debug("Adding If-None-Match header for GET request: {}", cachedEntry.etag());
+            }
+
+            HttpRequest request = requestBuilder.build();
+
+            // Execute async request (no blocking!)
+            return httpClient.sendAsync(request, responseConverter.getBodyHandler())
+                .thenApply(response -> {
+                    // Response handling will be implemented in Task 10
+                    // For now, return a placeholder to allow compilation
+                    throw new UnsupportedOperationException("Response handling not yet implemented - Task 10");
+                });
+
+        } catch (Exception e) {
+            // Any exception during request building
+            LOGGER.error("Failed to build HTTP request for {}: {}", method.methodName(), e.getMessage());
+            return CompletableFuture.completedFuture(
+                HttpResult.failure(
+                    "Failed to build HTTP request: " + e.getMessage(),
+                    e,
+                    HttpErrorCategory.CONFIGURATION_ERROR
+                )
+            );
+        }
+    }
+
+    /**
+     * Generates cache key from URI and filtered headers.
+     *
+     * <p>
+     * Cache key format: URI + sorted headers (filtered by predicate)
+     * </p>
+     *
+     * <h3>Example Cache Keys</h3>
+     * <pre>
+     * // With ALL filter:
+     * "https://api.example.com/users|Accept:application/json|Authorization:Bearer token123"
+     *
+     * // With NONE filter (URI only):
+     * "https://api.example.com/users"
+     *
+     * // With excluding("Authorization"):
+     * "https://api.example.com/users|Accept:application/json"
+     * </pre>
+     *
+     * @param uri Request URI
+     * @param headers HTTP headers
+     * @param filter Header filter predicate
+     * @return Cache key string
+     */
+    private String generateCacheKey(URI uri, Map<String, String> headers, CacheKeyHeaderFilter filter) {
+        StringBuilder keyBuilder = new StringBuilder(uri.toString());
+
+        // Sort headers alphabetically for consistent cache keys
+        headers.entrySet().stream()
+            .filter(entry -> filter.includeInCacheKey(entry.getKey()))
+            .sorted(Map.Entry.comparingByKey(String.CASE_INSENSITIVE_ORDER))
+            .forEach(entry -> {
+                keyBuilder.append('|');
+                keyBuilder.append(entry.getKey());
+                keyBuilder.append(':');
+                keyBuilder.append(entry.getValue());
+            });
+
+        return keyBuilder.toString();
+    }
+
+    /**
+     * Builds HTTP request body publisher.
+     *
+     * <p>
+     * Returns noBody() if:
+     * </p>
+     * <ul>
+     *   <li>Body is null (safe methods like GET/HEAD/OPTIONS)</li>
+     *   <li>Request converter not configured</li>
+     * </ul>
+     *
+     * @param body Request body (nullable)
+     * @return BodyPublisher for the request
+     * @throws IllegalArgumentException if body serialization fails
+     */
+    private HttpRequest.BodyPublisher buildBodyPublisher(@Nullable T body) {
+        if (body == null || requestConverter == null) {
+            return HttpRequest.BodyPublishers.noBody();
+        }
+
+        return requestConverter.toBodyPublisher(body);
     }
 
     /**
