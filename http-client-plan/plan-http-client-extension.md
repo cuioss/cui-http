@@ -79,20 +79,20 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - RFC 7231: HTTP method semantics
 
 **Checklist:**
-- [ ] Read and understand all references above
-- [ ] If unclear, ask user for clarification (DO NOT guess)
-- [ ] Create `HttpMethod` enum in `src/main/java/de/cuioss/http/client/HttpMethod.java`
-- [ ] Implement enum values: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS
-- [ ] Add fields: `boolean safe`, `boolean idempotent`, `String name`
-- [ ] Implement methods: `isSafe()`, `isIdempotent()`, `methodName()`
-- [ ] Set correct properties (GET: safe+idempotent, POST: unsafe+non-idempotent, PUT: unsafe+idempotent, etc.)
-- [ ] Add comprehensive Javadoc explaining safe vs idempotent
-- [ ] Mark enum as public (for logging/debugging visibility)
-- [ ] Implement unit tests in `HttpMethodTest` (minimum 80% coverage)
-- [ ] Test all methods have correct safe/idempotent properties
-- [ ] Test methodName() returns correct string
-- [ ] Run `project-builder` agent to verify build passes
-- [ ] Analyze build results - if issues found, fix and re-run
+- [x] Read and understand all references above
+- [x] If unclear, ask user for clarification (DO NOT guess)
+- [x] Create `HttpMethod` enum in `src/main/java/de/cuioss/http/client/HttpMethod.java`
+- [x] Implement enum values: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS
+- [x] Add fields: `boolean safe`, `boolean idempotent`, `String name`
+- [x] Implement methods: `isSafe()`, `isIdempotent()`, `methodName()`
+- [x] Set correct properties (GET: safe+idempotent, POST: unsafe+non-idempotent, PUT: unsafe+idempotent, etc.)
+- [x] Add comprehensive Javadoc explaining safe vs idempotent
+- [x] Mark enum as public (for logging/debugging visibility)
+- [x] Implement unit tests in `HttpMethodTest` (minimum 80% coverage)
+- [x] Test all methods have correct safe/idempotent properties
+- [x] Test methodName() returns correct string
+- [x] Run `project-builder` agent to verify build passes
+- [x] Analyze build results - if issues found, fix and re-run
 - [ ] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
