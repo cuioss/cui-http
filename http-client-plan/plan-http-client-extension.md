@@ -45,18 +45,18 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - Package: `de.cuioss.http.client`
 
 **Checklist:**
-- [ ] Read and understand all references above
-- [ ] If unclear, ask user for clarification (DO NOT guess)
-- [ ] Create `ContentType` enum in `src/main/java/de/cuioss/http/client/ContentType.java`
-- [ ] Implement enum values: APPLICATION_JSON, APPLICATION_XML, TEXT_PLAIN, TEXT_HTML, TEXT_XML, TEXT_CSV, APPLICATION_FORM_URLENCODED, MULTIPART_FORM_DATA, APPLICATION_OCTET_STREAM, APPLICATION_PDF, APPLICATION_ZIP, IMAGE_PNG, IMAGE_JPEG, IMAGE_GIF, IMAGE_SVG
-- [ ] Add fields: `String mediaType`, `Charset defaultCharset`
-- [ ] Implement methods: `mediaType()`, `defaultCharset()`, `toHeaderValue()`
-- [ ] Add comprehensive Javadoc with examples
-- [ ] Implement unit tests in `ContentTypeTest` (minimum 80% coverage)
-- [ ] Test `toHeaderValue()` includes charset for text types
-- [ ] Test binary types have no charset
-- [ ] Run `project-builder` agent to verify build passes
-- [ ] Analyze build results - if issues found, fix and re-run
+- [x] Read and understand all references above
+- [x] If unclear, ask user for clarification (DO NOT guess)
+- [x] Create `ContentType` enum in `src/main/java/de/cuioss/http/client/ContentType.java`
+- [x] Implement enum values: APPLICATION_JSON, APPLICATION_XML, TEXT_PLAIN, TEXT_HTML, TEXT_XML, TEXT_CSV, APPLICATION_FORM_URLENCODED, MULTIPART_FORM_DATA, APPLICATION_OCTET_STREAM, APPLICATION_PDF, APPLICATION_ZIP, IMAGE_PNG, IMAGE_JPEG, IMAGE_GIF, IMAGE_SVG
+- [x] Add fields: `String mediaType`, `Charset defaultCharset`
+- [x] Implement methods: `mediaType()`, `defaultCharset()`, `toHeaderValue()`
+- [x] Add comprehensive Javadoc with examples
+- [x] Implement unit tests in `ContentTypeTest` (minimum 80% coverage)
+- [x] Test `toHeaderValue()` includes charset for text types
+- [x] Test binary types have no charset
+- [x] Run `project-builder` agent to verify build passes
+- [x] Analyze build results - if issues found, fix and re-run
 - [ ] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
