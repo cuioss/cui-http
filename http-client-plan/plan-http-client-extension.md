@@ -193,7 +193,7 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - [x] Test getBodyHandler() returns discarding handler
 - [x] Run `project-builder` agent to verify build passes
 - [x] Analyze build results - if issues found, fix and re-run
-- [ ] Commit changes using `commit-current-changes` agent
+- [x] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
 - VoidResponseConverter exists as singleton
@@ -213,30 +213,30 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - Package: `de.cuioss.http.client.adapter`
 
 **Checklist:**
-- [ ] Read and understand all references above
-- [ ] If unclear, ask user for clarification (DO NOT guess)
-- [ ] Create `CacheKeyHeaderFilter` interface in `src/main/java/de/cuioss/http/client/adapter/CacheKeyHeaderFilter.java`
-- [ ] Mark as @FunctionalInterface
-- [ ] Add method: `boolean includeInCacheKey(String headerName)`
-- [ ] Add constant: `CacheKeyHeaderFilter ALL = header -> true`
-- [ ] Add constant: `CacheKeyHeaderFilter NONE = header -> false`
-- [ ] Add static method: `excluding(String... headerNames)`
-- [ ] Add static method: `including(String... headerNames)`
-- [ ] Add static method: `excludingPrefix(String prefix)`
-- [ ] Add static method: `matching(Predicate<String> predicate)`
-- [ ] Add default method: `and(CacheKeyHeaderFilter other)`
-- [ ] Add default method: `or(CacheKeyHeaderFilter other)`
-- [ ] Add default method: `negate()`
-- [ ] Add comprehensive Javadoc with token refresh cache bloat examples
-- [ ] Create unit tests in `CacheKeyHeaderFilterTest` (minimum 80% coverage)
-- [ ] Test ALL includes all headers
-- [ ] Test NONE excludes all headers
-- [ ] Test excluding() creates blacklist filter
-- [ ] Test including() creates whitelist filter
-- [ ] Test excludingPrefix() filters by prefix
-- [ ] Test composition (and, or, negate)
-- [ ] Run `project-builder` agent to verify build passes
-- [ ] Analyze build results - if issues found, fix and re-run
+- [x] Read and understand all references above
+- [x] If unclear, ask user for clarification (DO NOT guess)
+- [x] Create `CacheKeyHeaderFilter` interface in `src/main/java/de/cuioss/http/client/adapter/CacheKeyHeaderFilter.java`
+- [x] Mark as @FunctionalInterface
+- [x] Add method: `boolean includeInCacheKey(String headerName)`
+- [x] Add constant: `CacheKeyHeaderFilter ALL = header -> true`
+- [x] Add constant: `CacheKeyHeaderFilter NONE = header -> false`
+- [x] Add static method: `excluding(String... headerNames)`
+- [x] Add static method: `including(String... headerNames)`
+- [x] Add static method: `excludingPrefix(String prefix)`
+- [x] Add static method: `matching(Predicate<String> predicate)`
+- [x] Add default method: `and(CacheKeyHeaderFilter other)`
+- [x] Add default method: `or(CacheKeyHeaderFilter other)`
+- [x] Add default method: `negate()`
+- [x] Add comprehensive Javadoc with token refresh cache bloat examples
+- [x] Create unit tests in `CacheKeyHeaderFilterTest` (minimum 80% coverage)
+- [x] Test ALL includes all headers
+- [x] Test NONE excludes all headers
+- [x] Test excluding() creates blacklist filter
+- [x] Test including() creates whitelist filter
+- [x] Test excludingPrefix() filters by prefix
+- [x] Test composition (and, or, negate)
+- [x] Run `project-builder` agent to verify build passes
+- [x] Analyze build results - if issues found, fix and re-run
 - [ ] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
