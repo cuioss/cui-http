@@ -57,7 +57,7 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - [x] Test binary types have no charset
 - [x] Run `project-builder` agent to verify build passes
 - [x] Analyze build results - if issues found, fix and re-run
-- [ ] Commit changes using `commit-current-changes` agent
+- [x] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
 - ContentType enum exists with all specified MIME types
