@@ -841,7 +841,7 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - [x] Re-run checks until all pass
 - [x] Run `project-builder` agent for final verification
 - [x] Analyze build results - if issues found, fix and re-run
-- [ ] Commit changes using `commit-current-changes` agent
+- [x] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
 - All pre-commit checks pass
@@ -863,21 +863,21 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - Project standards: `/Users/oliver/git/cui-http/CLAUDE.md`
 
 **Checklist:**
-- [ ] Read and understand all references above
-- [ ] If unclear, ask user for clarification (DO NOT guess)
-- [ ] Review all new classes for CUI standards compliance
-- [ ] Verify Lombok annotations used appropriately
-- [ ] Verify @Nullable/@NonNull from JSpecify used
-- [ ] Verify CuiLogger used (not slf4j or System.out)
-- [ ] Verify no TODO or FIXME comments in production code
-- [ ] Verify all deprecated methods documented with migration path
-- [ ] Review test coverage report for any gaps
-- [ ] Verify all public APIs have examples
-- [ ] Verify no code duplication
-- [ ] Verify thread safety documented where applicable
-- [ ] Run final pre-commit check: `./mvnw -Ppre-commit clean verify`
-- [ ] Run `project-builder` agent for final build
-- [ ] Analyze build results - if issues found, fix and re-run
+- [x] Read and understand all references above
+- [x] If unclear, ask user for clarification (DO NOT guess)
+- [x] Review all new classes for CUI standards compliance
+- [x] Verify Lombok annotations used appropriately
+- [x] Verify @Nullable/@NonNull from JSpecify used
+- [x] Verify CuiLogger used (not slf4j or System.out)
+- [x] Verify no TODO or FIXME comments in production code
+- [x] Verify all deprecated methods documented with migration path
+- [x] Review test coverage report for any gaps
+- [x] Verify all public APIs have examples
+- [x] Verify no code duplication
+- [x] Verify thread safety documented where applicable
+- [x] Run final pre-commit check: `./mvnw -Ppre-commit clean verify`
+- [x] Run `project-builder` agent for final build
+- [x] Analyze build results - if issues found, fix and re-run
 - [ ] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**

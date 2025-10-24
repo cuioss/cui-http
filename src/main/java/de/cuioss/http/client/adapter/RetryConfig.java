@@ -30,7 +30,7 @@ import java.util.concurrent.ThreadLocalRandom;
  * <h2>Default Values (Industry Best Practices)</h2>
  * <ul>
  *   <li><b>maxAttempts: 5</b> - Total attempts including initial try (1 initial + 4 retries).
- *       Balances resilience vs. latency. Too few (< 3) = poor resilience. Too many (> 7) = excessive delays.</li>
+ *       Balances resilience vs. latency. Too few (&lt; 3) = poor resilience. Too many (&gt; 7) = excessive delays.</li>
  *   <li><b>initialDelay: 1 second</b> - Enough time for transient issues to clear (network hiccup, server restart).
  *       Sub-second often too fast for real transient issues.</li>
  *   <li><b>multiplier: 2.0</b> - Exponential backoff is proven most effective (RFC 8085).
@@ -193,9 +193,9 @@ boolean idempotentOnly
         /**
          * Sets the maximum number of attempts.
          *
-         * @param maxAttempts total attempts including initial try (must be >= 1)
+         * @param maxAttempts total attempts including initial try (must be &gt;= 1)
          * @return this builder for chaining
-         * @throws IllegalArgumentException if maxAttempts < 1
+         * @throws IllegalArgumentException if maxAttempts &lt; 1
          */
         public Builder maxAttempts(int maxAttempts) {
             if (maxAttempts < 1) {
@@ -223,9 +223,9 @@ boolean idempotentOnly
         /**
          * Sets the backoff multiplier.
          *
-         * @param multiplier each retry delay multiplied by this value (must be >= 1.0)
+         * @param multiplier each retry delay multiplied by this value (must be &gt;= 1.0)
          * @return this builder for chaining
-         * @throws IllegalArgumentException if multiplier < 1.0
+         * @throws IllegalArgumentException if multiplier &lt; 1.0
          */
         public Builder multiplier(double multiplier) {
             if (multiplier < 1.0) {
