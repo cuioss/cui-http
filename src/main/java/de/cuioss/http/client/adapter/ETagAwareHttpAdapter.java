@@ -237,8 +237,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
     @Override
     public CompletableFuture<HttpResult<T>> post(@Nullable T body, Map<String, String> headers) {
-        // TODO: Implement in Task 11
-        throw new UnsupportedOperationException("Not yet implemented - Task 11");
+        return send(HttpMethod.POST, body, headers);
     }
 
     @Override
@@ -248,8 +247,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
     @Override
     public <R> CompletableFuture<HttpResult<T>> post(HttpRequestConverter<R> converter, @Nullable R body, Map<String, String> headers) {
-        // TODO: Implement in Task 11
-        throw new UnsupportedOperationException("Not yet implemented - Task 11");
+        return sendWithConverter(HttpMethod.POST, converter, body, headers);
     }
 
     @Override
@@ -259,8 +257,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
     @Override
     public CompletableFuture<HttpResult<T>> put(@Nullable T body, Map<String, String> headers) {
-        // TODO: Implement in Task 11
-        throw new UnsupportedOperationException("Not yet implemented - Task 11");
+        return send(HttpMethod.PUT, body, headers);
     }
 
     @Override
@@ -270,8 +267,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
     @Override
     public <R> CompletableFuture<HttpResult<T>> put(HttpRequestConverter<R> converter, @Nullable R body, Map<String, String> headers) {
-        // TODO: Implement in Task 11
-        throw new UnsupportedOperationException("Not yet implemented - Task 11");
+        return sendWithConverter(HttpMethod.PUT, converter, body, headers);
     }
 
     @Override
@@ -281,8 +277,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
     @Override
     public CompletableFuture<HttpResult<T>> patch(@Nullable T body, Map<String, String> headers) {
-        // TODO: Implement in Task 11
-        throw new UnsupportedOperationException("Not yet implemented - Task 11");
+        return send(HttpMethod.PATCH, body, headers);
     }
 
     @Override
@@ -292,8 +287,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
     @Override
     public <R> CompletableFuture<HttpResult<T>> patch(HttpRequestConverter<R> converter, @Nullable R body, Map<String, String> headers) {
-        // TODO: Implement in Task 11
-        throw new UnsupportedOperationException("Not yet implemented - Task 11");
+        return sendWithConverter(HttpMethod.PATCH, converter, body, headers);
     }
 
     @Override
@@ -303,8 +297,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
     @Override
     public CompletableFuture<HttpResult<T>> delete(Map<String, String> headers) {
-        // TODO: Implement in Task 11
-        throw new UnsupportedOperationException("Not yet implemented - Task 11");
+        return send(HttpMethod.DELETE, null, headers);
     }
 
     @Override
@@ -314,8 +307,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
     @Override
     public CompletableFuture<HttpResult<T>> delete(@Nullable T body, Map<String, String> headers) {
-        // TODO: Implement in Task 11
-        throw new UnsupportedOperationException("Not yet implemented - Task 11");
+        return send(HttpMethod.DELETE, body, headers);
     }
 
     @Override
@@ -325,8 +317,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
     @Override
     public <R> CompletableFuture<HttpResult<T>> delete(HttpRequestConverter<R> converter, @Nullable R body, Map<String, String> headers) {
-        // TODO: Implement in Task 11
-        throw new UnsupportedOperationException("Not yet implemented - Task 11");
+        return sendWithConverter(HttpMethod.DELETE, converter, body, headers);
     }
 
     @Override
@@ -336,8 +327,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
     @Override
     public CompletableFuture<HttpResult<T>> head(Map<String, String> headers) {
-        // TODO: Implement in Task 11
-        throw new UnsupportedOperationException("Not yet implemented - Task 11");
+        return send(HttpMethod.HEAD, null, headers);
     }
 
     @Override
@@ -347,8 +337,150 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
     @Override
     public CompletableFuture<HttpResult<T>> options(Map<String, String> headers) {
-        // TODO: Implement in Task 11
-        throw new UnsupportedOperationException("Not yet implemented - Task 11");
+        return send(HttpMethod.OPTIONS, null, headers);
+    }
+
+    /**
+     * Sends request with explicit request converter for different body type.
+     *
+     * <p>
+     * Used for generic body methods where request type (R) differs from response type (T).
+     * Creates request body using provided converter instead of adapter's default converter.
+     * </p>
+     *
+     * @param <R> Request body type
+     * @param method HTTP method
+     * @param requestConverter Converter for request body serialization
+     * @param body Request body (nullable)
+     * @param headers Additional HTTP headers
+     * @return CompletableFuture with HttpResult
+     */
+    private <R> CompletableFuture<HttpResult<T>> sendWithConverter(
+        HttpMethod method,
+        HttpRequestConverter<R> requestConverter,
+        @Nullable R body,
+        Map<String, String> headers
+    ) {
+        // Validate safe methods don't have bodies
+        if (method.isSafe() && body != null) {
+            throw new IllegalArgumentException(
+                String.format("Safe method %s must not have a request body", method.methodName())
+            );
+        }
+
+        // Generate cache key (only meaningful for GET with caching enabled)
+        String cacheKey = generateCacheKey(httpHandler.getUri(), headers, cacheKeyHeaderFilter);
+
+        // Retrieve cache entry BEFORE building request (hold local reference for 304 handling)
+        @Nullable CacheEntry<T> cachedEntry = etagCachingEnabled ? cache.get(cacheKey) : null;
+
+        try {
+            // Build HTTP request with explicit converter
+            HttpRequest.BodyPublisher bodyPublisher = (body == null)
+                ? HttpRequest.BodyPublishers.noBody()
+                : requestConverter.toBodyPublisher(body);
+
+            HttpRequest.Builder requestBuilder = httpHandler.requestBuilder()
+                .method(method.methodName(), bodyPublisher);
+
+            // Add custom headers
+            headers.forEach(requestBuilder::header);
+
+            // Add If-None-Match header if cached entry exists (GET only)
+            if (cachedEntry != null && method == HttpMethod.GET) {
+                requestBuilder.header("If-None-Match", cachedEntry.etag());
+                LOGGER.debug("Adding If-None-Match header for GET request: {}", cachedEntry.etag());
+            }
+
+            HttpRequest request = requestBuilder.build();
+
+            // Execute async request (reuse response handling logic from send())
+            return httpClient.sendAsync(request, responseConverter.getBodyHandler())
+                .thenApply(response -> {
+                    int statusCode = response.statusCode();
+
+                    // Handle 304 Not Modified - return cached content
+                    if (statusCode == 304 && cachedEntry != null) {
+                        LOGGER.debug("304 Not Modified - returning cached content");
+                        return HttpResult.success(cachedEntry.content(), cachedEntry.etag(), 304);
+                    }
+
+                    // Extract ETag from response (all methods, not just GET)
+                    @Nullable String etag = response.headers()
+                        .firstValue("ETag")
+                        .orElse(null);
+
+                    // Convert response body
+                    Optional<T> content = responseConverter.convert(response.body());
+
+                    // Handle conversion failure
+                    if (content.isEmpty() && statusCode >= 200 && statusCode < 300) {
+                        LOGGER.warn("Response conversion failed for status {}", statusCode);
+                        return HttpResult.<T>failure(
+                            "Failed to convert response body",
+                            null,
+                            HttpErrorCategory.INVALID_CONTENT
+                        );
+                    }
+
+                    // Cache successful GET responses with ETag
+                    if (method == HttpMethod.GET && statusCode == 200 && etag != null && content.isPresent()) {
+                        CacheEntry<T> newEntry = new CacheEntry<>(content.get(), etag, System.currentTimeMillis());
+                        putInCache(cacheKey, newEntry);
+                        LOGGER.debug("Cached GET response with ETag: {}", etag);
+                    }
+
+                    // Return success for 2xx status codes
+                    if (statusCode >= 200 && statusCode < 300) {
+                        return HttpResult.success(content.orElse(null), etag, statusCode);
+                    }
+
+                    // Return failure for error status codes
+                    HttpErrorCategory errorCategory;
+                    if (statusCode >= 400 && statusCode < 500) {
+                        errorCategory = HttpErrorCategory.CLIENT_ERROR;
+                    } else if (statusCode >= 500 && statusCode < 600) {
+                        errorCategory = HttpErrorCategory.SERVER_ERROR;
+                    } else {
+                        // 3xx (other than 304), 1xx, or unknown codes
+                        errorCategory = HttpErrorCategory.INVALID_CONTENT;
+                    }
+
+                    return HttpResult.<T>failure(
+                        String.format("HTTP %d: %s", statusCode, method.methodName()),
+                        null,
+                        errorCategory
+                    );
+                })
+                .exceptionally(throwable -> {
+                    // Classify exceptions
+                    HttpErrorCategory category;
+                    if (throwable instanceof java.io.IOException) {
+                        category = HttpErrorCategory.NETWORK_ERROR;
+                        LOGGER.warn("Network error during {} request: {}", method.methodName(), throwable.getMessage());
+                    } else {
+                        category = HttpErrorCategory.CONFIGURATION_ERROR;
+                        LOGGER.error("Configuration error during {} request: {}", method.methodName(), throwable.getMessage());
+                    }
+
+                    return HttpResult.<T>failure(
+                        String.format("Request failed: %s", throwable.getMessage()),
+                        throwable,
+                        category
+                    );
+                });
+
+        } catch (Exception e) {
+            // Any exception during request building
+            LOGGER.error("Failed to build HTTP request for {}: {}", method.methodName(), e.getMessage());
+            return CompletableFuture.completedFuture(
+                HttpResult.failure(
+                    "Failed to build HTTP request: " + e.getMessage(),
+                    e,
+                    HttpErrorCategory.CONFIGURATION_ERROR
+                )
+            );
+        }
     }
 
     /**

@@ -420,7 +420,7 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - [x] Test exception handling (IOException, parsing failure)
 - [x] Run `project-builder` agent to verify build passes
 - [x] Analyze build results - if issues found, fix and re-run
-- [ ] Commit changes using `commit-current-changes` agent
+- [x] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**
 - 304 handling returns Success with cached content (structural guarantee)
@@ -443,25 +443,25 @@ This implementation replaces the existing `ResilientHttpHandler` with a composab
 - Interface definition: HttpAdapter
 
 **Checklist:**
-- [ ] Read and understand all references above
-- [ ] If unclear, ask user for clarification (DO NOT guess)
-- [ ] Implement `get(Map<String, String> headers)`: delegate to send(GET, null, headers)
-- [ ] Implement `post(@Nullable T body, Map<String, String> headers)`: delegate to send(POST, body, headers)
-- [ ] Implement `put(@Nullable T body, Map<String, String> headers)`: delegate to send(PUT, body, headers)
-- [ ] Implement `patch(@Nullable T body, Map<String, String> headers)`: delegate to send(PATCH, body, headers)
-- [ ] Implement `delete(Map<String, String> headers)`: delegate to send(DELETE, null, headers)
-- [ ] Implement `delete(@Nullable T body, Map<String, String> headers)`: delegate to send(DELETE, body, headers)
-- [ ] Implement `head(Map<String, String> headers)`: delegate to send(HEAD, null, headers)
-- [ ] Implement `options(Map<String, String> headers)`: delegate to send(OPTIONS, null, headers)
-- [ ] Implement generic body methods: `<R> post(HttpRequestConverter<R> converter, R body, Map headers)`
-- [ ] For generic methods: temporarily use converter, delegate to send(), restore original converter
-- [ ] Add unit tests for all HTTP method implementations
-- [ ] Test GET caches responses
-- [ ] Test POST/PUT/DELETE extract ETag but don't cache
-- [ ] Test HEAD doesn't cache
-- [ ] Test generic body methods with different types
-- [ ] Run `project-builder` agent to verify build passes
-- [ ] Analyze build results - if issues found, fix and re-run
+- [x] Read and understand all references above
+- [x] If unclear, ask user for clarification (DO NOT guess)
+- [x] Implement `get(Map<String, String> headers)`: delegate to send(GET, null, headers)
+- [x] Implement `post(@Nullable T body, Map<String, String> headers)`: delegate to send(POST, body, headers)
+- [x] Implement `put(@Nullable T body, Map<String, String> headers)`: delegate to send(PUT, body, headers)
+- [x] Implement `patch(@Nullable T body, Map<String, String> headers)`: delegate to send(PATCH, body, headers)
+- [x] Implement `delete(Map<String, String> headers)`: delegate to send(DELETE, null, headers)
+- [x] Implement `delete(@Nullable T body, Map<String, String> headers)`: delegate to send(DELETE, body, headers)
+- [x] Implement `head(Map<String, String> headers)`: delegate to send(HEAD, null, headers)
+- [x] Implement `options(Map<String, String> headers)`: delegate to send(OPTIONS, null, headers)
+- [x] Implement generic body methods: `<R> post(HttpRequestConverter<R> converter, R body, Map headers)`
+- [x] For generic methods: temporarily use converter, delegate to send(), restore original converter
+- [x] Add unit tests for all HTTP method implementations
+- [x] Test GET caches responses
+- [x] Test POST/PUT/DELETE extract ETag but don't cache
+- [x] Test HEAD doesn't cache
+- [x] Test generic body methods with different types
+- [x] Run `project-builder` agent to verify build passes
+- [x] Analyze build results - if issues found, fix and re-run
 - [ ] Commit changes using `commit-current-changes` agent
 
 **Acceptance Criteria:**

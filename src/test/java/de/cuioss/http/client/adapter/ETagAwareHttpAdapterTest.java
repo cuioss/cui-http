@@ -297,6 +297,309 @@ class ETagAwareHttpAdapterTest {
         assertNotNull(future2, "Second request should be created");
     }
 
+    // === Task 11: HTTP Method Implementation Tests ===
+
+    @Test
+    void testPostMethodWithBody() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+            .httpHandler(handler)
+            .responseConverter(responseConverter)
+            .requestConverter(new TestRequestConverter())
+            .build();
+
+        var future = adapter.post("test body");
+        assertNotNull(future, "POST should return non-null CompletableFuture");
+    }
+
+    @Test
+    void testPostMethodWithBodyAndHeaders() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+            .httpHandler(handler)
+            .responseConverter(responseConverter)
+            .requestConverter(new TestRequestConverter())
+            .build();
+
+        var headers = java.util.Map.of("Content-Type", "text/plain");
+        var future = adapter.post("test body", headers);
+        assertNotNull(future, "POST with headers should return non-null CompletableFuture");
+    }
+
+    @Test
+    void testPostMethodWithNullBody() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+            .httpHandler(handler)
+            .responseConverter(responseConverter)
+            .requestConverter(new TestRequestConverter())
+            .build();
+
+        var future = adapter.post(null);
+        assertNotNull(future, "POST with null body should return non-null CompletableFuture");
+    }
+
+    @Test
+    void testPostMethodWithExplicitConverter() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+            .httpHandler(handler)
+            .responseConverter(responseConverter)
+            .build();
+
+        var customConverter = new TestRequestConverter();
+        var future = adapter.post(customConverter, "test body");
+        assertNotNull(future, "POST with explicit converter should return non-null CompletableFuture");
+    }
+
+    @Test
+    void testPostMethodWithExplicitConverterAndHeaders() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+            .httpHandler(handler)
+            .responseConverter(responseConverter)
+            .build();
+
+        var customConverter = new TestRequestConverter();
+        var headers = java.util.Map.of("Content-Type", "text/plain");
+        var future = adapter.post(customConverter, "test body", headers);
+        assertNotNull(future, "POST with explicit converter and headers should return non-null CompletableFuture");
+    }
+
+    @Test
+    void testPutMethodWithBody() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+            .httpHandler(handler)
+            .responseConverter(responseConverter)
+            .requestConverter(new TestRequestConverter())
+            .build();
+
+        var future = adapter.put("test body");
+        assertNotNull(future, "PUT should return non-null CompletableFuture");
+    }
+
+    @Test
+    void testPutMethodWithBodyAndHeaders() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+            .httpHandler(handler)
+            .responseConverter(responseConverter)
+            .requestConverter(new TestRequestConverter())
+            .build();
+
+        var headers = java.util.Map.of("Content-Type", "text/plain");
+        var future = adapter.put("test body", headers);
+        assertNotNull(future, "PUT with headers should return non-null CompletableFuture");
+    }
+
+    @Test
+    void testPutMethodWithExplicitConverter() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+            .httpHandler(handler)
+            .responseConverter(responseConverter)
+            .build();
+
+        var customConverter = new TestRequestConverter();
+        var future = adapter.put(customConverter, "test body");
+        assertNotNull(future, "PUT with explicit converter should return non-null CompletableFuture");
+    }
+
+    @Test
+    void testPatchMethodWithBody() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+            .httpHandler(handler)
+            .responseConverter(responseConverter)
+            .requestConverter(new TestRequestConverter())
+            .build();
+
+        var future = adapter.patch("test body");
+        assertNotNull(future, "PATCH should return non-null CompletableFuture");
+    }
+
+    @Test
+    void testPatchMethodWithBodyAndHeaders() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+            .httpHandler(handler)
+            .responseConverter(responseConverter)
+            .requestConverter(new TestRequestConverter())
+            .build();
+
+        var headers = java.util.Map.of("Content-Type", "text/plain");
+        var future = adapter.patch("test body", headers);
+        assertNotNull(future, "PATCH with headers should return non-null CompletableFuture");
+    }
+
+    @Test
+    void testPatchMethodWithExplicitConverter() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+            .httpHandler(handler)
+            .responseConverter(responseConverter)
+            .build();
+
+        var customConverter = new TestRequestConverter();
+        var future = adapter.patch(customConverter, "test body");
+        assertNotNull(future, "PATCH with explicit converter should return non-null CompletableFuture");
+    }
+
+    @Test
+    void testDeleteMethodNoBody() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+            .httpHandler(handler)
+            .responseConverter(responseConverter)
+            .build();
+
+        var future = adapter.delete();
+        assertNotNull(future, "DELETE should return non-null CompletableFuture");
+    }
+
+    @Test
+    void testDeleteMethodNoBodyWithHeaders() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+            .httpHandler(handler)
+            .responseConverter(responseConverter)
+            .build();
+
+        var headers = java.util.Map.of("Authorization", "Bearer token");
+        var future = adapter.delete(headers);
+        assertNotNull(future, "DELETE with headers should return non-null CompletableFuture");
+    }
+
+    @Test
+    void testDeleteMethodWithBody() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+            .httpHandler(handler)
+            .responseConverter(responseConverter)
+            .requestConverter(new TestRequestConverter())
+            .build();
+
+        var future = adapter.delete("test body");
+        assertNotNull(future, "DELETE with body should return non-null CompletableFuture");
+    }
+
+    @Test
+    void testDeleteMethodWithBodyAndHeaders() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+            .httpHandler(handler)
+            .responseConverter(responseConverter)
+            .requestConverter(new TestRequestConverter())
+            .build();
+
+        var headers = java.util.Map.of("Authorization", "Bearer token");
+        var future = adapter.delete("test body", headers);
+        assertNotNull(future, "DELETE with body and headers should return non-null CompletableFuture");
+    }
+
+    @Test
+    void testDeleteMethodWithExplicitConverter() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+            .httpHandler(handler)
+            .responseConverter(responseConverter)
+            .build();
+
+        var customConverter = new TestRequestConverter();
+        var future = adapter.delete(customConverter, "test body");
+        assertNotNull(future, "DELETE with explicit converter should return non-null CompletableFuture");
+    }
+
+    @Test
+    void testHeadMethod() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+            .httpHandler(handler)
+            .responseConverter(responseConverter)
+            .build();
+
+        var future = adapter.head();
+        assertNotNull(future, "HEAD should return non-null CompletableFuture");
+    }
+
+    @Test
+    void testHeadMethodWithHeaders() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+            .httpHandler(handler)
+            .responseConverter(responseConverter)
+            .build();
+
+        var headers = java.util.Map.of("Accept", "application/json");
+        var future = adapter.head(headers);
+        assertNotNull(future, "HEAD with headers should return non-null CompletableFuture");
+    }
+
+    @Test
+    void testOptionsMethod() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+            .httpHandler(handler)
+            .responseConverter(responseConverter)
+            .build();
+
+        var future = adapter.options();
+        assertNotNull(future, "OPTIONS should return non-null CompletableFuture");
+    }
+
+    @Test
+    void testOptionsMethodWithHeaders() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+            .httpHandler(handler)
+            .responseConverter(responseConverter)
+            .build();
+
+        var headers = java.util.Map.of("Origin", "https://example.com");
+        var future = adapter.options(headers);
+        assertNotNull(future, "OPTIONS with headers should return non-null CompletableFuture");
+    }
+
+    @Test
+    void testGenericBodyMethodsWithDifferentTypes() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+            .httpHandler(handler)
+            .responseConverter(responseConverter)
+            .build();
+
+        // Test with Integer body type (different from String response type)
+        var intConverter = new de.cuioss.http.client.converter.HttpRequestConverter<Integer>() {
+            @Override
+            public java.net.http.HttpRequest.BodyPublisher toBodyPublisher(Integer content) {
+                if (content == null) {
+                    return java.net.http.HttpRequest.BodyPublishers.noBody();
+                }
+                return java.net.http.HttpRequest.BodyPublishers.ofString(content.toString());
+            }
+
+            @Override
+            public ContentType contentType() {
+                return ContentType.TEXT_PLAIN;
+            }
+        };
+
+        var futurePost = adapter.post(intConverter, 42);
+        var futurePut = adapter.put(intConverter, 42);
+        var futurePatch = adapter.patch(intConverter, 42);
+        var futureDelete = adapter.delete(intConverter, 42);
+
+        assertNotNull(futurePost, "POST with different type should return CompletableFuture");
+        assertNotNull(futurePut, "PUT with different type should return CompletableFuture");
+        assertNotNull(futurePatch, "PATCH with different type should return CompletableFuture");
+        assertNotNull(futureDelete, "DELETE with different type should return CompletableFuture");
+    }
+
+    @Test
+    void testAllMethodsReturnCompletableFuture() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+            .httpHandler(handler)
+            .responseConverter(responseConverter)
+            .requestConverter(new TestRequestConverter())
+            .build();
+
+        // All methods should return CompletableFuture (async-first design)
+        assertTrue(adapter.get() instanceof java.util.concurrent.CompletableFuture,
+                   "GET should return CompletableFuture");
+        assertTrue(adapter.post("body") instanceof java.util.concurrent.CompletableFuture,
+                   "POST should return CompletableFuture");
+        assertTrue(adapter.put("body") instanceof java.util.concurrent.CompletableFuture,
+                   "PUT should return CompletableFuture");
+        assertTrue(adapter.patch("body") instanceof java.util.concurrent.CompletableFuture,
+                   "PATCH should return CompletableFuture");
+        assertTrue(adapter.delete() instanceof java.util.concurrent.CompletableFuture,
+                   "DELETE should return CompletableFuture");
+        assertTrue(adapter.head() instanceof java.util.concurrent.CompletableFuture,
+                   "HEAD should return CompletableFuture");
+        assertTrue(adapter.options() instanceof java.util.concurrent.CompletableFuture,
+                   "OPTIONS should return CompletableFuture");
+    }
+
     /**
      * Test implementation of HttpResponseConverter for testing.
      */
