@@ -29,6 +29,8 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.Comparator;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -125,6 +127,7 @@ import static de.cuioss.http.client.HttpLogMessages.WARN;
  * @see CacheKeyHeaderFilter
  * @see VoidResponseConverter
  */
+@SuppressWarnings("RedundantTypeArguments")
 public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
     private static final CuiLogger LOGGER = new CuiLogger(ETagAwareHttpAdapter.class);
@@ -148,6 +151,20 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
     T content,
     String etag,
     long timestamp
+    ) {
+    }
+
+    /**
+     * Cache context for request processing.
+     *
+     * @param cacheKey Cache key for the request
+     * @param cachedEntry Cached entry if available, null otherwise
+     * @param <T> Content type
+     */
+    private record CacheContext<T>(
+    String cacheKey,
+    @Nullable
+    CacheEntry<T> cachedEntry
     ) {
     }
 
@@ -380,18 +397,9 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             @Nullable R body,
             Map<String, String> headers
     ) {
-        // Validate safe methods don't have bodies
-        if (method.isSafe() && body != null) {
-            throw new IllegalArgumentException(
-                    "Safe method %s must not have a request body".formatted(method.methodName())
-            );
-        }
-
-        // Generate cache key (only meaningful for GET with caching enabled)
-        String cacheKey = generateCacheKey(httpHandler.getUri(), headers, cacheKeyHeaderFilter);
-
-        // Retrieve cache entry BEFORE building request (hold local reference for 304 handling)
-        @Nullable CacheEntry<T> cachedEntry = etagCachingEnabled ? cache.get(cacheKey) : null;
+        CacheContext<T> cacheContext = prepareCacheContext(method, body, headers);
+        String cacheKey = cacheContext.cacheKey();
+        CacheEntry<T> cachedEntry = cacheContext.cachedEntry();
 
         try {
             // Build HTTP request with explicit converter
@@ -413,67 +421,9 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
             HttpRequest request = requestBuilder.build();
 
-            // Execute async request (reuse response handling logic from send())
+            // Execute async request with extracted response handler
             return httpClient.sendAsync(request, responseConverter.getBodyHandler())
-                    .thenApply(response -> {
-                        int statusCode = response.statusCode();
-
-                        // Handle 304 Not Modified - return cached content
-                        if (statusCode == 304 && cachedEntry != null) {
-                            LOGGER.debug("304 Not Modified - returning cached content");
-                            return HttpResult.success(cachedEntry.content(), cachedEntry.etag(), 304);
-                        }
-
-                        // Extract ETag from response (all methods, not just GET)
-                        @Nullable String etag = response.headers()
-                                .firstValue("ETag")
-                                .orElse(null);
-
-                        // Convert response body
-                        Optional<T> content = responseConverter.convert(response.body());
-
-                        // Handle conversion failure
-                        if (content.isEmpty() && statusCode >= 200 && statusCode < 300) {
-                            LOGGER.warn(WARN.RESPONSE_CONVERSION_FAILED, statusCode);
-                            return HttpResult.<T>failure(
-                                    "Failed to convert response body",
-                                    null,
-                                    HttpErrorCategory.INVALID_CONTENT
-                            );
-                        }
-
-                        // Cache successful GET responses with ETag
-                        if (method == HttpMethod.GET && statusCode == 200 && etag != null && content.isPresent()) {
-                            CacheEntry<T> newEntry = new CacheEntry<>(content.get(), etag, System.currentTimeMillis());
-                            putInCache(cacheKey, newEntry);
-                            LOGGER.debug("Cached GET response with ETag: %s", etag);
-                        }
-
-                        // Return success for 2xx status codes
-                        if (statusCode >= 200 && statusCode < 300) {
-                            return HttpResult.success(content.orElse(null), etag, statusCode);
-                        }
-
-                        // Return failure for error status codes
-                        HttpErrorCategory errorCategory;
-                        if (statusCode >= 400 && statusCode < 500) {
-                            errorCategory = HttpErrorCategory.CLIENT_ERROR;
-                        } else if (statusCode >= 500 && statusCode < 600) {
-                            errorCategory = HttpErrorCategory.SERVER_ERROR;
-                        } else {
-                            // 3xx (other than 304), 1xx, or unknown codes
-                            errorCategory = HttpErrorCategory.INVALID_CONTENT;
-                        }
-
-                        return HttpResult.<T>failureWithFallback(
-                                "HTTP %d: %s".formatted(statusCode, method.methodName()),
-                                null,
-                                null, // no fallback content
-                                errorCategory,
-                                null, // no cached ETag
-                                statusCode // include HTTP status code
-                        );
-                    })
+                    .thenApply(response -> handleHttpResponse(response, method, cachedEntry, cacheKey))
                     .exceptionally(throwable -> {
                         // Classify exceptions
                         HttpErrorCategory category;
@@ -525,18 +475,9 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      * @throws IllegalArgumentException if safe methods (GET/HEAD/OPTIONS) called with body
      */
     private CompletableFuture<HttpResult<T>> send(HttpMethod method, @Nullable T body, Map<String, String> headers) {
-        // Validate safe methods don't have bodies
-        if (method.isSafe() && body != null) {
-            throw new IllegalArgumentException(
-                    "Safe method %s must not have a request body".formatted(method.methodName())
-            );
-        }
-
-        // Generate cache key (only meaningful for GET with caching enabled)
-        String cacheKey = generateCacheKey(httpHandler.getUri(), headers, cacheKeyHeaderFilter);
-
-        // Retrieve cache entry BEFORE building request (hold local reference for 304 handling)
-        @Nullable CacheEntry<T> cachedEntry = etagCachingEnabled ? cache.get(cacheKey) : null;
+        CacheContext<T> cacheContext = prepareCacheContext(method, body, headers);
+        String cacheKey = cacheContext.cacheKey();
+        CacheEntry<T> cachedEntry = cacheContext.cachedEntry();
 
         try {
             // Build HTTP request
@@ -554,67 +495,9 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
             HttpRequest request = requestBuilder.build();
 
-            // Execute async request (no blocking!)
+            // Execute async request with extracted response handler
             return httpClient.sendAsync(request, responseConverter.getBodyHandler())
-                    .thenApply(response -> {
-                        int statusCode = response.statusCode();
-
-                        // Handle 304 Not Modified - return cached content
-                        if (statusCode == 304 && cachedEntry != null) {
-                            LOGGER.debug("304 Not Modified - returning cached content");
-                            return HttpResult.success(cachedEntry.content(), cachedEntry.etag(), 304);
-                        }
-
-                        // Extract ETag from response (all methods, not just GET)
-                        @Nullable String etag = response.headers()
-                                .firstValue("ETag")
-                                .orElse(null);
-
-                        // Convert response body
-                        Optional<T> content = responseConverter.convert(response.body());
-
-                        // Handle conversion failure
-                        if (content.isEmpty() && statusCode >= 200 && statusCode < 300) {
-                            LOGGER.warn(WARN.RESPONSE_CONVERSION_FAILED, statusCode);
-                            return HttpResult.<T>failure(
-                                    "Failed to convert response body",
-                                    null,
-                                    HttpErrorCategory.INVALID_CONTENT
-                            );
-                        }
-
-                        // Cache successful GET responses with ETag
-                        if (method == HttpMethod.GET && statusCode == 200 && etag != null && content.isPresent()) {
-                            CacheEntry<T> newEntry = new CacheEntry<>(content.get(), etag, System.currentTimeMillis());
-                            putInCache(cacheKey, newEntry);
-                            LOGGER.debug("Cached GET response with ETag: %s", etag);
-                        }
-
-                        // Return success for 2xx status codes
-                        if (statusCode >= 200 && statusCode < 300) {
-                            return HttpResult.success(content.orElse(null), etag, statusCode);
-                        }
-
-                        // Return failure for error status codes
-                        HttpErrorCategory errorCategory;
-                        if (statusCode >= 400 && statusCode < 500) {
-                            errorCategory = HttpErrorCategory.CLIENT_ERROR;
-                        } else if (statusCode >= 500 && statusCode < 600) {
-                            errorCategory = HttpErrorCategory.SERVER_ERROR;
-                        } else {
-                            // 3xx (other than 304), 1xx, or unknown codes
-                            errorCategory = HttpErrorCategory.INVALID_CONTENT;
-                        }
-
-                        return HttpResult.<T>failureWithFallback(
-                                "HTTP %d: %s".formatted(statusCode, method.methodName()),
-                                null,
-                                null, // no fallback content
-                                errorCategory,
-                                null, // no cached ETag
-                                statusCode // include HTTP status code
-                        );
-                    })
+                    .thenApply(response -> handleHttpResponse(response, method, cachedEntry, cacheKey))
                     .exceptionally(throwable -> {
                         // Classify exceptions
                         HttpErrorCategory category;
@@ -654,7 +537,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      * </p>
      *
      * <h3>Example Cache Keys</h3>
-     * <pre>
+     * <pre>{@code
      * // With ALL filter:
      * "https://api.example.com/users|Accept:application/json|Authorization:Bearer token123"
      *
@@ -663,7 +546,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      *
      * // With excluding("Authorization"):
      * "https://api.example.com/users|Accept:application/json"
-     * </pre>
+     * }</pre>
      *
      * @param uri Request URI
      * @param headers HTTP headers
@@ -752,7 +635,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         // Find oldest entries by timestamp
         var oldestEntries = cache.entrySet().stream()
                 .sorted(Map.Entry.comparingByValue(
-                        (e1, e2) -> Long.compare(e1.timestamp(), e2.timestamp())
+                        Comparator.comparingLong(CacheEntry::timestamp)
                 ))
                 .limit(evictionCount)
                 .map(Map.Entry::getKey)
@@ -768,6 +651,129 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
         LOGGER.debug("Cache eviction: removed %s oldest entries (cache size: %s → %s)",
                 removed, cache.size() + removed, cache.size());
+    }
+
+    /**
+     * Handles HTTP response with caching, conversion, and error categorization.
+     *
+     * <p>
+     * This method encapsulates the complete response handling logic including:
+     * </p>
+     * <ul>
+     *   <li>304 Not Modified detection and cached content return</li>
+     *   <li>ETag extraction from response headers</li>
+     *   <li>Response body conversion using configured converter</li>
+     *   <li>Conversion failure handling for 2xx responses</li>
+     *   <li>Successful GET response caching with ETag</li>
+     *   <li>Success/failure result creation based on status code</li>
+     * </ul>
+     *
+     * @param response HTTP response from server
+     * @param method HTTP method used for request
+     * @param cachedEntry Cached entry if available (for 304 handling)
+     * @param cacheKey Cache key for storing new entries
+     * @return HttpResult with success or failure status
+     */
+    @SuppressWarnings("java:S3655") // owolff: false positive, content is checked
+    private HttpResult<T> handleHttpResponse(
+            HttpResponse<?> response,
+            HttpMethod method,
+            @Nullable CacheEntry<T> cachedEntry,
+            String cacheKey
+    ) {
+        int statusCode = response.statusCode();
+
+        // Handle 304 Not Modified - return cached content
+        if (statusCode == 304 && cachedEntry != null) {
+            LOGGER.debug("304 Not Modified - returning cached content");
+            return HttpResult.<T>success(cachedEntry.content(), cachedEntry.etag(), 304);
+        }
+
+        // Extract ETag from response (all methods, not just GET)
+        String etag = response.headers()
+                .firstValue("ETag")
+                .orElse(null);
+
+        // Convert response body
+        Optional<T> content = responseConverter.convert(response.body());
+
+        // Handle conversion failure
+        if (content.isEmpty() && statusCode >= 200 && statusCode < 300) {
+            LOGGER.warn(WARN.RESPONSE_CONVERSION_FAILED, statusCode);
+            return HttpResult.<T>failure(
+                    "Failed to convert response body",
+                    null,
+                    HttpErrorCategory.INVALID_CONTENT
+            );
+        }
+
+        // Cache successful GET responses with ETag
+        // Note: content.isPresent() is guaranteed because statusCode 200 with empty content returns early at line 700
+        if (method == HttpMethod.GET && statusCode == 200 && etag != null) {
+            CacheEntry<T> newEntry = new CacheEntry<>(content.get(), etag, System.currentTimeMillis());
+            putInCache(cacheKey, newEntry);
+            LOGGER.debug("Cached GET response with ETag: %s", etag);
+        }
+
+        // Return success for 2xx status codes
+        if (statusCode >= 200 && statusCode < 300) {
+            return HttpResult.<T>success(content.orElse(null), etag, statusCode);
+        }
+
+        // Return failure for error status codes
+        HttpErrorCategory errorCategory = categorizeStatusCode(statusCode);
+
+        return HttpResult.<T>failureWithFallback(
+                "HTTP %d: %s".formatted(statusCode, method.methodName()),
+                null,
+                null, // no fallback content
+                errorCategory,
+                null, // no cached ETag
+                statusCode // include HTTP status code
+        );
+    }
+
+    /**
+     * Categorizes HTTP status code into error category.
+     *
+     * @param statusCode HTTP status code
+     * @return Appropriate error category
+     */
+    private HttpErrorCategory categorizeStatusCode(int statusCode) {
+        if (statusCode >= 400 && statusCode < 500) {
+            return HttpErrorCategory.CLIENT_ERROR;
+        } else if (statusCode >= 500 && statusCode < 600) {
+            return HttpErrorCategory.SERVER_ERROR;
+        } else {
+            // 3xx (other than 304), 1xx, or unknown codes
+            return HttpErrorCategory.INVALID_CONTENT;
+        }
+    }
+
+    /**
+     * Validates request and prepares cache context.
+     *
+     * @param method HTTP method
+     * @param body Request body (nullable)
+     * @param headers HTTP headers
+     * @return Cache context with key and cached entry
+     * @throws IllegalArgumentException if safe method called with body
+     */
+    private CacheContext<T> prepareCacheContext(HttpMethod method, @Nullable Object body, Map<String, String> headers) {
+        // Validate safe methods don't have bodies
+        if (method.isSafe() && body != null) {
+            throw new IllegalArgumentException(
+                    "Safe method %s must not have a request body".formatted(method.methodName())
+            );
+        }
+
+        // Generate cache key (only meaningful for GET with caching enabled)
+        String cacheKey = generateCacheKey(httpHandler.getUri(), headers, cacheKeyHeaderFilter);
+
+        // Retrieve cache entry BEFORE building request (hold local reference for 304 handling)
+        CacheEntry<T> cachedEntry = etagCachingEnabled ? cache.get(cacheKey) : null;
+
+        return new CacheContext<>(cacheKey, cachedEntry);
     }
 
     /**

@@ -64,11 +64,9 @@ public class TestApiDispatcher implements ModuleDispatcherElement {
     @Getter
     private int callCounter = 0;
 
-    @Getter
     @Setter
     private String lastRequestBody = null;
 
-    @Getter
     @Setter
     private String lastIfNoneMatch = null;
 
