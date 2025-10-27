@@ -79,12 +79,14 @@ class RetryConfigTest {
     @Test
     void shouldValidateMaxAttempts() {
         // when/then - zero not allowed
+        var builder1 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> RetryConfig.builder().maxAttempts(0));
+                () -> builder1.maxAttempts(0));
 
         // when/then - negative not allowed
+        var builder2 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> RetryConfig.builder().maxAttempts(-1));
+                () -> builder2.maxAttempts(-1));
 
         // when/then - 1 is valid (minimum)
         assertDoesNotThrow(() -> RetryConfig.builder().maxAttempts(1).build());
@@ -93,16 +95,19 @@ class RetryConfigTest {
     @Test
     void shouldValidateInitialDelay() {
         // when/then - null not allowed
+        var builder1 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> RetryConfig.builder().initialDelay(null));
+                () -> builder1.initialDelay(null));
 
         // when/then - zero not allowed
+        var builder2 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> RetryConfig.builder().initialDelay(Duration.ZERO));
+                () -> builder2.initialDelay(Duration.ZERO));
 
         // when/then - negative not allowed
+        var builder3 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> RetryConfig.builder().initialDelay(Duration.ofSeconds(-1)));
+                () -> builder3.initialDelay(Duration.ofSeconds(-1)));
 
         // when/then - positive is valid
         assertDoesNotThrow(() -> RetryConfig.builder().initialDelay(Duration.ofMillis(1)).build());
@@ -111,16 +116,19 @@ class RetryConfigTest {
     @Test
     void shouldValidateMultiplier() {
         // when/then - less than 1.0 not allowed
+        var builder1 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> RetryConfig.builder().multiplier(0.9));
+                () -> builder1.multiplier(0.9));
 
         // when/then - zero not allowed
+        var builder2 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> RetryConfig.builder().multiplier(0.0));
+                () -> builder2.multiplier(0.0));
 
         // when/then - negative not allowed
+        var builder3 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> RetryConfig.builder().multiplier(-1.0));
+                () -> builder3.multiplier(-1.0));
 
         // when/then - 1.0 is valid (minimum, linear backoff)
         assertDoesNotThrow(() -> RetryConfig.builder().multiplier(1.0).build());
@@ -132,16 +140,19 @@ class RetryConfigTest {
     @Test
     void shouldValidateMaxDelay() {
         // when/then - null not allowed
+        var builder1 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> RetryConfig.builder().maxDelay(null));
+                () -> builder1.maxDelay(null));
 
         // when/then - zero not allowed
+        var builder2 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> RetryConfig.builder().maxDelay(Duration.ZERO));
+                () -> builder2.maxDelay(Duration.ZERO));
 
         // when/then - negative not allowed
+        var builder3 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> RetryConfig.builder().maxDelay(Duration.ofSeconds(-1)));
+                () -> builder3.maxDelay(Duration.ofSeconds(-1)));
 
         // when/then - positive is valid
         assertDoesNotThrow(() -> RetryConfig.builder().maxDelay(Duration.ofMillis(1)).build());
@@ -150,12 +161,14 @@ class RetryConfigTest {
     @Test
     void shouldValidateJitter() {
         // when/then - negative not allowed
+        var builder1 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> RetryConfig.builder().jitter(-0.1));
+                () -> builder1.jitter(-0.1));
 
         // when/then - greater than 1.0 not allowed
+        var builder2 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> RetryConfig.builder().jitter(1.1));
+                () -> builder2.jitter(1.1));
 
         // when/then - 0.0 is valid (no jitter)
         assertDoesNotThrow(() -> RetryConfig.builder().jitter(0.0).build());
