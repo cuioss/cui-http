@@ -207,3 +207,13 @@ _(No suspicious permissions approved - clean slate)_
 ### Acceptable Warnings
 - `[WARNING] Using platform encoding (UTF-8 actually) to copy filtered resources`
 - `[WARNING] Parameter 'session' is deprecated`
+
+## handle-pull-request
+
+### CI/Sonar Duration
+- **Duration**: 300000ms (5 minutes)
+- **Last Updated**: 2025-10-27 (initial baseline)
+
+### Notes
+- This duration represents the time to wait for CI and SonarCloud checks to complete
+- Includes buffer time for queue delays
