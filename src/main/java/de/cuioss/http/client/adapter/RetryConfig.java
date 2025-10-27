@@ -212,6 +212,7 @@ boolean idempotentOnly
          * @return this builder for chaining
          * @throws IllegalArgumentException if delay is null, negative, or zero
          */
+        @SuppressWarnings("java:S2589") // False positive: @NonNull doesn't enforce runtime null checks
         public Builder initialDelay(@NonNull Duration delay) {
             if (delay == null || delay.isNegative() || delay.isZero()) {
                 throw new IllegalArgumentException("initialDelay must be positive");
@@ -242,6 +243,7 @@ boolean idempotentOnly
          * @return this builder for chaining
          * @throws IllegalArgumentException if maxDelay is null, negative, or zero
          */
+        @SuppressWarnings("java:S2589") // False positive: @NonNull doesn't enforce runtime null checks
         public Builder maxDelay(@NonNull Duration maxDelay) {
             if (maxDelay == null || maxDelay.isNegative() || maxDelay.isZero()) {
                 throw new IllegalArgumentException("maxDelay must be positive");
