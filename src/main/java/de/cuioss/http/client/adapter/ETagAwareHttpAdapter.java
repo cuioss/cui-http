@@ -492,9 +492,8 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
                         );
                     });
 
-        } // cui-rewrite:disable-next-line InvalidExceptionUsageRecipe
-        catch (Exception e) {
-            // Any exception during request building
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            // Request building failed: invalid method, headers, body publisher, or builder state
             LOGGER.error(ERROR.REQUEST_BUILD_FAILED, method.methodName(), e.getMessage());
             return CompletableFuture.completedFuture(
                     HttpResult.failure(
@@ -634,9 +633,8 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
                         );
                     });
 
-        } // cui-rewrite:disable-next-line InvalidExceptionUsageRecipe
-        catch (Exception e) {
-            // Any exception during request building
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            // Request building failed: invalid method, headers, body publisher, or builder state
             LOGGER.error(ERROR.REQUEST_BUILD_FAILED, method.methodName(), e.getMessage());
             return CompletableFuture.completedFuture(
                     HttpResult.failure(
