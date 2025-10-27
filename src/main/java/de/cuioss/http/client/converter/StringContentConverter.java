@@ -77,17 +77,6 @@ public abstract class StringContentConverter<T> implements HttpResponseConverter
     protected abstract Optional<T> convertString(String rawContent);
 
     /**
-     * Returns the expected content type for responses.
-     * <p>
-     * Subclasses must implement this to declare their expected content type.
-     * This content type is used to set the {@code Accept} header in requests.
-     *
-     * @return Content type (e.g., APPLICATION_JSON, TEXT_XML, TEXT_PLAIN)
-     */
-    @Override
-    public abstract ContentType contentType();
-
-    /**
      * Identity converter for String content (no conversion needed).
      * <p>
      * This is the most basic String converter that returns the input unchanged,
