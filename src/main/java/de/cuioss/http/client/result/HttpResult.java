@@ -129,7 +129,6 @@ import java.util.function.Function;
  * @param <T> the content type
  * @author Oliver Wolff
  * @see HttpErrorCategory
- * @see de.cuioss.http.client.ResilientHttpHandler
  * @since 1.0
  */
 public sealed interface HttpResult<T>

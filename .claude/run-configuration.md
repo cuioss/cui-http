@@ -119,39 +119,38 @@ _(No acceptable warnings defined)_
 
 ### Last Execution
 
-- **Date**: 2025-10-23
-- **Action**: Complete rebuild of permission settings
-- **Changes**: Removed 82 permissions, added 3 project-specific permissions
-- **Security**: Fixed JSON syntax error (missing comma), removed dangerous permissions
+- **Date**: 2025-10-26
+- **Action**: Fixed degraded permission settings (settings had regressed since 2025-10-23)
+- **Changes**: Removed 3 redundant permissions, added 3 essential project permissions, added security protection
+- **Security**: Removed cross-project access, fixed absolute paths, added settings write protection
 
 ### Removed Permissions
 
-**Security Risks Removed:**
-- `Read(//Users/oliver/**)` - Entire home directory access (CRITICAL SECURITY RISK)
-- `Read(//tmp/**)` - System temp directory access
-- `Bash(rm:*)` - Unrestricted file deletion
+**Redundant (already in global settings):**
+- `Read(//Users/oliver/git/cui-llm-rules/claude/**)` - Covered by global `Read(//~/git/cui-llm-rules/**)`
+- `Read(//Users/oliver/.claude/**)` - Covered by global `Read(//~/.claude/agents/**)` + `Read(//~/.claude/commands/**)`
 
-**Redundant Permissions Removed (already in global settings):**
-- 30+ Bash commands (git, grep, find, cat, etc.)
-- WebFetch domains (covered by global `domain:*`)
-- CUI standards paths (covered by global `Read(//~/git/cui-llm-rules/**)`)
-- 50+ other permissions already globally available
+**Security Risks:**
+- `Read(//Users/oliver/git/OAuth-Sheriff/.claude/**)` - Cross-project access violation (cui-http shouldn't access OAuth-Sheriff's private settings)
+
+**Issues with removed permissions:**
+1. All used absolute paths `/Users/oliver/` instead of user-relative `~/`
+2. Last one accessed different project's private .claude directory
+3. All were redundant (already covered by global settings)
 
 ### Current Permissions
 
-**Allow List (3 permissions - project-specific only):**
+**Allow List (4 permissions):**
+- `Bash(tee:*)` - Project-specific utility (tee command for output redirection)
 - `Edit(//~/git/cui-http/**)` - Edit project files
 - `Read(//~/git/cui-http/**)` - Read project files
 - `Write(//~/git/cui-http/**)` - Create new project files
 
-**Deny List (4 permissions - security):**
-- `Read(//tmp/**)` - Block system temp access
-- `Read(//private/tmp/**)` - Block private temp access
-- `Write(//tmp/**)` - Block temp file creation
-- `Write(//private/tmp/**)`- Block private temp writes
+**Deny List (0 permissions):**
+_(Empty - temp file security handled by global deny list)_
 
-**Ask List (1 permission - safety):**
-- `Write(//.claude/settings.local.json)` - Require approval for settings changes
+**Ask List (1 permission - security):**
+- `Write(.claude/settings.local.json)` - Require approval for settings changes
 
 ### User-Approved Permissions
 
@@ -160,30 +159,44 @@ _(No suspicious permissions approved - clean slate)_
 ### Architecture
 
 **Global Settings** (`~/.claude/settings.json`):
-- Common development tools (Bash commands, git, mvn, npm, etc.)
-- CUI standards access (`Read(//~/git/cui-llm-rules/**)`)
+- Common development tools (141 Bash commands: git, mvn, npm, grep, find, etc.)
+- CUI standards access (`Read(//~/git/cui-llm-rules/**)` - covers all CUI standards)
+- Claude tools access (`Read(//~/.claude/agents/**)`, `Read(//~/.claude/commands/**)`)
 - Universal web access (`WebFetch(domain:*)`)
-- Claude tools (`SlashCommand`, agents, commands)
+- Slash commands (`/agents-*`, `/slash-*`, `/setup-project-permissions`)
+- Security: 70 denied permissions (sudo, rm -rf, system directories, etc.)
 
 **Local Settings** (`./.claude/settings.local.json`):
 - **ONLY** project-specific permissions (cui-http)
-- Minimal footprint (3 allow, 4 deny, 1 ask)
+- Minimal footprint (4 allow, 0 deny, 1 ask)
 - Clean separation of concerns
+- All paths use user-relative format (`~/`)
 
 ### Notes
 
-**Fixed Issues:**
-1. **JSON Syntax Error**: Line 72 missing comma - caused parsing failures
-2. **Path Format**: Converted all `/Users/oliver/` to `~/` for portability
-3. **Security**: Removed home directory wildcard access
-4. **Redundancy**: Eliminated 79 permissions already covered globally
-5. **Temp Files**: Explicitly denied system temp access (Maven should use `target/`)
+**Why Settings Degraded:**
+- Settings file was manually edited or reverted after 2025-10-23 fix
+- Absolute paths returned (`/Users/oliver/` instead of `~/`)
+- Cross-project access added (OAuth-Sheriff .claude access from cui-http)
+- Essential project permissions still missing
 
-**Rationale for Clean Rebuild:**
-- Original file had 82 permissions (79 redundant, 3 dangerous)
-- Invalid JSON syntax prevented reliable parsing
-- Simpler to rebuild than to incrementally fix all issues
-- New structure follows global/local separation principle
+**Fixed Issues:**
+1. **Absolute Paths**: Converted all `/Users/oliver/` to `~/` for portability
+2. **Cross-Project Access**: Removed OAuth-Sheriff .claude access (privacy/security violation)
+3. **Redundancy**: Removed 2 permissions already covered globally
+4. **Missing Permissions**: Added essential Edit/Read/Write for cui-http project
+5. **Security Protection**: Added settings write protection to ask list
+
+**Comparison to OAuth-Sheriff (reference):**
+- OAuth-Sheriff has: Edit, Read, Write for project + specific .claude access
+- OAuth-Sheriff also had absolute paths (should be fixed there too)
+- Both projects should have identical structure (3-4 allow + 1 ask)
+
+**Best Practices Reinforced:**
+- **Global**: Common tools, CUI standards, shared .claude access, universal domains
+- **Local**: THIS project's Edit/Read/Write ONLY, plus project-specific tools (like tee)
+- **Security**: Settings write always in ask list, never in allow
+- **Portability**: Always use `~/` instead of `/Users/username/`
 
 ## ./mvnw -Ppre-commit clean install
 

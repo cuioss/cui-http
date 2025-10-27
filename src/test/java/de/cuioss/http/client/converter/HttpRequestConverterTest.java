@@ -69,12 +69,22 @@ class HttpRequestConverterTest {
             if (content == null) {
                 return HttpRequest.BodyPublishers.noBody();
             }
-            throw new IllegalArgumentException("Serialization failed", /*~~(TODO: Use specific not RuntimeException. Suppress: // cui-rewrite:disable InvalidExceptionUsageRecipe)~~>*/new RuntimeException("Underlying cause"));
+            throw new IllegalArgumentException("Serialization failed", new TestSerializationException("Underlying cause"));
         }
 
         @Override
         public ContentType contentType() {
             return ContentType.APPLICATION_JSON;
+        }
+    }
+
+    /**
+     * Specific exception for testing serialization failure scenarios.
+     * Used to avoid generic RuntimeException in test code.
+     */
+    private static class TestSerializationException extends Exception {
+        TestSerializationException(String message) {
+            super(message);
         }
     }
 

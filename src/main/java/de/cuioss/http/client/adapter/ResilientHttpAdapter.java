@@ -28,6 +28,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
+import static de.cuioss.http.client.HttpLogMessages.WARN;
 import static java.util.Objects.requireNonNull;
 
 /**
@@ -270,8 +271,7 @@ public class ResilientHttpAdapter<T> implements HttpAdapter<T> {
 
                     // Idempotency check - skip retry for non-idempotent methods if configured
                     if (config.idempotentOnly() && !method.isIdempotent()) {
-                        /*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*/LOGGER.warn("Skipping retry for non-idempotent method: %s (idempotentOnly=true)",
-                                method.methodName());
+                        LOGGER.warn(WARN.RETRY_SKIPPED_NON_IDEMPOTENT, method.methodName());
                         return CompletableFuture.completedFuture(result);
                     }
 
@@ -284,14 +284,14 @@ public class ResilientHttpAdapter<T> implements HttpAdapter<T> {
 
                     // Max attempts reached
                     if (attempt >= config.maxAttempts()) {
-                        /*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*/LOGGER.warn("%s request failed after %s attempts", method.methodName(), config.maxAttempts());
+                        LOGGER.warn(WARN.REQUEST_FAILED_MAX_ATTEMPTS, method.methodName(), config.maxAttempts());
                         return CompletableFuture.completedFuture(result);
                     }
 
                     // Retryable failure - calculate delay and schedule retry
                     Duration delay = config.calculateDelay(attempt);
 
-                    /*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*/LOGGER.warn("%s request failed on attempt %s, retrying after %sms",
+                    LOGGER.warn(WARN.REQUEST_RETRY_AFTER_FAILURE,
                             method.methodName(), attempt, delay.toMillis());
 
                     int nextAttempt = attempt + 1;

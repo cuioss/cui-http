@@ -173,29 +173,30 @@ result.getErrorCategory().ifPresent(category -> {
 
 == Creating Results
 
-=== Producer Pattern (ResilientHttpHandler)
+=== Producer Pattern (ResilientHttpAdapter)
 
 [source,java]
 ----
-public class ResilientHttpHandler<T> {
+// Create adapter with ETag caching and retry
+HttpAdapter<T> adapter = ResilientHttpAdapter.wrap(
+    ETagAwareHttpAdapter.<T>builder()
+        .httpHandler(httpHandler)
+        .responseConverter(responseConverter)
+        .build()
+);
 
-    public HttpResult<T> load() {
-        try {
-            HttpResponse<?> response = client.send(request, bodyHandler);
+// Execute async-first
+CompletableFuture<HttpResult<T>> future = adapter.get(headers);
 
-            return switch (response.statusCode()) {
-                case 200 -> {
-                    T content = converter.convert(response.body()).orElseThrow();
-                    String etag = response.headers()
-                        .firstValue("ETag").orElse(null);
-                    yield HttpResult.success(content, etag, 200);
-                }
-
-                case 304 -> {
-                    // Not Modified - use cached content
-                    yield HttpResult.success(
-                        cachedContent, cachedEtag, 304);
-                }
+// The adapter automatically handles:
+// - 200 responses: Convert body and cache with ETag
+// - 304 Not Modified: Return cached content
+// - Network/server errors: Retry with exponential backoff
+future.thenAccept(result -> {
+    result.ifSuccess(content -> {
+        // Use content
+    }).ifFailure(error -> {
+        // Handle failure
 
                 case int code when code >= 500 -> {
                     // Server error with fallback
@@ -457,4 +458,5 @@ String msg = result.getErrorMessage().orElse("Unknown error");
 * xref:client-handlers-readme.adoc[HTTP Client Handlers]
 * `de.cuioss.http.client.result.HttpResult` - API documentation
 * `de.cuioss.http.client.result.HttpErrorCategory` - Error categories
-* `de.cuioss.http.client.ResilientHttpHandler` - Primary producer
+* `de.cuioss.http.client.adapter.ResilientHttpAdapter` - Retry decorator with exponential backoff
+* `de.cuioss.http.client.adapter.ETagAwareHttpAdapter` - ETag caching with 304 Not Modified support

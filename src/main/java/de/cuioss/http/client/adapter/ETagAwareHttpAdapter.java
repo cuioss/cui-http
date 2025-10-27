@@ -35,6 +35,9 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static de.cuioss.http.client.HttpLogMessages.ERROR;
+import static de.cuioss.http.client.HttpLogMessages.WARN;
+
 /**
  * HTTP adapter with built-in, configurable ETag caching for bandwidth optimization.
  *
@@ -431,7 +434,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
                         // Handle conversion failure
                         if (content.isEmpty() && statusCode >= 200 && statusCode < 300) {
-                            /*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*/LOGGER.warn("Response conversion failed for status %s", statusCode);
+                            LOGGER.warn(WARN.RESPONSE_CONVERSION_FAILED, statusCode);
                             return HttpResult.<T>failure(
                                     "Failed to convert response body",
                                     null,
@@ -476,10 +479,10 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
                         HttpErrorCategory category;
                         if (throwable instanceof IOException) {
                             category = HttpErrorCategory.NETWORK_ERROR;
-                            /*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*/LOGGER.warn("Network error during %s request: %s", method.methodName(), throwable.getMessage());
+                            LOGGER.warn(WARN.NETWORK_ERROR_DURING_REQUEST, method.methodName(), throwable.getMessage());
                         } else {
                             category = HttpErrorCategory.CONFIGURATION_ERROR;
-                            /*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*/LOGGER.error("Configuration error during %s request: %s", method.methodName(), throwable.getMessage());
+                            LOGGER.error(ERROR.CONFIGURATION_ERROR_DURING_REQUEST, method.methodName(), throwable.getMessage());
                         }
 
                         return HttpResult.<T>failure(
@@ -489,9 +492,10 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
                         );
                     });
 
-        } /*~~(TODO: Catch specific not Exception. Suppress: // cui-rewrite:disable InvalidExceptionUsageRecipe)~~>*/catch (Exception e) {
+        } // cui-rewrite:disable-next-line InvalidExceptionUsageRecipe
+        catch (Exception e) {
             // Any exception during request building
-            /*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*/LOGGER.error("Failed to build HTTP request for %s: %s", method.methodName(), e.getMessage());
+            LOGGER.error(ERROR.REQUEST_BUILD_FAILED, method.methodName(), e.getMessage());
             return CompletableFuture.completedFuture(
                     HttpResult.failure(
                             "Failed to build HTTP request: " + e.getMessage(),
@@ -572,7 +576,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
                         // Handle conversion failure
                         if (content.isEmpty() && statusCode >= 200 && statusCode < 300) {
-                            /*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*/LOGGER.warn("Response conversion failed for status %s", statusCode);
+                            LOGGER.warn(WARN.RESPONSE_CONVERSION_FAILED, statusCode);
                             return HttpResult.<T>failure(
                                     "Failed to convert response body",
                                     null,
@@ -617,10 +621,10 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
                         HttpErrorCategory category;
                         if (throwable instanceof IOException) {
                             category = HttpErrorCategory.NETWORK_ERROR;
-                            /*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: WARN needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*/LOGGER.warn("Network error during %s request: %s", method.methodName(), throwable.getMessage());
+                            LOGGER.warn(WARN.NETWORK_ERROR_DURING_REQUEST, method.methodName(), throwable.getMessage());
                         } else {
                             category = HttpErrorCategory.CONFIGURATION_ERROR;
-                            /*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*/LOGGER.error("Configuration error during %s request: %s", method.methodName(), throwable.getMessage());
+                            LOGGER.error(ERROR.CONFIGURATION_ERROR_DURING_REQUEST, method.methodName(), throwable.getMessage());
                         }
 
                         return HttpResult.<T>failure(
@@ -630,9 +634,10 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
                         );
                     });
 
-        } /*~~(TODO: Catch specific not Exception. Suppress: // cui-rewrite:disable InvalidExceptionUsageRecipe)~~>*/catch (Exception e) {
+        } // cui-rewrite:disable-next-line InvalidExceptionUsageRecipe
+        catch (Exception e) {
             // Any exception during request building
-            /*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*//*~~(TODO: ERROR needs LogRecord. Suppress: // cui-rewrite:disable CuiLogRecordPatternRecipe)~~>*/LOGGER.error("Failed to build HTTP request for %s: %s", method.methodName(), e.getMessage());
+            LOGGER.error(ERROR.REQUEST_BUILD_FAILED, method.methodName(), e.getMessage());
             return CompletableFuture.completedFuture(
                     HttpResult.failure(
                             "Failed to build HTTP request: " + e.getMessage(),

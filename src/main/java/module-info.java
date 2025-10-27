@@ -26,7 +26,6 @@ module de.cuioss.http {
     exports de.cuioss.http.client.converter;
     exports de.cuioss.http.client.handler;
     exports de.cuioss.http.client.result;
-    exports de.cuioss.http.client.retry;
 
     // Security validation core
     exports de.cuioss.http.security.core;

@@ -116,6 +116,55 @@ public final class HttpLogMessages {
                 .identifier(109)
                 .template("Provided SSL context uses insecure protocol: %s. Creating a secure context instead.")
                 .build();
+
+        public static final LogRecord RETRY_SKIPPED_NON_IDEMPOTENT = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(110)
+                .template("Skipping retry for non-idempotent method: %s (idempotentOnly=true)")
+                .build();
+
+        public static final LogRecord REQUEST_FAILED_MAX_ATTEMPTS = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(111)
+                .template("%s request failed after %s attempts")
+                .build();
+
+        public static final LogRecord REQUEST_RETRY_AFTER_FAILURE = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(112)
+                .template("%s request failed on attempt %s, retrying after %sms")
+                .build();
+
+        public static final LogRecord RESPONSE_CONVERSION_FAILED = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(113)
+                .template("Response conversion failed for status %s")
+                .build();
+
+        public static final LogRecord NETWORK_ERROR_DURING_REQUEST = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(114)
+                .template("Network error during %s request: %s")
+                .build();
+    }
+
+    /**
+     * Contains error-level log messages for failures that prevent normal operation.
+     */
+    @UtilityClass
+    public static final class ERROR {
+
+        public static final LogRecord CONFIGURATION_ERROR_DURING_REQUEST = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(200)
+                .template("Configuration error during %s request: %s")
+                .build();
+
+        public static final LogRecord REQUEST_BUILD_FAILED = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(201)
+                .template("Failed to build HTTP request for %s: %s")
+                .build();
     }
 
 }
