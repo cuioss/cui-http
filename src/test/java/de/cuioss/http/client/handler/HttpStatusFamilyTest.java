@@ -304,7 +304,7 @@ class HttpStatusFamilyTest {
         void successShouldThrowException() {
             IllegalStateException exception = assertThrows(
                     IllegalStateException.class,
-                    () -> HttpStatusFamily.SUCCESS.toErrorCategory()
+                    HttpStatusFamily.SUCCESS::toErrorCategory
             );
             assertEquals("SUCCESS is not an error", exception.getMessage());
         }
@@ -312,11 +312,11 @@ class HttpStatusFamilyTest {
         @Test
         @DisplayName("All non-SUCCESS families should map without exception")
         void allNonSuccessFamiliesShouldMapWithoutException() {
-            assertDoesNotThrow(() -> HttpStatusFamily.CLIENT_ERROR.toErrorCategory());
-            assertDoesNotThrow(() -> HttpStatusFamily.SERVER_ERROR.toErrorCategory());
-            assertDoesNotThrow(() -> HttpStatusFamily.REDIRECTION.toErrorCategory());
-            assertDoesNotThrow(() -> HttpStatusFamily.INFORMATIONAL.toErrorCategory());
-            assertDoesNotThrow(() -> HttpStatusFamily.UNKNOWN.toErrorCategory());
+            assertDoesNotThrow(HttpStatusFamily.CLIENT_ERROR::toErrorCategory);
+            assertDoesNotThrow(HttpStatusFamily.SERVER_ERROR::toErrorCategory);
+            assertDoesNotThrow(HttpStatusFamily.REDIRECTION::toErrorCategory);
+            assertDoesNotThrow(HttpStatusFamily.INFORMATIONAL::toErrorCategory);
+            assertDoesNotThrow(HttpStatusFamily.UNKNOWN::toErrorCategory);
         }
 
         @Test
