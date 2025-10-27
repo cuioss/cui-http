@@ -101,12 +101,22 @@ public class TestApiDispatcher implements ModuleDispatcherElement {
 
     @Override
     public Optional<MockResponse> handlePost(@NonNull RecordedRequest request) {
-        lastRequestBody = request.getBody().readUtf8();
-        return handleRequest(request);
+        return handleRequestWithBody(request);
     }
 
     @Override
     public Optional<MockResponse> handlePut(@NonNull RecordedRequest request) {
+        return handleRequestWithBody(request);
+    }
+
+    /**
+     * Common handler for requests with body (POST, PUT).
+     * Captures request body before delegating to handleRequest.
+     *
+     * @param request the recorded request
+     * @return optional mock response
+     */
+    private Optional<MockResponse> handleRequestWithBody(@NonNull RecordedRequest request) {
         lastRequestBody = request.getBody().readUtf8();
         return handleRequest(request);
     }
