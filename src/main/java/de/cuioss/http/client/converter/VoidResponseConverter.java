@@ -75,6 +75,10 @@ import java.util.Optional;
  *
  * @since 1.0
  */
+// S6548: False positive - Singleton pattern is intentional and appropriate here
+// This converter is stateless and thread-safe, making singleton the correct design choice
+// to avoid unnecessary object allocations for a shared, immutable utility
+@SuppressWarnings("java:S6548")
 public final class VoidResponseConverter implements HttpResponseConverter<Void> {
 
     /**
