@@ -422,25 +422,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             HttpRequest request = requestBuilder.build();
 
             // Execute async request with extracted response handler
-            return httpClient.sendAsync(request, responseConverter.getBodyHandler())
-                    .thenApply(response -> handleHttpResponse(response, method, cachedEntry, cacheKey))
-                    .exceptionally(throwable -> {
-                        // Classify exceptions
-                        HttpErrorCategory category;
-                        if (throwable instanceof IOException) {
-                            category = HttpErrorCategory.NETWORK_ERROR;
-                            LOGGER.warn(WARN.NETWORK_ERROR_DURING_REQUEST, method.methodName(), throwable.getMessage());
-                        } else {
-                            category = HttpErrorCategory.CONFIGURATION_ERROR;
-                            LOGGER.error(ERROR.CONFIGURATION_ERROR_DURING_REQUEST, method.methodName(), throwable.getMessage());
-                        }
-
-                        return HttpResult.<T>failure(
-                                "Request failed: %s".formatted(throwable.getMessage()),
-                                throwable,
-                                category
-                        );
-                    });
+            return executeAsyncRequest(request, method, cachedEntry, cacheKey);
 
         } catch (IllegalArgumentException | IllegalStateException e) {
             // Request building failed: invalid method, headers, body publisher, or builder state
@@ -496,25 +478,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             HttpRequest request = requestBuilder.build();
 
             // Execute async request with extracted response handler
-            return httpClient.sendAsync(request, responseConverter.getBodyHandler())
-                    .thenApply(response -> handleHttpResponse(response, method, cachedEntry, cacheKey))
-                    .exceptionally(throwable -> {
-                        // Classify exceptions
-                        HttpErrorCategory category;
-                        if (throwable instanceof IOException) {
-                            category = HttpErrorCategory.NETWORK_ERROR;
-                            LOGGER.warn(WARN.NETWORK_ERROR_DURING_REQUEST, method.methodName(), throwable.getMessage());
-                        } else {
-                            category = HttpErrorCategory.CONFIGURATION_ERROR;
-                            LOGGER.error(ERROR.CONFIGURATION_ERROR_DURING_REQUEST, method.methodName(), throwable.getMessage());
-                        }
-
-                        return HttpResult.<T>failure(
-                                "Request failed: %s".formatted(throwable.getMessage()),
-                                throwable,
-                                category
-                        );
-                    });
+            return executeAsyncRequest(request, method, cachedEntry, cacheKey);
 
         } catch (IllegalArgumentException | IllegalStateException e) {
             // Request building failed: invalid method, headers, body publisher, or builder state
@@ -527,6 +491,47 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
                     )
             );
         }
+    }
+
+    /**
+     * Executes async HTTP request with error handling.
+     *
+     * <p>
+     * Centralizes the async request execution and exception handling logic
+     * to eliminate code duplication between send() and sendWithConverter().
+     * </p>
+     *
+     * @param request HTTP request to execute
+     * @param method HTTP method for logging
+     * @param cachedEntry Cached entry for 304 handling
+     * @param cacheKey Cache key for storing response
+     * @return CompletableFuture with HttpResult
+     */
+    private CompletableFuture<HttpResult<T>> executeAsyncRequest(
+            HttpRequest request,
+            HttpMethod method,
+            @Nullable CacheEntry<T> cachedEntry,
+            String cacheKey
+    ) {
+        return httpClient.sendAsync(request, responseConverter.getBodyHandler())
+                .thenApply(response -> handleHttpResponse(response, method, cachedEntry, cacheKey))
+                .exceptionally(throwable -> {
+                    // Classify exceptions
+                    HttpErrorCategory category;
+                    if (throwable instanceof IOException) {
+                        category = HttpErrorCategory.NETWORK_ERROR;
+                        LOGGER.warn(WARN.NETWORK_ERROR_DURING_REQUEST, method.methodName(), throwable.getMessage());
+                    } else {
+                        category = HttpErrorCategory.CONFIGURATION_ERROR;
+                        LOGGER.error(ERROR.CONFIGURATION_ERROR_DURING_REQUEST, method.methodName(), throwable.getMessage());
+                    }
+
+                    return HttpResult.<T>failure(
+                            "Request failed: %s".formatted(throwable.getMessage()),
+                            throwable,
+                            category
+                    );
+                });
     }
 
     /**
