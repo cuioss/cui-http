@@ -77,32 +77,30 @@ class RetryConfigTest {
     }
 
     @Test
+    @SuppressWarnings("java:S5778") // Validation tests intentionally use multiple method calls in lambdas
     void shouldValidateMaxAttempts() {
         // when/then - zero not allowed
-        var builder1 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> builder1.maxAttempts(0));
+                () -> RetryConfig.builder().maxAttempts(0));
 
         // when/then - negative not allowed
-        var builder2 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> builder2.maxAttempts(-1));
+                () -> RetryConfig.builder().maxAttempts(-1));
 
         // when/then - 1 is valid (minimum)
         assertDoesNotThrow(() -> RetryConfig.builder().maxAttempts(1).build());
     }
 
     @Test
+    @SuppressWarnings("java:S5778") // Validation tests intentionally use multiple method calls in lambdas
     void shouldValidateInitialDelay() {
         // when/then - null not allowed
-        var builder1 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> builder1.initialDelay(null));
+                () -> RetryConfig.builder().initialDelay(null));
 
         // when/then - zero not allowed
-        var builder2 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> builder2.initialDelay(Duration.ZERO));
+                () -> RetryConfig.builder().initialDelay(Duration.ZERO));
 
         // when/then - negative not allowed
         assertThrows(IllegalArgumentException.class,
@@ -113,21 +111,19 @@ class RetryConfigTest {
     }
 
     @Test
+    @SuppressWarnings("java:S5778") // Validation tests intentionally use multiple method calls in lambdas
     void shouldValidateMultiplier() {
         // when/then - less than 1.0 not allowed
-        var builder1 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> builder1.multiplier(0.9));
+                () -> RetryConfig.builder().multiplier(0.9));
 
         // when/then - zero not allowed
-        var builder2 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> builder2.multiplier(0.0));
+                () -> RetryConfig.builder().multiplier(0.0));
 
         // when/then - negative not allowed
-        var builder3 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> builder3.multiplier(-1.0));
+                () -> RetryConfig.builder().multiplier(-1.0));
 
         // when/then - 1.0 is valid (minimum, linear backoff)
         assertDoesNotThrow(() -> RetryConfig.builder().multiplier(1.0).build());
@@ -137,16 +133,15 @@ class RetryConfigTest {
     }
 
     @Test
+    @SuppressWarnings("java:S5778") // Validation tests intentionally use multiple method calls in lambdas
     void shouldValidateMaxDelay() {
         // when/then - null not allowed
-        var builder1 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> builder1.maxDelay(null));
+                () -> RetryConfig.builder().maxDelay(null));
 
         // when/then - zero not allowed
-        var builder2 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> builder2.maxDelay(Duration.ZERO));
+                () -> RetryConfig.builder().maxDelay(Duration.ZERO));
 
         // when/then - negative not allowed
         assertThrows(IllegalArgumentException.class,
@@ -157,16 +152,15 @@ class RetryConfigTest {
     }
 
     @Test
+    @SuppressWarnings("java:S5778") // Validation tests intentionally use multiple method calls in lambdas
     void shouldValidateJitter() {
         // when/then - negative not allowed
-        var builder1 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> builder1.jitter(-0.1));
+                () -> RetryConfig.builder().jitter(-0.1));
 
         // when/then - greater than 1.0 not allowed
-        var builder2 = RetryConfig.builder();
         assertThrows(IllegalArgumentException.class,
-                () -> builder2.jitter(1.1));
+                () -> RetryConfig.builder().jitter(1.1));
 
         // when/then - 0.0 is valid (no jitter)
         assertDoesNotThrow(() -> RetryConfig.builder().jitter(0.0).build());
