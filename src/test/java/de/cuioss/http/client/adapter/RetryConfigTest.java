@@ -106,8 +106,9 @@ class RetryConfigTest {
 
         // when/then - negative not allowed
         var builder3 = RetryConfig.builder();
+        var negativeDuration = Duration.ofSeconds(-1);
         assertThrows(IllegalArgumentException.class,
-                () -> builder3.initialDelay(Duration.ofSeconds(-1)));
+                () -> builder3.initialDelay(negativeDuration));
 
         // when/then - positive is valid
         assertDoesNotThrow(() -> RetryConfig.builder().initialDelay(Duration.ofMillis(1)).build());
@@ -151,8 +152,9 @@ class RetryConfigTest {
 
         // when/then - negative not allowed
         var builder3 = RetryConfig.builder();
+        var negativeMaxDelay = Duration.ofSeconds(-1);
         assertThrows(IllegalArgumentException.class,
-                () -> builder3.maxDelay(Duration.ofSeconds(-1)));
+                () -> builder3.maxDelay(negativeMaxDelay));
 
         // when/then - positive is valid
         assertDoesNotThrow(() -> RetryConfig.builder().maxDelay(Duration.ofMillis(1)).build());
