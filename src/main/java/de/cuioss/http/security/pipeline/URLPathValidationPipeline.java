@@ -70,7 +70,6 @@ import java.util.Objects;
 @EqualsAndHashCode(callSuper = false, of = {})
 @ToString(callSuper = true)
 @Getter
-@SuppressWarnings("ClassCanBeRecord")
 public final class URLPathValidationPipeline extends AbstractValidationPipeline {
 
     private static final ValidationType VALIDATION_TYPE = ValidationType.URL_PATH;
