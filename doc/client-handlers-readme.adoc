@@ -103,21 +103,6 @@ Error categorization for HTTP operations.
 
 HTTP-specific result states extending CUI result framework.
 
-=== Loading Status
-
-==== xref:../src/main/java/de/cuioss/http/client/LoadingStatusProvider.java[LoadingStatusProvider]
-
-Interface for components providing loading status.
-
-==== xref:../src/main/java/de/cuioss/http/client/LoaderStatus.java[LoaderStatus]
-
-Enum representing loader states.
-
-* `UNDEFINED` - Initial state
-* `IN_PROGRESS` - Currently loading
-* `ERROR` - Load failed
-* `OK` - Successfully loaded
-
 === Logging
 
 ==== xref:../src/main/java/de/cuioss/http/client/HttpLogMessages.java[HttpLogMessages]
