@@ -195,8 +195,6 @@ future.thenAccept(result -> {
     result.ifSuccess(content -> {
         // Use content
     }).ifFailure(error -> {
-        // Handle failure
-
                 case int code when code >= 500 -> {
                     // Server error with fallback
                     yield HttpResult.failureWithFallback(
