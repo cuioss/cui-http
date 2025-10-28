@@ -120,6 +120,10 @@ public final class VoidResponseConverter implements HttpResponseConverter<Void> 
      *
      * @return Discarding body handler - doesn't read body from network
      */
+    // S1452: False positive - wildcard type required for flexible body handler API
+    // JDK BodyHandler design requires type flexibility (String, byte[], Void, etc.)
+    // Callers use the handler to read response bodies, not to access type-specific operations
+    @SuppressWarnings("java:S1452")
     @Override
     public HttpResponse.BodyHandler<?> getBodyHandler() {
         return HttpResponse.BodyHandlers.discarding();  // Efficient - don't read body

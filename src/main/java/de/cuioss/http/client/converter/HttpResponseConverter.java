@@ -142,6 +142,10 @@ public interface HttpResponseConverter<T> {
      *
      * @return BodyHandler appropriate for this content type
      */
+    // S1452: False positive - wildcard type required for flexible body handler API
+    // JDK BodyHandler design requires type flexibility (String, byte[], Void, etc.)
+    // Callers use the handler to read response bodies, not to access type-specific operations
+    @SuppressWarnings("java:S1452")
     HttpResponse.BodyHandler<?> getBodyHandler();
 
     /**
