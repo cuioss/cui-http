@@ -81,7 +81,7 @@ The project produces a `generators` artifact containing security testing utiliti
 
 ## CUI Standards Integration
 
-This project follows CUI standards documented in `doc/ai-rules.md`. Key requirements:
+This project follows CUI standards documented in `agents.md`. Key requirements:
 
 1. **Pre-commit checks are mandatory**: Always run the pre-commit checks (see Build Commands section) before commits
 2. **Use CuiLogger**: Private static final LOGGER, never use slf4j or System.out
@@ -117,7 +117,7 @@ Validators are:
 
 - `/doc/http-security/specification/pipeline-architecture-standards.adoc`: Pipeline selection rules
 - `/doc/http-security/specification/generator-contract.adoc`: Generator implementation standards
-- `/doc/ai-rules.md`: CUI development standards
+- `/agents.md`: AI agent guidance and CUI development standards
 - `/src/main/java/module-info.java`: Module definition
 
 ## Development Notes

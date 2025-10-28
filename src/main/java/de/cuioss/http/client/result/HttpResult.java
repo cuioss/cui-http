@@ -65,25 +65,25 @@ import java.util.function.Function;
  *
  * <h3>2. Pattern Matching Style (Recommended for Complex Logic)</h3>
  * <pre>
- * HttpResult&lt;WellKnownResult&gt; result = resolver.load();
+ * HttpResult&lt;Config&gt; result = handler.load();
  *
  * return switch (result) {
- *     case HttpResult.Success&lt;WellKnownResult&gt;(var config, var etag, var status) -&gt; {
- *         logger.info("Loaded well-known configuration from {}", config.issuer());
+ *     case HttpResult.Success&lt;Config&gt;(var config, var etag, var status) -&gt; {
+ *         logger.info("Loaded configuration successfully");
  *         updateCache(config, etag);
- *         yield LoaderStatus.OK;
+ *         yield true; // Success
  *     }
  *
- *     case HttpResult.Failure&lt;WellKnownResult&gt; failure -&gt; {
+ *     case HttpResult.Failure&lt;Config&gt; failure -&gt; {
  *         logger.error(failure.errorMessage(), failure.cause());
  *
  *         // Graceful degradation with fallback
  *         if (failure.fallbackContent() != null) {
- *             logger.warn("Using cached well-known configuration");
- *             yield LoaderStatus.OK;
+ *             logger.warn("Using cached configuration");
+ *             yield true; // Degraded but functional
  *         }
  *
- *         yield failure.isRetryable() ? LoaderStatus.UNDEFINED : LoaderStatus.ERROR;
+ *         yield failure.isRetryable(); // Retry logic
  *     }
  * };
  * </pre>
@@ -129,7 +129,6 @@ import java.util.function.Function;
  * @param <T> the content type
  * @author Oliver Wolff
  * @see HttpErrorCategory
- * @see de.cuioss.http.client.ResilientHttpHandler
  * @since 1.0
  */
 public sealed interface HttpResult<T>
@@ -323,10 +322,10 @@ permits HttpResult.Success, HttpResult.Failure {
      * @param <T> content type
      */
     record Success<T>(
-        T content,
-        @Nullable
-        String etag,
-        int httpStatus
+    T content,
+    @Nullable
+    String etag,
+    int httpStatus
     ) implements HttpResult<T> {
 
         @Override
@@ -374,16 +373,16 @@ permits HttpResult.Success, HttpResult.Failure {
      */
     @Builder
     record Failure<T>(
-        String errorMessage,
-        @Nullable
-        Throwable cause,
-        @Nullable
-        T fallbackContent,
-        HttpErrorCategory category,
-        @Nullable
-        String etag,
-        @Nullable
-        Integer httpStatus
+    String errorMessage,
+    @Nullable
+    Throwable cause,
+    @Nullable
+    T fallbackContent,
+    HttpErrorCategory category,
+    @Nullable
+    String etag,
+    @Nullable
+    Integer httpStatus
     ) implements HttpResult<T> {
 
         @Override

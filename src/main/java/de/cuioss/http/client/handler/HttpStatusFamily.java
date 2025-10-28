@@ -15,6 +15,7 @@
  */
 package de.cuioss.http.client.handler;
 
+import de.cuioss.http.client.result.HttpErrorCategory;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
@@ -201,6 +202,51 @@ public enum HttpStatusFamily {
      */
     public static boolean isValid(int statusCode) {
         return statusCode >= 100 && statusCode <= 599;
+    }
+
+    /**
+     * Converts HTTP status family to error category for retry decisions.
+     * <p>
+     * This method maps HTTP status code families to application-level error categories
+     * used by retry logic and error handling strategies.
+     *
+     * <h3>Mapping Rules</h3>
+     * <ul>
+     *   <li><strong>CLIENT_ERROR (4xx)</strong> → {@link HttpErrorCategory#CLIENT_ERROR} - Client request errors (non-retryable)</li>
+     *   <li><strong>SERVER_ERROR (5xx)</strong> → {@link HttpErrorCategory#SERVER_ERROR} - Server errors (retryable)</li>
+     *   <li><strong>REDIRECTION (3xx)</strong> → {@link HttpErrorCategory#INVALID_CONTENT} - Rare case, most redirects handled by HttpClient</li>
+     *   <li><strong>INFORMATIONAL (1xx)</strong> → {@link HttpErrorCategory#INVALID_CONTENT} - Unexpected in response processing</li>
+     *   <li><strong>UNKNOWN</strong> → {@link HttpErrorCategory#INVALID_CONTENT} - Invalid status codes</li>
+     *   <li><strong>SUCCESS (2xx)</strong> → Throws IllegalStateException (not an error)</li>
+     * </ul>
+     *
+     * <h3>Usage Example</h3>
+     * <pre>
+     * HttpStatusFamily family = HttpStatusFamily.fromStatusCode(503);
+     * HttpErrorCategory category = family.toErrorCategory();
+     * if (category.isRetryable()) {
+     *     // Retry the request
+     * }
+     * </pre>
+     *
+     * <h3>Note on 3xx Redirects</h3>
+     * Most HTTP redirects (301, 302, 307, etc.) are handled automatically by Java's HttpClient.
+     * If a 3xx status reaches error handling, it typically indicates a configuration issue
+     * or a redirect loop, hence it's classified as INVALID_CONTENT.
+     *
+     * @return the corresponding HttpErrorCategory for this status family
+     * @throws IllegalStateException if called on SUCCESS family (which is not an error)
+     * @since 1.0
+     * @see HttpErrorCategory
+     */
+    public HttpErrorCategory toErrorCategory() {
+        return switch (this) {
+            case CLIENT_ERROR -> HttpErrorCategory.CLIENT_ERROR;
+            case SERVER_ERROR -> HttpErrorCategory.SERVER_ERROR;
+            case SUCCESS -> throw new IllegalStateException("SUCCESS is not an error");
+            case REDIRECTION -> HttpErrorCategory.INVALID_CONTENT;  // Rare, handled by adapter
+            case INFORMATIONAL, UNKNOWN -> HttpErrorCategory.INVALID_CONTENT;
+        };
     }
 
     @Override

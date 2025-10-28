@@ -15,6 +15,7 @@
  */
 package de.cuioss.http.client.converter;
 
+import de.cuioss.http.client.ContentType;
 import org.jspecify.annotations.NonNull;
 
 import java.net.http.HttpResponse;
@@ -28,14 +29,14 @@ import java.util.Optional;
  * This converter is suitable for text-based content types such as JSON, XML, HTML, and plain text.
  * It uses HttpResponse.BodyHandlers.ofString() with configurable charset support.
  * <p>
- * Subclasses need only implement the conversion logic and empty value provision.
+ * Subclasses need only implement the conversion logic and content type declaration.
  * The String raw type handling is managed internally.
  *
  * @param <T> the target type for content conversion
  * @author Oliver Wolff
  * @since 1.0
  */
-public abstract class StringContentConverter<T> implements HttpContentConverter<T> {
+public abstract class StringContentConverter<T> implements HttpResponseConverter<T> {
 
     private final Charset charset;
 
@@ -55,6 +56,10 @@ public abstract class StringContentConverter<T> implements HttpContentConverter<
         this.charset = charset;
     }
 
+    // S1452: False positive - wildcard type required for flexible body handler API
+    // JDK BodyHandler design requires type flexibility (String, byte[], Void, etc.)
+    // Callers use the handler to read response bodies, not to access type-specific operations
+    @SuppressWarnings("java:S1452")
     @Override
     public HttpResponse.BodyHandler<?> getBodyHandler() {
         return HttpResponse.BodyHandlers.ofString(charset);
@@ -91,9 +96,8 @@ public abstract class StringContentConverter<T> implements HttpContentConverter<
             }
 
             @Override
-            @NonNull
-            public String emptyValue() {
-                return "";
+            public ContentType contentType() {
+                return ContentType.TEXT_PLAIN;
             }
         };
     }

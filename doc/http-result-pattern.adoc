@@ -70,14 +70,14 @@ public sealed interface HttpResult<T>
 
 [source,java]
 ----
-HttpResult<Jwks> result = handler.load();
+HttpResult<ConfigData> result = handler.load();
 
 // Check success
 if (result.isSuccess()) {
     // Access content (Optional)
-    result.getContent().ifPresent(jwks -> {
-        processKeys(jwks);
-        logger.info("Loaded {} keys", jwks.keys().size());
+    result.getContent().ifPresent(config -> {
+        processData(config);
+        logger.info("Loaded configuration successfully");
     });
 
     // Access metadata
@@ -109,27 +109,26 @@ if (!result.isSuccess()) {
 
 [source,java]
 ----
-HttpResult<WellKnownResult> result = resolver.load();
+HttpResult<ConfigData> result = handler.load();
 
 return switch (result) {
-    case HttpResult.Success<WellKnownResult>(var config, var etag, var status) -> {
-        logger.info("Loaded well-known configuration from {}", config.issuer());
+    case HttpResult.Success<ConfigData>(var config, var etag, var status) -> {
+        logger.info("Loaded configuration successfully");
         updateCache(config, etag);
-        yield LoaderStatus.OK;
+        yield true; // Success
     }
 
-    case HttpResult.Failure<WellKnownResult> failure -> {
+    case HttpResult.Failure<ConfigData> failure -> {
         logger.error(failure.errorMessage(), failure.cause());
 
         // Graceful degradation with fallback
         if (failure.fallbackContent() != null) {
-            logger.warn("Using cached well-known configuration");
-            yield LoaderStatus.OK; // Degraded but functional
+            logger.warn("Using cached configuration");
+            yield true; // Degraded but functional
         }
 
         // Determine if retry should be attempted
-        yield failure.isRetryable() ?
-            LoaderStatus.UNDEFINED : LoaderStatus.ERROR;
+        yield failure.isRetryable(); // Retry logic
     }
 };
 ----
@@ -173,30 +172,29 @@ result.getErrorCategory().ifPresent(category -> {
 
 == Creating Results
 
-=== Producer Pattern (ResilientHttpHandler)
+=== Producer Pattern (ResilientHttpAdapter)
 
 [source,java]
 ----
-public class ResilientHttpHandler<T> {
+// Create adapter with ETag caching and retry
+HttpAdapter<T> adapter = ResilientHttpAdapter.wrap(
+    ETagAwareHttpAdapter.<T>builder()
+        .httpHandler(httpHandler)
+        .responseConverter(responseConverter)
+        .build()
+);
 
-    public HttpResult<T> load() {
-        try {
-            HttpResponse<?> response = client.send(request, bodyHandler);
+// Execute async-first
+CompletableFuture<HttpResult<T>> future = adapter.get(headers);
 
-            return switch (response.statusCode()) {
-                case 200 -> {
-                    T content = converter.convert(response.body()).orElseThrow();
-                    String etag = response.headers()
-                        .firstValue("ETag").orElse(null);
-                    yield HttpResult.success(content, etag, 200);
-                }
-
-                case 304 -> {
-                    // Not Modified - use cached content
-                    yield HttpResult.success(
-                        cachedContent, cachedEtag, 304);
-                }
-
+// The adapter automatically handles:
+// - 200 responses: Convert body and cache with ETag
+// - 304 Not Modified: Return cached content
+// - Network/server errors: Retry with exponential backoff
+future.thenAccept(result -> {
+    result.ifSuccess(content -> {
+        // Use content
+    }).ifFailure(error -> {
                 case int code when code >= 500 -> {
                     // Server error with fallback
                     yield HttpResult.failureWithFallback(
@@ -307,44 +305,44 @@ configResult.getETag().ifPresent(cache::updateETag);
 
 == Integration Examples
 
-=== JWKS Loader Pattern
+=== Generic Data Loader Pattern
 
 [source,java]
 ----
-public class HttpJwksLoader {
+public class GenericHttpLoader<T> {
 
-    public CompletableFuture<LoaderStatus> initJWKSLoader() {
+    public CompletableFuture<Boolean> loadData() {
         return CompletableFuture.supplyAsync(() -> {
-            HttpResult<Jwks> result = resilientHandler.load();
+            HttpResult<T> result = resilientHandler.load();
 
             return switch (result) {
-                case HttpResult.Success<Jwks>(var jwks, _, var status) -> {
-                    updateKeys(jwks);
-                    logger.info("Loaded JWKS with {} keys", jwks.keys().size());
+                case HttpResult.Success<T>(var data, _, var status) -> {
+                    updateCache(data);
+                    logger.info("Loaded data successfully");
 
                     if (status == 304) {
-                        logger.debug("JWKS unchanged (304 Not Modified)");
+                        logger.debug("Data unchanged (304 Not Modified)");
                     }
 
-                    yield LoaderStatus.OK;
+                    yield true; // Success
                 }
 
-                case HttpResult.Failure<Jwks> failure -> {
+                case HttpResult.Failure<T> failure -> {
                     logger.error(failure.errorMessage(), failure.cause());
 
                     // Use fallback if available
                     if (failure.fallbackContent() != null) {
-                        updateKeys(failure.fallbackContent());
-                        logger.warn("Using cached JWKS as fallback");
-                        yield LoaderStatus.OK; // Degraded
+                        updateCache(failure.fallbackContent());
+                        logger.warn("Using cached data as fallback");
+                        yield true; // Degraded but functional
                     }
 
                     // Retry if transient error
                     if (failure.isRetryable() && backgroundRefreshEnabled) {
-                        yield LoaderStatus.UNDEFINED; // Will retry
+                        scheduleRetry();
                     }
 
-                    yield LoaderStatus.ERROR;
+                    yield false; // Failure
                 }
             };
         });
@@ -352,21 +350,21 @@ public class HttpJwksLoader {
 }
 ----
 
-=== Well-Known Resolver Pattern
+=== Cached Data Resolver Pattern
 
 [source,java]
 ----
-public class HttpWellKnownResolver {
+public class CachedHttpResolver<T> {
 
-    private HttpResult<WellKnownResult> cachedResult;
+    private HttpResult<T> cachedResult;
 
-    public Optional<String> getJwksUri() {
-        return ensureLoaded().flatMap(WellKnownResult::getJwksUri);
+    public Optional<T> getData() {
+        return ensureLoaded();
     }
 
-    private Optional<WellKnownResult> ensureLoaded() {
+    private Optional<T> ensureLoaded() {
         if (cachedResult == null) {
-            cachedResult = wellKnownHandler.load();
+            cachedResult = httpHandler.load();
         }
 
         // Return content if successful, empty otherwise
@@ -457,4 +455,5 @@ String msg = result.getErrorMessage().orElse("Unknown error");
 * xref:client-handlers-readme.adoc[HTTP Client Handlers]
 * `de.cuioss.http.client.result.HttpResult` - API documentation
 * `de.cuioss.http.client.result.HttpErrorCategory` - Error categories
-* `de.cuioss.http.client.ResilientHttpHandler` - Primary producer
+* `de.cuioss.http.client.adapter.ResilientHttpAdapter` - Retry decorator with exponential backoff
+* `de.cuioss.http.client.adapter.ETagAwareHttpAdapter` - ETag caching with 304 Not Modified support

@@ -49,7 +49,17 @@ _(No acceptable warnings defined)_
 
 ### Last Execution
 
-- Date: 2025-10-21
+- Date: 2025-10-23
+- Directories processed: 1 (http-client/)
+- Files reviewed: 9
+- Issues found: 19 (format compliance)
+- Issues fixed: 18
+- Issues remaining: 0
+- Status: ✅ SUCCESS - All issues resolved
+- Agents launched: 1
+
+### Previous Execution (2025-10-21)
+
 - Directories processed: 6
 - Files reviewed: 20
 - Issues found: 123 (71 + 47 + 5)
@@ -104,3 +114,106 @@ _(No acceptable warnings defined)_
 2. **Pre-commit Validation:** Add hooks to validate cross-document anchor references before commits
 3. **Documentation Standards:** Document explicit anchor ID conventions in project standards
 4. **Cross-Directory Reviews:** When reviewing subdirectories with parent/sibling references, include related files in scope or explicitly flag dependencies
+
+## setup-project-permissions
+
+### Last Execution
+
+- **Date**: 2025-10-26
+- **Action**: Fixed degraded permission settings (settings had regressed since 2025-10-23)
+- **Changes**: Removed 3 redundant permissions, added 3 essential project permissions, added security protection
+- **Security**: Removed cross-project access, fixed absolute paths, added settings write protection
+
+### Removed Permissions
+
+**Redundant (already in global settings):**
+- `Read(//Users/oliver/git/cui-llm-rules/claude/**)` - Covered by global `Read(//~/git/cui-llm-rules/**)`
+- `Read(//Users/oliver/.claude/**)` - Covered by global `Read(//~/.claude/agents/**)` + `Read(//~/.claude/commands/**)`
+
+**Security Risks:**
+- `Read(//Users/oliver/git/OAuth-Sheriff/.claude/**)` - Cross-project access violation (cui-http shouldn't access OAuth-Sheriff's private settings)
+
+**Issues with removed permissions:**
+1. All used absolute paths `/Users/oliver/` instead of user-relative `~/`
+2. Last one accessed different project's private .claude directory
+3. All were redundant (already covered by global settings)
+
+### Current Permissions
+
+**Allow List (4 permissions):**
+- `Bash(tee:*)` - Project-specific utility (tee command for output redirection)
+- `Edit(//~/git/cui-http/**)` - Edit project files
+- `Read(//~/git/cui-http/**)` - Read project files
+- `Write(//~/git/cui-http/**)` - Create new project files
+
+**Deny List (0 permissions):**
+_(Empty - temp file security handled by global deny list)_
+
+**Ask List (1 permission - security):**
+- `Write(.claude/settings.local.json)` - Require approval for settings changes
+
+### User-Approved Permissions
+
+_(No suspicious permissions approved - clean slate)_
+
+### Architecture
+
+**Global Settings** (`~/.claude/settings.json`):
+- Common development tools (141 Bash commands: git, mvn, npm, grep, find, etc.)
+- CUI standards access (`Read(//~/git/cui-llm-rules/**)` - covers all CUI standards)
+- Claude tools access (`Read(//~/.claude/agents/**)`, `Read(//~/.claude/commands/**)`)
+- Universal web access (`WebFetch(domain:*)`)
+- Slash commands (`/agents-*`, `/slash-*`, `/setup-project-permissions`)
+- Security: 70 denied permissions (sudo, rm -rf, system directories, etc.)
+
+**Local Settings** (`./.claude/settings.local.json`):
+- **ONLY** project-specific permissions (cui-http)
+- Minimal footprint (4 allow, 0 deny, 1 ask)
+- Clean separation of concerns
+- All paths use user-relative format (`~/`)
+
+### Notes
+
+**Why Settings Degraded:**
+- Settings file was manually edited or reverted after 2025-10-23 fix
+- Absolute paths returned (`/Users/oliver/` instead of `~/`)
+- Cross-project access added (OAuth-Sheriff .claude access from cui-http)
+- Essential project permissions still missing
+
+**Fixed Issues:**
+1. **Absolute Paths**: Converted all `/Users/oliver/` to `~/` for portability
+2. **Cross-Project Access**: Removed OAuth-Sheriff .claude access (privacy/security violation)
+3. **Redundancy**: Removed 2 permissions already covered globally
+4. **Missing Permissions**: Added essential Edit/Read/Write for cui-http project
+5. **Security Protection**: Added settings write protection to ask list
+
+**Comparison to OAuth-Sheriff (reference):**
+- OAuth-Sheriff has: Edit, Read, Write for project + specific .claude access
+- OAuth-Sheriff also had absolute paths (should be fixed there too)
+- Both projects should have identical structure (3-4 allow + 1 ask)
+
+**Best Practices Reinforced:**
+- **Global**: Common tools, CUI standards, shared .claude access, universal domains
+- **Local**: THIS project's Edit/Read/Write ONLY, plus project-specific tools (like tee)
+- **Security**: Settings write always in ask list, never in allow
+- **Portability**: Always use `~/` instead of `/Users/username/`
+
+## ./mvnw -Ppre-commit clean install
+
+### Last Execution Duration
+- **Duration**: 60000ms (1 minute)
+- **Last Updated**: 2025-10-23 (initial baseline)
+
+### Acceptable Warnings
+- `[WARNING] Using platform encoding (UTF-8 actually) to copy filtered resources`
+- `[WARNING] Parameter 'session' is deprecated`
+
+## handle-pull-request
+
+### CI/Sonar Duration
+- **Duration**: 300000ms (5 minutes)
+- **Last Updated**: 2025-10-27 (initial baseline)
+
+### Notes
+- This duration represents the time to wait for CI and SonarCloud checks to complete
+- Includes buffer time for queue delays
