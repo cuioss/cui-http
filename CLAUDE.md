@@ -122,6 +122,8 @@ Validators are:
 
 ## Development Notes
 
+- Use `.plan/temp/` for ALL temporary files (covered by `Write(.plan/**)` permission - avoids permission prompts)
+
 1. The project uses Java modules (JPMS) - main code in `module de.cuioss.http`
 2. Tests run on classpath (not module path) to bypass JPMS restrictions
 3. All public APIs must have Javadoc with usage examples

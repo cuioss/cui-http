@@ -9,3 +9,12 @@
 **/.vscode
 .DS_Store
 .asciidoctorconfig.adoc
+.factorypath
+
+# Planning system (managed by /marshall-steward)
+.plan/*
+!.plan/marshal.json
+!.plan/project-structure.json
+
+# Planning system (managed by /marshall-steward)
+!.plan/project-architecture/
