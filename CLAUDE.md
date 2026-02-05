@@ -28,6 +28,18 @@ CUI-HTTP is a security-focused HTTP utilities library providing secure validatio
 ./mvnw clean install -DskipTests
 ```
 
+## Git Workflow
+
+All cuioss repositories have branch protection on `main`. Direct pushes to `main` are never allowed. Always use this workflow:
+
+1. Create a feature branch: `git checkout -b <branch-name>`
+2. Commit changes: `git add <files> && git commit -m "<message>"`
+3. Push the branch: `git push -u origin <branch-name>`
+4. Create a PR: `gh pr create --repo cuioss/<repo> --head <branch-name> --base main --title "<title>" --body "<body>"`
+5. Wait for CI: `gh pr checks --repo cuioss/<repo> --watch`
+6. Merge when checks pass: `gh pr merge --repo cuioss/<repo> --squash --delete-branch`
+7. Return to main: `git checkout main && git pull`
+
 ## Architecture
 
 ### Core Components
