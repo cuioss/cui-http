@@ -204,6 +204,7 @@ Validators are thread-safe, composable, and fail-secure (throw `UrlSecurityExcep
 
 ## Development Notes
 
+- Use `.plan/temp/` for ALL temporary files (covered by `Write(.plan/**)` permission - avoids permission prompts)
 - The project uses Java modules (JPMS) - main code in `module de.cuioss.http`
 - Tests run on classpath (not module path) to bypass JPMS restrictions
 - All public APIs must have Javadoc with usage examples
