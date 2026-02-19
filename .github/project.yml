@@ -26,3 +26,12 @@ pages:
 github-automation:
   auto-merge-build-versions: true
   auto-merge-build-timeout: 300
+
+consumers:
+  - cuioss-parent-pom:version.cui.http
+  - nifi-extensions:version.cui.http
+
+dependency-propagation:
+  group-id: de.cuioss
+  artifact-id: cui-http
+  scope: dependency
