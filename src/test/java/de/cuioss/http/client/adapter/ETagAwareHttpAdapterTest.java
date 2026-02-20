@@ -602,20 +602,13 @@ class ETagAwareHttpAdapterTest {
                 .build();
 
         // All methods should return CompletableFuture (async-first design)
-        assertTrue(adapter.get() instanceof CompletableFuture,
-                "GET should return CompletableFuture");
-        assertTrue(adapter.post("body") instanceof CompletableFuture,
-                "POST should return CompletableFuture");
-        assertTrue(adapter.put("body") instanceof CompletableFuture,
-                "PUT should return CompletableFuture");
-        assertTrue(adapter.patch("body") instanceof CompletableFuture,
-                "PATCH should return CompletableFuture");
-        assertTrue(adapter.delete() instanceof CompletableFuture,
-                "DELETE should return CompletableFuture");
-        assertTrue(adapter.head() instanceof CompletableFuture,
-                "HEAD should return CompletableFuture");
-        assertTrue(adapter.options() instanceof CompletableFuture,
-                "OPTIONS should return CompletableFuture");
+        assertInstanceOf(CompletableFuture.class, adapter.get(), "GET should return CompletableFuture");
+        assertInstanceOf(CompletableFuture.class, adapter.post("body"), "POST should return CompletableFuture");
+        assertInstanceOf(CompletableFuture.class, adapter.put("body"), "PUT should return CompletableFuture");
+        assertInstanceOf(CompletableFuture.class, adapter.patch("body"), "PATCH should return CompletableFuture");
+        assertInstanceOf(CompletableFuture.class, adapter.delete(), "DELETE should return CompletableFuture");
+        assertInstanceOf(CompletableFuture.class, adapter.head(), "HEAD should return CompletableFuture");
+        assertInstanceOf(CompletableFuture.class, adapter.options(), "OPTIONS should return CompletableFuture");
     }
 
     /**

@@ -246,9 +246,6 @@ class AllGeneratorsIntegrationTest {
                 fail("Thread interrupted during concurrent generation test");
             }
         });
-
-        // If we get here without exceptions, thread safety test passed
-        assertTrue(true, "Concurrent generation completed without exceptions");
     }
 
     @Test
@@ -363,8 +360,5 @@ class AllGeneratorsIntegrationTest {
         assertTrue(hasUnicodeAttacks, "Should generate unicode attacks");
         assertTrue(hasParameterXSS, "Should generate parameter XSS attacks");
         assertTrue(hasCookieInjection, "Should generate cookie injection attacks");
-
-        // Phase 1 is now complete - all 9 tasks (G1-G9) implemented
-        assertTrue(true, "Phase 1: Test Infrastructure and Generators (9/9 complete)");
     }
 }

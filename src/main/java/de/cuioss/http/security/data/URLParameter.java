@@ -69,8 +69,8 @@ import org.jspecify.annotations.Nullable;
  * @see ValidationType#PARAMETER_VALUE
  */
 public record URLParameter(@Nullable
-    String name, @Nullable
-    String value) {
+String name, @Nullable
+String value) {
 
     /**
      * Creates a URLParameter with empty value.

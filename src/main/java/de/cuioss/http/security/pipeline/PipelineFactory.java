@@ -232,8 +232,8 @@ public final class PipelineFactory {
                     "BODY validation pipeline has been removed. HTTP body content validation should be handled at application layer.");
             case COOKIE_NAME, COOKIE_VALUE -> throw new IllegalArgumentException(
                     """
-                    Cookie validation pipelines are not yet implemented. \
-                    Supported types: URL_PATH, PARAMETER_VALUE, HEADER_NAME, HEADER_VALUE""");
+                            Cookie validation pipelines are not yet implemented. \
+                            Supported types: URL_PATH, PARAMETER_VALUE, HEADER_NAME, HEADER_VALUE""");
         };
     }
 

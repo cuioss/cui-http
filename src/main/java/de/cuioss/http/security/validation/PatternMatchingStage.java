@@ -128,13 +128,13 @@ ValidationType validationType) implements HttpSecurityValidator {
     @SuppressWarnings({"java:S5869", "java:S5867", "java:S5855"})
     private static final Pattern ENCODED_TRAVERSAL_PATTERN = Pattern.compile(
             """
-            %2e%2e(%2f|%5c|/|\\\\)|\
-            \\.%2e(%2f|%5c|/|\\\\)|%2e\\.(%2f|%5c|/|\\\\)|\
-            %252e%252e(%252f|%255c)|\
-            \\.\\.(%252f|%255c)|\
-            %c0%ae%c0%ae(%c0%af|%c1%9c|/|\\\\)|%c1%9c%c1%9c|%c1%8s|\
-            %c0%ae%c0%ae%c0%af|%c0%ae%c0%af|%c1%9c|\
-            %2e%2e//|%2e%2e\\\\\\\\""",
+                    %2e%2e(%2f|%5c|/|\\\\)|\
+                    \\.%2e(%2f|%5c|/|\\\\)|%2e\\.(%2f|%5c|/|\\\\)|\
+                    %252e%252e(%252f|%255c)|\
+                    \\.\\.(%252f|%255c)|\
+                    %c0%ae%c0%ae(%c0%af|%c1%9c|/|\\\\)|%c1%9c%c1%9c|%c1%8s|\
+                    %c0%ae%c0%ae%c0%af|%c0%ae%c0%af|%c1%9c|\
+                    %2e%2e//|%2e%2e\\\\\\\\""",
             Pattern.CASE_INSENSITIVE
     );
 
@@ -145,10 +145,10 @@ ValidationType validationType) implements HttpSecurityValidator {
     @SuppressWarnings({"java:S5869", "java:S6035", "RegExpSingleCharAlternation"})
     private static final Pattern DOT_SEPARATOR_PATTERN = Pattern.compile(
             """
-            \\.\\.(/|\\\\)|\\.\\.%2f|\\.\\.%5c|\
-            \\.\\.\\.(/|\\\\)|\\.\\.\\.%2f|\\.\\.\\.%5c|\
-            \\.\\.\\.\\.(/|\\\\)|\\.\\.\\.\\.%2f|\\.\\.\\.\\.%5c|\
-            \\.\\.\\.\\.\\.(/|\\\\)|\\.\\.\\.\\.\\.%2f|\\.\\.\\.\\.\\.%5c""",
+                    \\.\\.(/|\\\\)|\\.\\.%2f|\\.\\.%5c|\
+                    \\.\\.\\.(/|\\\\)|\\.\\.\\.%2f|\\.\\.\\.%5c|\
+                    \\.\\.\\.\\.(/|\\\\)|\\.\\.\\.\\.%2f|\\.\\.\\.\\.%5c|\
+                    \\.\\.\\.\\.\\.(/|\\\\)|\\.\\.\\.\\.\\.%2f|\\.\\.\\.\\.\\.%5c""",
             Pattern.CASE_INSENSITIVE
     );
 

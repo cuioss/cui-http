@@ -95,10 +95,10 @@ import java.util.concurrent.ThreadLocalRandom;
 public record RetryConfig(
 int maxAttempts,
 @NonNull
-    Duration initialDelay,
+Duration initialDelay,
 double multiplier,
 @NonNull
-    Duration maxDelay,
+Duration maxDelay,
 double jitter,
 boolean idempotentOnly
 ) {

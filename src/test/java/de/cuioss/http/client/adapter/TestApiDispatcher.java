@@ -117,7 +117,7 @@ public class TestApiDispatcher implements ModuleDispatcherElement {
      * @return optional mock response
      */
     private Optional<MockResponse> handleRequestWithBody(@NonNull RecordedRequest request) {
-        lastRequestBody = request.getBody().readUtf8();
+        lastRequestBody = request.getBody().utf8();
         return handleRequest(request);
     }
 

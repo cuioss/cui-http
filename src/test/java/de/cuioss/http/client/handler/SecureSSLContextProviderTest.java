@@ -25,9 +25,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import javax.net.ssl.SSLContext;
-import java.security.KeyManagementException;
-import java.security.KeyStoreException;
-import java.security.NoSuchAlgorithmException;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -123,7 +120,7 @@ class SecureSSLContextProviderTest {
 
     @Test
     @DisplayName("Should create secure SSL context with default minimum")
-    void shouldCreateSecureSSLContextWithDefaultMinimum() throws NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
+    void shouldCreateSecureSSLContextWithDefaultMinimum() throws Exception {
         // When: Creating a secure SSL context with default minimum
         SecureSSLContextProvider secureSSLContextProvider = new SecureSSLContextProvider();
         SSLContext sslContext = secureSSLContextProvider.createSecureSSLContext();
@@ -138,7 +135,7 @@ class SecureSSLContextProviderTest {
 
     @Test
     @DisplayName("Should create secure SSL context with TLS 1.3 minimum")
-    void shouldCreateSecureSSLContextWithTls13Minimum() throws NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
+    void shouldCreateSecureSSLContextWithTls13Minimum() throws Exception {
         // When: Creating a secure SSL context with TLS 1.3 minimum
         SecureSSLContextProvider secureSSLContextProvider = new SecureSSLContextProvider(SecureSSLContextProvider.TLS_V1_3);
         SSLContext sslContext = secureSSLContextProvider.createSecureSSLContext();
@@ -159,7 +156,7 @@ class SecureSSLContextProviderTest {
 
     @Test
     @DisplayName("Should replace insecure SSL context and log warning")
-    void shouldReplaceInsecureSSLContextAndLogWarning() throws NoSuchAlgorithmException, KeyManagementException, KeyStoreException {
+    void shouldReplaceInsecureSSLContextAndLogWarning() throws Exception {
         // Given: An insecure SSL context is provided to a stricter provider.
         // To simulate this, we'll create a TLSv1.2 context and test it against a provider that requires TLSv1.3.
         SecureSSLContextProvider provider = new SecureSSLContextProvider();

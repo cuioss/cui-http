@@ -165,7 +165,7 @@ class HttpHeaderInjectionAttackTest {
                 "http://example.com/test?param=normal%0D%0AX-Injected: malicious",    // Uppercase hex
                 "https://site.org/page?value=test%0d%0a%20X-Header: injected",        // Space after CRLF
                 "http://app.com/api?data=input%0d%0a%09X-Tab: header",                // Tab after CRLF
-            "https://secure.com/redirect?url=test%0d%20%0aX-Space: value",        // Space in CRLF
+                "https://secure.com/redirect?url=test%0d%20%0aX-Space: value",        // Space in CRLF
                 "http://domain.com/header?param=data%0a%0dX-Reversed: crlf",          // Reversed CRLF
                 "https://test.org/login?user=admin%0d%0aLocation: http://evil.com",   // URL encoded CRLF
                 "http://site.com/cookie?name=test%0d%0aSet-Cookie: admin=true", // Standard CRLF
