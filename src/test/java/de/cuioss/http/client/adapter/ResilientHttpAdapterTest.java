@@ -381,7 +381,7 @@ class ResilientHttpAdapterTest {
         HttpAdapter<String> resilient = ResilientHttpAdapter.wrap(mockAdapter);
 
         assertNotNull(resilient);
-        assertTrue(resilient instanceof ResilientHttpAdapter);
+        assertInstanceOf(ResilientHttpAdapter.class, resilient);
     }
 
     /**
@@ -399,7 +399,7 @@ class ResilientHttpAdapterTest {
         HttpAdapter<String> resilient = ResilientHttpAdapter.wrap(mockAdapter, config);
 
         assertNotNull(resilient);
-        assertTrue(resilient instanceof ResilientHttpAdapter);
+        assertInstanceOf(ResilientHttpAdapter.class, resilient);
     }
 
     /**

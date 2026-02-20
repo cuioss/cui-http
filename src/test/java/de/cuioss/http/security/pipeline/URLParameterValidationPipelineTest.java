@@ -78,20 +78,20 @@ class URLParameterValidationPipelineTest {
 
         @ParameterizedTest
         @TypeGeneratorSource(value = ValidURLParameterStringGenerator.class, count = 10)
-        void shouldValidateValidParameters(String validParam) throws UrlSecurityException {
+        void shouldValidateValidParameters(String validParam) throws Exception {
             Optional<String> result = pipeline.validate(validParam);
             assertTrue(result.isPresent());
             assertNotNull(result.get(), "Valid parameter should not return null result");
         }
 
         @Test
-        void shouldHandleNullInput() throws UrlSecurityException {
+        void shouldHandleNullInput() throws Exception {
             Optional<String> result = pipeline.validate(null);
             assertEquals(Optional.empty(), result);
         }
 
         @Test
-        void shouldHandleEmptyInput() throws UrlSecurityException {
+        void shouldHandleEmptyInput() throws Exception {
             Optional<String> result = pipeline.validate("");
             assertTrue(result.isPresent());
             assertEquals("", result.get(), "Empty input should return empty string result");
@@ -103,7 +103,7 @@ class URLParameterValidationPipelineTest {
 
         @ParameterizedTest
         @TypeGeneratorSource(value = ValidURLParameterStringGenerator.class, count = 5)
-        void shouldValidateParameterVariations(String param) throws UrlSecurityException {
+        void shouldValidateParameterVariations(String param) throws Exception {
             Optional<String> result = pipeline.validate(param);
             assertTrue(result.isPresent());
             assertNotNull(result.get(), "Valid parameter variation should not return null result");
@@ -174,7 +174,7 @@ class URLParameterValidationPipelineTest {
 
         @ParameterizedTest
         @TypeGeneratorSource(value = ValidURLParameterStringGenerator.class, count = 5)
-        void shouldValidateParameterSpecificScenarios(String validParam) throws UrlSecurityException {
+        void shouldValidateParameterSpecificScenarios(String validParam) throws Exception {
             Optional<String> result = pipeline.validate(validParam);
             assertTrue(result.isPresent());
             assertNotNull(result.get(), "Valid parameter in specific scenarios should not return null result");

@@ -132,7 +132,7 @@ import java.util.function.Function;
  * @since 1.0
  */
 public sealed interface HttpResult<T>
-permits HttpResult.Success, HttpResult.Failure {
+        permits HttpResult.Success, HttpResult.Failure {
 
     // === State Checks ===
 

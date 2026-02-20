@@ -201,7 +201,7 @@ class EncodedPathTraversalAttackTest {
 
     @Test
     @DisplayName("Should be thread-safe for concurrent testing")
-    void shouldBeThreadSafe() throws InterruptedException {
+    void shouldBeThreadSafe() throws Exception {
         // Test concurrent access to the validation pipeline
         Thread[] threads = new Thread[10];
         boolean[] results = new boolean[10];

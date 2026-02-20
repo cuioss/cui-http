@@ -24,7 +24,6 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import javax.net.ssl.SSLContext;
-import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
 import java.net.http.HttpRequest;
@@ -276,7 +275,7 @@ class HttpHandlerTest {
 
         @Test
         @DisplayName("Should handle URL that cannot be converted to URI")
-        void shouldHandleUrlThatCannotBeConvertedToUri() throws MalformedURLException {
+        void shouldHandleUrlThatCannotBeConvertedToUri() throws Exception {
             // Create a URL with characters that are invalid in URI syntax
             // Using the deprecated URL constructor to create a URL that's valid as URL
             // but cannot be converted to URI (contains unescaped space)

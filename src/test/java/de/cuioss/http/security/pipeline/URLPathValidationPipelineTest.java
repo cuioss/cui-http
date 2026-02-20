@@ -78,20 +78,20 @@ class URLPathValidationPipelineTest {
 
         @ParameterizedTest
         @TypeGeneratorSource(value = ValidURLPathGenerator.class, count = 10)
-        void shouldValidateValidPaths(String validPath) throws UrlSecurityException {
+        void shouldValidateValidPaths(String validPath) throws Exception {
             Optional<String> result = pipeline.validate(validPath);
             assertTrue(result.isPresent());
             assertNotNull(result.get());
         }
 
         @Test
-        void shouldHandleNullInput() throws UrlSecurityException {
+        void shouldHandleNullInput() throws Exception {
             Optional<String> result = pipeline.validate(null);
             assertEquals(Optional.empty(), result);
         }
 
         @Test
-        void shouldHandleEmptyInput() throws UrlSecurityException {
+        void shouldHandleEmptyInput() throws Exception {
             Optional<String> result = pipeline.validate("");
             assertTrue(result.isPresent());
             assertEquals("", result.get());

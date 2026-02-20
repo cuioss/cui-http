@@ -324,7 +324,7 @@ class CookieChaosAttackTest {
     @ParameterizedTest
     @TypeGeneratorSource(value = ValidCookieGenerator.class, count = 20)
     @DisplayName("Test #7: Valid cookies should be accepted")
-    void shouldAcceptValidCookies(Cookie validCookie) throws UrlSecurityException {
+    void shouldAcceptValidCookies(Cookie validCookie) throws Exception {
         if (validCookie.hasName()) {
             assertDoesNotThrow(() -> cookieNameValidator.validate(validCookie.name()),
                     "Valid cookie name should be accepted: " + validCookie.name());

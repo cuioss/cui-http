@@ -234,7 +234,7 @@ class SecurityEventCounterTest {
 
     @RepeatedTest(10)
     @DisplayName("Should be thread-safe under concurrent access")
-    void shouldBeThreadSafe() throws InterruptedException {
+    void shouldBeThreadSafe() throws Exception {
         final int threadCount = 20;
         final int incrementsPerThread = 100;
         final ExecutorService executor = Executors.newFixedThreadPool(threadCount);
@@ -284,7 +284,7 @@ class SecurityEventCounterTest {
 
     @Test
     @DisplayName("Should handle concurrent access to multiple counters")
-    void shouldHandleConcurrentMultipleCounters() throws InterruptedException {
+    void shouldHandleConcurrentMultipleCounters() throws Exception {
         final int threadCount = 10;
         final ExecutorService executor = Executors.newFixedThreadPool(threadCount);
         final CountDownLatch completionLatch = new CountDownLatch(threadCount);

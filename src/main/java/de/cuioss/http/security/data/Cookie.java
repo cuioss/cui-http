@@ -84,9 +84,9 @@ import java.util.Optional;
  * @see ValidationType#COOKIE_VALUE
  */
 public record Cookie(@Nullable
-    String name, @Nullable
-    String value, @Nullable
-    String attributes) {
+String name, @Nullable
+String value, @Nullable
+String attributes) {
 
     /**
      * Shared validator for cookie name suffixes using default security configuration.

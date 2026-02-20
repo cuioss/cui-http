@@ -104,7 +104,7 @@ class HTTPHeaderValidationPipelineTest {
 
         @ParameterizedTest
         @TypeGeneratorSource(value = ValidHTTPHeaderNameGenerator.class, count = 10)
-        void shouldAcceptValidHeaderNames(String validHeaderName) throws UrlSecurityException {
+        void shouldAcceptValidHeaderNames(String validHeaderName) throws Exception {
             HTTPHeaderValidationPipeline pipeline = new HTTPHeaderValidationPipeline(config, eventCounter, ValidationType.HEADER_NAME);
 
             Optional<String> result = pipeline.validate(validHeaderName);
@@ -115,7 +115,7 @@ class HTTPHeaderValidationPipelineTest {
 
         @ParameterizedTest
         @TypeGeneratorSource(value = ValidHTTPHeaderValueGenerator.class, count = 10)
-        void shouldAcceptValidHeaderValues(String validHeaderValue) throws UrlSecurityException {
+        void shouldAcceptValidHeaderValues(String validHeaderValue) throws Exception {
             HTTPHeaderValidationPipeline pipeline = new HTTPHeaderValidationPipeline(config, eventCounter, ValidationType.HEADER_VALUE);
 
             Optional<String> result = pipeline.validate(validHeaderValue);
@@ -125,7 +125,7 @@ class HTTPHeaderValidationPipelineTest {
         }
 
         @Test
-        void shouldHandleNullInput() throws UrlSecurityException {
+        void shouldHandleNullInput() throws Exception {
             HTTPHeaderValidationPipeline pipeline = new HTTPHeaderValidationPipeline(config, eventCounter, ValidationType.HEADER_VALUE);
 
             Optional<String> result = pipeline.validate(null);
@@ -133,7 +133,7 @@ class HTTPHeaderValidationPipelineTest {
         }
 
         @Test
-        void shouldHandleEmptyInput() throws UrlSecurityException {
+        void shouldHandleEmptyInput() throws Exception {
             HTTPHeaderValidationPipeline pipeline = new HTTPHeaderValidationPipeline(config, eventCounter, ValidationType.HEADER_VALUE);
 
             Optional<String> result = pipeline.validate("");

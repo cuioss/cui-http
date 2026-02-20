@@ -109,8 +109,7 @@ class VoidResponseConverterTest {
     @Test
     void shouldImplementHttpResponseConverterInterface() {
         VoidResponseConverter converter = VoidResponseConverter.INSTANCE;
-        assertTrue(converter instanceof HttpResponseConverter,
-                "Should implement HttpResponseConverter interface");
+        assertInstanceOf(HttpResponseConverter.class, converter, "Should implement HttpResponseConverter interface");
     }
 
     /**
@@ -202,7 +201,7 @@ class VoidResponseConverterTest {
      * Test that the converter is thread-safe (singleton usage).
      */
     @Test
-    void shouldBeThreadSafe() throws InterruptedException {
+    void shouldBeThreadSafe() throws Exception {
         // Since INSTANCE is a singleton with no mutable state,
         // it should be inherently thread-safe
 

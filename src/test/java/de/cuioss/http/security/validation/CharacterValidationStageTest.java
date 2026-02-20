@@ -32,7 +32,7 @@ class CharacterValidationStageTest {
     private final SecurityConfiguration config = SecurityConfiguration.defaults();
 
     @Test
-    void shouldAllowNullAndEmptyValues() throws UrlSecurityException {
+    void shouldAllowNullAndEmptyValues() throws Exception {
         CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.URL_PATH);
 
         assertEquals(Optional.empty(), stage.validate(null));
@@ -42,7 +42,7 @@ class CharacterValidationStageTest {
     }
 
     @Test
-    void shouldAllowValidPathCharacters() throws UrlSecurityException {
+    void shouldAllowValidPathCharacters() throws Exception {
         CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.URL_PATH);
 
         String validPath = "/api/users/123";
@@ -57,7 +57,7 @@ class CharacterValidationStageTest {
     }
 
     @Test
-    void shouldAllowValidQueryCharacters() throws UrlSecurityException {
+    void shouldAllowValidQueryCharacters() throws Exception {
         CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.PARAMETER_NAME);
 
         String validParam = "userName123";
@@ -72,7 +72,7 @@ class CharacterValidationStageTest {
     }
 
     @Test
-    void shouldAllowValidHeaderCharacters() throws UrlSecurityException {
+    void shouldAllowValidHeaderCharacters() throws Exception {
         CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.HEADER_NAME);
 
         String validHeader = "X-Custom-Header";
@@ -87,7 +87,7 @@ class CharacterValidationStageTest {
     }
 
     @Test
-    void shouldAllowSpaceInHeaderValues() throws UrlSecurityException {
+    void shouldAllowSpaceInHeaderValues() throws Exception {
         CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.HEADER_VALUE);
 
         String headerValue = "Mozilla/5.0 Chrome Safari";
@@ -166,7 +166,7 @@ class CharacterValidationStageTest {
     }
 
     @Test
-    void shouldAllowValidPercentEncoding() throws UrlSecurityException {
+    void shouldAllowValidPercentEncoding() throws Exception {
         CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.URL_PATH);
 
         String encodedPath = "/path/with%20encoded%2Fchars";

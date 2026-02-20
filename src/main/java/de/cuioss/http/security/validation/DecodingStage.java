@@ -118,11 +118,11 @@ ValidationType validationType) implements HttpSecurityValidator {
     @SuppressWarnings({"java:S5785", "java:S5855"})
     private static final Pattern UTF8_OVERLONG_PATTERN = Pattern.compile(
             """
-            %c[0-1][0-9a-f]|\
-            %e0%[89][0-9a-f]%[89a-f]|\
-            %f0%80%[89][0-9a-f]%[89a-f]|\
-            %c0%[a-f][0-9a-f]|%c1%[0-9a-f]|\
-            %c0%ae|%c0%af|%c1%9c|%c1%81""",
+                    %c[0-1][0-9a-f]|\
+                    %e0%[89][0-9a-f]%[89a-f]|\
+                    %f0%80%[89][0-9a-f]%[89a-f]|\
+                    %c0%[a-f][0-9a-f]|%c1%[0-9a-f]|\
+                    %c0%ae|%c0%af|%c1%9c|%c1%81""",
             Pattern.CASE_INSENSITIVE
     );
 

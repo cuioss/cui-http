@@ -21,8 +21,8 @@ import de.cuioss.test.generator.junit.EnableGeneratorController;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 
@@ -71,7 +71,7 @@ class HttpResultTest {
         }
 
         @ParameterizedTest
-        @CsvSource({"200", "201", "204", "304"})
+        @ValueSource(ints = {200, 201, 204, 304})
         void shouldCreateSuccessWithVariousStatusCodes(int status) {
             HttpResult<String> result = HttpResult.success(strings.next(), null, status);
 
