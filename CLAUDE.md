@@ -6,17 +6,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 CUI-HTTP is a security-focused HTTP utilities library providing secure validation pipelines, SSL/TLS context management, and HTTP client handlers. The library emphasizes security validation of HTTP components (paths, parameters, headers, bodies) with comprehensive attack pattern detection.
 
+### Multi-Module Structure
+
+```
+cui-http/                         (root, packaging=pom, artifactId=cui-http-parent)
+├── cui-http-core/                (library, artifactId=cui-http — preserves Maven Central coords)
+│   └── src/
+├── benchmarking/                 (JMH benchmarks, artifactId=cui-http-benchmarking)
+│   ├── scripts/benchmark-pages.py
+│   └── src/main/java/...
+└── .github/workflows/benchmark.yml
+```
+
 ## Build Commands
 
 ```bash
-# Build and install locally
+# Build and install locally (all modules)
 ./mvnw clean install
 
-# Run tests
-./mvnw test
+# Run tests (core module only)
+./mvnw test -pl cui-http-core
 
 # Run specific test
-./mvnw test -Dtest=ClassName#methodName
+./mvnw test -pl cui-http-core -Dtest=ClassName#methodName
 
 # Run pre-commit checks (MANDATORY before commits)
 ./mvnw -Ppre-commit clean verify
@@ -26,6 +38,12 @@ CUI-HTTP is a security-focused HTTP utilities library providing secure validatio
 
 # Build with skipping tests
 ./mvnw clean install -DskipTests
+
+# Run benchmarks (quick profile for local testing)
+./mvnw verify -pl benchmarking -am -Pbenchmark -Pquick
+
+# Run benchmarks (full)
+./mvnw verify -pl benchmarking -am -Pbenchmark
 ```
 
 ## Git Workflow
@@ -75,9 +93,9 @@ This repository has branch protection on `main`. Direct pushes to `main` are nev
 
 ### Test Organization
 
-- **Attack Databases** (`src/test/java/de/cuioss/http/security/database`): Predefined attack patterns
-- **Generators** (`src/test/java/de/cuioss/http/security/generators`): Test data generators
-- **Integration Tests** (`src/test/java/de/cuioss/http/security/tests`): Attack database validation
+- **Attack Databases** (`cui-http-core/src/test/java/de/cuioss/http/security/database`): Predefined attack patterns
+- **Generators** (`cui-http-core/src/test/java/de/cuioss/http/security/generators`): Test data generators
+- **Integration Tests** (`cui-http-core/src/test/java/de/cuioss/http/security/tests`): Attack database validation
 
 ### Test Generators (Available as separate artifact)
 
@@ -130,7 +148,7 @@ Validators are:
 - `/doc/http-security/specification/pipeline-architecture-standards.adoc`: Pipeline selection rules
 - `/doc/http-security/specification/generator-contract.adoc`: Generator implementation standards
 - `/agents.md`: AI agent guidance and CUI development standards
-- `/src/main/java/module-info.java`: Module definition
+- `/cui-http-core/src/main/java/module-info.java`: Module definition
 
 ## Development Notes
 

@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>de.cuioss</groupId>
+        <artifactId>cui-http-parent</artifactId>
+        <version>1.4-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>cui-http-benchmarking</artifactId>
+    <packaging>jar</packaging>
+    <name>CUI HTTP Benchmarking</name>
+    <description>JMH micro-benchmarks for CUI HTTP security validation pipelines</description>
+
+    <properties>
+        <maven.jar.plugin.automatic.module.name>de.cuioss.http.benchmarking</maven.jar.plugin.automatic.module.name>
+        <!-- JMH version -->
+        <version.jmh>1.37</version.jmh>
+        <!-- Skip benchmarks by default -->
+        <skip.benchmark>true</skip.benchmark>
+        <!-- Sonar: skip analysis for benchmarking module -->
+        <sonar.skip>true</sonar.skip>
+
+        <!-- Default benchmark runner -->
+        <benchmark.runner>de.cuioss.http.security.benchmark.SecurityBenchmarkRunner</benchmark.runner>
+
+        <!-- JMH Configuration Properties -->
+        <jmh.include>de\.cuioss\.http\.security\.benchmark\.standard\..*</jmh.include>
+        <jmh.result.format>JSON</jmh.result.format>
+        <jmh.result.filePrefix>target/benchmark-results/micro-result</jmh.result.filePrefix>
+        <jmh.iterations>5</jmh.iterations>
+        <jmh.warmupIterations>3</jmh.warmupIterations>
+        <jmh.forks>1</jmh.forks>
+        <jmh.threads>4</jmh.threads>
+        <jmh.time>4s</jmh.time>
+        <jmh.warmupTime>1s</jmh.warmupTime>
+        <!-- Benchmark history directory for trend analysis (passed from CI) -->
+        <benchmark.history.dir />
+    </properties>
+
+    <dependencies>
+        <!-- Library under test -->
+        <dependency>
+            <groupId>de.cuioss</groupId>
+            <artifactId>cui-http</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Benchmarking infrastructure -->
+        <dependency>
+            <groupId>de.cuioss.sheriff.oauth</groupId>
+            <artifactId>benchmarking-common</artifactId>
+            <version>1.0.0-SNAPSHOT</version>
+        </dependency>
+
+        <!-- JMH dependencies -->
+        <dependency>
+            <groupId>org.openjdk.jmh</groupId>
+            <artifactId>jmh-core</artifactId>
+            <version>${version.jmh}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.openjdk.jmh</groupId>
+            <artifactId>jmh-generator-annprocess</artifactId>
+            <version>${version.jmh}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- CUI utilities -->
+        <dependency>
+            <groupId>de.cuioss</groupId>
+            <artifactId>cui-java-tools</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Skip unit tests by default -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <skipTests>${skipTests}</skipTests>
+                </configuration>
+            </plugin>
+
+            <!-- Enable annotation processing for JMH -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.openjdk.jmh</groupId>
+                            <artifactId>jmh-generator-annprocess</artifactId>
+                            <version>${version.jmh}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                    <release>21</release>
+                </configuration>
+            </plugin>
+
+            <!-- Execute benchmark tests when skip.benchmark is false -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>run-benchmarks</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <skip>${skip.benchmark}</skip>
+                            <executable>java</executable>
+                            <arguments>
+                                <argument>-classpath</argument>
+                                <argument>${project.build.outputDirectory}${path.separator}${project.build.directory}/dependency/*</argument>
+                                <argument>-Djmh.include=${jmh.include}</argument>
+                                <argument>-Djmh.result.format=${jmh.result.format}</argument>
+                                <argument>-Djmh.result.filePrefix=${jmh.result.filePrefix}</argument>
+                                <argument>-Djmh.iterations=${jmh.iterations}</argument>
+                                <argument>-Djmh.warmupIterations=${jmh.warmupIterations}</argument>
+                                <argument>-Djmh.forks=${jmh.forks}</argument>
+                                <argument>-Djmh.threads=${jmh.threads}</argument>
+                                <argument>-Djmh.time=${jmh.time}</argument>
+                                <argument>-Djmh.warmupTime=${jmh.warmupTime}</argument>
+                                <argument>-Dbenchmark.history.dir=${benchmark.history.dir}</argument>
+                                <argument>-Djava.util.logging.config.file=benchmark-logging.properties</argument>
+                                <argument>-XX:+UnlockDiagnosticVMOptions</argument>
+                                <argument>-XX:+DebugNonSafepoints</argument>
+                                <argument>${benchmark.runner}</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Build classpath for benchmark execution -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-dependencies</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy-dependencies</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/dependency</outputDirectory>
+                            <overWriteReleases>false</overWriteReleases>
+                            <overWriteSnapshots>false</overWriteSnapshots>
+                            <overWriteIfNewer>true</overWriteIfNewer>
+                            <includeScope>runtime</includeScope>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <id>benchmark</id>
+            <properties>
+                <skip.benchmark>false</skip.benchmark>
+            </properties>
+        </profile>
+        <!-- Quick benchmark profile for faster testing -->
+        <profile>
+            <id>quick</id>
+            <properties>
+                <jmh.iterations>2</jmh.iterations>
+                <jmh.warmupIterations>1</jmh.warmupIterations>
+                <jmh.forks>1</jmh.forks>
+                <jmh.time>5s</jmh.time>
+                <jmh.warmupTime>2s</jmh.warmupTime>
+            </properties>
+        </profile>
+    </profiles>
+</project>
