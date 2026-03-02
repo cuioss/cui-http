@@ -381,7 +381,7 @@ class HttpResultTest {
         void shouldDeconstructSuccessRecordInPattern() {
             HttpResult<String> result = HttpResult.success("content", "etag", 200);
 
-            if (result instanceof HttpResult.Success<String>( content,  etag,  status)) {
+            if (result instanceof HttpResult.Success<String>(var content, var etag, var status)) {
                 assertEquals("content", content);
                 assertEquals("etag", etag);
                 assertEquals(200, status);
