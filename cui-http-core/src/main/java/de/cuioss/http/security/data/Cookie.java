@@ -22,7 +22,6 @@ import org.jspecify.annotations.Nullable;
 
 import de.cuioss.tools.string.Splitter;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
@@ -316,19 +315,16 @@ String attributes) {
      *
      * @return A list of attribute names (may be empty)
      */
-    @SuppressWarnings("ConstantConditions")
     public List<String> getAttributeNames() {
         if (!hasAttributes()) {
             return List.of();
         }
-        return Arrays.stream(attributes.split(";"))
-                .map(String::trim)
-                .filter(attr -> !attr.isEmpty())
-                .map(attr -> {
-                    int equalIndex = attr.indexOf('=');
-                    return equalIndex > 0 ? attr.substring(0, equalIndex).trim() : attr;
-                })
-                .toList();
+        var result = new java.util.ArrayList<String>();
+        for (String attr : Splitter.on(';').trimResults().omitEmptyStrings().splitToList(attributes)) {
+            int equalIndex = attr.indexOf('=');
+            result.add(equalIndex > 0 ? attr.substring(0, equalIndex).trim() : attr);
+        }
+        return List.copyOf(result);
     }
 
     public String nameOrDefault(String defaultName) {

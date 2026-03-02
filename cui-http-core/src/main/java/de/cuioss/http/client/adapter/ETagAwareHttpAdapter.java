@@ -562,15 +562,16 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         StringBuilder keyBuilder = new StringBuilder(uri.toString());
 
         // Sort headers alphabetically for consistent cache keys
-        headers.entrySet().stream()
-                .filter(entry -> filter.includeInCacheKey(entry.getKey()))
-                .sorted(Map.Entry.comparingByKey(String.CASE_INSENSITIVE_ORDER))
-                .forEach(entry -> {
-                    keyBuilder.append('|');
-                    keyBuilder.append(entry.getKey());
-                    keyBuilder.append(':');
-                    keyBuilder.append(entry.getValue());
-                });
+        var sortedEntries = new java.util.ArrayList<>(headers.entrySet());
+        sortedEntries.sort(Map.Entry.comparingByKey(String.CASE_INSENSITIVE_ORDER));
+        for (Map.Entry<String, String> entry : sortedEntries) {
+            if (filter.includeInCacheKey(entry.getKey())) {
+                keyBuilder.append('|');
+                keyBuilder.append(entry.getKey());
+                keyBuilder.append(':');
+                keyBuilder.append(entry.getValue());
+            }
+        }
 
         return keyBuilder.toString();
     }
