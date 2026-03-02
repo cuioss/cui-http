@@ -248,7 +248,7 @@ String attributes) {
      * Checks whether the given flag name appears as a standalone semicolon-delimited
      * token in the attributes string (case-insensitive).
      *
-     * @param flag the attribute flag name to look for (must be lowercase)
+     * @param flag the attribute flag name to look for (case-insensitive)
      * @return true if the flag is present as a standalone token
      */
     private boolean hasAttributeFlag(String flag) {

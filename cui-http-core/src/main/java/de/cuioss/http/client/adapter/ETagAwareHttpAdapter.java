@@ -561,16 +561,19 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
     private String generateCacheKey(URI uri, Map<String, String> headers, CacheKeyHeaderFilter filter) {
         StringBuilder keyBuilder = new StringBuilder(uri.toString());
 
-        // Sort headers alphabetically for consistent cache keys
-        var sortedEntries = new java.util.ArrayList<>(headers.entrySet());
-        sortedEntries.sort(Map.Entry.comparingByKey(String.CASE_INSENSITIVE_ORDER));
-        for (Map.Entry<String, String> entry : sortedEntries) {
+        // Filter first, then sort for consistent cache keys
+        var filteredEntries = new java.util.ArrayList<Map.Entry<String, String>>();
+        for (Map.Entry<String, String> entry : headers.entrySet()) {
             if (filter.includeInCacheKey(entry.getKey())) {
-                keyBuilder.append('|');
-                keyBuilder.append(entry.getKey());
-                keyBuilder.append(':');
-                keyBuilder.append(entry.getValue());
+                filteredEntries.add(entry);
             }
+        }
+        filteredEntries.sort(Map.Entry.comparingByKey(String.CASE_INSENSITIVE_ORDER));
+        for (Map.Entry<String, String> entry : filteredEntries) {
+            keyBuilder.append('|');
+            keyBuilder.append(entry.getKey());
+            keyBuilder.append(':');
+            keyBuilder.append(entry.getValue());
         }
 
         return keyBuilder.toString();
