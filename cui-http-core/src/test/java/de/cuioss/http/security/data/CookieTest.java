@@ -385,6 +385,32 @@ class CookieTest {
     }
 
     @Test
+    void shouldNotFalsePositiveOnSecure() {
+        Cookie falsePositive = new Cookie(COOKIE_NAME, COOKIE_VALUE,
+                "SameSite=None; description=not-secure-at-all");
+        assertFalse(falsePositive.isSecure(),
+                "isSecure() must not match 'secure' inside an attribute value");
+
+        Cookie truePositive = new Cookie(COOKIE_NAME, COOKIE_VALUE,
+                "SameSite=None; Secure; description=not-secure-at-all");
+        assertTrue(truePositive.isSecure(),
+                "isSecure() must still detect standalone Secure flag");
+    }
+
+    @Test
+    void shouldNotFalsePositiveOnHttpOnly() {
+        Cookie falsePositive = new Cookie(COOKIE_NAME, COOKIE_VALUE,
+                "SameSite=None; note=httponlyrelated");
+        assertFalse(falsePositive.isHttpOnly(),
+                "isHttpOnly() must not match 'httponly' inside an attribute value");
+
+        Cookie truePositive = new Cookie(COOKIE_NAME, COOKIE_VALUE,
+                "SameSite=None; HttpOnly; note=httponlyrelated");
+        assertTrue(truePositive.isHttpOnly(),
+                "isHttpOnly() must still detect standalone HttpOnly flag");
+    }
+
+    @Test
     void shouldHandleEmptyAttributeSegments() {
         Cookie cookie = new Cookie(COOKIE_NAME, COOKIE_VALUE, ";;Secure;;HttpOnly;;");
 

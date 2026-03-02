@@ -20,6 +20,8 @@ import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.validation.CharacterValidationStage;
 import org.jspecify.annotations.Nullable;
 
+import de.cuioss.tools.string.Splitter;
+
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -222,21 +224,42 @@ String attributes) {
     /**
      * Checks if the cookie has the Secure attribute.
      *
-     * @return true if the attributes contain "Secure"
+     * <p>Matches "Secure" as a standalone semicolon-delimited token (case-insensitive)
+     * to avoid false positives from substrings like "not-secure-at-all".</p>
+     *
+     * @return true if the attributes contain the standalone "Secure" flag
      */
-    @SuppressWarnings("ConstantConditions")
     public boolean isSecure() {
-        return hasAttributes() && attributes.toLowerCase().contains("secure");
+        return hasAttributeFlag("secure");
     }
 
     /**
      * Checks if the cookie has the HttpOnly attribute.
      *
-     * @return true if the attributes contain "HttpOnly"
+     * <p>Matches "HttpOnly" as a standalone semicolon-delimited token (case-insensitive)
+     * to avoid false positives from substrings like "httponlyrelated".</p>
+     *
+     * @return true if the attributes contain the standalone "HttpOnly" flag
      */
-    @SuppressWarnings("ConstantConditions")
     public boolean isHttpOnly() {
-        return hasAttributes() && attributes.toLowerCase().contains("httponly");
+        return hasAttributeFlag("httponly");
+    }
+
+    /**
+     * Checks whether the given flag name appears as a standalone semicolon-delimited
+     * token in the attributes string (case-insensitive).
+     *
+     * @param flag the attribute flag name to look for (must be lowercase)
+     * @return true if the flag is present as a standalone token
+     */
+    private boolean hasAttributeFlag(String flag) {
+        if (!hasAttributes()) return false;
+        for (String token : Splitter.on(';').trimResults().omitEmptyStrings().splitToList(attributes)) {
+            if (flag.equalsIgnoreCase(token)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
