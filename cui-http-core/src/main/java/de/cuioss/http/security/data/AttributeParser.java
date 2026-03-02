@@ -15,6 +15,7 @@
  */
 package de.cuioss.http.security.data;
 
+import de.cuioss.tools.string.Splitter;
 import org.jspecify.annotations.Nullable;
 
 import java.util.Optional;
@@ -98,9 +99,7 @@ final class AttributeParser {
         String lowerAttrName = attributeName.toLowerCase();
 
         // Split by semicolons to process each attribute individually
-        String[] attributes = attributeString.split(";");
-        for (String attribute : attributes) {
-            String trimmedAttr = attribute.trim();
+        for (String trimmedAttr : Splitter.on(';').trimResults().omitEmptyStrings().splitToList(attributeString)) {
             int equalsIndex = trimmedAttr.indexOf('=');
 
             if (equalsIndex > 0) {

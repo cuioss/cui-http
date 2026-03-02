@@ -15,9 +15,9 @@
  */
 package de.cuioss.http.client.adapter;
 
+import java.util.HashSet;
 import java.util.Set;
 import java.util.function.Predicate;
-import java.util.stream.Collectors;
 
 /**
  * Strategy for determining which HTTP headers should be included in cache keys.
@@ -133,9 +133,10 @@ public interface CacheKeyHeaderFilter {
      * @return Filter that includes all headers except specified ones
      */
     static CacheKeyHeaderFilter excluding(String... headerNames) {
-        Set<String> excluded = Set.of(headerNames).stream()
-                .map(String::toLowerCase)
-                .collect(Collectors.toSet());
+        Set<String> excluded = new HashSet<>(headerNames.length);
+        for (String name : headerNames) {
+            excluded.add(name.toLowerCase());
+        }
         return header -> !excluded.contains(header.toLowerCase());
     }
 
@@ -156,9 +157,10 @@ public interface CacheKeyHeaderFilter {
      * @return Filter that includes only specified headers
      */
     static CacheKeyHeaderFilter including(String... headerNames) {
-        Set<String> included = Set.of(headerNames).stream()
-                .map(String::toLowerCase)
-                .collect(Collectors.toSet());
+        Set<String> included = new HashSet<>(headerNames.length);
+        for (String name : headerNames) {
+            included.add(name.toLowerCase());
+        }
         return header -> included.contains(header.toLowerCase());
     }
 

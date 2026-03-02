@@ -22,8 +22,10 @@ import de.cuioss.http.client.handler.HttpHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.net.URI;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -609,6 +611,57 @@ class ETagAwareHttpAdapterTest {
         assertInstanceOf(CompletableFuture.class, adapter.delete(), "DELETE should return CompletableFuture");
         assertInstanceOf(CompletableFuture.class, adapter.head(), "HEAD should return CompletableFuture");
         assertInstanceOf(CompletableFuture.class, adapter.options(), "OPTIONS should return CompletableFuture");
+    }
+
+    // === Cache Key Injection Prevention Tests ===
+
+    @Test
+    void cacheKeysShouldDifferWhenHeaderValueContainsDelimiters() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .build();
+
+        var uri = URI.create("https://api.example.com/test");
+
+        // Legitimate headers
+        var legitimate = new LinkedHashMap<String, String>();
+        legitimate.put("Accept", "text/html");
+        legitimate.put("X-Custom", "safe");
+
+        // Malicious: header value contains delimiter to forge another header entry
+        var malicious = new LinkedHashMap<String, String>();
+        malicious.put("Accept", "text/html|X-Custom:safe");
+
+        String key1 = adapter.generateCacheKey(uri, legitimate, CacheKeyHeaderFilter.ALL);
+        String key2 = adapter.generateCacheKey(uri, malicious, CacheKeyHeaderFilter.ALL);
+
+        assertNotEquals(key1, key2,
+                "Cache keys must differ when header value contains pipe/colon delimiters");
+    }
+
+    @Test
+    void cacheKeysShouldDifferWhenHeaderNameContainsDelimiters() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .build();
+
+        var uri = URI.create("https://api.example.com/test");
+
+        var normal = new LinkedHashMap<String, String>();
+        normal.put("A", "val1");
+        normal.put("B", "val2");
+
+        // Header name contains colon to impersonate key-value boundary
+        var injected = new LinkedHashMap<String, String>();
+        injected.put("A", "val1|B:val2");
+
+        String key1 = adapter.generateCacheKey(uri, normal, CacheKeyHeaderFilter.ALL);
+        String key2 = adapter.generateCacheKey(uri, injected, CacheKeyHeaderFilter.ALL);
+
+        assertNotEquals(key1, key2,
+                "Cache keys must differ when header value injects forged key-value pairs");
     }
 
     /**

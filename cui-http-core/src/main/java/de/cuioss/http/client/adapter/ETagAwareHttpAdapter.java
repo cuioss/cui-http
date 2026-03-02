@@ -558,21 +558,44 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      * @param filter Header filter predicate
      * @return Cache key string
      */
-    private String generateCacheKey(URI uri, Map<String, String> headers, CacheKeyHeaderFilter filter) {
+    // Package-private for testing
+    String generateCacheKey(URI uri, Map<String, String> headers, CacheKeyHeaderFilter filter) {
         StringBuilder keyBuilder = new StringBuilder(uri.toString());
 
-        // Sort headers alphabetically for consistent cache keys
-        headers.entrySet().stream()
-                .filter(entry -> filter.includeInCacheKey(entry.getKey()))
-                .sorted(Map.Entry.comparingByKey(String.CASE_INSENSITIVE_ORDER))
-                .forEach(entry -> {
-                    keyBuilder.append('|');
-                    keyBuilder.append(entry.getKey());
-                    keyBuilder.append(':');
-                    keyBuilder.append(entry.getValue());
-                });
+        // Filter first, then sort for consistent cache keys
+        var filteredEntries = new java.util.ArrayList<Map.Entry<String, String>>();
+        for (Map.Entry<String, String> entry : headers.entrySet()) {
+            if (filter.includeInCacheKey(entry.getKey())) {
+                filteredEntries.add(entry);
+            }
+        }
+        filteredEntries.sort(Map.Entry.comparingByKey(String.CASE_INSENSITIVE_ORDER));
+        for (Map.Entry<String, String> entry : filteredEntries) {
+            keyBuilder.append('|');
+            keyBuilder.append(escapeCacheKeyToken(entry.getKey()));
+            keyBuilder.append(':');
+            keyBuilder.append(escapeCacheKeyToken(entry.getValue()));
+        }
 
         return keyBuilder.toString();
+    }
+
+    /**
+     * Escapes the cache key delimiters {@code |} and {@code :} inside header
+     * names and values so that a malicious value cannot forge additional
+     * key-value entries in the cache key string.
+     */
+    private static String escapeCacheKeyToken(String token) {
+        // Use backslash as escape character: \ -> \\, | -> \|, : -> \:
+        StringBuilder sb = new StringBuilder(token.length());
+        for (int i = 0; i < token.length(); i++) {
+            char c = token.charAt(i);
+            if (c == '\\' || c == '|' || c == ':') {
+                sb.append('\\');
+            }
+            sb.append(c);
+        }
+        return sb.toString();
     }
 
     /**

@@ -20,7 +20,8 @@ import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.validation.CharacterValidationStage;
 import org.jspecify.annotations.Nullable;
 
-import java.util.Arrays;
+import de.cuioss.tools.string.Splitter;
+
 import java.util.List;
 import java.util.Optional;
 
@@ -222,21 +223,42 @@ String attributes) {
     /**
      * Checks if the cookie has the Secure attribute.
      *
-     * @return true if the attributes contain "Secure"
+     * <p>Matches "Secure" as a standalone semicolon-delimited token (case-insensitive)
+     * to avoid false positives from substrings like "not-secure-at-all".</p>
+     *
+     * @return true if the attributes contain the standalone "Secure" flag
      */
-    @SuppressWarnings("ConstantConditions")
     public boolean isSecure() {
-        return hasAttributes() && attributes.toLowerCase().contains("secure");
+        return hasAttributeFlag("secure");
     }
 
     /**
      * Checks if the cookie has the HttpOnly attribute.
      *
-     * @return true if the attributes contain "HttpOnly"
+     * <p>Matches "HttpOnly" as a standalone semicolon-delimited token (case-insensitive)
+     * to avoid false positives from substrings like "httponlyrelated".</p>
+     *
+     * @return true if the attributes contain the standalone "HttpOnly" flag
      */
-    @SuppressWarnings("ConstantConditions")
     public boolean isHttpOnly() {
-        return hasAttributes() && attributes.toLowerCase().contains("httponly");
+        return hasAttributeFlag("httponly");
+    }
+
+    /**
+     * Checks whether the given flag name appears as a standalone semicolon-delimited
+     * token in the attributes string (case-insensitive).
+     *
+     * @param flag the attribute flag name to look for (case-insensitive)
+     * @return true if the flag is present as a standalone token
+     */
+    private boolean hasAttributeFlag(String flag) {
+        if (!hasAttributes()) return false;
+        for (String token : Splitter.on(';').trimResults().omitEmptyStrings().splitToList(attributes)) {
+            if (flag.equalsIgnoreCase(token)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -293,19 +315,16 @@ String attributes) {
      *
      * @return A list of attribute names (may be empty)
      */
-    @SuppressWarnings("ConstantConditions")
     public List<String> getAttributeNames() {
         if (!hasAttributes()) {
             return List.of();
         }
-        return Arrays.stream(attributes.split(";"))
-                .map(String::trim)
-                .filter(attr -> !attr.isEmpty())
-                .map(attr -> {
-                    int equalIndex = attr.indexOf('=');
-                    return equalIndex > 0 ? attr.substring(0, equalIndex).trim() : attr;
-                })
-                .toList();
+        var result = new java.util.ArrayList<String>();
+        for (String attr : Splitter.on(';').trimResults().omitEmptyStrings().splitToList(attributes)) {
+            int equalIndex = attr.indexOf('=');
+            result.add(equalIndex > 0 ? attr.substring(0, equalIndex).trim() : attr);
+        }
+        return List.copyOf(result);
     }
 
     public String nameOrDefault(String defaultName) {
