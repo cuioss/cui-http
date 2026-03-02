@@ -16,6 +16,13 @@ https://sonarcloud.io/summary/new_code?id=cuioss_cui-http[image:https://sonarclo
 image:https://sonarcloud.io/api/project_badges/measure?project=cuioss_cui-http&metric=ncloc[Lines of Code,link=https://sonarcloud.io/summary/new_code?id=cuioss_cui-http]
 image:https://sonarcloud.io/api/project_badges/measure?project=cuioss_cui-http&metric=coverage[Coverage,link=https://sonarcloud.io/summary/new_code?id=cuioss_cui-http]
 
+**Performance Benchmarks**
+
+image:https://github.com/cuioss/cui-http/actions/workflows/benchmark.yml/badge.svg[JMH Benchmarks,link=https://github.com/cuioss/cui-http/actions/workflows/benchmark.yml]
+image:https://img.shields.io/endpoint?url=https://cuioss.github.io/cui-http/benchmarks/badges/performance-badge.json[Performance Score,link=https://cuioss.github.io/cui-http/benchmarks/micro/]
+image:https://img.shields.io/endpoint?url=https://cuioss.github.io/cui-http/benchmarks/badges/trend-badge.json[Performance Trend,link=https://cuioss.github.io/cui-http/benchmarks/micro/trends.html]
+image:https://img.shields.io/endpoint?url=https://cuioss.github.io/cui-http/benchmarks/badges/last-run-badge.json[Last Benchmark Run,link=https://cuioss.github.io/cui-http/benchmarks/]
+
 https://cuioss.github.io/cui-java-module-template/about.html[Generated Documentation on github-pages]
 
 [.discrete]

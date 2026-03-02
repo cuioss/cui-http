@@ -1,0 +1,120 @@
+name: Performance Benchmark
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    types: [ closed ]
+  push:
+    tags: [ "*" ]
+  workflow_dispatch:
+
+# Declare default permissions as read only (principle of least privilege)
+permissions:
+  contents: read
+
+# Prevent concurrent benchmark runs to avoid interference
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false  # Don't cancel in-progress runs as benchmarks are expensive
+
+jobs:
+  benchmark:
+    name: Run JMH Benchmarks
+    runs-on: ubuntu-latest
+    # Only run on merged PRs, not just closed ones
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    timeout-minutes: 30
+    permissions:
+      contents: write
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+        with:
+          egress-policy: audit
+
+      - name: Create GitHub App token for deployment
+        id: app-token
+        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }},cuioss.github.io
+          owner: cuioss
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build all modules
+        run: |
+          ./mvnw --no-transfer-progress clean install -DskipTests
+
+      - name: Fetch Previous History
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: cuioss/cuioss.github.io
+          ref: main
+          path: previous-pages
+          sparse-checkout: |
+            cui-http/benchmarks/micro/history
+        continue-on-error: true
+
+      - name: Prepare Historical Data for Benchmarks
+        run: |
+          python3 benchmarking/scripts/benchmark-pages.py prepare-history \
+            --previous-pages-dir previous-pages/cui-http/benchmarks \
+            --output-dir "${GITHUB_WORKSPACE}/benchmark-history"
+
+      - name: Run Micro Benchmarks
+        run: |
+          ./mvnw --no-transfer-progress clean verify -pl benchmarking -Pbenchmark \
+            -Dbenchmark.history.dir="${GITHUB_WORKSPACE}/benchmark-history/micro"
+
+          echo "Micro benchmark artifacts generated:"
+          ls -la benchmarking/target/benchmark-results/
+
+      - name: Assemble benchmark artifacts for deployment
+        run: |
+          python3 benchmarking/scripts/benchmark-pages.py assemble \
+            --micro-results benchmarking/target/benchmark-results/gh-pages-ready \
+            --previous-pages-dir previous-pages/cui-http/benchmarks \
+            --output-dir gh-pages \
+            --commit-sha "${{ github.sha }}"
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: benchmark-results
+          path: gh-pages/
+          retention-days: 90
+
+      - name: Checkout cuioss.github.io for deployment
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: cuioss/cuioss.github.io
+          path: _pages-deploy
+          sparse-checkout: cui-http/benchmarks
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Deploy to cuioss.github.io
+        run: |
+          TARGET_DIR="_pages-deploy/cui-http/benchmarks"
+          rm -rf "$TARGET_DIR"
+          mkdir -p "$TARGET_DIR"
+          cp -r gh-pages/* "$TARGET_DIR/"
+          cd _pages-deploy
+          git config user.name "cuioss-release-bot[bot]"
+          git config user.email "cuioss-release-bot[bot]@users.noreply.github.com"
+          git add .
+          git diff --staged --quiet || git commit -m "Deploy benchmark results from ${{ github.sha }}"
+          git push
