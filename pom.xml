@@ -17,7 +17,7 @@
     <url>https://github.com/cuioss/cui-http/</url>
     <modules>
         <module>cui-http-core</module>
-        <module>benchmarking</module>
+        <module>cui-http-benchmarking</module>
     </modules>
     <scm>
         <url>https://github.com/cuioss/cui-http/</url>

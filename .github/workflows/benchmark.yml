@@ -71,22 +71,22 @@ jobs:
 
       - name: Prepare Historical Data for Benchmarks
         run: |
-          python3 benchmarking/scripts/benchmark-pages.py prepare-history \
+          python3 cui-http-benchmarking/scripts/benchmark-pages.py prepare-history \
             --previous-pages-dir previous-pages/cui-http/benchmarks \
             --output-dir "${GITHUB_WORKSPACE}/benchmark-history"
 
       - name: Run Micro Benchmarks
         run: |
-          ./mvnw --no-transfer-progress clean verify -pl benchmarking -Pbenchmark \
+          ./mvnw --no-transfer-progress clean verify -pl cui-http-benchmarking -Pbenchmark \
             -Dbenchmark.history.dir="${GITHUB_WORKSPACE}/benchmark-history/micro"
 
           echo "Micro benchmark artifacts generated:"
-          ls -la benchmarking/target/benchmark-results/
+          ls -la cui-http-benchmarking/target/benchmark-results/
 
       - name: Assemble benchmark artifacts for deployment
         run: |
-          python3 benchmarking/scripts/benchmark-pages.py assemble \
-            --micro-results benchmarking/target/benchmark-results/gh-pages-ready \
+          python3 cui-http-benchmarking/scripts/benchmark-pages.py assemble \
+            --micro-results cui-http-benchmarking/target/benchmark-results/gh-pages-ready \
             --previous-pages-dir previous-pages/cui-http/benchmarks \
             --output-dir gh-pages \
             --commit-sha "${{ github.sha }}"
