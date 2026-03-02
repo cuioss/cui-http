@@ -38,6 +38,7 @@ public class SecurityBenchmarkRunner extends AbstractBenchmarkRunner {
                 .withBenchmarkType(BenchmarkType.MICRO)
                 .withThroughputBenchmarkName("measureThroughput")
                 .withLatencyBenchmarkName("measureAverageTime")
+                .withProjectName("CUI HTTP")
                 .build();
     }
 
