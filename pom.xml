@@ -8,7 +8,7 @@
         <relativePath />
     </parent>
     <artifactId>cui-http-parent</artifactId>
-    <version>1.4-SNAPSHOT</version>
+    <version>1.4.0</version>
     <packaging>pom</packaging>
     <name>CUI HTTP Parent</name>
     <description>Parent module for CUI HTTP utilities library providing secure validation pipelines,
@@ -27,7 +27,7 @@
         <developerConnection>
             scm:git:https://github.com/cuioss/cui-http/
         </developerConnection>
-        <tag>HEAD</tag>
+        <tag>1.4.0</tag>
     </scm>
     <issueManagement>
         <url>https://github.com/cuioss/cui-http/issues</url>
