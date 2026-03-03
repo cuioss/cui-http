@@ -12,7 +12,7 @@ CUI-HTTP is a security-focused HTTP utilities library providing secure validatio
 cui-http/                         (root, packaging=pom, artifactId=cui-http-parent)
 ├── cui-http-core/                (library, artifactId=cui-http — preserves Maven Central coords)
 │   └── src/
-├── benchmarking/                 (JMH benchmarks, artifactId=cui-http-benchmarking)
+├── cui-http-benchmarking/        (JMH benchmarks, artifactId=cui-http-benchmarking)
 │   ├── scripts/benchmark-pages.py
 │   └── src/main/java/...
 └── .github/workflows/benchmark.yml
@@ -40,10 +40,10 @@ cui-http/                         (root, packaging=pom, artifactId=cui-http-pare
 ./mvnw clean install -DskipTests
 
 # Run benchmarks (quick profile for local testing)
-./mvnw verify -pl benchmarking -am -Pbenchmark -Pquick
+./mvnw verify -pl cui-http-benchmarking -am -Pbenchmark -Pquick
 
 # Run benchmarks (full)
-./mvnw verify -pl benchmarking -am -Pbenchmark
+./mvnw verify -pl cui-http-benchmarking -am -Pbenchmark
 ```
 
 ## Git Workflow
