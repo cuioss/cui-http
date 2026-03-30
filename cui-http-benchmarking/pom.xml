@@ -51,7 +51,7 @@
         <dependency>
             <groupId>de.cuioss.sheriff.oauth</groupId>
             <artifactId>benchmarking-common</artifactId>
-            <version>0.6.0</version>
+            <version>0.7.0</version>
         </dependency>
 
         <!-- JMH dependencies -->
