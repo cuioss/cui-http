@@ -139,7 +139,8 @@ public final class HttpHandler {
         this.connectionTimeoutSeconds = connectionTimeoutSeconds;
         this.readTimeoutSeconds = readTimeoutSeconds;
 
-        // Create the HttpClient for HTTPS
+        // JDK 11+ HttpClient enables hostname verification by default.
+        // We intentionally omit explicit SSLParameters to preserve caller flexibility.
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(connectionTimeoutSeconds))
                 .sslContext(sslContext)

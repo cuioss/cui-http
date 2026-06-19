@@ -163,9 +163,13 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
         while (i < value.length()) {
             char ch = value.charAt(i);
 
-            // Check for null byte FIRST (highest priority security check)
+            // Check for null byte FIRST (highest priority security check).
+            // Self-contained: skip remaining loop body so future reordering
+            // cannot inadvertently process a null byte through other checks.
             if (ch == '\0') {
                 handleNullByte(value, i);
+                i++;
+                continue;
             }
 
             // Handle percent encoding
