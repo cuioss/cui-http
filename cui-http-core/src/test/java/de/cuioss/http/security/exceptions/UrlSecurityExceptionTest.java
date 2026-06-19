@@ -158,4 +158,53 @@ class UrlSecurityExceptionTest {
         assertFalse(message.contains("\u0000"));
         assertTrue(message.contains("?"));
     }
+
+    @Test
+    void toStringShouldIncludeFields() {
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(TEST_FAILURE_TYPE)
+                .validationType(TEST_VALIDATION_TYPE)
+                .originalInput(TEST_INPUT)
+                .build();
+
+        String result = exception.toString();
+        assertTrue(result.contains("UrlSecurityException"));
+        assertTrue(result.contains(TEST_FAILURE_TYPE.toString()));
+        assertTrue(result.contains(TEST_VALIDATION_TYPE.toString()));
+        assertTrue(result.contains(TEST_INPUT));
+        assertTrue(result.contains("detail='null'"));
+    }
+
+    @Test
+    void toStringShouldIncludeDetailWhenPresent() {
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(TEST_FAILURE_TYPE)
+                .validationType(TEST_VALIDATION_TYPE)
+                .originalInput(TEST_INPUT)
+                .detail(TEST_DETAIL)
+                .build();
+
+        String result = exception.toString();
+        assertTrue(result.contains("UrlSecurityException"));
+        assertTrue(result.contains(TEST_DETAIL));
+        assertTrue(result.contains("detail='"));
+        assertFalse(result.contains("detail='null'"));
+    }
+
+    @Test
+    void toStringShouldTruncateLongDetail() {
+        String longDetail = "B".repeat(300);
+
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(TEST_FAILURE_TYPE)
+                .validationType(TEST_VALIDATION_TYPE)
+                .originalInput(TEST_INPUT)
+                .detail(longDetail)
+                .build();
+
+        String result = exception.toString();
+        assertTrue(result.contains("detail='"));
+        assertFalse(result.contains(longDetail));
+        assertTrue(result.contains("..."));
+    }
 }

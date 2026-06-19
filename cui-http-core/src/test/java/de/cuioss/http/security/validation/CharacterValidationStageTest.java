@@ -227,6 +227,34 @@ class CharacterValidationStageTest {
     }
 
     @Test
+    void shouldContinueAfterNullByteWhenAllowed() {
+        SecurityConfiguration permissiveConfig = SecurityConfiguration.builder()
+                .allowNullBytes(true)
+                .build();
+        CharacterValidationStage stage = new CharacterValidationStage(permissiveConfig, ValidationType.URL_PATH);
+
+        // Null byte in middle: should skip it and continue processing remaining characters
+        String input = "/valid\0/path";
+        var result = assertDoesNotThrow(() -> stage.validate(input));
+        assertTrue(result.isPresent());
+        assertEquals(input, result.get());
+    }
+
+    @Test
+    void shouldProcessMultipleNullBytesWhenAllowed() {
+        SecurityConfiguration permissiveConfig = SecurityConfiguration.builder()
+                .allowNullBytes(true)
+                .build();
+        CharacterValidationStage stage = new CharacterValidationStage(permissiveConfig, ValidationType.URL_PATH);
+
+        // Multiple null bytes: should skip all and continue
+        String input = "/a\0b\0c";
+        var result = assertDoesNotThrow(() -> stage.validate(input));
+        assertTrue(result.isPresent());
+        assertEquals(input, result.get());
+    }
+
+    @Test
     void shouldRejectHighUnicodeCharacters() {
         CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.URL_PATH);
 
