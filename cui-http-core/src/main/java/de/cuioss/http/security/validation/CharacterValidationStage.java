@@ -158,6 +158,7 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
      * @param value The string to validate
      * @throws UrlSecurityException if any character validation fails
      */
+    @SuppressWarnings("java:S135")
     private void validateCharacters(String value) throws UrlSecurityException {
         int i = 0;
         while (i < value.length()) {
