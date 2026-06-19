@@ -16,7 +16,6 @@
 package de.cuioss.http.client.adapter;
 
 import java.util.HashSet;
-import java.util.Set;
 import java.util.function.Predicate;
 
 /**
@@ -132,8 +131,10 @@ public interface CacheKeyHeaderFilter {
      * @param headerNames Case-insensitive header names to exclude
      * @return Filter that includes all headers except specified ones
      */
+    @SuppressWarnings("java:S6485")
     static CacheKeyHeaderFilter excluding(String... headerNames) {
-        Set<String> excluded = new HashSet<>(headerNames.length);
+        // Use calculated capacity to avoid resizing (load factor 0.75)
+        var excluded = new HashSet<String>(Math.max((int) (headerNames.length / 0.75f) + 1, 16));
         for (String name : headerNames) {
             excluded.add(name.toLowerCase());
         }
@@ -156,8 +157,10 @@ public interface CacheKeyHeaderFilter {
      * @param headerNames Case-insensitive header names to include
      * @return Filter that includes only specified headers
      */
+    @SuppressWarnings("java:S6485")
     static CacheKeyHeaderFilter including(String... headerNames) {
-        Set<String> included = new HashSet<>(headerNames.length);
+        // Use calculated capacity to avoid resizing (load factor 0.75)
+        var included = new HashSet<String>(Math.max((int) (headerNames.length / 0.75f) + 1, 16));
         for (String name : headerNames) {
             included.add(name.toLowerCase());
         }

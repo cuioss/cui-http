@@ -207,6 +207,7 @@ class AllGeneratorsIntegrationTest {
     }
 
     @Test
+    @SuppressWarnings("java:S1612")
     void shouldHandleConcurrentGeneration() {
         // Test thread safety of generators
         List<Thread> threads = List.of(
@@ -238,14 +239,7 @@ class AllGeneratorsIntegrationTest {
         threads.forEach(Thread::start);
 
         // Wait for completion
-        threads.forEach(thread -> {
-            try {
-                thread.join();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                fail("Thread interrupted during concurrent generation test");
-            }
-        });
+        threads.forEach(thread -> assertDoesNotThrow(() -> thread.join()));
     }
 
     @Test

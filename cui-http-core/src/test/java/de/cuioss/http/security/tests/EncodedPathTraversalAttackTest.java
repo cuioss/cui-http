@@ -50,7 +50,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class EncodedPathTraversalAttackTest {
 
     // Precompiled pattern for control character detection
-    private static final Pattern CONTROL_CHARS_PATTERN = Pattern.compile(".*[\\x00-\\x1F\\x7F-\\x9F].*");
+    private static final Pattern CONTROL_CHARS_PATTERN = Pattern.compile("[\\x00-\\x1F\\x7F-\\x9F]");
 
     private URLPathValidationPipeline pipeline;
     private SecurityConfiguration config;
@@ -185,7 +185,7 @@ class EncodedPathTraversalAttackTest {
             // If validation succeeds, ensure the edge case doesn't contain obvious attack patterns
             boolean containsTraversal = edgeCase.contains("..") || edgeCase.contains("./") || edgeCase.contains("\\");
             boolean containsNullByte = edgeCase.contains("\0") || edgeCase.contains("%00");
-            boolean containsControlChars = CONTROL_CHARS_PATTERN.matcher(edgeCase).matches();
+            boolean containsControlChars = CONTROL_CHARS_PATTERN.matcher(edgeCase).find();
 
             if (containsTraversal || containsNullByte || containsControlChars) {
                 fail("Edge case with attack patterns should have been rejected: " + edgeCase);
