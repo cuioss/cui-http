@@ -131,6 +131,7 @@ public interface CacheKeyHeaderFilter {
      * @param headerNames Case-insensitive header names to exclude
      * @return Filter that includes all headers except specified ones
      */
+    @SuppressWarnings("java:S6485")
     static CacheKeyHeaderFilter excluding(String... headerNames) {
         // Use calculated capacity to avoid resizing (load factor 0.75)
         var excluded = new HashSet<String>(Math.max((int) (headerNames.length / 0.75f) + 1, 16));
@@ -156,6 +157,7 @@ public interface CacheKeyHeaderFilter {
      * @param headerNames Case-insensitive header names to include
      * @return Filter that includes only specified headers
      */
+    @SuppressWarnings("java:S6485")
     static CacheKeyHeaderFilter including(String... headerNames) {
         // Use calculated capacity to avoid resizing (load factor 0.75)
         var included = new HashSet<String>(Math.max((int) (headerNames.length / 0.75f) + 1, 16));

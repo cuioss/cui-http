@@ -207,6 +207,7 @@ class AllGeneratorsIntegrationTest {
     }
 
     @Test
+    @SuppressWarnings("java:S1612")
     void shouldHandleConcurrentGeneration() {
         // Test thread safety of generators
         List<Thread> threads = List.of(
