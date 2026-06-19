@@ -158,14 +158,19 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
      * @param value The string to validate
      * @throws UrlSecurityException if any character validation fails
      */
+    @SuppressWarnings("java:S135")
     private void validateCharacters(String value) throws UrlSecurityException {
         int i = 0;
         while (i < value.length()) {
             char ch = value.charAt(i);
 
-            // Check for null byte FIRST (highest priority security check)
+            // Check for null byte FIRST (highest priority security check).
+            // Self-contained: skip remaining loop body so future reordering
+            // cannot inadvertently process a null byte through other checks.
             if (ch == '\0') {
                 handleNullByte(value, i);
+                i++;
+                continue;
             }
 
             // Handle percent encoding

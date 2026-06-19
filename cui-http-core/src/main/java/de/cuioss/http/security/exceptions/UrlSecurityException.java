@@ -189,7 +189,7 @@ public class UrlSecurityException extends RuntimeException {
                 ", validationType=" + validationType +
                 ", originalInput='" + truncateForLogging(originalInput) + '\'' +
                 ", sanitizedInput='" + (sanitizedInput != null ? truncateForLogging(sanitizedInput) : null) + '\'' +
-                ", detail='" + detail + '\'' +
+                ", detail='" + (detail != null ? truncateForLogging(detail) : null) + '\'' +
                 ", cause=" + getCause() +
                 '}';
     }

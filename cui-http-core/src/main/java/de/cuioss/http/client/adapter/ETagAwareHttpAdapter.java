@@ -30,10 +30,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.Comparator;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -563,7 +560,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         StringBuilder keyBuilder = new StringBuilder(uri.toString());
 
         // Filter first, then sort for consistent cache keys
-        var filteredEntries = new java.util.ArrayList<Map.Entry<String, String>>();
+        var filteredEntries = new ArrayList<Map.Entry<String, String>>();
         for (Map.Entry<String, String> entry : headers.entrySet()) {
             if (filter.includeInCacheKey(entry.getKey())) {
                 filteredEntries.add(entry);

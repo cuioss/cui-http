@@ -18,10 +18,10 @@ package de.cuioss.http.security.data;
 import de.cuioss.http.security.config.SecurityConfiguration;
 import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.validation.CharacterValidationStage;
+import de.cuioss.tools.string.Splitter;
 import org.jspecify.annotations.Nullable;
 
-import de.cuioss.tools.string.Splitter;
-
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -319,7 +319,7 @@ String attributes) {
         if (!hasAttributes()) {
             return List.of();
         }
-        var result = new java.util.ArrayList<String>();
+        var result = new ArrayList<String>();
         for (String attr : Splitter.on(';').trimResults().omitEmptyStrings().splitToList(attributes)) {
             int equalIndex = attr.indexOf('=');
             result.add(equalIndex > 0 ? attr.substring(0, equalIndex).trim() : attr);
