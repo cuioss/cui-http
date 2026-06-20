@@ -2,7 +2,7 @@ name: cui-http
 description: CUI HTTP client utilities
 
 release:
-  current-version: 1.4.0
+  current-version: 1.4.1
   next-version: 1.5-SNAPSHOT
   create-github-release: true
 
