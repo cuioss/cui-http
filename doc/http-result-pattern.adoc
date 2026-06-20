@@ -192,55 +192,26 @@ CompletableFuture<HttpResult<T>> future = adapter.get(headers);
 // - 304 Not Modified: Return cached content
 // - Network/server errors: Retry with exponential backoff
 future.thenAccept(result -> {
-    result.ifSuccess(content -> {
-        // Use content
-    }).ifFailure(error -> {
-                case int code when code >= 500 -> {
-                    // Server error with fallback
-                    yield HttpResult.failureWithFallback(
-                        "Server error: " + code,
-                        null,
-                        cachedContent,
-                        HttpErrorCategory.SERVER_ERROR,
-                        cachedEtag,
-                        code
-                    );
-                }
+    if (result.isSuccess()) {
+        result.getContent().ifPresent(content -> {
+            // Use content
+        });
+    } else {
+        result.getErrorMessage().ifPresent(logger::error);
+        result.getCause().ifPresent(cause ->
+            logger.error("Underlying cause", cause));
 
-                default -> {
-                    // Client error without fallback
-                    yield HttpResult.failure(
-                        "Unexpected status: " + response.statusCode(),
-                        null,
-                        HttpErrorCategory.CLIENT_ERROR
-                    );
-                }
-            };
-
-        } catch (IOException e) {
-            return handleNetworkError(e);
+        // Check if retryable
+        if (result.isRetryable()) {
+            logger.warn("Error is retryable, scheduling retry");
+            scheduleRetry();
         }
-    }
 
-    private HttpResult<T> handleNetworkError(IOException e) {
-        if (cachedContent != null) {
-            return HttpResult.failureWithFallback(
-                "Network error: " + e.getMessage(),
-                e,
-                cachedContent,
-                HttpErrorCategory.NETWORK_ERROR,
-                cachedEtag,
-                null
-            );
-        } else {
-            return HttpResult.failure(
-                "Network error with no cache: " + e.getMessage(),
-                e,
-                HttpErrorCategory.NETWORK_ERROR
-            );
-        }
+        // Use fallback if available
+        result.getContent().ifPresent(fallback ->
+            logger.warn("Using cached fallback content"));
     }
-}
+});
 ----
 
 === Factory Method Reference

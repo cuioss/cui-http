@@ -61,15 +61,15 @@ When user input cannot be avoided, implement multiple layers of defense:
 === Input Validation Techniques
 
 ==== Character Validation
-Implemented in: link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage]
+Implemented in: link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage]
 
 * Whitelist validation for allowed characters
-* Pattern matching against link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationConstants.java[CharacterValidationConstants]
+* Pattern matching against link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationConstants.java[CharacterValidationConstants]
 
 === Path Canonicalization and Validation
 
 ==== Normalization Implementation
-Implemented in: link:../../../src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]
+Implemented in: link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]
 
 * Path normalization and canonicalization
 * Unicode normalization (NFC, NFD, NFKC, NFKD)
@@ -106,7 +106,7 @@ Implemented in: link:../../../src/main/java/de/cuioss/http/security/validation/N
 |===
 
 ==== Decoding Implementation
-Implemented in: link:../../../src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage]
+Implemented in: link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage]
 
 * URL decoding with double-encoding detection
 * UTF-8 overlong encoding prevention
@@ -171,15 +171,15 @@ C:\inetpub\wwwroot\..\..\Windows\win.ini
 === Secure Validation Patterns
 
 ==== Path Validation Pipeline
-Implemented in: link:../../../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]
+Implemented in: link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]
 
 * Sequential validation stages
 * Pattern matching for known attacks
-* Configurable security levels via link:../../../src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration]
+* Configurable security levels via link:../../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration]
 
 === HTTP Header Validation
 
-Implemented in: link:../../../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline]
+Implemented in: link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline]
 
 * Header injection prevention
 * CRLF attack detection
@@ -188,7 +188,7 @@ Implemented in: link:../../../src/main/java/de/cuioss/http/security/pipeline/HTT
 == Real-World Attack Pattern Detection
 
 === Pattern Matching Implementation
-Implemented in: link:../../../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage]
+Implemented in: link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage]
 
 * Path traversal pattern detection
 * CVE-based attack patterns
@@ -198,26 +198,26 @@ Implemented in: link:../../../src/main/java/de/cuioss/http/security/validation/P
 == Monitoring and Detection
 
 === Security Event Monitoring
-Implemented in: link:../../../src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]
+Implemented in: link:../../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]
 
 * Attack attempt counting by type
 * Failure type categorization
 * Metrics collection for security monitoring
 
 === Logging Implementation
-Implemented in: link:../../../src/main/java/de/cuioss/http/security/monitoring/URLSecurityLogMessages.java[URLSecurityLogMessages]
+Implemented in: link:../../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]
 
-* Structured security event logging
-* CuiLogger integration
-* Attack pattern logging
+* Security event counting and tracking
+* Failure type categorization
+* Attack pattern monitoring
 
 
 == Key Implementation Points
 
-* Use link:../../../src/main/java/de/cuioss/http/security/pipeline/PipelineFactory.java[PipelineFactory] to select appropriate validation pipeline
-* Configure via link:../../../src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration] with sensible defaults
-* Monitor security events with link:../../../src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]
-* All validators implement link:../../../src/main/java/de/cuioss/http/security/core/HttpSecurityValidator.java[HttpSecurityValidator] interface
+* Use link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/PipelineFactory.java[PipelineFactory] to select appropriate validation pipeline
+* Configure via link:../../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration] with sensible defaults
+* Monitor security events with link:../../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]
+* All validators implement link:../../../cui-http-core/src/main/java/de/cuioss/http/security/core/HttpSecurityValidator.java[HttpSecurityValidator] interface
 
 == HTTP/URL Standards and Validation
 
@@ -241,14 +241,14 @@ Implemented in: link:../../../src/main/java/de/cuioss/http/security/monitoring/U
 
 ==== URL Query Parameter Validation
 
-Implemented in: link:../../../src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline]
+Implemented in: link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline]
 
 * RFC 3986 compliant validation
 * Parameter name and value validation
 * Length limits enforcement
 * Null byte detection
 
-Parameter data structure: link:../../../src/main/java/de/cuioss/http/security/data/URLParameter.java[URLParameter]
+Parameter data structure: link:../../../cui-http-core/src/main/java/de/cuioss/http/security/data/URLParameter.java[URLParameter]
 
 ==== HTTP Body Validation
 
@@ -263,8 +263,8 @@ Note: Body validation pipeline has been eliminated from the architecture. Body c
 
 ==== Cookie Validation
 
-Cookie data structure: link:../../../src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie]
-Attribute parsing: link:../../../src/main/java/de/cuioss/http/security/data/AttributeParser.java[AttributeParser]
+Cookie data structure: link:../../../cui-http-core/src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie]
+Attribute parsing: link:../../../cui-http-core/src/main/java/de/cuioss/http/security/data/AttributeParser.java[AttributeParser]
 
 ==== Common Parameter Attack Patterns
 

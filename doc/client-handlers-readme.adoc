@@ -25,7 +25,7 @@ HTTP client utilities for request execution, SSL/TLS context management, and HTT
 
 === Core HTTP Handlers
 
-==== xref:../src/main/java/de/cuioss/http/client/handler/HttpHandler.java[HttpHandler]
+==== xref:../cui-http-core/src/main/java/de/cuioss/http/client/handler/HttpHandler.java[HttpHandler]
 
 Builder-based HTTP client wrapper with automatic SSL context creation for HTTPS.
 
@@ -34,7 +34,7 @@ Builder-based HTTP client wrapper with automatic SSL context creation for HTTPS.
 * Configurable connection and read timeouts (default: 10 seconds)
 * Thread-safe after construction
 
-==== xref:../src/main/java/de/cuioss/http/client/adapter/package-info.java[HTTP Adapters (New Architecture)]
+===== xref:../cui-http-core/src/main/java/de/cuioss/http/client/adapter/package-info.java[HTTP Adapters (New Architecture)]
 
 Async-first HTTP client adapters with composable retry and caching.
 
@@ -45,23 +45,23 @@ Async-first HTTP client adapters with composable retry and caching.
 * Thread-safe async execution with CompletableFuture
 * Error categorization and idempotency-aware retry
 
-See xref:../src/main/java/de/cuioss/http/client/adapter/package-info.java[package documentation] for complete usage examples.
+See xref:../cui-http-core/src/main/java/de/cuioss/http/client/adapter/package-info.java[package documentation] for complete usage examples.
 
 === SSL/TLS Support
 
-==== xref:../src/main/java/de/cuioss/http/client/handler/SecureSSLContextProvider.java[SecureSSLContextProvider]
+==== xref:../cui-http-core/src/main/java/de/cuioss/http/client/handler/SecureSSLContextProvider.java[SecureSSLContextProvider]
 
 Utility for creating TLS 1.2+ SSL contexts.
 
 === HTTP Status Classification
 
-==== xref:../src/main/java/de/cuioss/http/client/handler/HttpStatusFamily.java[HttpStatusFamily]
+==== xref:../cui-http-core/src/main/java/de/cuioss/http/client/handler/HttpStatusFamily.java[HttpStatusFamily]
 
 Enum for RFC 7231 HTTP status code classification with static helper methods.
 
 === Content Conversion
 
-==== xref:../src/main/java/de/cuioss/http/client/converter/HttpContentConverter.java[HttpContentConverter]
+==== xref:../cui-http-core/src/main/java/de/cuioss/http/client/converter/HttpResponseConverter.java[HttpResponseConverter]
 
 Interface for converting HTTP response bodies to domain objects.
 
@@ -69,7 +69,7 @@ Interface for converting HTTP response bodies to domain objects.
 * Configurable body handlers
 * Empty value support for null/empty responses
 
-==== xref:../src/main/java/de/cuioss/http/client/converter/StringContentConverter.java[StringContentConverter]
+==== xref:../cui-http-core/src/main/java/de/cuioss/http/client/converter/StringContentConverter.java[StringContentConverter]
 
 Built-in content converter for String responses.
 
@@ -79,7 +79,7 @@ Built-in content converter for String responses.
 
 === Result Handling
 
-==== xref:../src/main/java/de/cuioss/http/client/result/HttpResult.java[HttpResult]
+==== xref:../cui-http-core/src/main/java/de/cuioss/http/client/result/HttpResult.java[HttpResult]
 
 Sealed interface for HTTP operation results with type-safe pattern matching.
 
@@ -89,7 +89,7 @@ Sealed interface for HTTP operation results with type-safe pattern matching.
 * Error categorization via HttpErrorCategory
 * Factory methods for common scenarios
 
-==== xref:../src/main/java/de/cuioss/http/client/result/HttpErrorCategory.java[HttpErrorCategory]
+==== xref:../cui-http-core/src/main/java/de/cuioss/http/client/result/HttpErrorCategory.java[HttpErrorCategory]
 
 Error categorization for HTTP operations.
 
@@ -99,13 +99,13 @@ Error categorization for HTTP operations.
 * `INVALID_CONTENT` - Content conversion failures
 * Retry eligibility determination
 
-==== xref:../src/main/java/de/cuioss/http/client/result/HttpResultState.java[HttpResultState]
+==== xref:../cui-http-core/src/main/java/de/cuioss/http/client/result/HttpResultState.java[HttpResultState]
 
 HTTP-specific result states extending CUI result framework.
 
 === Logging
 
-==== xref:../src/main/java/de/cuioss/http/client/HttpLogMessages.java[HttpLogMessages]
+==== xref:../cui-http-core/src/main/java/de/cuioss/http/client/HttpLogMessages.java[HttpLogMessages]
 
 Centralized log messages for HTTP operations.
 
