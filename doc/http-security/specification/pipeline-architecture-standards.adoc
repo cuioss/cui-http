@@ -80,8 +80,8 @@ HTTP security validation should focus exclusively on HTTP protocol violations an
 
 === 4. Unicode Handling
 
-* **Unicode characters in paths** → `URLPathValidationPipeline` with `allowHighBitCharacters(true)`
-* **Unicode in parameters** → `URLParameterValidationPipeline` with `allowHighBitCharacters(true)`
+* **Unicode characters in paths** → `URLPathValidationPipeline` with `allowExtendedAscii(true)`
+* **Unicode in parameters** → `URLParameterValidationPipeline` with `allowExtendedAscii(true)`
 
 === 5. Configuration Requirements
 
@@ -94,7 +94,7 @@ SecurityConfiguration config = SecurityConfiguration.defaults();
 
 // For Unicode path content:
 SecurityConfiguration unicodeConfig = SecurityConfiguration.builder()
-    .allowHighBitCharacters(true)
+    .allowExtendedAscii(true)
     .build();
 ----
 

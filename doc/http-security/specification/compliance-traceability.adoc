@@ -40,26 +40,26 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 ==== Specifications
 
 * xref:../analysis/owasp-best-practices.adoc[Path Traversal Prevention]: OWASP best practices implementation
-* link:../../../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]: Pipeline architecture
-* link:../../../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage]: Attack pattern detection
-* link:../../../src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]: Path canonicalization
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]: Pipeline architecture
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage]: Attack pattern detection
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]: Path canonicalization
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest]: OWASP A01 attack patterns (lines 50-126)
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest]: OWASP A01 attack patterns (lines 50-126)
 * `CLASSIC_PATH_TRAVERSAL_UNIX`: `../../../etc/passwd`
 * `URL_ENCODED_TRAVERSAL`: `%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd`
 * `DOUBLE_ENCODED_TRAVERSAL`: `%252e%252e%252f...`
 * `UTF8_OVERLONG_TRAVERSAL`: `%c0%ae%c0%ae%c0%af...`
 * `STRUTS2_COMPONENT_TRAVERSAL`: `/struts2-showcase/../../../etc/passwd`
 * `AUTH_BYPASS_TRAVERSAL`: `/admin/../user/profile`
-* link:../../../src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]: Comprehensive path traversal testing
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]: Comprehensive path traversal testing
 
 * `shouldRejectAllPathTraversalPatterns()`: 64 generated patterns
 * `shouldBlockCVEStylePatterns()`: CVE-based patterns
-* link:../../../src/test/java/de/cuioss/http/security/tests/EncodedPathTraversalAttackTest.java[EncodedPathTraversalAttackTest]: Encoded variants
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/EncodedPathTraversalAttackTest.java[EncodedPathTraversalAttackTest]: Encoded variants
 
-* link:../../../src/test/java/de/cuioss/http/security/tests/UnicodePathTraversalAttackTest.java[UnicodePathTraversalAttackTest]: Unicode-based traversal
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/UnicodePathTraversalAttackTest.java[UnicodePathTraversalAttackTest]: Unicode-based traversal
 
 *Status*: ✅ VERIFIED - Complete coverage with 200+ test cases
 
@@ -81,17 +81,17 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 ==== Specifications
 
-* link:../../../src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage]: URL decoding with double-encoding detection
-* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage]: RFC-compliant character validation
-* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationConstants.java[CharacterValidationConstants]: Allowed character sets
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage]: URL decoding with double-encoding detection
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage]: RFC-compliant character validation
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationConstants.java[CharacterValidationConstants]: Allowed character sets
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/tests/DoubleEncodingAttackTest.java[DoubleEncodingAttackTest]: Double/triple encoding patterns (CWE-20, CWE-22)
-* link:../../../src/test/java/de/cuioss/http/security/tests/MixedEncodingAttackTest.java[MixedEncodingAttackTest]: Mixed encoding combinations (CWE-20, CWE-116, CWE-838)
-* link:../../../src/test/java/de/cuioss/http/security/tests/NullBytePathTraversalAttackTest.java[NullBytePathTraversalAttackTest]: Null byte injection
-* link:../../../src/test/java/de/cuioss/http/security/validation/DecodingStageTest.java[DecodingStageTest]: Decoding stage validation
-* link:../../../src/test/java/de/cuioss/http/security/validation/CharacterValidationStageTest.java[CharacterValidationStageTest]: Character validation
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/DoubleEncodingAttackTest.java[DoubleEncodingAttackTest]: Double/triple encoding patterns (CWE-20, CWE-22)
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/MixedEncodingAttackTest.java[MixedEncodingAttackTest]: Mixed encoding combinations (CWE-20, CWE-116, CWE-838)
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/NullBytePathTraversalAttackTest.java[NullBytePathTraversalAttackTest]: Null byte injection
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/DecodingStageTest.java[DecodingStageTest]: Decoding stage validation
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/CharacterValidationStageTest.java[CharacterValidationStageTest]: Character validation
 
 *Status*: ✅ VERIFIED - Complete coverage at HTTP/URL protocol layer
 
@@ -112,14 +112,14 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 ==== Specifications
 
 * xref:specification.adoc[Pipeline Architecture]: Sequential validation stages
-* link:../../../src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration]: Immutable configuration
-* link:../../../src/main/java/de/cuioss/http/security/config/SecurityDefaults.java[SecurityDefaults]: OWASP-compliant defaults
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration]: Immutable configuration
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityDefaults.java[SecurityDefaults]: OWASP-compliant defaults
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/pipeline/URLPathValidationPipelineTest.java[URLPathValidationPipelineTest]: Pipeline execution
-* link:../../../src/test/java/de/cuioss/http/security/config/SecurityConfigurationTest.java[SecurityConfigurationTest]: Configuration validation
-* link:../../../src/test/java/de/cuioss/http/security/config/SecurityDefaultsTest.java[SecurityDefaultsTest]: Secure defaults
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/URLPathValidationPipelineTest.java[URLPathValidationPipelineTest]: Pipeline execution
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/config/SecurityConfigurationTest.java[SecurityConfigurationTest]: Configuration validation
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/config/SecurityDefaultsTest.java[SecurityDefaultsTest]: Secure defaults
 
 *Status*: ✅ VERIFIED - Defense-in-depth architecture implemented
 
@@ -137,14 +137,14 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 ==== Specifications
 
-* link:../../../src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration]: Configuration management
-* link:../../../src/main/java/de/cuioss/http/security/config/SecurityDefaults.java[SecurityDefaults]: Default values based on RFC standards
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration]: Configuration management
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityDefaults.java[SecurityDefaults]: Default values based on RFC standards
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/config/SecurityConfigurationTest.java[SecurityConfigurationTest]: Configuration validation
-* link:../../../src/test/java/de/cuioss/http/security/config/SecurityConfigurationBuilderTest.java[SecurityConfigurationBuilderTest]: Builder pattern validation
-* link:../../../src/test/java/de/cuioss/http/security/config/SecurityDefaultsTest.java[SecurityDefaultsTest]: Default configuration testing
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/config/SecurityConfigurationTest.java[SecurityConfigurationTest]: Configuration validation
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/config/SecurityConfigurationBuilderTest.java[SecurityConfigurationBuilderTest]: Builder pattern validation
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/config/SecurityDefaultsTest.java[SecurityDefaultsTest]: Default configuration testing
 
 *Status*: ✅ VERIFIED - Secure defaults enforced
 
@@ -163,14 +163,14 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 ==== Specifications
 
-* link:../../../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]: Authentication bypass prevention
-* link:../../../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline]: Header validation
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]: Authentication bypass prevention
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline]: Header validation
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest]: `AUTH_BYPASS_TRAVERSAL` pattern
-* link:../../../src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java[HttpHeaderInjectionAttackTest]: Header injection patterns (CWE-113, CWE-116)
-* link:../../../src/test/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipelineTest.java[HTTPHeaderValidationPipelineTest]: Header validation
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest]: `AUTH_BYPASS_TRAVERSAL` pattern
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java[HttpHeaderInjectionAttackTest]: Header injection patterns (CWE-113, CWE-116)
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipelineTest.java[HTTPHeaderValidationPipelineTest]: Header validation
 
 *Status*: ✅ VERIFIED - Authentication bypass patterns detected
 
@@ -189,15 +189,15 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 ==== Specifications
 
-* link:../../../src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]: Unicode normalization (NFC)
-* link:../../../src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage]: Encoding consistency validation
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]: Unicode normalization (NFC)
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage]: Encoding consistency validation
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/tests/UnicodeNormalizationAttackTest.java[UnicodeNormalizationAttackTest]: Unicode normalization attacks (CWE-20, CWE-176, CWE-838)
-* link:../../../src/test/java/de/cuioss/http/security/tests/UnicodeControlCharacterAttackTest.java[UnicodeControlCharacterAttackTest]: Control character attacks (CWE-74, CWE-20, CWE-176)
-* link:../../../src/test/java/de/cuioss/http/security/tests/HomographAttackDatabaseTest.java[HomographAttackDatabaseTest]: Homograph attacks (CWE-20, CWE-178)
-* link:../../../src/test/java/de/cuioss/http/security/validation/NormalizationStageTest.java[NormalizationStageTest]: Normalization validation
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/UnicodeNormalizationAttackTest.java[UnicodeNormalizationAttackTest]: Unicode normalization attacks (CWE-20, CWE-176, CWE-838)
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/UnicodeControlCharacterAttackTest.java[UnicodeControlCharacterAttackTest]: Control character attacks (CWE-74, CWE-20, CWE-176)
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HomographAttackDatabaseTest.java[HomographAttackDatabaseTest]: Homograph attacks (CWE-20, CWE-178)
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/NormalizationStageTest.java[NormalizationStageTest]: Normalization validation
 
 *Status*: ✅ VERIFIED - Input integrity validated
 
@@ -217,12 +217,12 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 ==== Specifications
 
-* link:../../../src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]: Event tracking by failure type
-* link:../../../src/main/java/de/cuioss/http/security/monitoring/URLSecurityLogMessages.java[URLSecurityLogMessages]: Structured logging
+ * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]: Event tracking by failure type
+ * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]: Security event logging
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/monitoring/SecurityEventCounterTest.java[SecurityEventCounterTest]: Event counter validation
+ * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/monitoring/SecurityEventCounterTest.java[SecurityEventCounterTest]: Event counter validation
 * All attack database tests verify security events are recorded:
 * `assertTrue(eventCounter.getTotalCount() > initialEventCount)`
 
@@ -242,20 +242,20 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 ==== Specifications
 
-* link:../../../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]: Primary defense
-* link:../../../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage]: Pattern detection
-* link:../../../src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]: Path canonicalization
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]: Primary defense
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage]: Pattern detection
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]: Path canonicalization
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]: 64+ patterns
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]: 64+ patterns
 * References CVE-2019-5418, CVE-2018-1000671, CVE-2020-5398 (lines 64)
-* link:../../../src/test/java/de/cuioss/http/security/tests/EncodedPathTraversalAttackTest.java[EncodedPathTraversalAttackTest]: Encoded variants
-* link:../../../src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest]: Multiple traversal patterns
-* link:../../../src/test/java/de/cuioss/http/security/tests/ApacheCVEAttackDatabaseTest.java[ApacheCVEAttackDatabaseTest]: Apache-specific CVEs
-* link:../../../src/test/java/de/cuioss/http/security/tests/IISCVEAttackDatabaseTest.java[IISCVEAttackDatabaseTest]: IIS-specific CVEs
-* link:../../../src/test/java/de/cuioss/http/security/tests/NginxCVEAttackDatabaseTest.java[NginxCVEAttackDatabaseTest]: Nginx-specific CVEs
-* link:../../../src/test/java/de/cuioss/http/security/tests/DoubleEncodingAttackTest.java[DoubleEncodingAttackTest]: References CWE-22 (line 63)
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/EncodedPathTraversalAttackTest.java[EncodedPathTraversalAttackTest]: Encoded variants
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest]: Multiple traversal patterns
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/ApacheCVEAttackDatabaseTest.java[ApacheCVEAttackDatabaseTest]: Apache-specific CVEs
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/IISCVEAttackDatabaseTest.java[IISCVEAttackDatabaseTest]: IIS-specific CVEs
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/NginxCVEAttackDatabaseTest.java[NginxCVEAttackDatabaseTest]: Nginx-specific CVEs
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/DoubleEncodingAttackTest.java[DoubleEncodingAttackTest]: References CWE-22 (line 63)
 
 *Status*: ✅ VERIFIED - Extensive coverage with 500+ test cases
 
@@ -270,15 +270,15 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 ==== Specifications
 
-* link:../../../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]: Relative path detection
-* link:../../../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage]: `../` pattern detection
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]: Relative path detection
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage]: `../` pattern detection
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]:
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]:
 * Test case: `../../../etc/passwd` (line 209)
 * Relative path patterns in 64+ generated test cases
-* link:../../../src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest]:
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest]:
 * `CLASSIC_PATH_TRAVERSAL_UNIX`: `../../../etc/passwd`
 * `AUTH_BYPASS_TRAVERSAL`: `/admin/../user/profile`
 
@@ -295,14 +295,14 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 ==== Specifications
 
-* link:../../../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage]: Advanced pattern detection
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage]: Advanced pattern detection
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]:
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]:
 * Test case: `....//....//etc/passwd` (line 217)
 * Generator includes advanced patterns
-* link:../../../src/test/java/de/cuioss/http/security/generators/encoding/PathTraversalGenerator.java[PathTraversalGenerator]: Generates advanced patterns
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/generators/encoding/PathTraversalGenerator.java[PathTraversalGenerator]: Generates advanced patterns
 
 *Status*: ✅ VERIFIED - Advanced patterns detected
 
@@ -317,14 +317,14 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 ==== Specifications
 
-* link:../../../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]: Validates all path input
-* link:../../../src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline]: Validates parameters
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]: Validates all path input
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline]: Validates parameters
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/generators/url/PathTraversalParameterGeneratorTest.java[PathTraversalParameterGeneratorTest]: Parameter-based path traversal
-* link:../../../src/test/java/de/cuioss/http/security/pipeline/URLParameterValidationPipelineTest.java[URLParameterValidationPipelineTest]: Parameter validation
-* link:../../../src/test/java/de/cuioss/http/security/tests/ProtocolHandlerAttackTest.java[ProtocolHandlerAttackTest]: References CWE-73 for protocol injection
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/generators/url/PathTraversalParameterGeneratorTest.java[PathTraversalParameterGeneratorTest]: Parameter-based path traversal
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/URLParameterValidationPipelineTest.java[URLParameterValidationPipelineTest]: Parameter validation
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/ProtocolHandlerAttackTest.java[ProtocolHandlerAttackTest]: References CWE-73 for protocol injection
 
 *Status*: ✅ VERIFIED - External input validated
 
@@ -339,13 +339,13 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 ==== Specifications
 
-* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage]: Blocks command injection characters
-* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationConstants.java[CharacterValidationConstants]: Defines safe character sets
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage]: Blocks command injection characters
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationConstants.java[CharacterValidationConstants]: Defines safe character sets
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/validation/CharacterValidationStageTest.java[CharacterValidationStageTest]: Character validation including special characters
-* link:../../../src/test/java/de/cuioss/http/security/pipeline/URLParameterValidationPipelineTest.java[URLParameterValidationPipelineTest]: Parameter validation
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/CharacterValidationStageTest.java[CharacterValidationStageTest]: Character validation including special characters
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/URLParameterValidationPipelineTest.java[URLParameterValidationPipelineTest]: Parameter validation
 
 *Note*: Full command injection prevention requires application-layer validation. HTTP layer prevents injection characters in URLs/parameters.
 
@@ -364,13 +364,13 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 ==== Specifications
 
-* link:../../../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]: Path containment
-* link:../../../src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]: Canonicalization prevents bypass
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]: Path containment
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]: Canonicalization prevents bypass
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]: Access control bypass prevention
-* link:../../../src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest]: `AUTH_BYPASS_TRAVERSAL`
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]: Access control bypass prevention
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest]: `AUTH_BYPASS_TRAVERSAL`
 
 *Status*: ✅ VERIFIED
 
@@ -389,8 +389,8 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/pipeline/URLPathValidationPipelineTest.java[URLPathValidationPipelineTest]: Pipeline execution
-* link:../../../src/test/java/de/cuioss/http/security/pipeline/URLParameterValidationPipelineTest.java[URLParameterValidationPipelineTest]: Parameter flow control
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/URLPathValidationPipelineTest.java[URLPathValidationPipelineTest]: Pipeline execution
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/URLParameterValidationPipelineTest.java[URLParameterValidationPipelineTest]: Parameter flow control
 
 *Status*: ✅ VERIFIED
 
@@ -405,13 +405,13 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 ==== Specifications
 
-* link:../../../src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]: Event tracking by type
-* link:../../../src/main/java/de/cuioss/http/security/core/UrlSecurityFailureType.java[UrlSecurityFailureType]: Event categorization
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]: Event tracking by type
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/core/UrlSecurityFailureType.java[UrlSecurityFailureType]: Event categorization
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/monitoring/SecurityEventCounterTest.java[SecurityEventCounterTest]: Event counting validation
-* link:../../../src/test/java/de/cuioss/http/security/core/UrlSecurityFailureTypeTest.java[UrlSecurityFailureTypeTest]: Failure type enumeration
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/monitoring/SecurityEventCounterTest.java[SecurityEventCounterTest]: Event counting validation
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/core/UrlSecurityFailureTypeTest.java[UrlSecurityFailureTypeTest]: Failure type enumeration
 
 *Status*: ✅ VERIFIED
 
@@ -426,17 +426,17 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 ==== Specifications
 
-* link:../../../src/main/java/de/cuioss/http/security/exceptions/UrlSecurityException.java[UrlSecurityException]: Detailed exception context
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/exceptions/UrlSecurityException.java[UrlSecurityException]: Detailed exception context
 * Failure type
 * Validation type
 * Original input
 * Sanitized input (if available)
 * Detailed error message
-* link:../../../src/main/java/de/cuioss/http/security/monitoring/URLSecurityLogMessages.java[URLSecurityLogMessages]: Structured log messages
+ * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]: Structured event tracking
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/exceptions/UrlSecurityExceptionTest.java[UrlSecurityExceptionTest]: Exception content validation
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/exceptions/UrlSecurityExceptionTest.java[UrlSecurityExceptionTest]: Exception content validation
 * All attack tests verify exception content
 
 *Status*: ✅ VERIFIED
@@ -452,12 +452,11 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 ==== Specifications
 
-* link:../../../src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]: Event generation and tracking
-* link:../../../src/main/java/de/cuioss/http/security/monitoring/URLSecurityLogMessages.java[URLSecurityLogMessages]: Log message generation
+ * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]: Event generation and tracking
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/monitoring/SecurityEventCounterTest.java[SecurityEventCounterTest]: Event generation validation
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/monitoring/SecurityEventCounterTest.java[SecurityEventCounterTest]: Event generation validation
 * All attack tests verify events are generated
 
 *Status*: ✅ VERIFIED
@@ -474,20 +473,20 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 ==== Specifications
 
 * All validation stages implement input validation:
-* link:../../../src/main/java/de/cuioss/http/security/validation/LengthValidationStage.java[LengthValidationStage]
-* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage]
-* link:../../../src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage]
-* link:../../../src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]
-* link:../../../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage]
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/LengthValidationStage.java[LengthValidationStage]
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage]
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage]
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage]
 
 ==== Unit Tests
 
 * All validation stage tests:
-* link:../../../src/test/java/de/cuioss/http/security/validation/LengthValidationStageTest.java[LengthValidationStageTest]
-* link:../../../src/test/java/de/cuioss/http/security/validation/CharacterValidationStageTest.java[CharacterValidationStageTest]
-* link:../../../src/test/java/de/cuioss/http/security/validation/DecodingStageTest.java[DecodingStageTest]
-* link:../../../src/test/java/de/cuioss/http/security/validation/NormalizationStageTest.java[NormalizationStageTest]
-* link:../../../src/test/java/de/cuioss/http/security/validation/PatternMatchingStageTest.java[PatternMatchingStageTest]
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/LengthValidationStageTest.java[LengthValidationStageTest]
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/CharacterValidationStageTest.java[CharacterValidationStageTest]
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/DecodingStageTest.java[DecodingStageTest]
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/NormalizationStageTest.java[NormalizationStageTest]
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/PatternMatchingStageTest.java[PatternMatchingStageTest]
 
 *Status*: ✅ VERIFIED
 
@@ -504,13 +503,13 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 ==== Specifications
 
-* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage]: Blocks malicious characters
-* link:../../../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage]: Detects attack patterns
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage]: Blocks malicious characters
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage]: Detects attack patterns
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/validation/CharacterValidationStageTest.java[CharacterValidationStageTest]
-* link:../../../src/test/java/de/cuioss/http/security/validation/PatternMatchingStageTest.java[PatternMatchingStageTest]
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/CharacterValidationStageTest.java[CharacterValidationStageTest]
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/PatternMatchingStageTest.java[PatternMatchingStageTest]
 * All attack database tests
 
 *Status*: ✅ VERIFIED
@@ -530,10 +529,10 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/tests/ApacheCVEAttackDatabaseTest.java[ApacheCVEAttackDatabaseTest]: Apache CVEs
-* link:../../../src/test/java/de/cuioss/http/security/tests/IISCVEAttackDatabaseTest.java[IISCVEAttackDatabaseTest]: IIS CVEs
-* link:../../../src/test/java/de/cuioss/http/security/tests/NginxCVEAttackDatabaseTest.java[NginxCVEAttackDatabaseTest]: Nginx CVEs
-* link:../../../src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]: References CVE-2019-5418, CVE-2018-1000671, CVE-2020-5398
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/ApacheCVEAttackDatabaseTest.java[ApacheCVEAttackDatabaseTest]: Apache CVEs
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/IISCVEAttackDatabaseTest.java[IISCVEAttackDatabaseTest]: IIS CVEs
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/NginxCVEAttackDatabaseTest.java[NginxCVEAttackDatabaseTest]: Nginx CVEs
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]: References CVE-2019-5418, CVE-2018-1000671, CVE-2020-5398
 
 *Status*: ✅ VERIFIED
 
@@ -548,14 +547,14 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 ==== Specifications
 
-* link:../../../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline]: Header security
-* link:../../../src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest]: Protocol-level attacks (CWE-444)
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline]: Header security
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest]: Protocol-level attacks (CWE-444)
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipelineTest.java[HTTPHeaderValidationPipelineTest]
-* link:../../../src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java[HttpHeaderInjectionAttackTest]
-* link:../../../src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest]
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipelineTest.java[HTTPHeaderValidationPipelineTest]
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java[HttpHeaderInjectionAttackTest]
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest]
 
 *Status*: ✅ VERIFIED
 
@@ -573,7 +572,7 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/generators/AllGeneratorsIntegrationTest.java[AllGeneratorsIntegrationTest]: Generator framework testing
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/generators/AllGeneratorsIntegrationTest.java[AllGeneratorsIntegrationTest]: Generator framework testing
 * All attack database tests demonstrate systematic security testing
 * Test coverage &gt; 80% (enforced by build)
 
@@ -592,13 +591,13 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 ==== Specifications
 
-* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage]: Character filtering
-* link:../../../src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage]: Encoding attack prevention
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage]: Character filtering
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage]: Encoding attack prevention
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/validation/CharacterValidationStageTest.java[CharacterValidationStageTest]
-* link:../../../src/test/java/de/cuioss/http/security/tests/MixedEncodingAttackTest.java[MixedEncodingAttackTest]
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/CharacterValidationStageTest.java[CharacterValidationStageTest]
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/MixedEncodingAttackTest.java[MixedEncodingAttackTest]
 
 *Note*: Full SQL injection prevention requires application-layer validation. HTTP layer provides input sanitization.
 
@@ -615,13 +614,13 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 ==== Specifications
 
-* link:../../../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]: Access control enforcement
-* link:../../../src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]: Canonicalization
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline]: Access control enforcement
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]: Canonicalization
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]: 64+ test cases
-* link:../../../src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest]: Access control bypass patterns
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]: 64+ test cases
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest]: Access control bypass patterns
 * All CVE attack database tests
 
 *Status*: ✅ VERIFIED
@@ -637,13 +636,13 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 ==== Specifications
 
-* link:../../../src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]: Event tracking
-* link:../../../src/main/java/de/cuioss/http/security/monitoring/URLSecurityLogMessages.java[URLSecurityLogMessages]: Structured logging
-* link:../../../src/main/java/de/cuioss/http/security/exceptions/UrlSecurityException.java[UrlSecurityException]: Detailed context
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]: Event tracking
+ * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]: Event tracking and logging
+ * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/exceptions/UrlSecurityException.java[UrlSecurityException]: Detailed context
 
 ==== Unit Tests
 
-* link:../../../src/test/java/de/cuioss/http/security/monitoring/SecurityEventCounterTest.java[SecurityEventCounterTest]
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/monitoring/SecurityEventCounterTest.java[SecurityEventCounterTest]
 * All attack tests verify audit trail generation
 
 *Status*: ✅ VERIFIED

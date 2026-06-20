@@ -77,11 +77,11 @@ Result: __Host- cookie with forbidden Domain attribute
 
 **Implementation:**
 
-* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - ASCII-only validation, whitespace rejection
-* link:../../../src/main/java/de/cuioss/http/security/validation/CookiePrefixValidationStage.java[CookiePrefixValidationStage] - RFC 6265bis prefix validation
-* link:../../../src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.hostPrefix() / securePrefix()] - Factory methods
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - ASCII-only validation, whitespace rejection
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CookiePrefixValidationStage.java[CookiePrefixValidationStage] - RFC 6265bis prefix validation
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.hostPrefix() / securePrefix()] - Factory methods
 
-**Tests:** link:../../../src/test/java/de/cuioss/http/security/validation/CookiePrefixValidationStageTest.java[CookiePrefixValidationStageTest] (36 tests), link:../../../src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest] (50 tests)
+**Tests:** link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/CookiePrefixValidationStageTest.java[CookiePrefixValidationStageTest] (36 tests), link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest] (50 tests)
 
 === 2. Legacy Parsing Exploitation
 
@@ -118,7 +118,7 @@ Legacy parser behavior:
 
 **Scope:** Library validates outgoing cookies; server-side parsing is framework responsibility. Configure Tomcat (`STRICT_SERVLET_COMPLIANCE=true`) or Jetty (`CookieCompliance.RFC6265`) to disable legacy RFC 2109 parsing.
 
-**Tests:** link:../../../src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest] (20 tests with link:../../../src/test/java/de/cuioss/http/security/generators/cookie/CookieNameLegacyParsingGenerator.java[CookieNameLegacyParsingGenerator])
+**Tests:** link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest] (20 tests with link:../../../cui-http-core/src/test/java/de/cuioss/http/security/generators/cookie/CookieNameLegacyParsingGenerator.java[CookieNameLegacyParsingGenerator])
 
 === 3. Server-Side Cookie Name Normalization
 
@@ -148,12 +148,12 @@ Result: __Host- cookie with forbidden Domain attribute bypasses validation
 
 **Implementation:**
 
-* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - ASCII-only validation
-* link:../../../src/main/java/de/cuioss/http/security/validation/CookiePrefixValidationStage.java[CookiePrefixValidationStage] - Whitespace rejection before prefix validation
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - ASCII-only validation
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CookiePrefixValidationStage.java[CookiePrefixValidationStage] - Whitespace rejection before prefix validation
 
 **Tests:**
 
-link:../../../src/test/java/de/cuioss/http/security/validation/CookiePrefixValidationStageTest.java[CookiePrefixValidationStageTest], link:../../../src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest] (40 tests with link:../../../src/test/java/de/cuioss/http/security/generators/cookie/CookieNameAsciiWhitespaceGenerator.java[CookieNameAsciiWhitespaceGenerator])
+link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/CookiePrefixValidationStageTest.java[CookiePrefixValidationStageTest], link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest] (40 tests with link:../../../cui-http-core/src/test/java/de/cuioss/http/security/generators/cookie/CookieNameAsciiWhitespaceGenerator.java[CookieNameAsciiWhitespaceGenerator])
 
 === 4. Domain Attribute Validation
 
@@ -177,11 +177,11 @@ Result: __Host- cookie with forbidden Domain attribute accepted by server
 
 **Implementation:**
 
-* link:../../../src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie] - Data structure with getDomain(), getPath(), isSecure()
-* link:../../../src/main/java/de/cuioss/http/security/validation/CookiePrefixValidationStage.java[CookiePrefixValidationStage] - Validates `__Host-` has no Domain, Path=/, Secure; `__Secure-` has Secure
-* link:../../../src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.hostPrefix() / securePrefix()] - Factory methods
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie] - Data structure with getDomain(), getPath(), isSecure()
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CookiePrefixValidationStage.java[CookiePrefixValidationStage] - Validates `__Host-` has no Domain, Path=/, Secure; `__Secure-` has Secure
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.hostPrefix() / securePrefix()] - Factory methods
 
-**Tests:** link:../../../src/test/java/de/cuioss/http/security/validation/CookiePrefixValidationStageTest.java[CookiePrefixValidationStageTest] (36 tests), link:../../../src/test/java/de/cuioss/http/security/data/CookieTest.java[CookieTest] (factory method tests)
+**Tests:** link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/CookiePrefixValidationStageTest.java[CookiePrefixValidationStageTest] (36 tests), link:../../../cui-http-core/src/test/java/de/cuioss/http/security/data/CookieTest.java[CookieTest] (factory method tests)
 
 === 5. Path Attribute Validation
 
@@ -205,9 +205,9 @@ Result: __Host- cookie with restricted path accepted by server
 
 **Implementation:**
 
-* link:../../../src/main/java/de/cuioss/http/security/validation/CookiePrefixValidationStage.java[CookiePrefixValidationStage] - Validates `__Host-` cookies have Path=/
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CookiePrefixValidationStage.java[CookiePrefixValidationStage] - Validates `__Host-` cookies have Path=/
 
-**Tests:** link:../../../src/test/java/de/cuioss/http/security/validation/CookiePrefixValidationStageTest.java[CookiePrefixValidationStageTest]
+**Tests:** link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/CookiePrefixValidationStageTest.java[CookiePrefixValidationStageTest]
 
 == Attack Pattern Database
 
@@ -284,7 +284,7 @@ Cookie: "$Version=1,__Secure-session=attack;"
 
 The cui-http library now provides comprehensive cookie prefix validation and secure cookie creation:
 
-1. ✓ Cookie prefix validation fully implemented (link:../../../src/main/java/de/cuioss/http/security/validation/CookiePrefixValidationStage.java[CookiePrefixValidationStage])
+1. ✓ Cookie prefix validation fully implemented (link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CookiePrefixValidationStage.java[CookiePrefixValidationStage])
 2. ✓ `__Host-` prefix requirements enforced (no Domain, Path=/, Secure)
 3. ✓ `__Secure-` prefix requirements enforced (Secure attribute)
 4. ✓ Factory methods for creating RFC-compliant cookies
@@ -295,22 +295,22 @@ The cui-http library now provides comprehensive cookie prefix validation and sec
 
 ==== Completed Library Enhancements ✓
 
-1. **Cookie Prefix Validator:** link:../../../src/main/java/de/cuioss/http/security/validation/CookiePrefixValidationStage.java[CookiePrefixValidationStage] - RFC 6265bis validation for `__Host-` and `__Secure-` prefixes
+1. **Cookie Prefix Validator:** link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CookiePrefixValidationStage.java[CookiePrefixValidationStage] - RFC 6265bis validation for `__Host-` and `__Secure-` prefixes
 
-2. **Enhanced Character Validation:** link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - ASCII-only enforcement, whitespace rejection
+2. **Enhanced Character Validation:** link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - ASCII-only enforcement, whitespace rejection
 
-3. **Cookie Factory Methods:** link:../../../src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.hostPrefix()] and link:../../../src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.securePrefix()] - Create RFC-compliant cookies
+3. **Cookie Factory Methods:** link:../../../cui-http-core/src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.hostPrefix()] and link:../../../cui-http-core/src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.securePrefix()] - Create RFC-compliant cookies
 
 4. **Test Coverage:** 246 tests total
-   * link:../../../src/test/java/de/cuioss/http/security/validation/CookiePrefixValidationStageTest.java[CookiePrefixValidationStageTest] (36 tests)
-   * link:../../../src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest] (213 tests)
-   * link:../../../src/test/java/de/cuioss/http/security/data/CookieTest.java[CookieTest] (factory method tests)
+   * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/CookiePrefixValidationStageTest.java[CookiePrefixValidationStageTest] (36 tests)
+   * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest] (213 tests)
+   * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/data/CookieTest.java[CookieTest] (factory method tests)
 
 ==== Usage Guide for Library Users
 
-1. **Cookie Prefix Validation:** See link:../../../src/main/java/de/cuioss/http/security/validation/CookiePrefixValidationStage.java[CookiePrefixValidationStage] - Use `validateCookie(cookie)` or `validate(cookieName)` methods
+1. **Cookie Prefix Validation:** See link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CookiePrefixValidationStage.java[CookiePrefixValidationStage] - Use `validateCookie(cookie)` or `validate(cookieName)` methods
 
-2. **Creating Secure Cookies:** See link:../../../src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.hostPrefix()] and link:../../../src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.securePrefix()] - Factory methods that automatically apply RFC 6265bis compliant attributes
+2. **Creating Secure Cookies:** See link:../../../cui-http-core/src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.hostPrefix()] and link:../../../cui-http-core/src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.securePrefix()] - Factory methods that automatically apply RFC 6265bis compliant attributes
 
 3. **Server Framework Configuration:**
    * Tomcat: Set `STRICT_SERVLET_COMPLIANCE=true`
@@ -323,16 +323,16 @@ The cui-http library now provides comprehensive cookie prefix validation and sec
 
 All recommended test cases have been implemented using parameterized tests with generators:
 
-**Test Class:** link:../../../src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest]
+**Test Class:** link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest]
 
 **Test Generators:**
 
-* link:../../../src/test/java/de/cuioss/http/security/generators/cookie/CookieNameUnicodeWhitespaceGenerator.java[CookieNameUnicodeWhitespaceGenerator] - 13 Unicode whitespace types
-* link:../../../src/test/java/de/cuioss/http/security/generators/cookie/CookieNameZeroWidthGenerator.java[CookieNameZeroWidthGenerator] - 4 zero-width character types
-* link:../../../src/test/java/de/cuioss/http/security/generators/cookie/CookieNameAsciiWhitespaceGenerator.java[CookieNameAsciiWhitespaceGenerator] - ASCII whitespace patterns
-* link:../../../src/test/java/de/cuioss/http/security/generators/cookie/CookieNameLegacyParsingGenerator.java[CookieNameLegacyParsingGenerator] - Legacy parsing triggers
-* link:../../../src/test/java/de/cuioss/http/security/generators/cookie/ValidCookieGenerator.java[ValidCookieGenerator] - Valid cookie patterns
-* link:../../../src/test/java/de/cuioss/http/security/generators/cookie/AttackCookieGenerator.java[AttackCookieGenerator] - General attack patterns
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/generators/cookie/CookieNameUnicodeWhitespaceGenerator.java[CookieNameUnicodeWhitespaceGenerator] - 13 Unicode whitespace types
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/generators/cookie/CookieNameZeroWidthGenerator.java[CookieNameZeroWidthGenerator] - 4 zero-width character types
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/generators/cookie/CookieNameAsciiWhitespaceGenerator.java[CookieNameAsciiWhitespaceGenerator] - ASCII whitespace patterns
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/generators/cookie/CookieNameLegacyParsingGenerator.java[CookieNameLegacyParsingGenerator] - Legacy parsing triggers
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/generators/cookie/ValidCookieGenerator.java[ValidCookieGenerator] - Valid cookie patterns
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/generators/cookie/AttackCookieGenerator.java[AttackCookieGenerator] - General attack patterns
 
 **Test Coverage (213 total test cases):**
 
@@ -383,16 +383,16 @@ All recommended test cases have been implemented using parameterized tests with 
 
 **Core Implementation:**
 
-* link:../../../src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie] - Data structure with attribute parsing
-* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - ASCII-only, whitespace rejection
-* link:../../../src/main/java/de/cuioss/http/security/validation/CookiePrefixValidationStage.java[CookiePrefixValidationStage] - RFC 6265bis prefix validation
-* link:../../../src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.hostPrefix() / securePrefix()] - Factory methods
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie] - Data structure with attribute parsing
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - ASCII-only, whitespace rejection
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CookiePrefixValidationStage.java[CookiePrefixValidationStage] - RFC 6265bis prefix validation
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.hostPrefix() / securePrefix()] - Factory methods
 
 **Test Coverage (246 total):**
 
-* link:../../../src/test/java/de/cuioss/http/security/validation/CookiePrefixValidationStageTest.java[CookiePrefixValidationStageTest] - 36 prefix validation tests
-* link:../../../src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest] - 213 attack pattern tests
-* link:../../../src/test/java/de/cuioss/http/security/data/CookieTest.java[CookieTest] - Factory method validation
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/CookiePrefixValidationStageTest.java[CookiePrefixValidationStageTest] - 36 prefix validation tests
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest] - 213 attack pattern tests
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/data/CookieTest.java[CookieTest] - Factory method validation
 
 === Architectural Notes
 

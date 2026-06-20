@@ -70,7 +70,6 @@ See `de.cuioss.http.security.pipeline.URLParameterValidationPipeline`.
 // Create pipeline with configuration
 SecurityConfiguration config = SecurityConfiguration.builder()
     .maxPathLength(2048)
-    .allowPathTraversal(false)
     .build();
 
 SecurityEventCounter counter = new SecurityEventCounter();
@@ -81,7 +80,8 @@ URLPathValidationPipeline pipeline = new URLPathValidationPipeline(
 
 // Validate input
 try {
-    String validated = pipeline.validate("/api/users/123");
+    String validated = pipeline.validate("/api/users/123")
+        .orElseThrow(() -> new UrlSecurityException("Validation returned empty"));
     // Use validated path
 } catch (UrlSecurityException e) {
     log.warn("Security violation: {}", e.getFailureType());
@@ -95,16 +95,17 @@ SecurityConfiguration config = SecurityConfiguration.builder().build();
 SecurityEventCounter counter = new SecurityEventCounter();
 HttpSecurityValidator validator = PipelineFactory.createPipeline(
     ValidationType.URL_PATH, config, counter);
-String validated = validator.validate(userInput);
+String validated = validator.validate(userInput)
+    .orElseThrow(() -> new UrlSecurityException("Validation returned empty"));
 ----
 
 
 == Pipeline Selection Rules
 
-See xref:../doc/http-security/specification/pipeline-architecture-standards.adoc[Pipeline Architecture Standards] for detailed selection criteria.
+See xref:http-security/specification/pipeline-architecture-standards.adoc[Pipeline Architecture Standards] for detailed selection criteria.
 
 == Related Documentation
 
-* xref:../doc/http-security/README.adoc[Complete HTTP Security Documentation]
-* xref:../doc/http-security/specification/specification.adoc[Architecture Specification]
-* xref:../doc/http-security/specification/testing.adoc[Testing Framework]
+* xref:http-security/README.adoc[Complete HTTP Security Documentation]
+* xref:http-security/specification/specification.adoc[Architecture Specification]
+* xref:http-security/specification/testing.adoc[Testing Framework]

@@ -77,6 +77,48 @@ LogMessages Classes:
 |SSL
 |Provided SSL context uses insecure protocol: %s. Creating a secure context instead.
 |Logged when a provided SSL context uses an insecure protocol and is replaced with a secure one. Parameters: insecure protocol name (e.g., TLSv1.0, TLSv1.1, SSLv3).
+
+|HTTP-110
+|Retry
+|Skipping retry for non-idempotent method: %s (idempotentOnly=true)
+|Logged when retry is skipped because the HTTP method is not idempotent and idempotentOnly is enabled. Parameters: HTTP method name.
+
+|HTTP-111
+|Handler
+|%s request failed after %s attempts
+|Logged when all retry attempts are exhausted. Parameters: HTTP method, maximum attempts.
+
+|HTTP-112
+|Handler
+|%s request failed on attempt %s, retrying after %sms
+|Logged when a request fails and a retry is scheduled with backoff. Parameters: HTTP method, failed attempt number, delay in milliseconds.
+
+|HTTP-113
+|Handler
+|Response conversion failed for status %s
+|Logged when converting HTTP response content fails. Parameters: HTTP status code.
+
+|HTTP-114
+|Handler
+|Network error during %s request: %s
+|Logged when a network error occurs during an HTTP request. Parameters: HTTP method, error message.
+|===
+
+== ERROR Level (200-299)
+
+[cols="1,2,3,3", options="header"]
+|===
+|ID |Component |Message |Description
+
+|HTTP-200
+|Handler
+|Configuration error during %s request: %s
+|Logged when a configuration error prevents an HTTP request from being executed. Parameters: HTTP method, error message.
+
+|HTTP-201
+|Handler
+|Failed to build HTTP request for %s: %s
+|Logged when building an HTTP request fails. Parameters: URL, error message.
 |===
 
 == Notes

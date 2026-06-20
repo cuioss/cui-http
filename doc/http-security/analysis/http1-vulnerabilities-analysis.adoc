@@ -60,9 +60,9 @@ G
 
 **Application-Layer Protection:**
 
-* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - Detects CRLF injection patterns (`%0d%0a`)
-* link:../../../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] - Validates header values
-* link:../../../src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] - Comprehensive CL.TE test coverage (200+ tests)
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - Detects CRLF injection patterns (`%0d%0a`)
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] - Validates header values
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] - Comprehensive CL.TE test coverage (200+ tests)
 
 **Infrastructure-Layer Responsibility:**
 
@@ -70,7 +70,7 @@ G
 * Content-Length vs Transfer-Encoding conflict resolution
 * Request boundary determination
 
-**Tests:** link:../../../src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] (25 CL.TE-specific tests using link:../../../src/test/java/de/cuioss/http/security/generators/injection/HttpRequestSmugglingAttackGenerator.java[HttpRequestSmugglingAttackGenerator])
+**Tests:** link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] (25 CL.TE-specific tests using link:../../../cui-http-core/src/test/java/de/cuioss/http/security/generators/injection/HttpRequestSmugglingAttackGenerator.java[HttpRequestSmugglingAttackGenerator])
 
 === 2. TE.CL Request Smuggling
 
@@ -107,8 +107,8 @@ Host: vulnerable.com
 
 **Application-Layer Protection:**
 
-* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - CRLF and control character detection
-* link:../../../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] - Header value validation
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - CRLF and control character detection
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] - Header value validation
 
 **Infrastructure-Layer Responsibility:**
 
@@ -116,7 +116,7 @@ Host: vulnerable.com
 * Transfer-Encoding vs Content-Length priority determination
 * Connection reuse security
 
-**Tests:** link:../../../src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] (25 TE.CL-specific tests)
+**Tests:** link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] (25 TE.CL-specific tests)
 
 === 3. CL.0 Request Smuggling
 
@@ -149,7 +149,7 @@ Host: vulnerable.com
 
 **Application-Layer Protection:**
 
-* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - Detects embedded HTTP verbs and CRLF patterns
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - Detects embedded HTTP verbs and CRLF patterns
 * Existing smuggling tests cover embedded request patterns
 
 **Infrastructure-Layer Responsibility:**
@@ -158,7 +158,7 @@ Host: vulnerable.com
 * Request body handling
 * Connection state management
 
-**Tests:** Covered by general smuggling tests in link:../../../src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest]
+**Tests:** Covered by general smuggling tests in link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest]
 
 === 4. Expect Header Desync Attacks
 
@@ -258,9 +258,9 @@ Front-end ignores obfuscated Transfer-Encoding, back-end processes it.
 
 **Application-Layer Protection:**
 
-* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - Whitespace and control character validation
-* link:../../../src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] - TE.TE smuggling tests cover Transfer-Encoding obfuscation (30 tests)
-* link:../../../src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java[HttpHeaderInjectionAttackTest] - Header injection and CRLF detection
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - Whitespace and control character validation
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] - TE.TE smuggling tests cover Transfer-Encoding obfuscation (30 tests)
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java[HttpHeaderInjectionAttackTest] - Header injection and CRLF detection
 
 **Infrastructure-Layer Responsibility:**
 
@@ -270,8 +270,8 @@ Front-end ignores obfuscated Transfer-Encoding, back-end processes it.
 
 **Tests:**
 
-* link:../../../src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] - TE.TE and CL.CL variants
-* link:../../../src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java[HttpHeaderInjectionAttackTest] - Header manipulation patterns
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] - TE.TE and CL.CL variants
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java[HttpHeaderInjectionAttackTest] - Header manipulation patterns
 
 === 6. Upstream Connection Reuse Vulnerabilities
 
@@ -342,20 +342,20 @@ The cui-http library provides HTTP **component** validation (headers, paths, par
 
 ==== Completed Library Enhancements ✓
 
-1. **HTTP Header Validation:** link:../../../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] - RFC 7230 header validation
+1. **HTTP Header Validation:** link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] - RFC 7230 header validation
 
-2. **Character Validation:** link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - CRLF, control character detection
+2. **Character Validation:** link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - CRLF, control character detection
 
-3. **Pattern Matching:** link:../../../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Attack pattern detection
+3. **Pattern Matching:** link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Attack pattern detection
 
 4. **Test Coverage:** 395+ tests total
-   * link:../../../src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] (200 tests)
-   * link:../../../src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java[HttpHeaderInjectionAttackTest] (195 tests)
+   * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] (200 tests)
+   * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java[HttpHeaderInjectionAttackTest] (195 tests)
    * Generator-based testing with reproducible patterns
 
 ==== Usage Guide for Library Users
 
-1. **Header Validation:** Use link:../../../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] for validating HTTP header values
+1. **Header Validation:** Use link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] for validating HTTP header values
 
 2. **Infrastructure Configuration (Critical):**
    * **Disable upstream connection reuse** for security-critical applications
@@ -478,9 +478,9 @@ Transfer-Encoding: identity
 
 All request smuggling patterns are tested using parameterized tests with generators:
 
-**Test Class:** link:../../../src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest]
+**Test Class:** link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest]
 
-**Test Generator:** link:../../../src/test/java/de/cuioss/http/security/generators/injection/HttpRequestSmugglingAttackGenerator.java[HttpRequestSmugglingAttackGenerator]
+**Test Generator:** link:../../../cui-http-core/src/test/java/de/cuioss/http/security/generators/injection/HttpRequestSmugglingAttackGenerator.java[HttpRequestSmugglingAttackGenerator]
 
 **Test Coverage (200 total test cases):**
 
@@ -575,9 +575,9 @@ All request smuggling patterns are tested using parameterized tests with generat
 
 **Library-Level Protection (Application Layer):**
 
-* link:../../../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] - Header component validation
-* link:../../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - CRLF and control character detection
-* link:../../../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Attack pattern detection
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] - Header component validation
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - CRLF and control character detection
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Attack pattern detection
 * Comprehensive test coverage (395+ tests)
 
 **Infrastructure-Level Protection (Required):**

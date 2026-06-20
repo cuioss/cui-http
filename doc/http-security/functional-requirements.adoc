@@ -259,31 +259,31 @@ The following classes implement the functional requirements:
 
 === Core Implementation Classes
 
-* link:../../src/main/java/de/cuioss/http/security/core/HttpSecurityValidator.java[HttpSecurityValidator] - Core validation interface (HTTP-1, HTTP-3)
-* link:../../src/main/java/de/cuioss/http/security/core/ValidationType.java[ValidationType] - Validation type enumeration (HTTP-1, HTTP-14)
-* link:../../src/main/java/de/cuioss/http/security/exceptions/UrlSecurityException.java[UrlSecurityException] - Security exception handling (HTTP-15)
-* link:../../src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter] - Event tracking (HTTP-16)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/core/HttpSecurityValidator.java[HttpSecurityValidator] - Core validation interface (HTTP-1, HTTP-3)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/core/ValidationType.java[ValidationType] - Validation type enumeration (HTTP-1, HTTP-14)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/exceptions/UrlSecurityException.java[UrlSecurityException] - Security exception handling (HTTP-15)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter] - Event tracking (HTTP-16)
 
 === Validation Stages Implementation
 
-* link:../../src/main/java/de/cuioss/http/security/validation/LengthValidationStage.java[LengthValidationStage] - Length constraints (HTTP-19)
-* link:../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - Character validation (HTTP-10, HTTP-11)
-* link:../../src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage] - Encoding validation (HTTP-9)
-* link:../../src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage] - Path normalization (HTTP-6, HTTP-8)
-* link:../../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Pattern detection (HTTP-7)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/validation/LengthValidationStage.java[LengthValidationStage] - Length constraints (HTTP-19)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - Character validation (HTTP-10, HTTP-11)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage] - Encoding validation (HTTP-9)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage] - Path normalization (HTTP-6, HTTP-8)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Pattern detection (HTTP-7)
 
 === Pipeline Implementation
 
-* link:../../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline] - Path validation pipeline (HTTP-4, HTTP-5)
-* link:../../src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline] - Parameter validation pipeline
-* link:../../src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] - Header validation pipeline
-* link:../../src/main/java/de/cuioss/http/security/pipeline/PipelineFactory.java[PipelineFactory] - Pipeline creation factory
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline] - Path validation pipeline (HTTP-4, HTTP-5)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline] - Parameter validation pipeline
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] - Header validation pipeline
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/PipelineFactory.java[PipelineFactory] - Pipeline creation factory
 
 === Configuration Implementation
 
-* link:../../src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration] - Main configuration (HTTP-13)
-* link:../../src/main/java/de/cuioss/http/security/config/SecurityConfigurationBuilder.java[SecurityConfigurationBuilder] - Configuration builder
-* link:../../src/main/java/de/cuioss/http/security/config/SecurityDefaults.java[SecurityDefaults] - Default security constants
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration] - Main configuration (HTTP-13)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityConfigurationBuilder.java[SecurityConfigurationBuilder] - Configuration builder
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityDefaults.java[SecurityDefaults] - Default security constants
 
 == Traceability Matrix
 

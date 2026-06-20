@@ -57,7 +57,7 @@ All databases implement `AttackDatabase` interface and provide `AttackTestCase` 
 
 == Test Generators
 
-The test artifact includes generators organized by category (body, cookie, encoding, header, injection, url).
+The test artifact includes generators organized by category (cookie, encoding, header, injection, url).
 
 For complete generator architecture and categories, see xref:http-security/specification/testing.adoc[Testing Framework].
 

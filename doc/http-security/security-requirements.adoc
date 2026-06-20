@@ -283,31 +283,31 @@ The following classes implement the security requirements:
 
 === Security Validation Implementation
 
-* link:../../src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage] - Encoding attack prevention (SEC-4, SEC-13)
-* link:../../src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage] - Canonicalization security (SEC-5)
-* link:../../src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Attack pattern detection (SEC-3, SEC-12)
-* link:../../src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - Input validation (SEC-6, SEC-7)
-* link:../../src/main/java/de/cuioss/http/security/validation/LengthValidationStage.java[LengthValidationStage] - DoS prevention (SEC-9, SEC-10)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage] - Encoding attack prevention (SEC-4, SEC-13)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage] - Canonicalization security (SEC-5)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Attack pattern detection (SEC-3, SEC-12)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - Input validation (SEC-6, SEC-7)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/validation/LengthValidationStage.java[LengthValidationStage] - DoS prevention (SEC-9, SEC-10)
 
 === Security Monitoring Implementation
 
-* link:../../src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter] - Event tracking and attack recognition (SEC-11, SEC-12, SEC-15)
-* link:../../src/main/java/de/cuioss/http/security/monitoring/URLSecurityLogMessages.java[URLSecurityLogMessages] - Security logging (SEC-11)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter] - Event tracking and attack recognition (SEC-11, SEC-12, SEC-15)
+ * link:../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter] - Security event logging (SEC-11)
 
 === Security Configuration Implementation
 
-* link:../../src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration] - Secure defaults (SEC-14, SEC-18)
-* link:../../src/main/java/de/cuioss/http/security/config/SecurityDefaults.java[SecurityDefaults] - OWASP-compliant defaults (SEC-1, SEC-2, SEC-14)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration] - Secure defaults (SEC-14, SEC-18)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityDefaults.java[SecurityDefaults] - OWASP-compliant defaults (SEC-1, SEC-2, SEC-14)
 
 === Security Pipeline Implementation
 
-* link:../../src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline] - Path security enforcement (SEC-3, SEC-5)
-* link:../../src/main/java/de/cuioss/http/security/pipeline/PipelineFactory.java[PipelineFactory] - API security (SEC-17)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline] - Path security enforcement (SEC-3, SEC-5)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/PipelineFactory.java[PipelineFactory] - API security (SEC-17)
 
 === Security Testing Implementation
 
-* link:../../src/test/java/de/cuioss/http/security/tests/[Security Test Suite] - Security testing support (SEC-16)
-* link:../../src/test/java/de/cuioss/http/security/database/[Attack Databases] - Attack pattern configuration (SEC-18)
+* link:../../cui-http-core/src/test/java/de/cuioss/http/security/tests/[Security Test Suite] - Security testing support (SEC-16)
+* link:../../cui-http-core/src/test/java/de/cuioss/http/security/database/[Attack Databases] - Attack pattern configuration (SEC-18)
 
 == Traceability Matrix
 

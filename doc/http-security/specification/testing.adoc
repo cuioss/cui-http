@@ -44,9 +44,6 @@ src/test/java/de/cuioss/http/security/
 ├── generators/                              # Test data generators (organized by type)
 │   ├── AllGeneratorsIntegrationTest.java   # Generator integration tests
 │   ├── SupportedValidationTypeGenerator.java
-│   ├── body/                               # Note: HTTP body validation has been eliminated
-│   │   ├── HTTPBodyGenerator.java          # (Deprecated - no longer used)
-│   │   └── ValidHTTPBodyContentGenerator.java  # (Deprecated - no longer used)
 │   ├── cookie/                             # Cookie generators
 │   │   ├── AttackCookieGenerator.java
 │   │   └── ValidCookieGenerator.java
@@ -140,7 +137,7 @@ package de.cuioss.http.security.attacks;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
-import de.cuioss.test.generator.junit.TypeGeneratorSource;
+import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -152,17 +149,18 @@ public class PathTraversalAttackTest {
     private final HttpSecurityValidator validator = createValidator();
 
     private HttpSecurityValidator createValidator() {
-        // Create a path validation pipeline for testing
-        return PipelineFactory.createPipeline(ValidationType.URL_PATH);
+        var config = SecurityConfiguration.defaults();
+        var counter = new SecurityEventCounter();
+        return PipelineFactory.createPipeline(ValidationType.URL_PATH, config, counter);
     }
     
     @ParameterizedTest(name = "T1: Path traversal [{index}]: {0}")
-    @TypeGeneratorSource(value = PathTraversalGenerator.class, count = 100)
+    @TypeGeneratorSource(value = PathTraversalURLGenerator.class, count = 100)
     void testBasicPathTraversal_T1(String attack) {
         // T1: Basic path traversal patterns from generator
         UrlSecurityException exception = assertThrows(
             UrlSecurityException.class, 
-            () -> validator.execute(attack),
+            () -> validator.validate(attack),
             "Failed to detect path traversal: " + attack
         );
         
@@ -180,7 +178,7 @@ public class PathTraversalAttackTest {
         // T2: URL-encoded path traversal - caught early at character validation
         UrlSecurityException exception = assertThrows(
             UrlSecurityException.class, 
-            () -> validator.execute(encoded)
+            () -> validator.validate(encoded)
         );
         
         // Should be caught at character validation or as encoding issue
@@ -197,7 +195,7 @@ public class PathTraversalAttackTest {
         // T3: Unicode-based path traversal
         UrlSecurityException exception = assertThrows(
             UrlSecurityException.class, 
-            () -> validator.execute(unicode)
+            () -> validator.validate(unicode)
         );
         
         // Should detect unicode attacks
@@ -215,7 +213,7 @@ public class PathTraversalAttackTest {
         // BoundaryFuzzingGenerator includes null byte patterns
         UrlSecurityException exception = assertThrows(
             UrlSecurityException.class, 
-            () -> validator.execute(nullByteAttack)
+            () -> validator.validate(nullByteAttack)
         );
         
         // Must be caught as appropriate security issue
@@ -235,74 +233,60 @@ public class PathTraversalAttackTest {
 
 === Database Structure
 
+Attack databases implement the `AttackDatabase` interface providing curated collections of security test cases:
+
+* `ApacheCVEAttackDatabase` - Apache HTTP Server and Tomcat CVE exploits
+* `IISCVEAttackDatabase` - Microsoft IIS and Windows vulnerabilities
+* `NginxCVEAttackDatabase` - Nginx server CVE patterns
+* `OWASPTop10AttackDatabase` - OWASP Top 10 2021 attack vectors
+* `ModSecurityCRSAttackDatabase` - ModSecurity Core Rule Set patterns
+* `OWASPZAPAttackDatabase` - OWASP ZAP scanner patterns
+* `HomographAttackDatabase` - Unicode homograph attacks
+* `IPv6AttackDatabase` - IPv6-specific patterns
+* `ProtocolHandlerAttackDatabase` - Protocol manipulation attacks
+* `IDNAttackDatabase` - Internationalized Domain Name attacks
+
+Each database provides attack test cases as `AttackTestCase` records with attack string, expected `UrlSecurityFailureType`, description, and detection rationale.
+
+=== Attack Database Usage
+
 [source,java]
 ----
-package de.cuioss.http.security.database;
+import de.cuioss.http.security.database.ApacheCVEAttackDatabase;
+import de.cuioss.http.security.database.AttackTestCase;
 
-/**
- * Central repository of attack patterns.
- */
-public class AttackPatternDatabase {
-    
-    private final Map<String, AttackPattern> patterns = new HashMap<>();
-    
-    public record AttackPattern(
-        String id,
-        String name,
-        String pattern,
-        AttackCategory category,
-        String cveReference,
-        String owaspReference,
-        String description,
-        boolean shouldBlock,
-        String justification
-    ) {}
-    
-    public enum AttackCategory {
-        PATH_TRAVERSAL,
-        ENCODING_BYPASS,
-        UNICODE_ATTACK,
-        INJECTION,
-        HTTP_SMUGGLING,
-        DOS_ATTACK,
-        PROTOCOL_ABUSE
-    }
-    
-    public AttackPatternDatabase() {
-        loadCVEPatterns();
-        loadOWASPPatterns();
-        loadModSecurityPatterns();
-    }
-    
-    private void loadCVEPatterns() {
-        // CVE-2021-41773: Apache path traversal
-        patterns.put("CVE-2021-41773", new AttackPattern(
-            "CVE-2021-41773",
-            "Apache Path Traversal",
-            "/.%2e/",
-            AttackCategory.PATH_TRAVERSAL,
-            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-41773",
-            "CWE-22",
-            "Apache HTTP Server 2.4.49 path traversal",
-            true,
-            "Known critical vulnerability allowing directory traversal"
-        ));
-        
-        // CVE-2021-42013: Apache double encoding
-        patterns.put("CVE-2021-42013", new AttackPattern(
-            "CVE-2021-42013",
-            "Apache Double Encoding",
-            "%%32%65",
-            AttackCategory.ENCODING_BYPASS,
-            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-42013",
-            "CWE-22",
-            "Apache HTTP Server double encoding bypass",
-            true,
-            "Double encoding bypass of CVE-2021-41773 fix"
-        ));
-        
-        // More CVE patterns loaded from database...
-    }
+@ParameterizedTest
+@MethodSource("apacheCVEAttacks")
+void shouldDetectApacheCVEs(AttackTestCase testCase) {
+    UrlSecurityException exception = assertThrows(
+        UrlSecurityException.class,
+        () -> pathValidator.validate(testCase.attackString())
+    );
+    assertEquals(testCase.expectedFailureType(), exception.getFailureType());
+}
+
+static Stream<AttackTestCase> apacheCVEAttacks() {
+    return StreamSupport.stream(
+        new ApacheCVEAttackDatabase().getAttackTestCases().spliterator(),
+        false
+    );
+}
+----
+
+=== Using ArgumentsProvider
+
+Each database includes a nested `ArgumentsProvider` for cleaner test declarations:
+
+[source,java]
+----
+@ParameterizedTest
+@ArgumentsSource(ApacheCVEAttackDatabase.ArgumentsProvider.class)
+void shouldRejectApacheCVEs(AttackTestCase testCase) {
+    UrlSecurityException exception = assertThrows(
+        UrlSecurityException.class,
+        () -> pathValidator.validate(testCase.attackString())
+    );
+    assertEquals(testCase.expectedFailureType(), exception.getFailureType());
 }
 ----
 
@@ -412,19 +396,18 @@ public class PerformanceValidationBenchmark {
     @Setup(Level.Trial)
     public void setupBenchmark() {
         // Setup configuration
-        UrlSecurityConfig baseConfig = UrlSecurityConfig.builder()
+        var config = SecurityConfiguration.builder()
             .maxPathLength(2048)
-            .maxDirectoryDepth(10)
             .build();
         
-        SecurityEventCounter eventCounter = new SecurityEventCounter();
+        var eventCounter = new SecurityEventCounter();
         
-        // Create validators for different types
-        pathValidator = createPathValidator(baseConfig, eventCounter);
-        paramNameValidator = createParameterNameValidator(baseConfig, eventCounter);
-        paramValueValidator = createParameterValueValidator(baseConfig, eventCounter);
-        headerNameValidator = createHeaderNameValidator(baseConfig, eventCounter);
-        headerValueValidator = createHeaderValueValidator(baseConfig, eventCounter);
+        // Create validators using PipelineFactory
+        pathValidator = PipelineFactory.createUrlPathPipeline(config, eventCounter);
+        paramNameValidator = PipelineFactory.createParameterNamePipeline(config, eventCounter);
+        paramValueValidator = PipelineFactory.createUrlParameterPipeline(config, eventCounter);
+        headerNameValidator = PipelineFactory.createHeaderNamePipeline(config, eventCounter);
+        headerValueValidator = PipelineFactory.createHeaderValuePipeline(config, eventCounter);
         
         // Setup generators
         attackGen = new PathTraversalGenerator();
@@ -523,30 +506,14 @@ public class PerformanceValidationBenchmark {
         }
     }
     
-    private HttpSecurityValidator createPathValidator(UrlSecurityConfig baseConfig, SecurityEventCounter eventCounter) {
-        ConfigStageProvider pathConfig = new URLPathConfig(baseConfig);
-        return new UnifiedValidationPipeline(pathConfig, eventCounter);
-    }
-    
-    private HttpSecurityValidator createParameterNameValidator(UrlSecurityConfig baseConfig, SecurityEventCounter eventCounter) {
-        ConfigStageProvider paramNameConfig = new URLParameterNameConfig(baseConfig);
-        return new UnifiedValidationPipeline(paramNameConfig, eventCounter);
-    }
-    
-    private HttpSecurityValidator createParameterValueValidator(UrlSecurityConfig baseConfig, SecurityEventCounter eventCounter) {
-        ConfigStageProvider paramValueConfig = new URLParameterValueConfig(baseConfig);
-        return new UnifiedValidationPipeline(paramValueConfig, eventCounter);
-    }
-    
-    private HttpSecurityValidator createHeaderNameValidator(UrlSecurityConfig baseConfig, SecurityEventCounter eventCounter) {
-        ConfigStageProvider headerNameConfig = new HTTPHeaderNameConfig(baseConfig);
-        return new UnifiedValidationPipeline(headerNameConfig, eventCounter);
-    }
-    
-    private HttpSecurityValidator createHeaderValueValidator(UrlSecurityConfig baseConfig, SecurityEventCounter eventCounter) {
-        ConfigStageProvider headerValueConfig = new HTTPHeaderValueConfig(baseConfig);
-        return new UnifiedValidationPipeline(headerValueConfig, eventCounter);
-    }
+    // PipelineFactory static methods used directly in setupBenchmark()
+    // Available factory methods:
+    //   PipelineFactory.createUrlPathPipeline(config, eventCounter)
+    //   PipelineFactory.createParameterNamePipeline(config, eventCounter)
+    //   PipelineFactory.createUrlParameterPipeline(config, eventCounter)
+    //   PipelineFactory.createHeaderNamePipeline(config, eventCounter)
+    //   PipelineFactory.createHeaderValuePipeline(config, eventCounter)
+    //   PipelineFactory.createPipeline(ValidationType, config, eventCounter)
     
     /**
      * Main method for running benchmarks standalone
@@ -619,7 +586,7 @@ Add to GitHub Actions or Jenkins:
 
 === Security Coverage Metrics
 
-1. **Attack Pattern Coverage**: 100% of patterns in AttackPatternDatabase
+1. **Attack Pattern Coverage**: 100% of patterns in attack databases
 2. **CVE Coverage**: All relevant CVEs from 2020-2024
 3. **OWASP Coverage**: Complete OWASP Top 10 2021
 4. **Encoding Coverage**: All encoding combinations up to 3 levels
@@ -651,89 +618,36 @@ Add to GitHub Actions or Jenkins:
 
 == Generator Usage Guidelines
 
-=== Custom Test Annotations
+=== Generator-based Parameterized Tests
+
+The framework uses `@TypeGeneratorSource` from `cui-test-generator` for parameterized tests:
 
 [source,java]
 ----
-package de.cuioss.http.security.testing;
+@EnableGeneratorController
+class SecurityValidationTest {
 
-import org.junit.jupiter.params.provider.ArgumentsSource;
-import java.lang.annotation.*;
+    private final HttpSecurityValidator pathValidator =
+        PipelineFactory.createUrlPathPipeline(
+            SecurityConfiguration.defaults(),
+            new SecurityEventCounter());
 
-/**
- * Custom annotation for generator-based tests.
- * Automatically provides test data from all security generators.
- */
-@Target({ElementType.METHOD})
-@Retention(RetentionPolicy.RUNTIME)
-@ArgumentsSource(GeneratorsArgumentsProvider.class)
-@Documented
-public @interface GeneratorsSource {
-    /**
-     * Which generator types to use
-     */
-    GeneratorType[] value() default {
-        GeneratorType.PATH_TRAVERSAL,
-        GeneratorType.ENCODING,
-        GeneratorType.UNICODE,
-        GeneratorType.BOUNDARY
-    };
-    
-    /**
-     * Number of test cases to generate per generator
-     */
-    int limit() default 100;
-}
-
-public enum GeneratorType {
-    PATH_TRAVERSAL,
-    ENCODING,
-    UNICODE,
-    BOUNDARY,
-    VALID_URL,
-    INVALID_URL,
-    PARAMETER_NAME,
-    PARAMETER_VALUE,
-    COOKIE,
-    HTTP_BODY
-}
-
-/**
- * ArgumentsProvider for @GeneratorsSource annotation.
- */
-public class GeneratorsArgumentsProvider implements ArgumentsProvider {
-    @Override
-    public Stream<? extends Arguments> provideArguments(ExtensionContext context) {
-        GeneratorsSource annotation = context.getRequiredTestMethod()
-            .getAnnotation(GeneratorsSource.class);
-        
-        List<Stream<Arguments>> streams = new ArrayList<>();
-        
-        for (GeneratorType type : annotation.value()) {
-            TypedGenerator<String> generator = createGenerator(type);
-            Stream<Arguments> stream = Stream.generate(() -> 
-                Arguments.of(generator.next(), type.name())
-            ).limit(annotation.limit());
-            streams.add(stream);
-        }
-        
-        // Combine all streams
-        return streams.stream().flatMap(Function.identity());
+    @ParameterizedTest(name = "Valid path [{index}]: {0}")
+    @TypeGeneratorSource(value = ValidURLPathGenerator.class, count = 10)
+    void shouldAcceptValidPaths(String validPath) {
+        Optional<String> result = pathValidator.validate(validPath);
+        assertTrue(result.isPresent(), "Valid path should pass: " + validPath);
     }
-    
-    private TypedGenerator<String> createGenerator(GeneratorType type) {
-        return switch (type) {
-            case PATH_TRAVERSAL -> new PathTraversalGenerator();
-            case ENCODING -> new EncodingCombinationGenerator();
-            case UNICODE -> new UnicodeAttackGenerator();
-            case BOUNDARY -> new BoundaryFuzzingGenerator();
-            case VALID_URL -> new ValidURLGenerator();
-            case INVALID_URL -> new InvalidURLGenerator();
-            case PARAMETER_NAME -> new URLParameterNameGenerator();
-            case PARAMETER_VALUE -> new URLParameterValueGenerator();
-            case COOKIE -> new CookieGenerator();
-            case HTTP_BODY -> throw new UnsupportedOperationException("HTTP body validation has been eliminated from the architecture");
-        };
+
+    @ParameterizedTest(name = "Path traversal [{index}]: {0}")
+    @TypeGeneratorSource(value = PathTraversalURLGenerator.class, count = 5)
+    void shouldRejectPathTraversal(String attack) {
+        UrlSecurityException exception = assertThrows(
+            UrlSecurityException.class,
+            () -> pathValidator.validate(attack)
+        );
+        assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
+            exception.getFailureType());
     }
 }
 ----
@@ -746,65 +660,52 @@ public class GeneratorsArgumentsProvider implements ArgumentsProvider {
 
 [source,java]
 ----
-package de.cuioss.http.security.validation;
+import de.cuioss.http.security.core.ValidationType;
+import de.cuioss.http.security.pipeline.PipelineFactory;
 
-/**
- * Tests to ensure ValidationType is properly propagated through the system.
- */
-public class ValidationTypeTest {
-    
+class ValidationTypeTest {
+
+    private final SecurityConfiguration config = SecurityConfiguration.defaults();
+    private final SecurityEventCounter counter = new SecurityEventCounter();
+
     @Test
-    void testValidationTypeInException() {
-        // Create validators for different types
-        UrlSecurityConfig config = UrlSecurityConfig.builder().build();
-        
-        // Test URL_PATH type
-        ConfigStageProvider pathConfig = new URLPathConfig(config);
-        HttpSecurityValidator pathValidator = new UnifiedValidationPipeline(
-            pathConfig, new SecurityEventCounter());
-        
+    void shouldAssociateValidationTypeWithException() {
+        HttpSecurityValidator pathValidator =
+            PipelineFactory.createPipeline(ValidationType.URL_PATH, config, counter);
+
+        UrlSecurityException exception = assertThrows(
+            UrlSecurityException.class,
+            () -> pathValidator.validate("../../../etc/passwd")
+        );
+        assertEquals(ValidationType.URL_PATH, exception.getValidationType());
+    }
+
+    @Test
+    void shouldPreserveValidationTypeAcrossAllPipelines() {
+        var pipelines = PipelineFactory.createCommonPipelines(config, counter);
+
+        HttpSecurityValidator pathValidator = pipelines.urlPathPipeline();
+        HttpSecurityValidator paramValidator = pipelines.urlParameterPipeline();
+        HttpSecurityValidator headerValidator = pipelines.headerNamePipeline();
+
+        // Each pipeline assigns the correct ValidationType on failure
         UrlSecurityException pathException = assertThrows(
             UrlSecurityException.class,
-            () -> pathValidator.execute("../../../etc/passwd")
+            () -> pathValidator.validate("../../../etc/passwd")
         );
         assertEquals(ValidationType.URL_PATH, pathException.getValidationType());
-        
-        // Test PARAMETER_VALUE type
-        ConfigStageProvider paramConfig = new URLParameterValueConfig(config);
-        HttpSecurityValidator paramValidator = new UnifiedValidationPipeline(
-            paramConfig, new SecurityEventCounter());
-        
+
         UrlSecurityException paramException = assertThrows(
             UrlSecurityException.class,
-            () -> paramValidator.execute("<script>alert(1)</script>")
+            () -> paramValidator.validate("<script>alert(1)</script>")
         );
         assertEquals(ValidationType.PARAMETER_VALUE, paramException.getValidationType());
-        
-        // Test HEADER_VALUE type
-        ConfigStageProvider headerConfig = new HTTPHeaderValueConfig(config);
-        HttpSecurityValidator headerValidator = new UnifiedValidationPipeline(
-            headerConfig, new SecurityEventCounter());
-        
+
         UrlSecurityException headerException = assertThrows(
             UrlSecurityException.class,
-            () -> headerValidator.execute("Bearer\\r\\nX-Injected: true")
+            () -> headerValidator.validate("Bearer\r\nX-Injected: true")
         );
-        assertEquals(ValidationType.HEADER_VALUE, headerException.getValidationType());
-    }
-    
-    @Test
-    void testValidationTypeConsistency() {
-        // Ensure ValidationType is consistent across all stages in a pipeline
-        UrlSecurityConfig config = UrlSecurityConfig.builder().build();
-        ConfigStageProvider pathConfig = new URLPathConfig(config);
-        
-        // All stages should report the same ValidationType
-        assertEquals(ValidationType.URL_PATH, pathConfig.getValidationType());
-        for (HttpSecurityValidator stage : pathConfig.getStages()) {
-            if (stage != null) {
-                assertEquals(ValidationType.URL_PATH, stage.getType());
-            }
-        }
+        assertEquals(ValidationType.HEADER_NAME, headerException.getValidationType());
     }
 }
 ----
@@ -826,135 +727,32 @@ import static org.junit.jupiter.api.Assertions.*;
  * Comprehensive security test using all generators.
  */
 @EnableGeneratorController
-public class ComprehensiveSecurityTest {
+class ComprehensiveSecurityTest {
 
-    private static final CuiLogger logger = new CuiLogger(ComprehensiveSecurityTest.class);
-
-    private final HttpSecurityValidator pathValidator = createPathValidator();
-    private final HttpSecurityValidator paramValidator = createParameterValidator();
-    private final HttpSecurityValidator headerValidator = createHeaderValidator();
-    
-    private HttpSecurityValidator createPathValidator() {
-        UrlSecurityConfig baseConfig = UrlSecurityConfig.builder().build();
-        ConfigStageProvider pathConfig = new URLPathConfig(baseConfig);
-        return new UnifiedValidationPipeline(pathConfig, new SecurityEventCounter());
-    }
-    
-    private HttpSecurityValidator createParameterValidator() {
-        UrlSecurityConfig baseConfig = UrlSecurityConfig.builder().build();
-        ConfigStageProvider paramConfig = new URLParameterValueConfig(baseConfig);
-        return new UnifiedValidationPipeline(paramConfig, new SecurityEventCounter());
-    }
-    
-    private HttpSecurityValidator createHeaderValidator() {
-        UrlSecurityConfig baseConfig = UrlSecurityConfig.builder().build();
-        ConfigStageProvider headerConfig = new HTTPHeaderValueConfig(baseConfig);
-        return new UnifiedValidationPipeline(headerConfig, new SecurityEventCounter());
-    }
-
-    private boolean isValidPath(String path) {
-        // Helper method to validate if a path is considered valid
-        // This checks for common invalid patterns
-        return path != null &&
-               !path.isEmpty() &&
-               !path.contains("..") &&
-               !path.contains("\\") &&
-               !path.contains("\0");
-    }
+    private final SecurityConfiguration config = SecurityConfiguration.defaults();
+    private final SecurityEventCounter counter = new SecurityEventCounter();
+    private final HttpSecurityValidator pathValidator =
+        PipelineFactory.createUrlPathPipeline(config, counter);
+    private final HttpSecurityValidator paramValidator =
+        PipelineFactory.createUrlParameterPipeline(config, counter);
+    private final HttpSecurityValidator headerValidator =
+        PipelineFactory.createHeaderValuePipeline(config, counter);
 
     @ParameterizedTest(name = "Attack detection [{index}]: {0}")
-    @CompositeTypeGeneratorSource(
-        generatorClasses = {
-            PathTraversalGenerator.class,
-            EncodingCombinationGenerator.class,
-            UnicodeAttackGenerator.class,
-            BoundaryFuzzingGenerator.class
-        }, 
-        count = 200
-    )
-    void testAllAttackPatterns(String attack) {
-        // All attack patterns should be blocked
+    @TypeGeneratorSource(value = PathTraversalURLGenerator.class, count = 50)
+    void shouldRejectPathTraversal(String attack) {
         UrlSecurityException exception = assertThrows(
             UrlSecurityException.class,
-            () -> pathValidator.execute(attack),
-            "Failed to detect attack: " + attack
+            () -> pathValidator.validate(attack)
         );
-        
-        // Verify ValidationType is properly set
-        assertEquals(ValidationType.URL_PATH, exception.getValidationType(),
-            "Exception should include ValidationType");
-        
-        // Log failure type for analysis
-        logger.debug("Detected {} for attack (type: {}): {}", 
-            exception.getFailureType(), 
-            exception.getValidationType(), attack);
+        assertEquals(ValidationType.URL_PATH, exception.getValidationType());
     }
-    
+
     @ParameterizedTest(name = "Valid URL [{index}]")
-    @TypeGeneratorSource(value = ValidURLGenerator.class, count = 500)
-    void testValidURLs(String validUrl) {
-        // Valid URLs should pass without exception
-        String result = assertDoesNotThrow(
-            () -> pathValidator.execute(validUrl),
-            "False positive for valid URL: " + validUrl
-        );
-        
-        assertNotNull(result);
-        // Result might be normalized but should still be valid
-        assertTrue(isValidPath(result), "Validation result should be a valid path: " + result);
-    }
-    
-    @ParameterizedTest(name = "Parameter validation [{index}]")
-    @TypeGeneratorSource(value = ValidURLGenerator.class, count = 200)
-    void testParameterValidation(String paramValue) {
-        // Test parameter-specific validation
-        // URLParameterValueGenerator creates both attack and valid parameters
-        try {
-            String result = paramValidator.execute(paramValue);
-            // Valid parameter passed
-            assertNotNull(result);
-        } catch (UrlSecurityException e) {
-            // Attack parameter detected - verify it's a known attack type
-            assertTrue(
-                e.getFailureType() == UrlSecurityFailureType.INVALID_CHARACTER ||
-                e.getFailureType() == UrlSecurityFailureType.INVALID_ENCODING ||
-                e.getFailureType() == UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED ||
-                e.getFailureType() == UrlSecurityFailureType.SUSPICIOUS_PATTERN
-            );
-        }
-    }
-    
-    @ParameterizedTest(name = "Boundary fuzzing [{index}]")
-    @TypeGeneratorSource(value = BoundaryFuzzingGenerator.class, count = 100)
-    void testBoundaryConditions(String boundary) {
-        // Boundary conditions should be handled gracefully
-        try {
-            pathValidator.execute(boundary);
-            // If it passes, verify length constraints
-            assertTrue(boundary.length() <= UrlSecurityConfig.DEFAULT_MAX_PATH_LENGTH);
-        } catch (UrlSecurityException e) {
-            // Expected for oversized or malformed inputs
-            assertTrue(
-                e.getFailureType() == UrlSecurityFailureType.PATH_TOO_LONG ||
-                e.getFailureType() == UrlSecurityFailureType.EXCESSIVE_NESTING ||
-                e.getFailureType() == UrlSecurityFailureType.INVALID_CHARACTER
-            );
-        }
-    }
-    
-    @Test
-    void testGeneratorCoverage() {
-        // Verify all generators produce unique patterns
-        Set<String> uniquePatterns = new HashSet<>();
-        PathTraversalGenerator gen = new PathTraversalGenerator();
-        
-        for (int i = 0; i < 1000; i++) {
-            uniquePatterns.add(gen.next());
-        }
-        
-        // Should generate many unique patterns
-        assertTrue(uniquePatterns.size() > 500, 
-            "Generator should produce diverse patterns");
+    @TypeGeneratorSource(value = ValidURLPathGenerator.class, count = 50)
+    void shouldAcceptValidPaths(String validPath) {
+        Optional<String> result = pathValidator.validate(validPath);
+        assertTrue(result.isPresent(), "Valid path should pass: " + validPath);
     }
 }
 ----
@@ -963,206 +761,23 @@ public class ComprehensiveSecurityTest {
 
 1. **Always use TypedGenerator interface** - Ensures type safety
 2. **Use Generator class, never Random** - Maintains determinism  
-3. **Respect configuration limits** - Check DEFAULT_* constants
+3. **Respect configuration limits** - Check constants in `SecurityConfiguration`
 4. **Document attack sources** - Include CVE/OWASP references
-5. **Test generators themselves** - Task G10 validates all generators
-6. **Use @GeneratorsSource** - For comprehensive parameterized testing
+5. **Test generators themselves** - `AllGeneratorsIntegrationTest` validates all generators
+6. **Use @TypeGeneratorSource** - For generator-based parameterized testing
 7. **Combine generators** - Test interaction between different attack types
 8. **Track failure types** - Ensure attacks are caught for the right reasons
-
-=== Additional Test Examples
-
-[source,java]
-----
-/**
- * False positive prevention tests.
- */
-public class FalsePositiveTest {
-
-    private final HttpSecurityValidator validator = createValidator();
-
-    private HttpSecurityValidator createValidator() {
-        // Create a path validation pipeline for testing
-        return PipelineFactory.createPipeline(ValidationType.URL_PATH);
-    }
-    
-    @ParameterizedTest(name = "Valid URLs should pass [{index}]: {0}")
-    @GeneratorsSource(value = GeneratorType.VALID_URL, limit = 500)
-    void testValidURLsNoFalsePositives(String validUrl, String generatorType) {
-        // T31: Legitimate paths should pass validation
-        String result = assertDoesNotThrow(
-            () -> validator.execute(validUrl),
-            "False positive on valid URL: " + validUrl
-        );
-        
-        // Result should be non-null and potentially normalized
-        assertNotNull(result);
-    }
-    
-    @ParameterizedTest(name = "Invalid URLs should fail [{index}]: {0}")
-    @GeneratorsSource(value = GeneratorType.INVALID_URL, limit = 200)
-    void testInvalidURLsDetected(String invalidUrl, String generatorType) {
-        // T32: Malformed URLs should be rejected
-        assertThrows(
-            UrlSecurityException.class,
-            () -> validator.execute(invalidUrl),
-            "Failed to detect invalid URL: " + invalidUrl
-        );
-    }
-}
-
-/**
- * Performance validation tests.
- */
-public class PerformanceValidationTest {
-
-    private final HttpSecurityValidator validator = createValidator();
-
-    private HttpSecurityValidator createValidator() {
-        // Create a path validation pipeline for testing
-        return PipelineFactory.createPipeline(ValidationType.URL_PATH);
-    }
-    
-    @ParameterizedTest(name = "Performance test [{index}]")
-    @GeneratorsSource(value = {
-        GeneratorType.VALID_URL,
-        GeneratorType.PATH_TRAVERSAL,
-        GeneratorType.ENCODING
-    }, limit = 1000)
-    void testPerformanceUnderLoad_T34(String input, String generatorType) {
-        // T34-T36: Verify <1ms performance requirement
-        long startTime = System.nanoTime();
-        
-        try {
-            validator.execute(input);
-        } catch (UrlSecurityException e) {
-            // Expected for attack inputs
-        }
-        
-        long duration = System.nanoTime() - startTime;
-        long durationMs = duration / 1_000_000;
-        
-        // Must complete within 1ms
-        assertTrue(durationMs < 1, 
-            "Validation took " + durationMs + "ms for " + generatorType);
-    }
-}
-
-/**
- * Cookie and HTTP header validation tests.
- * Note: HTTP body validation has been eliminated from the architecture.
- * All URL validation is now handled by URLPathValidationPipeline.
- */
-public class HTTPDataValidationTest {
-
-    private final HttpSecurityValidator cookieValidator = createCookieValidator();
-    private final HttpSecurityValidator headerValidator = createHeaderValidator();
-
-    private HttpSecurityValidator createCookieValidator() {
-        // Create a cookie validation pipeline
-        // Note: This would typically use specialized cookie validation rules
-        return PipelineFactory.createPipeline(ValidationType.HEADER_VALUE);
-    }
-
-    private HttpSecurityValidator createHeaderValidator() {
-        // Create a header validation pipeline
-        return PipelineFactory.createPipeline(ValidationType.HEADER_VALUE);
-    }
-
-    @ParameterizedTest(name = "Cookie validation [{index}]")
-    @GeneratorsSource(value = GeneratorType.COOKIE, limit = 100)
-    void testCookieValidation(String cookieValue, String generatorType) {
-        // CookieGenerator creates both valid and attack cookies
-        try {
-            String result = cookieValidator.execute(cookieValue);
-            // Valid cookie
-            assertNotNull(result);
-        } catch (UrlSecurityException e) {
-            // Attack cookie detected
-            assertNotNull(e.getFailureType());
-        }
-    }
-    
-    @ParameterizedTest(name = "HTTP header validation [{index}]")
-    @GeneratorsSource(value = GeneratorType.HTTP_HEADER, limit = 100)
-    void testHTTPHeaderValidation(String headerValue, String generatorType) {
-        // HTTPHeaderGenerator creates various header content types
-        try {
-            String result = headerValidator.execute(headerValue);
-            // Valid header content
-            assertNotNull(result);
-        } catch (UrlSecurityException e) {
-            // Malicious header content detected
-            assertNotNull(e.getFailureType());
-        }
-    }
-}
-
-/**
- * Combined attack tests using multiple generators.
- */
-public class CombinedAttackTest {
-
-    private static final CuiLogger logger = new CuiLogger(CombinedAttackTest.class);
-
-    private final HttpSecurityValidator validator = createValidator();
-
-    private HttpSecurityValidator createValidator() {
-        // Create a path validation pipeline for testing
-        return PipelineFactory.createPipeline(ValidationType.URL_PATH);
-    }
-    
-    @ParameterizedTest(name = "Combined attacks [{index}]: {1}")
-    @GeneratorsSource(value = {
-        GeneratorType.PATH_TRAVERSAL,
-        GeneratorType.ENCODING,
-        GeneratorType.UNICODE,
-        GeneratorType.BOUNDARY
-    }, limit = 50)  // 50 each = 200 total tests
-    void testAllAttackTypes(String attack, String generatorType) {
-        // Test that all attack types are properly detected
-        UrlSecurityException exception = assertThrows(
-            UrlSecurityException.class,
-            () -> validator.execute(attack),
-            "Failed to detect " + generatorType + " attack: " + attack
-        );
-        
-        // Track which failure types are triggered by which generators
-        logger.info("Generator: {} -> FailureType: {}", 
-            generatorType, exception.getFailureType());
-    }
-    
-    @ParameterizedTest(name = "Mixed valid/invalid [{index}]: {1}")
-    @GeneratorsSource(value = {
-        GeneratorType.VALID_URL,
-        GeneratorType.INVALID_URL,
-        GeneratorType.PATH_TRAVERSAL
-    }, limit = 33)  // ~100 total tests mixed
-    void testMixedInputs(String input, String generatorType) {
-        // Test mix of valid and invalid inputs
-        boolean isValid = generatorType.equals("VALID_URL");
-        
-        if (isValid) {
-            assertDoesNotThrow(() -> validator.execute(input));
-        } else {
-            assertThrows(UrlSecurityException.class, 
-                () -> validator.execute(input));
-        }
-    }
-}
-----
 
 == Success Criteria
 
 The test harness achieves success when:
 
 1. ✅ **ALL tests pass** - No failures accepted
-2. ✅ All 10 generators (G1-G10) implemented and tested
-3. ✅ All 36 test cases (T1-T36) passing
-4. ✅ 100% of known CVE patterns blocked
-5. ✅ OWASP Top 10 compliance achieved
-6. ✅ <1ms performance for ALL validations
-7. ✅ Zero false positives - valid URLs must pass
-8. ✅ Zero false negatives - all attacks must be detected
-9. ✅ CI/CD integration complete
-10. ✅ Comprehensive reporting available
+2. ✅ All generators implemented and tested
+3. ✅ 100% of known CVE patterns blocked
+4. ✅ OWASP Top 10 compliance achieved
+5. ✅ <1ms performance for ALL validations
+6. ✅ Zero false positives - valid URLs must pass
+7. ✅ Zero false negatives - all attacks must be detected
+8. ✅ CI/CD integration complete
+9. ✅ Comprehensive reporting available
