@@ -686,7 +686,7 @@ class ValidationTypeTest {
 
         HttpSecurityValidator pathValidator = pipelines.urlPathPipeline();
         HttpSecurityValidator paramValidator = pipelines.urlParameterPipeline();
-        HttpSecurityValidator headerValidator = pipelines.headerNamePipeline();
+        HttpSecurityValidator headerValidator = pipelines.headerValuePipeline();
 
         // Each pipeline assigns the correct ValidationType on failure
         UrlSecurityException pathException = assertThrows(
@@ -705,7 +705,7 @@ class ValidationTypeTest {
             UrlSecurityException.class,
             () -> headerValidator.validate("Bearer\r\nX-Injected: true")
         );
-        assertEquals(ValidationType.HEADER_NAME, headerException.getValidationType());
+        assertEquals(ValidationType.HEADER_VALUE, headerException.getValidationType());
     }
 }
 ----

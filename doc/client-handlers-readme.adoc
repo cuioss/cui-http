@@ -34,7 +34,7 @@ Builder-based HTTP client wrapper with automatic SSL context creation for HTTPS.
 * Configurable connection and read timeouts (default: 10 seconds)
 * Thread-safe after construction
 
-===== xref:../cui-http-core/src/main/java/de/cuioss/http/client/adapter/package-info.java[HTTP Adapters (New Architecture)]
+==== xref:../cui-http-core/src/main/java/de/cuioss/http/client/adapter/package-info.java[HTTP Adapters (New Architecture)]
 
 Async-first HTTP client adapters with composable retry and caching.
 
