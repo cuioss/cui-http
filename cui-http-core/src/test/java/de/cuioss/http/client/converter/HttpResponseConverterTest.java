@@ -106,6 +106,14 @@ class HttpResponseConverterTest {
     }
 
     @Test
+    void emptyContentIsValidDefaultsToFalse() {
+        var converter = new TestStringConverter();
+
+        assertFalse(converter.emptyContentIsValid(),
+                "Content-producing converters must treat empty conversion results as failures");
+    }
+
+    @Test
     void convertReturnsEmptyOnNullInput() {
         var converter = new TestStringConverter();
 

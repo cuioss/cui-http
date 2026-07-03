@@ -20,6 +20,7 @@ import de.cuioss.http.client.converter.HttpRequestConverter;
 import de.cuioss.http.client.converter.HttpResponseConverter;
 import de.cuioss.http.client.converter.VoidResponseConverter;
 import de.cuioss.http.client.handler.HttpHandler;
+import de.cuioss.http.client.handler.HttpStatusFamily;
 import de.cuioss.http.client.result.HttpErrorCategory;
 import de.cuioss.http.client.result.HttpResult;
 import de.cuioss.tools.logging.CuiLogger;
@@ -699,7 +700,6 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      * @param cacheKey Cache key for storing new entries
      * @return HttpResult with success or failure status
      */
-    @SuppressWarnings("java:S3655") // owolff: false positive, content is checked
     private HttpResult<T> handleHttpResponse(
             HttpResponse<?> response,
             HttpMethod method,
@@ -722,8 +722,10 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         // Convert response body
         Optional<T> content = responseConverter.convert(response.body());
 
-        // Handle conversion failure
-        if (content.isEmpty() && statusCode >= 200 && statusCode < 300) {
+        // Handle conversion failure. Converters that intentionally produce no content
+        // (e.g. VoidResponseConverter for status-code-only operations) are exempt.
+        if (content.isEmpty() && HttpStatusFamily.isSuccess(statusCode)
+                && !responseConverter.emptyContentIsValid()) {
             LOGGER.warn(WARN.RESPONSE_CONVERSION_FAILED, statusCode);
             return HttpResult.<T>failure(
                     "Failed to convert response body",
@@ -732,21 +734,21 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             );
         }
 
-        // Cache successful GET responses with ETag
-        // Note: content.isPresent() is guaranteed because statusCode 200 with empty content returns early at line 700
-        if (method == HttpMethod.GET && statusCode == 200 && etag != null) {
+        // Cache successful GET responses with ETag (only when content exists;
+        // no-content converters have nothing to cache)
+        if (method == HttpMethod.GET && statusCode == 200 && etag != null && content.isPresent()) {
             CacheEntry<T> newEntry = new CacheEntry<>(content.get(), etag, System.currentTimeMillis());
             putInCache(cacheKey, newEntry);
             LOGGER.debug("Cached GET response with ETag: %s", etag);
         }
 
         // Return success for 2xx status codes
-        if (statusCode >= 200 && statusCode < 300) {
+        if (HttpStatusFamily.isSuccess(statusCode)) {
             return HttpResult.<T>success(content.orElse(null), etag, statusCode);
         }
 
         // Return failure for error status codes
-        HttpErrorCategory errorCategory = categorizeStatusCode(statusCode);
+        HttpErrorCategory errorCategory = HttpStatusFamily.fromStatusCode(statusCode).toErrorCategory();
 
         return HttpResult.<T>failureWithFallback(
                 "HTTP %d: %s".formatted(statusCode, method.methodName()),
@@ -756,23 +758,6 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
                 null, // no cached ETag
                 statusCode // include HTTP status code
         );
-    }
-
-    /**
-     * Categorizes HTTP status code into error category.
-     *
-     * @param statusCode HTTP status code
-     * @return Appropriate error category
-     */
-    private HttpErrorCategory categorizeStatusCode(int statusCode) {
-        if (statusCode >= 400 && statusCode < 500) {
-            return HttpErrorCategory.CLIENT_ERROR;
-        } else if (statusCode >= 500 && statusCode < 600) {
-            return HttpErrorCategory.SERVER_ERROR;
-        } else {
-            // 3xx (other than 304), 1xx, or unknown codes
-            return HttpErrorCategory.INVALID_CONTENT;
-        }
     }
 
     /**

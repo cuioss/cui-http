@@ -192,6 +192,77 @@ class ETagAwareHttpAdapterIntegrationTest {
     }
 
     /**
+     * Test status-code-only adapter: DELETE with 204 must be reported as success
+     * even though VoidResponseConverter never produces content.
+     */
+    @Test
+    @DisplayName("statusCodeOnly DELETE should report 204 as success")
+    @ModuleDispatcher
+    void statusCodeOnlyDeleteShouldReport204AsSuccess(URIBuilder uriBuilder) {
+        dispatcher.withNoContent();
+
+        String serverUrl = uriBuilder.addPathSegments("api", "data", "1").build().toString();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).build();
+
+        HttpAdapter<Void> adapter = ETagAwareHttpAdapter.statusCodeOnly(handler);
+
+        HttpResult<Void> result = adapter.deleteBlocking();
+
+        assertTrue(result.isSuccess(), "204 with Void converter must be success, not INVALID_CONTENT failure");
+        assertEquals(204, result.getHttpStatus().orElse(-1));
+        assertTrue(result.getContent().isEmpty(), "Void result carries no content");
+        assertTrue(result.getErrorCategory().isEmpty(), "Success must not carry an error category");
+    }
+
+    /**
+     * Test status-code-only adapter: HEAD with 200 and ETag must be success with ETag exposed.
+     */
+    @Test
+    @DisplayName("statusCodeOnly HEAD should report 200 as success and expose ETag")
+    @ModuleDispatcher
+    void statusCodeOnlyHeadShouldReport200AsSuccess(URIBuilder uriBuilder) {
+        dispatcher.withSuccessAndETag("", "\"etag-head\"");
+
+        String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).build();
+
+        HttpAdapter<Void> adapter = ETagAwareHttpAdapter.statusCodeOnly(handler);
+
+        HttpResult<Void> result = adapter.headBlocking();
+
+        assertTrue(result.isSuccess(), "200 with Void converter must be success");
+        assertEquals(200, result.getHttpStatus().orElse(-1));
+        assertEquals("\"etag-head\"", result.getETag().orElse(null), "ETag should be exposed");
+    }
+
+    /**
+     * Test status-code-only adapter: GET with 200 and ETag must not fail on the
+     * caching path even though the converter produces no cacheable content.
+     */
+    @Test
+    @DisplayName("statusCodeOnly GET with ETag should succeed without caching")
+    @ModuleDispatcher
+    void statusCodeOnlyGetWithETagShouldSucceedWithoutCaching(URIBuilder uriBuilder) {
+        dispatcher.withSuccessAndETag("ignored-body", "\"etag-get\"");
+
+        String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).build();
+
+        HttpAdapter<Void> adapter = ETagAwareHttpAdapter.statusCodeOnly(handler);
+
+        HttpResult<Void> result = adapter.getBlocking();
+
+        assertTrue(result.isSuccess(), "200 with Void converter must be success");
+        assertEquals(200, result.getHttpStatus().orElse(-1));
+
+        // Second GET must not send If-None-Match (nothing was cached)
+        HttpResult<Void> result2 = adapter.getBlocking();
+        assertTrue(result2.isSuccess());
+        assertFalse(dispatcher.getLastIfNoneMatch().isPresent(),
+                "No If-None-Match expected - Void responses are never cached");
+    }
+
+    /**
      * Test server error: 503 response, returns SERVER_ERROR failure with status code
      */
     @Test
