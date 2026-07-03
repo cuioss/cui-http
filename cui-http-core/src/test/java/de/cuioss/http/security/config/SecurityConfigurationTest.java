@@ -215,6 +215,39 @@ class SecurityConfigurationTest {
         assertThrows(IllegalArgumentException.class, () -> new SecurityConfiguration(
                 4096, false, 128, 2048, 128, 2048, 128, 2048, -1,
                 false, false, true, false, false, false));
+        assertThrows(IllegalArgumentException.class, () -> new SecurityConfiguration(
+                4096, false, 0, 2048, 128, 2048, 128, 2048, 1024,
+                false, false, true, false, false, false));
+        assertThrows(IllegalArgumentException.class, () -> new SecurityConfiguration(
+                4096, false, 128, 0, 128, 2048, 128, 2048, 1024,
+                false, false, true, false, false, false));
+        assertThrows(IllegalArgumentException.class, () -> new SecurityConfiguration(
+                4096, false, 128, 2048, 0, 2048, 128, 2048, 1024,
+                false, false, true, false, false, false));
+        assertThrows(IllegalArgumentException.class, () -> new SecurityConfiguration(
+                4096, false, 128, 2048, 128, 0, 128, 2048, 1024,
+                false, false, true, false, false, false));
+        assertThrows(IllegalArgumentException.class, () -> new SecurityConfiguration(
+                4096, false, 128, 2048, 128, 2048, 0, 2048, 1024,
+                false, false, true, false, false, false));
+        assertThrows(IllegalArgumentException.class, () -> new SecurityConfiguration(
+                4096, false, 128, 2048, 128, 2048, 128, 0, 1024,
+                false, false, true, false, false, false));
+    }
+
+    @Test
+    void configurationAllowingNullBytesShouldNotBeLenient() {
+        // Contract: lenient never permits null bytes
+        SecurityConfiguration withNullBytes = SecurityConfiguration.builder()
+                .allowDoubleEncoding(true)
+                .allowNullBytes(true)
+                .allowControlCharacters(true)
+                .allowExtendedAscii(true)
+                .normalizeUnicode(false)
+                .failOnSuspiciousPatterns(false)
+                .build();
+
+        assertFalse(withNullBytes.isLenient());
     }
 
     @Test

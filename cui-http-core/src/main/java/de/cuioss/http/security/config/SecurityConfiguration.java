@@ -193,6 +193,7 @@ boolean failOnSuspiciousPatterns
      */
     public boolean isLenient() {
         return allowDoubleEncoding &&
+                !allowNullBytes &&
                 allowControlCharacters &&
                 allowExtendedAscii &&
                 !normalizeUnicode &&
