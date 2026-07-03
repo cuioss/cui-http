@@ -26,6 +26,7 @@ import lombok.ToString;
 import org.jspecify.annotations.Nullable;
 
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLParameters;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URI;
@@ -132,7 +133,8 @@ public final class HttpHandler {
     }
 
     // Constructor for HTTPS URIs (SSL context required)
-    private HttpHandler(URI uri, URL url, SSLContext sslContext, int connectionTimeoutSeconds, int readTimeoutSeconds) {
+    private HttpHandler(URI uri, URL url, SSLContext sslContext, String[] enabledProtocols,
+            int connectionTimeoutSeconds, int readTimeoutSeconds) {
         this.uri = uri;
         this.url = url;
         this.sslContext = sslContext;
@@ -140,10 +142,14 @@ public final class HttpHandler {
         this.readTimeoutSeconds = readTimeoutSeconds;
 
         // JDK 11+ HttpClient enables hostname verification by default.
-        // We intentionally omit explicit SSLParameters to preserve caller flexibility.
+        // Pin the enabled TLS protocols so the configured minimum version is a hard
+        // floor on the wire, not merely the context's default protocol object.
+        SSLParameters sslParameters = new SSLParameters();
+        sslParameters.setProtocols(enabledProtocols);
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(connectionTimeoutSeconds))
                 .sslContext(sslContext)
+                .sslParameters(sslParameters)
                 .build();
     }
 
@@ -411,11 +417,13 @@ public final class HttpHandler {
 
             // Use appropriate constructor based on scheme
             if ("https".equalsIgnoreCase(uri.getScheme())) {
-                // For HTTPS, create or validate SSL context
+                // For HTTPS, create or validate SSL context and pin the enabled protocols
                 SecureSSLContextProvider actualSecureSSLContextProvider = secureSSLContextProvider != null ?
                         secureSSLContextProvider : new SecureSSLContextProvider();
                 SSLContext secureContext = actualSecureSSLContextProvider.getOrCreateSecureSSLContext(sslContext);
-                return new HttpHandler(uri, verifiedUrl, secureContext, actualConnectionTimeoutSeconds, actualReadTimeoutSeconds);
+                String[] enabledProtocols = actualSecureSSLContextProvider.getEnabledProtocols();
+                return new HttpHandler(uri, verifiedUrl, secureContext, enabledProtocols,
+                        actualConnectionTimeoutSeconds, actualReadTimeoutSeconds);
             } else {
                 // For HTTP, no SSL context needed
                 return new HttpHandler(uri, verifiedUrl, actualConnectionTimeoutSeconds, actualReadTimeoutSeconds);

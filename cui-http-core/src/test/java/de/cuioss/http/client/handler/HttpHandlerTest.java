@@ -155,6 +155,32 @@ class HttpHandlerTest {
         }
 
         @Test
+        @DisplayName("HTTPS client should pin enabled TLS protocols to the configured floor")
+        void shouldPinEnabledTlsProtocolsOnHttpsClient() {
+            HttpHandler handler = HttpHandler.builder()
+                    .url(VALID_URL) // https://
+                    .build();
+
+            String[] protocols = handler.createHttpClient().sslParameters().getProtocols();
+            assertNotNull(protocols, "SSLParameters protocols must be pinned, not left to JVM defaults");
+            assertArrayEquals(
+                    new String[]{SecureSSLContextProvider.TLS_V1_2, SecureSSLContextProvider.TLS_V1_3},
+                    protocols);
+        }
+
+        @Test
+        @DisplayName("HTTPS client with TLS 1.3 minimum should enable only TLS 1.3")
+        void shouldPinTls13OnlyWhenMinimumIsTls13() {
+            HttpHandler handler = HttpHandler.builder()
+                    .url(VALID_URL)
+                    .tlsVersions(new SecureSSLContextProvider(SecureSSLContextProvider.TLS_V1_3))
+                    .build();
+
+            String[] protocols = handler.createHttpClient().sslParameters().getProtocols();
+            assertArrayEquals(new String[]{SecureSSLContextProvider.TLS_V1_3}, protocols);
+        }
+
+        @Test
         @DisplayName("Should prepend https:// to URL without scheme")
         void shouldPrependHttpsToUrlWithoutScheme() {
             String urlWithoutScheme = "example.com";

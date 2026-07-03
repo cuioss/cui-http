@@ -146,6 +146,29 @@ public record SecureSSLContextProvider(String minimumTlsVersion) {
     }
 
     /**
+     * Returns the concrete TLS protocol versions that must be enabled on a connection
+     * to enforce this instance's minimum version as a hard floor.
+     * <p>
+     * An {@link SSLContext} created with a protocol string only governs the context's
+     * <em>default</em> protocol object; it does not by itself prevent the JVM from
+     * negotiating an older enabled protocol. Applying these versions via
+     * {@code SSLParameters.setProtocols(...)} on the client makes the floor real.
+     * <ul>
+     *   <li>Minimum {@link #TLS_V1_3} → {@code [TLSv1.3]}</li>
+     *   <li>Minimum {@link #TLS_V1_2} or generic {@link #TLS} → {@code [TLSv1.2, TLSv1.3]}</li>
+     * </ul>
+     *
+     * @return the ordered array of enabled protocol versions (never empty)
+     */
+    public String[] getEnabledProtocols() {
+        if (TLS_V1_3.equals(minimumTlsVersion)) {
+            return new String[]{TLS_V1_3};
+        }
+        // TLS_V1_2 and generic TLS both enforce a 1.2 floor with 1.3 available
+        return new String[]{TLS_V1_2, TLS_V1_3};
+    }
+
+    /**
      * Creates a secure SSLContext configured with the minimum TLS version set for this instance.
      * <p>
      * This method:
@@ -183,11 +206,16 @@ public record SecureSSLContextProvider(String minimumTlsVersion) {
      *   <li>If the provided SSLContext is not null, checks if its protocol is secure</li>
      *   <li>If the protocol is secure, returns the provided SSLContext</li>
      *   <li>If the protocol is not secure, creates a new secure SSLContext</li>
-     *   <li>If an exception occurs during validation or creation, falls back to the provided SSLContext or the default SSLContext</li>
+     *   <li>If a secure context cannot be created, fails hard with {@link IllegalStateException}</li>
      * </ol>
+     * <p>
+     * Note that the returned context's reported protocol is only part of the guarantee:
+     * {@link HttpHandler} additionally pins the enabled protocols via
+     * {@link #getEnabledProtocols()} so that the minimum version is enforced on the wire.
      *
      * @param sslContext the SSLContext to validate, may be null
      * @return a secure SSLContext, either the validated input or a newly created one (never null)
+     * @throws IllegalStateException if a secure SSLContext cannot be created
      */
     public SSLContext getOrCreateSecureSSLContext(@Nullable SSLContext sslContext) {
         try {
