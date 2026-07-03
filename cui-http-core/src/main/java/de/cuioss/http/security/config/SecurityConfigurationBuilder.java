@@ -15,12 +15,6 @@
  */
 package de.cuioss.http.security.config;
 
-import org.jspecify.annotations.Nullable;
-
-import java.util.HashSet;
-import java.util.Objects;
-import java.util.Set;
-
 /**
  * Builder class for constructing {@link SecurityConfiguration} instances with fluent API.
  *
@@ -43,21 +37,15 @@ import java.util.Set;
  * // Custom configuration
  * SecurityConfiguration custom = SecurityConfiguration.builder()
  *     .maxPathLength(2048)
- *     .allowPathTraversal(false)
- *     .maxParameterCount(50)
- *     .requireSecureCookies(true)
- *     .addBlockedHeaderName("X-Debug")
- *     .addAllowedContentType("application/json")
- *     .addAllowedContentType("text/plain")
+ *     .maxParameterValueLength(1024)
+ *     .normalizeUnicode(true)
  *     .build();
  *
- * // Chain multiple settings
+ * // Chain encoding settings in one call
  * SecurityConfiguration strict = SecurityConfiguration.builder()
- *     .pathSecurity(1024, false)
- *     .cookieSecurity(true, true, 10, 64, 512)
- *     .bodySecurity(1024 * 1024, Set.of("application/json"))
+ *     .maxPathLength(1024)
  *     .encoding(false, false, false, true)
- *     .policies(true, true, true)
+ *     .failOnSuspiciousPatterns(true)
  *     .build();
  * </pre>
  *
@@ -66,12 +54,11 @@ import java.util.Set;
  * security without being overly restrictive:</p>
  * <ul>
  *   <li>Path length: 4096 characters</li>
- *   <li>Parameter count: 100</li>
- *   <li>Header count: 50</li>
- *   <li>Cookie count: 20</li>
+ *   <li>Parameter name/value length: 128 / 2048 characters</li>
+ *   <li>Header name/value length: 128 / 2048 characters</li>
+ *   <li>Cookie name/value length: 128 / 2048 characters</li>
  *   <li>Body size: 5MB</li>
- *   <li>Path traversal: disabled</li>
- *   <li>Cookie security flags: recommended but not required</li>
+ *   <li>Null bytes and control characters: blocked</li>
  * </ul>
  *
  * Implements: Task C2 from HTTP verification specification
@@ -83,32 +70,22 @@ public class SecurityConfigurationBuilder {
 
     // Path Security defaults
     private int maxPathLength = 4096;
-    private boolean allowPathTraversal = false;
     private boolean allowDoubleEncoding = false;
 
     // Parameter Security defaults
-    private int maxParameterCount = 100;
     private int maxParameterNameLength = 128;
     private int maxParameterValueLength = 2048;
 
     // Header Security defaults
-    private int maxHeaderCount = 50;
     private int maxHeaderNameLength = 128;
     private int maxHeaderValueLength = 2048;
-    private @Nullable Set<String> allowedHeaderNames = null;
-    private Set<String> blockedHeaderNames = new HashSet<>();
 
     // Cookie Security defaults
-    private int maxCookieCount = 20;
     private int maxCookieNameLength = 128;
     private int maxCookieValueLength = 2048;
-    private boolean requireSecureCookies = false;
-    private boolean requireHttpOnlyCookies = false;
 
     // Body Security defaults
     private long maxBodySize = 5L * 1024 * 1024; // 5MB
-    private @Nullable Set<String> allowedContentTypes = null;
-    private Set<String> blockedContentTypes = new HashSet<>();
 
     // Encoding Security defaults
     private boolean allowNullBytes = false;
@@ -119,7 +96,6 @@ public class SecurityConfigurationBuilder {
     // General Policy defaults
     private boolean caseSensitiveComparison = false;
     private boolean failOnSuspiciousPatterns = false;
-    private boolean logSecurityViolations = true;
 
     /**
      * Package-private constructor for internal use.
@@ -146,17 +122,6 @@ public class SecurityConfigurationBuilder {
     }
 
     /**
-     * Sets whether path traversal patterns (../) are allowed.
-     *
-     * @param allow true to allow path traversal, false to block it
-     * @return This builder for method chaining
-     */
-    public SecurityConfigurationBuilder allowPathTraversal(boolean allow) {
-        this.allowPathTraversal = allow;
-        return this;
-    }
-
-    /**
      * Sets whether double URL encoding is allowed.
      *
      * @param allow true to allow double encoding, false to block it
@@ -167,33 +132,7 @@ public class SecurityConfigurationBuilder {
         return this;
     }
 
-    /**
-     * Configures path security settings in one call.
-     *
-     * @param maxLength Maximum path length
-     * @param allowTraversal Whether to allow path traversal
-     * @return This builder for method chaining
-     */
-    public SecurityConfigurationBuilder pathSecurity(int maxLength, boolean allowTraversal) {
-        return maxPathLength(maxLength).allowPathTraversal(allowTraversal);
-    }
-
     // === Parameter Security Methods ===
-
-    /**
-     * Sets the maximum number of query parameters allowed.
-     *
-     * @param maxCount Maximum parameter count (must be non-negative)
-     * @return This builder for method chaining
-     * @throws IllegalArgumentException if maxCount is negative
-     */
-    public SecurityConfigurationBuilder maxParameterCount(int maxCount) {
-        if (maxCount < 0) {
-            throw new IllegalArgumentException("maxParameterCount must be non-negative, got: " + maxCount);
-        }
-        this.maxParameterCount = maxCount;
-        return this;
-    }
 
     /**
      * Sets the maximum length for parameter names.
@@ -225,36 +164,7 @@ public class SecurityConfigurationBuilder {
         return this;
     }
 
-    /**
-     * Configures parameter security settings in one call.
-     *
-     * @param maxCount Maximum parameter count
-     * @param maxNameLength Maximum parameter name length
-     * @param maxValueLength Maximum parameter value length
-     * @return This builder for method chaining
-     */
-    public SecurityConfigurationBuilder parameterSecurity(int maxCount, int maxNameLength, int maxValueLength) {
-        return maxParameterCount(maxCount)
-                .maxParameterNameLength(maxNameLength)
-                .maxParameterValueLength(maxValueLength);
-    }
-
     // === Header Security Methods ===
-
-    /**
-     * Sets the maximum number of HTTP headers allowed.
-     *
-     * @param maxCount Maximum header count (must be non-negative)
-     * @return This builder for method chaining
-     * @throws IllegalArgumentException if maxCount is negative
-     */
-    public SecurityConfigurationBuilder maxHeaderCount(int maxCount) {
-        if (maxCount < 0) {
-            throw new IllegalArgumentException("maxHeaderCount must be non-negative, got: " + maxCount);
-        }
-        this.maxHeaderCount = maxCount;
-        return this;
-    }
 
     /**
      * Sets the maximum length for header names.
@@ -286,90 +196,7 @@ public class SecurityConfigurationBuilder {
         return this;
     }
 
-    /**
-     * Adds a header name to the allowed list. If the allowed list is null,
-     * this method initializes it with the given header name.
-     *
-     * @param headerName Header name to allow (must not be null)
-     * @return This builder for method chaining
-     * @throws NullPointerException if headerName is null
-     */
-    public SecurityConfigurationBuilder addAllowedHeaderName(String headerName) {
-        Objects.requireNonNull(headerName, "headerName must not be null");
-        if (allowedHeaderNames == null) {
-            allowedHeaderNames = new HashSet<>();
-        }
-        allowedHeaderNames.add(headerName);
-        return this;
-    }
-
-    /**
-     * Sets the complete list of allowed header names.
-     *
-     * @param headerNames Set of allowed header names (null means all allowed)
-     * @return This builder for method chaining
-     */
-    public SecurityConfigurationBuilder allowedHeaderNames(@Nullable Set<String> headerNames) {
-        this.allowedHeaderNames = headerNames != null ? new HashSet<>(headerNames) : null;
-        return this;
-    }
-
-    /**
-     * Adds a header name to the blocked list.
-     *
-     * @param headerName Header name to block (must not be null)
-     * @return This builder for method chaining
-     * @throws NullPointerException if headerName is null
-     */
-    public SecurityConfigurationBuilder addBlockedHeaderName(String headerName) {
-        Objects.requireNonNull(headerName, "headerName must not be null");
-        blockedHeaderNames.add(headerName);
-        return this;
-    }
-
-    /**
-     * Sets the complete list of blocked header names.
-     *
-     * @param headerNames Set of blocked header names (must not be null)
-     * @return This builder for method chaining
-     * @throws NullPointerException if headerNames is null
-     */
-    public SecurityConfigurationBuilder blockedHeaderNames(Set<String> headerNames) {
-        Objects.requireNonNull(headerNames, "headerNames must not be null");
-        this.blockedHeaderNames = new HashSet<>(headerNames);
-        return this;
-    }
-
-    /**
-     * Configures header security settings in one call.
-     *
-     * @param maxCount Maximum header count
-     * @param maxNameLength Maximum header name length
-     * @param maxValueLength Maximum header value length
-     * @return This builder for method chaining
-     */
-    public SecurityConfigurationBuilder headerSecurity(int maxCount, int maxNameLength, int maxValueLength) {
-        return maxHeaderCount(maxCount)
-                .maxHeaderNameLength(maxNameLength)
-                .maxHeaderValueLength(maxValueLength);
-    }
-
     // === Cookie Security Methods ===
-
-    /**
-     * Sets the maximum number of cookies allowed.
-     *
-     * @param maxCount Maximum cookie count (must be non-negative)
-     * @return This builder for method chaining
-     * @throws IllegalArgumentException if maxCount is negative
-     */
-    public SecurityConfigurationBuilder maxCookieCount(int maxCount) {
-        if (maxCount < 0) {
-            throw new IllegalArgumentException("maxCookieCount must be non-negative, got: " + maxCount);
-        }
-        this.maxCookieCount = maxCount;
-        return this;
-    }
 
     /**
      * Sets the maximum length for cookie names.
@@ -401,47 +228,6 @@ public class SecurityConfigurationBuilder {
         return this;
     }
 
-    /**
-     * Sets whether all cookies must have the Secure flag.
-     *
-     * @param require true to require Secure flag on all cookies
-     * @return This builder for method chaining
-     */
-    public SecurityConfigurationBuilder requireSecureCookies(boolean require) {
-        this.requireSecureCookies = require;
-        return this;
-    }
-
-    /**
-     * Sets whether all cookies must have the HttpOnly flag.
-     *
-     * @param require true to require HttpOnly flag on all cookies
-     * @return This builder for method chaining
-     */
-    public SecurityConfigurationBuilder requireHttpOnlyCookies(boolean require) {
-        this.requireHttpOnlyCookies = require;
-        return this;
-    }
-
-    /**
-     * Configures cookie security settings in one call.
-     *
-     * @param requireSecure Whether to require Secure flag
-     * @param requireHttpOnly Whether to require HttpOnly flag
-     * @param maxCount Maximum cookie count
-     * @param maxNameLength Maximum cookie name length
-     * @param maxValueLength Maximum cookie value length
-     * @return This builder for method chaining
-     */
-    public SecurityConfigurationBuilder cookieSecurity(boolean requireSecure, boolean requireHttpOnly,
-            int maxCount, int maxNameLength, int maxValueLength) {
-        return requireSecureCookies(requireSecure)
-                .requireHttpOnlyCookies(requireHttpOnly)
-                .maxCookieCount(maxCount)
-                .maxCookieNameLength(maxNameLength)
-                .maxCookieValueLength(maxValueLength);
-    }
-
     // === Body Security Methods ===
 
     /**
@@ -457,71 +243,6 @@ public class SecurityConfigurationBuilder {
         }
         this.maxBodySize = maxSize;
         return this;
-    }
-
-    /**
-     * Adds a content type to the allowed list. If the allowed list is null,
-     * this method initializes it with the given content type.
-     *
-     * @param contentType Content type to allow (must not be null)
-     * @return This builder for method chaining
-     * @throws NullPointerException if contentType is null
-     */
-    public SecurityConfigurationBuilder addAllowedContentType(String contentType) {
-        Objects.requireNonNull(contentType, "contentType must not be null");
-        if (allowedContentTypes == null) {
-            allowedContentTypes = new HashSet<>();
-        }
-        allowedContentTypes.add(contentType);
-        return this;
-    }
-
-    /**
-     * Sets the complete list of allowed content types.
-     *
-     * @param contentTypes Set of allowed content types (null means all allowed)
-     * @return This builder for method chaining
-     */
-    public SecurityConfigurationBuilder allowedContentTypes(@Nullable Set<String> contentTypes) {
-        this.allowedContentTypes = contentTypes != null ? new HashSet<>(contentTypes) : null;
-        return this;
-    }
-
-    /**
-     * Adds a content type to the blocked list.
-     *
-     * @param contentType Content type to block (must not be null)
-     * @return This builder for method chaining
-     * @throws NullPointerException if contentType is null
-     */
-    public SecurityConfigurationBuilder addBlockedContentType(String contentType) {
-        Objects.requireNonNull(contentType, "contentType must not be null");
-        blockedContentTypes.add(contentType);
-        return this;
-    }
-
-    /**
-     * Sets the complete list of blocked content types.
-     *
-     * @param contentTypes Set of blocked content types (must not be null)
-     * @return This builder for method chaining
-     * @throws NullPointerException if contentTypes is null
-     */
-    public SecurityConfigurationBuilder blockedContentTypes(Set<String> contentTypes) {
-        Objects.requireNonNull(contentTypes, "contentTypes must not be null");
-        this.blockedContentTypes = new HashSet<>(contentTypes);
-        return this;
-    }
-
-    /**
-     * Configures body security settings in one call.
-     *
-     * @param maxSize Maximum body size
-     * @param allowedTypes Set of allowed content types (null = all allowed)
-     * @return This builder for method chaining
-     */
-    public SecurityConfigurationBuilder bodySecurity(long maxSize, @Nullable Set<String> allowedTypes) {
-        return maxBodySize(maxSize).allowedContentTypes(allowedTypes);
     }
 
     // === Encoding Security Methods ===
@@ -560,7 +281,6 @@ public class SecurityConfigurationBuilder {
         this.allowExtendedAscii = allow;
         return this;
     }
-
 
     /**
      * Sets whether Unicode normalization should be performed.
@@ -615,31 +335,6 @@ public class SecurityConfigurationBuilder {
     }
 
     /**
-     * Sets whether to log security violations.
-     *
-     * @param log true to enable logging, false to disable
-     * @return This builder for method chaining
-     */
-    public SecurityConfigurationBuilder logSecurityViolations(boolean log) {
-        this.logSecurityViolations = log;
-        return this;
-    }
-
-    /**
-     * Configures general policy settings in one call.
-     *
-     * @param caseSensitive Whether comparisons are case-sensitive
-     * @param failOnSuspicious Whether to fail on suspicious patterns
-     * @param logViolations Whether to log security violations
-     * @return This builder for method chaining
-     */
-    public SecurityConfigurationBuilder policies(boolean caseSensitive, boolean failOnSuspicious, boolean logViolations) {
-        return caseSensitiveComparison(caseSensitive)
-                .failOnSuspiciousPatterns(failOnSuspicious)
-                .logSecurityViolations(logViolations);
-    }
-
-    /**
      * Builds the SecurityConfiguration with the current settings.
      *
      * @return A new immutable SecurityConfiguration instance
@@ -647,13 +342,13 @@ public class SecurityConfigurationBuilder {
      */
     public SecurityConfiguration build() {
         return new SecurityConfiguration(
-                maxPathLength, allowPathTraversal, allowDoubleEncoding,
-                maxParameterCount, maxParameterNameLength, maxParameterValueLength,
-                maxHeaderCount, maxHeaderNameLength, maxHeaderValueLength, allowedHeaderNames, blockedHeaderNames,
-                maxCookieCount, maxCookieNameLength, maxCookieValueLength, requireSecureCookies, requireHttpOnlyCookies,
-                maxBodySize, allowedContentTypes, blockedContentTypes,
+                maxPathLength, allowDoubleEncoding,
+                maxParameterNameLength, maxParameterValueLength,
+                maxHeaderNameLength, maxHeaderValueLength,
+                maxCookieNameLength, maxCookieValueLength,
+                maxBodySize,
                 allowNullBytes, allowControlCharacters, allowExtendedAscii, normalizeUnicode,
-                caseSensitiveComparison, failOnSuspiciousPatterns, logSecurityViolations
+                caseSensitiveComparison, failOnSuspiciousPatterns
         );
     }
 }

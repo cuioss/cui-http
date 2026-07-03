@@ -17,8 +17,6 @@ package de.cuioss.http.security.config;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.Set;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -31,7 +29,6 @@ class SecurityConfigurationBuilderTest {
         SecurityConfiguration config = SecurityConfiguration.builder().build();
 
         assertEquals(4096, config.maxPathLength());
-        assertFalse(config.allowPathTraversal());
         assertFalse(config.allowDoubleEncoding());
     }
 
@@ -39,7 +36,6 @@ class SecurityConfigurationBuilderTest {
     void shouldCreateBuilderWithDefaultParameterSettings() {
         SecurityConfiguration config = SecurityConfiguration.builder().build();
 
-        assertEquals(100, config.maxParameterCount());
         assertEquals(128, config.maxParameterNameLength());
         assertEquals(2048, config.maxParameterValueLength());
     }
@@ -48,31 +44,23 @@ class SecurityConfigurationBuilderTest {
     void shouldCreateBuilderWithDefaultHeaderSettings() {
         SecurityConfiguration config = SecurityConfiguration.builder().build();
 
-        assertEquals(50, config.maxHeaderCount());
         assertEquals(128, config.maxHeaderNameLength());
         assertEquals(2048, config.maxHeaderValueLength());
-        assertNull(config.allowedHeaderNames());
-        assertTrue(config.blockedHeaderNames().isEmpty());
     }
 
     @Test
     void shouldCreateBuilderWithDefaultCookieSettings() {
         SecurityConfiguration config = SecurityConfiguration.builder().build();
 
-        assertEquals(20, config.maxCookieCount());
         assertEquals(128, config.maxCookieNameLength());
         assertEquals(2048, config.maxCookieValueLength());
-        assertFalse(config.requireSecureCookies());
-        assertFalse(config.requireHttpOnlyCookies());
     }
 
     @Test
     void shouldCreateBuilderWithDefaultBodySettings() {
         SecurityConfiguration config = SecurityConfiguration.builder().build();
 
-        assertEquals(5 * 1024 * 1024, config.maxBodySize());
-        assertNull(config.allowedContentTypes());
-        assertTrue(config.blockedContentTypes().isEmpty());
+        assertEquals(5L * 1024 * 1024, config.maxBodySize());
     }
 
     @Test
@@ -91,346 +79,105 @@ class SecurityConfigurationBuilderTest {
 
         assertFalse(config.caseSensitiveComparison());
         assertFalse(config.failOnSuspiciousPatterns());
-        assertTrue(config.logSecurityViolations());
     }
 
     @Test
     void shouldSetPathSecuritySettings() {
         SecurityConfiguration config = SecurityConfiguration.builder()
-                .maxPathLength(2048)
-                .allowPathTraversal(true)
+                .maxPathLength(1024)
                 .allowDoubleEncoding(true)
                 .build();
 
-        assertEquals(2048, config.maxPathLength());
-        assertTrue(config.allowPathTraversal());
-        assertTrue(config.allowDoubleEncoding());
-    }
-
-    @Test
-    void shouldSetPathSecurityInOneCall() {
-        SecurityConfiguration config = SecurityConfiguration.builder()
-                .pathSecurity(1024, true)
-                .build();
-
         assertEquals(1024, config.maxPathLength());
-        assertTrue(config.allowPathTraversal());
+        assertTrue(config.allowDoubleEncoding());
     }
 
     @Test
     @SuppressWarnings("java:S5778")
     void shouldValidatePathLengthPositive() {
-        var builder1 = SecurityConfiguration.builder();
-        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                builder1.maxPathLength(0));
-        assertTrue(thrown.getMessage().contains("maxPathLength must be positive"));
+        var builder = SecurityConfiguration.builder();
 
-        var builder2 = SecurityConfiguration.builder();
-        IllegalArgumentException thrown2 = assertThrows(IllegalArgumentException.class, () ->
-                builder2.maxPathLength(-1));
-        assertTrue(thrown2.getMessage().contains("maxPathLength must be positive"));
+        assertThrows(IllegalArgumentException.class, () -> builder.maxPathLength(0));
+        assertThrows(IllegalArgumentException.class, () -> builder.maxPathLength(-1));
     }
 
     @Test
     void shouldSetParameterSecuritySettings() {
         SecurityConfiguration config = SecurityConfiguration.builder()
-                .maxParameterCount(50)
                 .maxParameterNameLength(64)
-                .maxParameterValueLength(1024)
+                .maxParameterValueLength(512)
                 .build();
 
-        assertEquals(50, config.maxParameterCount());
         assertEquals(64, config.maxParameterNameLength());
-        assertEquals(1024, config.maxParameterValueLength());
-    }
-
-    @Test
-    void shouldSetParameterSecurityInOneCall() {
-        SecurityConfiguration config = SecurityConfiguration.builder()
-                .parameterSecurity(30, 32, 512)
-                .build();
-
-        assertEquals(30, config.maxParameterCount());
-        assertEquals(32, config.maxParameterNameLength());
         assertEquals(512, config.maxParameterValueLength());
     }
 
     @Test
     @SuppressWarnings("java:S5778")
     void shouldValidateParameterConstraints() {
-        // Parameter count can be 0
-        SecurityConfiguration.builder().maxParameterCount(0);
+        var builder = SecurityConfiguration.builder();
 
-        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxParameterCount(-1));
-        assertTrue(thrown.getMessage().contains("maxParameterCount must be non-negative"));
-
-        IllegalArgumentException thrown2 = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxParameterNameLength(0));
-        assertTrue(thrown2.getMessage().contains("maxParameterNameLength must be positive"));
-
-        IllegalArgumentException thrown3 = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxParameterValueLength(0));
-        assertTrue(thrown3.getMessage().contains("maxParameterValueLength must be positive"));
+        assertThrows(IllegalArgumentException.class, () -> builder.maxParameterNameLength(0));
+        assertThrows(IllegalArgumentException.class, () -> builder.maxParameterValueLength(0));
     }
 
     @Test
     void shouldSetHeaderSecuritySettings() {
         SecurityConfiguration config = SecurityConfiguration.builder()
-                .maxHeaderCount(30)
                 .maxHeaderNameLength(64)
                 .maxHeaderValueLength(1024)
                 .build();
 
-        assertEquals(30, config.maxHeaderCount());
         assertEquals(64, config.maxHeaderNameLength());
         assertEquals(1024, config.maxHeaderValueLength());
     }
 
     @Test
-    void shouldSetHeaderSecurityInOneCall() {
-        SecurityConfiguration config = SecurityConfiguration.builder()
-                .headerSecurity(25, 32, 512)
-                .build();
-
-        assertEquals(25, config.maxHeaderCount());
-        assertEquals(32, config.maxHeaderNameLength());
-        assertEquals(512, config.maxHeaderValueLength());
-    }
-
-    @Test
-    void shouldManageAllowedHeaderNames() {
-        SecurityConfigurationBuilder builder = SecurityConfiguration.builder();
-
-        SecurityConfiguration config = builder
-                .addAllowedHeaderName("Authorization")
-                .addAllowedHeaderName("Content-Type")
-                .build();
-
-        assertNotNull(config.allowedHeaderNames());
-        var allowedHeaders = config.allowedHeaderNames();
-        assertNotNull(allowedHeaders);
-        assertEquals(2, allowedHeaders.size());
-        assertTrue(allowedHeaders.contains("Authorization"));
-        assertTrue(allowedHeaders.contains("Content-Type"));
-    }
-
-    @Test
-    void shouldSetAllowedHeaderNamesAsSet() {
-        Set<String> headers = Set.of("X-Custom", "Authorization");
-        SecurityConfiguration config = SecurityConfiguration.builder()
-                .allowedHeaderNames(headers)
-                .build();
-
-        var allowedHeaders = config.allowedHeaderNames();
-        assertNotNull(allowedHeaders);
-        assertEquals(2, allowedHeaders.size());
-        assertTrue(allowedHeaders.contains("X-Custom"));
-        assertTrue(allowedHeaders.contains("Authorization"));
-    }
-
-    @Test
-    void shouldManageBlockedHeaderNames() {
-        SecurityConfiguration config = SecurityConfiguration.builder()
-                .addBlockedHeaderName("X-Debug")
-                .addBlockedHeaderName("X-Internal")
-                .build();
-
-        assertEquals(2, config.blockedHeaderNames().size());
-        assertTrue(config.blockedHeaderNames().contains("X-Debug"));
-        assertTrue(config.blockedHeaderNames().contains("X-Internal"));
-    }
-
-    @Test
-    void shouldSetBlockedHeaderNamesAsSet() {
-        Set<String> headers = Set.of("X-Test", "X-Debug");
-        SecurityConfiguration config = SecurityConfiguration.builder()
-                .blockedHeaderNames(headers)
-                .build();
-
-        assertEquals(2, config.blockedHeaderNames().size());
-        assertTrue(config.blockedHeaderNames().contains("X-Test"));
-        assertTrue(config.blockedHeaderNames().contains("X-Debug"));
-    }
-
-    @Test
     @SuppressWarnings("java:S5778")
     void shouldValidateHeaderConstraints() {
-        // Header count can be 0
-        SecurityConfiguration.builder().maxHeaderCount(0);
+        var builder = SecurityConfiguration.builder();
 
-        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxHeaderCount(-1));
-        assertTrue(thrown.getMessage().contains("maxHeaderCount must be non-negative"));
-
-        IllegalArgumentException thrown2 = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxHeaderNameLength(0));
-        assertTrue(thrown2.getMessage().contains("maxHeaderNameLength must be positive"));
-
-        IllegalArgumentException thrown3 = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxHeaderValueLength(0));
-        assertTrue(thrown3.getMessage().contains("maxHeaderValueLength must be positive"));
-    }
-
-    @Test
-    @SuppressWarnings("java:S5778")
-    void shouldRejectNullHeaderNames() {
-        assertThrows(NullPointerException.class, () ->
-                SecurityConfiguration.builder().addAllowedHeaderName(null));
-
-        assertThrows(NullPointerException.class, () ->
-                SecurityConfiguration.builder().addBlockedHeaderName(null));
-
-        assertThrows(NullPointerException.class, () ->
-                SecurityConfiguration.builder().blockedHeaderNames(null));
+        assertThrows(IllegalArgumentException.class, () -> builder.maxHeaderNameLength(0));
+        assertThrows(IllegalArgumentException.class, () -> builder.maxHeaderValueLength(-5));
     }
 
     @Test
     void shouldSetCookieSecuritySettings() {
         SecurityConfiguration config = SecurityConfiguration.builder()
-                .maxCookieCount(15)
                 .maxCookieNameLength(64)
-                .maxCookieValueLength(1024)
-                .requireSecureCookies(true)
-                .requireHttpOnlyCookies(true)
+                .maxCookieValueLength(512)
                 .build();
 
-        assertEquals(15, config.maxCookieCount());
         assertEquals(64, config.maxCookieNameLength());
-        assertEquals(1024, config.maxCookieValueLength());
-        assertTrue(config.requireSecureCookies());
-        assertTrue(config.requireHttpOnlyCookies());
-    }
-
-    @Test
-    void shouldSetCookieSecurityInOneCall() {
-        SecurityConfiguration config = SecurityConfiguration.builder()
-                .cookieSecurity(true, true, 10, 32, 512)
-                .build();
-
-        assertTrue(config.requireSecureCookies());
-        assertTrue(config.requireHttpOnlyCookies());
-        assertEquals(10, config.maxCookieCount());
-        assertEquals(32, config.maxCookieNameLength());
         assertEquals(512, config.maxCookieValueLength());
     }
 
     @Test
     @SuppressWarnings("java:S5778")
     void shouldValidateCookieConstraints() {
-        // Cookie count can be 0
-        SecurityConfiguration.builder().maxCookieCount(0);
+        var builder = SecurityConfiguration.builder();
 
-        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxCookieCount(-1));
-        assertTrue(thrown.getMessage().contains("maxCookieCount must be non-negative"));
-
-        IllegalArgumentException thrown2 = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxCookieNameLength(0));
-        assertTrue(thrown2.getMessage().contains("maxCookieNameLength must be positive"));
-
-        IllegalArgumentException thrown3 = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxCookieValueLength(0));
-        assertTrue(thrown3.getMessage().contains("maxCookieValueLength must be positive"));
+        assertThrows(IllegalArgumentException.class, () -> builder.maxCookieNameLength(0));
+        assertThrows(IllegalArgumentException.class, () -> builder.maxCookieValueLength(0));
     }
 
     @Test
     void shouldSetBodySecuritySettings() {
         SecurityConfiguration config = SecurityConfiguration.builder()
-                .maxBodySize(2 * 1024 * 1024)
-                .build();
-
-        assertEquals(2 * 1024 * 1024, config.maxBodySize());
-    }
-
-    @Test
-    void shouldManageAllowedContentTypes() {
-        SecurityConfiguration config = SecurityConfiguration.builder()
-                .addAllowedContentType("application/json")
-                .addAllowedContentType("text/plain")
-                .build();
-
-        var allowedTypes = config.allowedContentTypes();
-        assertNotNull(allowedTypes);
-        assertEquals(2, allowedTypes.size());
-        assertTrue(allowedTypes.contains("application/json"));
-        assertTrue(allowedTypes.contains("text/plain"));
-    }
-
-    @Test
-    void shouldSetAllowedContentTypesAsSet() {
-        Set<String> contentTypes = Set.of("application/xml", "text/html");
-        SecurityConfiguration config = SecurityConfiguration.builder()
-                .allowedContentTypes(contentTypes)
-                .build();
-
-        var allowedTypes = config.allowedContentTypes();
-        assertNotNull(allowedTypes);
-        assertEquals(2, allowedTypes.size());
-        assertTrue(allowedTypes.contains("application/xml"));
-        assertTrue(allowedTypes.contains("text/html"));
-    }
-
-    @Test
-    void shouldManageBlockedContentTypes() {
-        SecurityConfiguration config = SecurityConfiguration.builder()
-                .addBlockedContentType("application/x-executable")
-                .addBlockedContentType("text/x-script")
-                .build();
-
-        assertEquals(2, config.blockedContentTypes().size());
-        assertTrue(config.blockedContentTypes().contains("application/x-executable"));
-        assertTrue(config.blockedContentTypes().contains("text/x-script"));
-    }
-
-    @Test
-    void shouldSetBlockedContentTypesAsSet() {
-        Set<String> contentTypes = Set.of("application/octet-stream", "text/x-shellscript");
-        SecurityConfiguration config = SecurityConfiguration.builder()
-                .blockedContentTypes(contentTypes)
-                .build();
-
-        assertEquals(2, config.blockedContentTypes().size());
-        assertTrue(config.blockedContentTypes().contains("application/octet-stream"));
-        assertTrue(config.blockedContentTypes().contains("text/x-shellscript"));
-    }
-
-    @Test
-    void shouldSetBodySecurityInOneCall() {
-        Set<String> allowedTypes = Set.of("application/json", "text/plain");
-        SecurityConfiguration config = SecurityConfiguration.builder()
-                .bodySecurity(1024 * 1024, allowedTypes)
+                .maxBodySize(1024 * 1024)
                 .build();
 
         assertEquals(1024 * 1024, config.maxBodySize());
-        var configAllowedTypes = config.allowedContentTypes();
-        assertNotNull(configAllowedTypes);
-        assertEquals(2, configAllowedTypes.size());
-        assertTrue(configAllowedTypes.contains("application/json"));
     }
 
     @Test
     @SuppressWarnings("java:S5778")
     void shouldValidateBodySizeNonNegative() {
-        // Body size can be 0
-        SecurityConfiguration.builder().maxBodySize(0);
+        var builder = SecurityConfiguration.builder();
 
-        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxBodySize(-1));
-        assertTrue(thrown.getMessage().contains("maxBodySize must be non-negative"));
-    }
-
-    @Test
-    @SuppressWarnings("java:S5778")
-    void shouldRejectNullContentTypes() {
-        assertThrows(NullPointerException.class, () ->
-                SecurityConfiguration.builder().addAllowedContentType(null));
-
-        assertThrows(NullPointerException.class, () ->
-                SecurityConfiguration.builder().addBlockedContentType(null));
-
-        assertThrows(NullPointerException.class, () ->
-                SecurityConfiguration.builder().blockedContentTypes(null));
+        assertThrows(IllegalArgumentException.class, () -> builder.maxBodySize(-1));
+        // Zero is allowed (blocks all bodies)
+        assertDoesNotThrow(() -> builder.maxBodySize(0));
     }
 
     @Test
@@ -451,13 +198,13 @@ class SecurityConfigurationBuilderTest {
     @Test
     void shouldSetEncodingSecurityInOneCall() {
         SecurityConfiguration config = SecurityConfiguration.builder()
-                .encoding(true, false, true, false)
+                .encoding(true, true, false, true)
                 .build();
 
         assertTrue(config.allowNullBytes());
-        assertFalse(config.allowControlCharacters());
-        assertTrue(config.allowExtendedAscii());
-        assertFalse(config.normalizeUnicode());
+        assertTrue(config.allowControlCharacters());
+        assertFalse(config.allowExtendedAscii());
+        assertTrue(config.normalizeUnicode());
     }
 
     @Test
@@ -465,113 +212,55 @@ class SecurityConfigurationBuilderTest {
         SecurityConfiguration config = SecurityConfiguration.builder()
                 .caseSensitiveComparison(true)
                 .failOnSuspiciousPatterns(true)
-                .logSecurityViolations(false)
                 .build();
 
         assertTrue(config.caseSensitiveComparison());
         assertTrue(config.failOnSuspiciousPatterns());
-        assertFalse(config.logSecurityViolations());
-    }
-
-    @Test
-    void shouldSetPoliciesInOneCall() {
-        SecurityConfiguration config = SecurityConfiguration.builder()
-                .policies(true, false, true)
-                .build();
-
-        assertTrue(config.caseSensitiveComparison());
-        assertFalse(config.failOnSuspiciousPatterns());
-        assertTrue(config.logSecurityViolations());
     }
 
     @Test
     void shouldSupportMethodChaining() {
         SecurityConfiguration config = SecurityConfiguration.builder()
-                .maxPathLength(1024)
-                .allowPathTraversal(false)
-                .maxParameterCount(50)
-                .requireSecureCookies(true)
+                .maxPathLength(2048)
+                .allowDoubleEncoding(false)
+                .maxParameterNameLength(64)
+                .maxParameterValueLength(1024)
+                .maxHeaderNameLength(64)
+                .maxHeaderValueLength(2048)
+                .maxCookieNameLength(64)
+                .maxCookieValueLength(1024)
+                .maxBodySize(2L * 1024 * 1024)
                 .allowNullBytes(false)
+                .allowControlCharacters(false)
+                .allowExtendedAscii(false)
+                .normalizeUnicode(true)
                 .caseSensitiveComparison(true)
+                .failOnSuspiciousPatterns(true)
                 .build();
 
-        assertEquals(1024, config.maxPathLength());
-        assertFalse(config.allowPathTraversal());
-        assertEquals(50, config.maxParameterCount());
-        assertTrue(config.requireSecureCookies());
-        assertFalse(config.allowNullBytes());
-        assertTrue(config.caseSensitiveComparison());
-    }
-
-    @Test
-    void shouldCreateComplexConfiguration() {
-        Set<String> allowedHeaders = Set.of("Authorization", "Content-Type", "X-Custom");
-        Set<String> blockedHeaders = Set.of("X-Debug", "X-Internal", "X-Admin");
-        Set<String> allowedContentTypes = Set.of("application/json", "text/plain", "text/html");
-        Set<String> blockedContentTypes = Set.of("application/x-executable", "text/x-script");
-
-        SecurityConfiguration config = SecurityConfiguration.builder()
-                .pathSecurity(2048, false)
-                .parameterSecurity(75, 100, 1500)
-                .headerSecurity(40, 100, 1500)
-                .allowedHeaderNames(allowedHeaders)
-                .blockedHeaderNames(blockedHeaders)
-                .cookieSecurity(true, true, 15, 100, 1500)
-                .bodySecurity(3 * 1024 * 1024, allowedContentTypes)
-                .blockedContentTypes(blockedContentTypes)
-                .encoding(false, false, true, true)
-                .policies(false, true, true)
-                .build();
-
-        // Verify all settings
         assertEquals(2048, config.maxPathLength());
-        assertFalse(config.allowPathTraversal());
-        assertEquals(75, config.maxParameterCount());
-        assertEquals(100, config.maxParameterNameLength());
-        assertEquals(1500, config.maxParameterValueLength());
-        assertEquals(40, config.maxHeaderCount());
-        var configAllowedHeaders = config.allowedHeaderNames();
-        assertNotNull(configAllowedHeaders);
-        assertEquals(3, configAllowedHeaders.size());
-        assertEquals(3, config.blockedHeaderNames().size());
-        assertTrue(config.requireSecureCookies());
-        assertTrue(config.requireHttpOnlyCookies());
-        assertEquals(3 * 1024 * 1024, config.maxBodySize());
-        var configAllowedTypes = config.allowedContentTypes();
-        assertNotNull(configAllowedTypes);
-        assertEquals(3, configAllowedTypes.size());
-        assertEquals(2, config.blockedContentTypes().size());
-        assertFalse(config.allowNullBytes());
-        assertTrue(config.allowExtendedAscii());
+        assertEquals(64, config.maxParameterNameLength());
+        assertEquals(1024, config.maxParameterValueLength());
+        assertEquals(64, config.maxHeaderNameLength());
+        assertEquals(2048, config.maxHeaderValueLength());
+        assertEquals(64, config.maxCookieNameLength());
+        assertEquals(1024, config.maxCookieValueLength());
+        assertEquals(2L * 1024 * 1024, config.maxBodySize());
+        assertFalse(config.allowExtendedAscii());
         assertTrue(config.normalizeUnicode());
-        assertFalse(config.caseSensitiveComparison());
+        assertTrue(config.caseSensitiveComparison());
         assertTrue(config.failOnSuspiciousPatterns());
-        assertTrue(config.logSecurityViolations());
+        assertTrue(config.isStrict());
     }
 
     @Test
-    void shouldHandleNullAllowedSets() {
-        SecurityConfiguration config = SecurityConfiguration.builder()
-                .allowedHeaderNames(null)
-                .allowedContentTypes(null)
-                .build();
+    void builtConfigurationsShouldBeIndependent() {
+        var builder = SecurityConfiguration.builder().maxPathLength(1000);
+        SecurityConfiguration first = builder.build();
+        builder.maxPathLength(2000);
+        SecurityConfiguration second = builder.build();
 
-        assertNull(config.allowedHeaderNames());
-        assertNull(config.allowedContentTypes());
-    }
-
-    @Test
-    void shouldPreventModificationOfBuilderSetsAfterBuilding() {
-        SecurityConfigurationBuilder builder = SecurityConfiguration.builder();
-        builder.addBlockedHeaderName("X-Test");
-
-        SecurityConfiguration config = builder.build();
-
-        // Adding more items to builder shouldn't affect already built configuration
-        builder.addBlockedHeaderName("X-Modified");
-
-        assertEquals(1, config.blockedHeaderNames().size());
-        assertTrue(config.blockedHeaderNames().contains("X-Test"));
-        assertFalse(config.blockedHeaderNames().contains("X-Modified"));
+        assertEquals(1000, first.maxPathLength());
+        assertEquals(2000, second.maxPathLength());
     }
 }

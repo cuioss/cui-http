@@ -230,7 +230,7 @@ class SecurityDefaultsTest {
         assertTrue(SecurityDefaults.STRICT_CONFIGURATION.isStrict());
         assertFalse(SecurityDefaults.DEFAULT_CONFIGURATION.isStrict());
         assertFalse(SecurityDefaults.DEFAULT_CONFIGURATION.isLenient());
-        assertFalse(SecurityDefaults.LENIENT_CONFIGURATION.isLenient()); // Not fully lenient - still blocks path traversal and null bytes
+        assertTrue(SecurityDefaults.LENIENT_CONFIGURATION.isLenient());
     }
 
     @Test
@@ -238,15 +238,18 @@ class SecurityDefaultsTest {
         SecurityConfiguration strict = SecurityDefaults.STRICT_CONFIGURATION;
 
         assertEquals(SecurityDefaults.MAX_PATH_LENGTH_STRICT, strict.maxPathLength());
-        assertEquals(SecurityDefaults.MAX_PARAMETER_COUNT_STRICT, strict.maxParameterCount());
-        assertEquals(SecurityDefaults.MAX_HEADER_COUNT_STRICT, strict.maxHeaderCount());
-        assertEquals(SecurityDefaults.MAX_COOKIE_COUNT_STRICT, strict.maxCookieCount());
+        assertEquals(SecurityDefaults.MAX_PARAMETER_NAME_LENGTH_STRICT, strict.maxParameterNameLength());
+        assertEquals(SecurityDefaults.MAX_PARAMETER_VALUE_LENGTH_STRICT, strict.maxParameterValueLength());
+        assertEquals(SecurityDefaults.MAX_HEADER_NAME_LENGTH_STRICT, strict.maxHeaderNameLength());
+        assertEquals(SecurityDefaults.MAX_HEADER_VALUE_LENGTH_STRICT, strict.maxHeaderValueLength());
+        assertEquals(SecurityDefaults.MAX_COOKIE_NAME_LENGTH_STRICT, strict.maxCookieNameLength());
+        assertEquals(SecurityDefaults.MAX_COOKIE_VALUE_LENGTH_STRICT, strict.maxCookieValueLength());
         assertEquals(SecurityDefaults.MAX_BODY_SIZE_STRICT, strict.maxBodySize());
 
-        assertFalse(strict.allowPathTraversal());
         assertFalse(strict.allowDoubleEncoding());
-        assertTrue(strict.requireSecureCookies());
-        assertTrue(strict.requireHttpOnlyCookies());
+        assertFalse(strict.allowNullBytes());
+        assertFalse(strict.allowControlCharacters());
+        assertTrue(strict.normalizeUnicode());
     }
 
     @Test
@@ -254,15 +257,18 @@ class SecurityDefaultsTest {
         SecurityConfiguration defaults = SecurityDefaults.DEFAULT_CONFIGURATION;
 
         assertEquals(SecurityDefaults.MAX_PATH_LENGTH_DEFAULT, defaults.maxPathLength());
-        assertEquals(SecurityDefaults.MAX_PARAMETER_COUNT_DEFAULT, defaults.maxParameterCount());
-        assertEquals(SecurityDefaults.MAX_HEADER_COUNT_DEFAULT, defaults.maxHeaderCount());
-        assertEquals(SecurityDefaults.MAX_COOKIE_COUNT_DEFAULT, defaults.maxCookieCount());
+        assertEquals(SecurityDefaults.MAX_PARAMETER_NAME_LENGTH_DEFAULT, defaults.maxParameterNameLength());
+        assertEquals(SecurityDefaults.MAX_PARAMETER_VALUE_LENGTH_DEFAULT, defaults.maxParameterValueLength());
+        assertEquals(SecurityDefaults.MAX_HEADER_NAME_LENGTH_DEFAULT, defaults.maxHeaderNameLength());
+        assertEquals(SecurityDefaults.MAX_HEADER_VALUE_LENGTH_DEFAULT, defaults.maxHeaderValueLength());
         assertEquals(SecurityDefaults.MAX_BODY_SIZE_DEFAULT, defaults.maxBodySize());
 
-        assertFalse(defaults.allowPathTraversal());
         assertFalse(defaults.allowDoubleEncoding());
-        assertFalse(defaults.requireSecureCookies());
-        assertFalse(defaults.requireHttpOnlyCookies());
+        assertFalse(defaults.allowNullBytes());
+        assertFalse(defaults.allowControlCharacters());
+
+        // The default preset must be identical to plain builder defaults
+        assertEquals(SecurityConfiguration.builder().build(), defaults);
     }
 
     @Test
@@ -270,15 +276,15 @@ class SecurityDefaultsTest {
         SecurityConfiguration lenient = SecurityDefaults.LENIENT_CONFIGURATION;
 
         assertEquals(SecurityDefaults.MAX_PATH_LENGTH_LENIENT, lenient.maxPathLength());
-        assertEquals(SecurityDefaults.MAX_PARAMETER_COUNT_LENIENT, lenient.maxParameterCount());
-        assertEquals(SecurityDefaults.MAX_HEADER_COUNT_LENIENT, lenient.maxHeaderCount());
-        assertEquals(SecurityDefaults.MAX_COOKIE_COUNT_LENIENT, lenient.maxCookieCount());
+        assertEquals(SecurityDefaults.MAX_PARAMETER_NAME_LENGTH_LENIENT, lenient.maxParameterNameLength());
+        assertEquals(SecurityDefaults.MAX_PARAMETER_VALUE_LENGTH_LENIENT, lenient.maxParameterValueLength());
+        assertEquals(SecurityDefaults.MAX_HEADER_NAME_LENGTH_LENIENT, lenient.maxHeaderNameLength());
+        assertEquals(SecurityDefaults.MAX_HEADER_VALUE_LENGTH_LENIENT, lenient.maxHeaderValueLength());
         assertEquals(SecurityDefaults.MAX_BODY_SIZE_LENIENT, lenient.maxBodySize());
 
-        assertFalse(lenient.allowPathTraversal()); // Still not allowed
         assertTrue(lenient.allowDoubleEncoding());
-        assertFalse(lenient.requireSecureCookies());
-        assertFalse(lenient.requireHttpOnlyCookies());
+        assertFalse(lenient.allowNullBytes()); // Never allowed, even in lenient mode
+        assertTrue(lenient.allowControlCharacters());
     }
 
     @Test
