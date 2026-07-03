@@ -199,6 +199,35 @@ class HTTPHeaderValidationPipelineTest {
             assertEquals(ValidationType.HEADER_NAME, exception.getValidationType());
             assertEquals(longHeaderName, exception.getOriginalInput());
         }
+
+        /**
+         * Regression: CR/LF must be rejected in header values even under a lenient
+         * configuration that allows control characters, since they enable HTTP
+         * response splitting / header injection.
+         */
+        @Test
+        void shouldRejectCrlfInHeaderValueEvenWhenControlCharsAllowed() {
+            SecurityConfiguration lenient = SecurityConfiguration.lenient();
+            HTTPHeaderValidationPipeline pipeline = new HTTPHeaderValidationPipeline(
+                    lenient, eventCounter, ValidationType.HEADER_VALUE);
+
+            assertThrows(UrlSecurityException.class, () ->
+                    pipeline.validate("value\r\nInjected-Header: evil"));
+            assertThrows(UrlSecurityException.class, () ->
+                    pipeline.validate("value\rInjected"));
+            assertThrows(UrlSecurityException.class, () ->
+                    pipeline.validate("value\nInjected"));
+        }
+
+        @Test
+        void shouldRejectCrlfInHeaderNameEvenWhenControlCharsAllowed() {
+            SecurityConfiguration lenient = SecurityConfiguration.lenient();
+            HTTPHeaderValidationPipeline pipeline = new HTTPHeaderValidationPipeline(
+                    lenient, eventCounter, ValidationType.HEADER_NAME);
+
+            assertThrows(UrlSecurityException.class, () ->
+                    pipeline.validate("X-Name\r\nInjected"));
+        }
     }
 
     @Nested

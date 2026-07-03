@@ -213,21 +213,20 @@ class DecodingStageTest {
                 .normalizeUnicode(true)
                 .build();
 
-        DecodingStage unicodeDecoder = new DecodingStage(unicodeConfig, ValidationType.URL_PATH);
+        DecodingStage unicodeDecoder = new DecodingStage(unicodeConfig, ValidationType.HEADER_VALUE);
 
-        // Create a string with decomposed Unicode that will change when normalized
-        // Using combining characters that will be normalized
-        String decomposed = "cafe\u0301"; // e + combining acute accent
-        String composed = "café"; // precomposed character
+        // Fullwidth 'A' (U+FF21) is a compatibility character that NFKC folds to 'A'.
+        // NFKC (not NFC) is required to catch this; it is not a combining mark, so it
+        // reaches the normalization step rather than the post-decode character check.
+        String compatibility = "ＡBC"; // fullwidth A + BC
+        String folded = "ABC";
 
-        // If the input changes during normalization, it should throw an exception
-        // Note: This depends on the exact Unicode composition
         UrlSecurityException exception = assertThrows(UrlSecurityException.class,
-                () -> unicodeDecoder.validate(decomposed));
+                () -> unicodeDecoder.validate(compatibility));
 
         assertEquals(UrlSecurityFailureType.UNICODE_NORMALIZATION_CHANGED, exception.getFailureType());
-        assertEquals(decomposed, exception.getOriginalInput());
-        assertEquals(Optional.of(composed), exception.getSanitizedInput());
+        assertEquals(compatibility, exception.getOriginalInput());
+        assertEquals(Optional.of(folded), exception.getSanitizedInput());
         assertTrue(exception.getDetail().isPresent());
         assertTrue(exception.getDetail().get().contains("Unicode normalization changed"));
     }
@@ -239,15 +238,48 @@ class DecodingStageTest {
                 .normalizeUnicode(false)
                 .build();
 
-        DecodingStage noUnicodeDecoder = new DecodingStage(noUnicodeConfig, ValidationType.URL_PATH);
+        DecodingStage noUnicodeDecoder = new DecodingStage(noUnicodeConfig, ValidationType.HEADER_VALUE);
 
-        // Even with decomposed Unicode, should not throw exception
-        String decomposed = "cafe\u0301";
+        // With normalization disabled the compatibility character passes through unchanged
+        String compatibility = "ＡBC";
         assertDoesNotThrow(() -> {
-            Optional<String> result = noUnicodeDecoder.validate(decomposed);
+            Optional<String> result = noUnicodeDecoder.validate(compatibility);
             assertTrue(result.isPresent());
+            assertEquals(compatibility, result.get());
             return result.get();
         });
+    }
+
+    @Test
+    @DisplayName("Should reject decoded combining characters regardless of normalization setting")
+    void shouldRejectDecodedCombiningCharacters() {
+        SecurityConfiguration noNormalize = SecurityConfiguration.builder()
+                .normalizeUnicode(false)
+                .build();
+        DecodingStage decoder = new DecodingStage(noNormalize, ValidationType.PARAMETER_VALUE);
+
+        // %CC%80 decodes to U+0300 (combining grave accent). Pre-decode this is valid
+        // percent-encoding; the decoded combining mark must still be rejected.
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> decoder.validate("value%CC%80"));
+
+        assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
+        assertTrue(exception.getDetail().orElse("").contains("combining character"));
+    }
+
+    @Test
+    @DisplayName("Should reject decoded CRLF in URL paths")
+    void shouldRejectDecodedCrlfInPath() {
+        SecurityConfiguration config = SecurityConfiguration.builder()
+                .normalizeUnicode(false)
+                .build();
+        DecodingStage decoder = new DecodingStage(config, ValidationType.URL_PATH);
+
+        // %0D%0A decodes to CRLF - a response-splitting vector in a path
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> decoder.validate("/path%0D%0AInjected: header"));
+
+        assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType());
     }
 
     @Test

@@ -128,7 +128,7 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
         this.allowNullBytes = config.allowNullBytes();
         this.allowControlCharacters = config.allowControlCharacters();
         this.allowExtendedAscii = config.allowExtendedAscii();
-        // Use the shared BitSet directly - it's read-only after initialization
+        // Defensive copy per stage - the shared constants cannot be corrupted through this instance
         this.allowedChars = CharacterValidationConstants.getCharacterSet(type);
 
         // Determine if percent encoding is allowed based on type
@@ -278,6 +278,13 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
 
         // Control characters (1-31, excluding null which is handled above)
         if (ch <= 31) {
+            // CR/LF can never appear in header names or values - allowing them would
+            // enable HTTP response splitting / header injection, so they are rejected
+            // unconditionally regardless of allowControlCharacters
+            if ((ch == '\r' || ch == '\n') &&
+                    (validationType == ValidationType.HEADER_NAME || validationType == ValidationType.HEADER_VALUE)) {
+                return false;
+            }
             // Always allow common whitespace characters that are in the base character set
             if (allowedChars.get(ch)) {
                 return true;

@@ -190,9 +190,19 @@ ValidationType validationType) implements HttpSecurityValidator {
                     .build();
         }
 
-        // Step 3: Unicode normalization with change detection
+        // Step 2.5: Re-validate security-critical characters in the DECODED output.
+        // Character validation runs before decoding, so a percent-encoded sequence
+        // (e.g. %CC%80 for a combining grave accent, or %0D%0A for CRLF) is only
+        // seen as valid percent-encoding. The decoded characters must be checked
+        // again or encoding becomes a bypass for the character rules.
+        validateDecodedCharacters(value, decoded);
+
+        // Step 3: Unicode normalization with change detection.
+        // NFKC (not NFC) is required to fold compatibility homoglyphs such as the
+        // fullwidth solidus U+FF0F to their canonical form: a change after folding
+        // indicates an input that would read differently after normalization.
         if (config.normalizeUnicode()) {
-            String normalized = Normalizer.normalize(decoded, Normalizer.Form.NFC);
+            String normalized = Normalizer.normalize(decoded, Normalizer.Form.NFKC);
             if (!decoded.equals(normalized)) {
                 // Normalization changed the string - potential attack
                 throw UrlSecurityException.builder()
@@ -207,6 +217,60 @@ ValidationType validationType) implements HttpSecurityValidator {
         }
 
         return Optional.of(decoded);
+    }
+
+    /**
+     * Validates security-critical characters in decoded output.
+     *
+     * <p>Checks applied to the decoded string:</p>
+     * <ul>
+     *   <li><strong>Null bytes</strong> - rejected unless explicitly allowed (defense in depth;
+     *       encoded {@code %00} is normally already rejected before decoding)</li>
+     *   <li><strong>Combining characters (U+0300-U+036F)</strong> - always rejected, mirroring
+     *       the raw-character rule; decoded combining marks can visually alter adjacent
+     *       characters and enable homograph attacks</li>
+     *   <li><strong>Decoded CR/LF in URL paths</strong> - rejected unless control characters are
+     *       explicitly allowed; a decoded line break in a path is a response-splitting vector.
+     *       Parameter values are exempt because encoded line breaks are legitimate form data.</li>
+     * </ul>
+     *
+     * @param originalInput The original (still encoded) input for error reporting
+     * @param decoded The decoded string to validate
+     * @throws UrlSecurityException if a security-critical character is found
+     */
+    private void validateDecodedCharacters(String originalInput, String decoded) throws UrlSecurityException {
+        for (int i = 0; i < decoded.length(); i++) {
+            char ch = decoded.charAt(i);
+
+            if (ch == '\0' && !config.allowNullBytes()) {
+                throw UrlSecurityException.builder()
+                        .failureType(UrlSecurityFailureType.NULL_BYTE_INJECTION)
+                        .validationType(validationType)
+                        .originalInput(originalInput)
+                        .detail("Decoded null byte at position " + i)
+                        .build();
+            }
+
+            if (ch >= 0x0300 && ch <= 0x036F) {
+                throw UrlSecurityException.builder()
+                        .failureType(UrlSecurityFailureType.INVALID_CHARACTER)
+                        .validationType(validationType)
+                        .originalInput(originalInput)
+                        .detail("Decoded combining character (U+" + Integer.toHexString(ch).toUpperCase()
+                                + ") at position " + i)
+                        .build();
+            }
+
+            if ((ch == '\r' || ch == '\n') && validationType == ValidationType.URL_PATH
+                    && !config.allowControlCharacters()) {
+                throw UrlSecurityException.builder()
+                        .failureType(UrlSecurityFailureType.CONTROL_CHARACTERS)
+                        .validationType(validationType)
+                        .originalInput(originalInput)
+                        .detail("Decoded line break at position " + i)
+                        .build();
+            }
+        }
     }
 
     /**

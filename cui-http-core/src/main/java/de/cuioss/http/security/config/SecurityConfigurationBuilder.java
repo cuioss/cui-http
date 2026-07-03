@@ -91,7 +91,7 @@ public class SecurityConfigurationBuilder {
     private boolean allowNullBytes = false;
     private boolean allowControlCharacters = false;
     private boolean allowExtendedAscii = true;
-    private boolean normalizeUnicode = false;
+    private boolean normalizeUnicode = true;
 
     // General Policy defaults
     private boolean caseSensitiveComparison = false;
