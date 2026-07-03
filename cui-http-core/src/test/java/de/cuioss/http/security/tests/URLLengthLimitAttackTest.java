@@ -92,7 +92,6 @@ class URLLengthLimitAttackTest {
                 .maxParameterValueLength(256) // Further reduced from 512
                 .maxHeaderNameLength(64)      // Reduced from default 128
                 .maxHeaderValueLength(256)    // Further reduced from 512
-                .allowPathTraversal(false)
                 .allowDoubleEncoding(false)
                 .build();
         eventCounter = new SecurityEventCounter();
