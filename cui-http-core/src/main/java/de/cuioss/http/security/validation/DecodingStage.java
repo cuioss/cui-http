@@ -229,9 +229,11 @@ ValidationType validationType) implements HttpSecurityValidator {
      *   <li><strong>Combining characters (U+0300-U+036F)</strong> - always rejected, mirroring
      *       the raw-character rule; decoded combining marks can visually alter adjacent
      *       characters and enable homograph attacks</li>
-     *   <li><strong>Decoded CR/LF in URL paths</strong> - rejected unless control characters are
-     *       explicitly allowed; a decoded line break in a path is a response-splitting vector.
-     *       Parameter values are exempt because encoded line breaks are legitimate form data.</li>
+     *   <li><strong>Decoded CR/LF</strong> - always rejected for header names/values and cookie
+     *       names/values (they travel inside HTTP headers, so a decoded line break is a
+     *       response-splitting vector). For URL paths, rejected unless control characters are
+     *       explicitly allowed. Parameter values are exempt because encoded line breaks are
+     *       legitimate form data.</li>
      * </ul>
      *
      * @param originalInput The original (still encoded) input for error reporting
@@ -261,8 +263,7 @@ ValidationType validationType) implements HttpSecurityValidator {
                         .build();
             }
 
-            if ((ch == '\r' || ch == '\n') && validationType == ValidationType.URL_PATH
-                    && !config.allowControlCharacters()) {
+            if ((ch == '\r' || ch == '\n') && decodedLineBreakForbidden()) {
                 throw UrlSecurityException.builder()
                         .failureType(UrlSecurityFailureType.CONTROL_CHARACTERS)
                         .validationType(validationType)
@@ -271,6 +272,18 @@ ValidationType validationType) implements HttpSecurityValidator {
                         .build();
             }
         }
+    }
+
+    /**
+     * A decoded CR/LF is forbidden for header/cookie contexts unconditionally (response
+     * splitting), and for URL paths unless control characters are explicitly allowed.
+     */
+    private boolean decodedLineBreakForbidden() {
+        return switch (validationType) {
+            case HEADER_NAME, HEADER_VALUE, COOKIE_NAME, COOKIE_VALUE -> true;
+            case URL_PATH -> !config.allowControlCharacters();
+            case PARAMETER_NAME, PARAMETER_VALUE, BODY -> false;
+        };
     }
 
     /**

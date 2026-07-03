@@ -283,6 +283,23 @@ class DecodingStageTest {
     }
 
     @Test
+    @DisplayName("Should reject decoded CRLF in header and cookie contexts even when control chars allowed")
+    void shouldRejectDecodedCrlfInHeaderAndCookieContexts() {
+        SecurityConfiguration lenient = SecurityConfiguration.lenient(); // allowControlCharacters=true
+
+        for (ValidationType type : new ValidationType[]{
+                ValidationType.HEADER_NAME, ValidationType.HEADER_VALUE,
+                ValidationType.COOKIE_NAME, ValidationType.COOKIE_VALUE}) {
+            DecodingStage decoder = new DecodingStage(lenient, type);
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                    () -> decoder.validate("value%0D%0AInjected"),
+                    "Decoded CRLF must be rejected for " + type);
+            assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
+                    "Failure type must be CONTROL_CHARACTERS for " + type);
+        }
+    }
+
+    @Test
     @DisplayName("Should preserve validation type in exceptions")
     void shouldPreserveValidationType() {
         DecodingStage[] decoders = {

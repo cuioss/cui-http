@@ -23,6 +23,7 @@ import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import org.jspecify.annotations.Nullable;
 
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -171,7 +172,9 @@ ValidationType validationType) implements HttpSecurityValidator {
             toLowercaseSet(SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES);
 
     private static Set<String> toLowercaseSet(Set<String> patterns) {
-        return patterns.stream().map(String::toLowerCase).collect(Collectors.toUnmodifiableSet());
+        return patterns.stream()
+                .map(p -> p.toLowerCase(Locale.ROOT))
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     /**
@@ -204,8 +207,10 @@ ValidationType validationType) implements HttpSecurityValidator {
             return Optional.of(value);
         }
 
-        // Prepare value for case-insensitive matching if needed
-        String testValue = config.caseSensitiveComparison() ? value : value.toLowerCase();
+        // Prepare value for case-insensitive matching if needed.
+        // Locale.ROOT avoids locale-specific folding (e.g. the Turkish dotless-i)
+        // that could otherwise be exploited to bypass pattern matching.
+        String testValue = config.caseSensitiveComparison() ? value : value.toLowerCase(Locale.ROOT);
 
         // Step 1: Check for path traversal patterns (applies to paths and parameters)
         if (validationType == ValidationType.URL_PATH ||
