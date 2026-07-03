@@ -141,25 +141,37 @@ class CharacterValidationConstantsTest {
 
     @Test
     void shouldReturnCorrectCharacterSetForValidationType() {
-        assertSame(CharacterValidationConstants.RFC3986_PATH_CHARS,
+        assertEquals(CharacterValidationConstants.RFC3986_PATH_CHARS,
                 CharacterValidationConstants.getCharacterSet(ValidationType.URL_PATH));
 
-        assertSame(CharacterValidationConstants.RFC3986_QUERY_CHARS,
+        assertEquals(CharacterValidationConstants.RFC3986_QUERY_CHARS,
                 CharacterValidationConstants.getCharacterSet(ValidationType.PARAMETER_NAME));
-        assertSame(CharacterValidationConstants.RFC3986_QUERY_CHARS,
+        assertEquals(CharacterValidationConstants.RFC3986_QUERY_CHARS,
                 CharacterValidationConstants.getCharacterSet(ValidationType.PARAMETER_VALUE));
 
-        assertSame(CharacterValidationConstants.RFC7230_HEADER_CHARS,
+        assertEquals(CharacterValidationConstants.RFC7230_HEADER_CHARS,
                 CharacterValidationConstants.getCharacterSet(ValidationType.HEADER_NAME));
-        assertSame(CharacterValidationConstants.RFC7230_HEADER_CHARS,
+        assertEquals(CharacterValidationConstants.RFC7230_HEADER_CHARS,
                 CharacterValidationConstants.getCharacterSet(ValidationType.HEADER_VALUE));
 
-        assertSame(CharacterValidationConstants.HTTP_BODY_CHARS,
+        assertEquals(CharacterValidationConstants.HTTP_BODY_CHARS,
                 CharacterValidationConstants.getCharacterSet(ValidationType.BODY));
-        assertSame(CharacterValidationConstants.RFC3986_UNRESERVED,
+        assertEquals(CharacterValidationConstants.RFC3986_UNRESERVED,
                 CharacterValidationConstants.getCharacterSet(ValidationType.COOKIE_NAME));
-        assertSame(CharacterValidationConstants.RFC3986_UNRESERVED,
+        assertEquals(CharacterValidationConstants.RFC3986_UNRESERVED,
                 CharacterValidationConstants.getCharacterSet(ValidationType.COOKIE_VALUE));
+    }
+
+    @Test
+    void shouldReturnDefensiveCopies() {
+        // Mutating a returned set must not corrupt the shared constants
+        var copy = CharacterValidationConstants.getCharacterSet(ValidationType.URL_PATH);
+        assertNotSame(CharacterValidationConstants.RFC3986_PATH_CHARS, copy);
+
+        copy.set('<');
+        assertFalse(CharacterValidationConstants.RFC3986_PATH_CHARS.get('<'),
+                "Shared constant must be unaffected by mutation of the returned copy");
+        assertFalse(CharacterValidationConstants.getCharacterSet(ValidationType.URL_PATH).get('<'));
     }
 
     @Test

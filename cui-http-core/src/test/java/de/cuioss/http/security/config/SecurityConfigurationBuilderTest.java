@@ -70,7 +70,7 @@ class SecurityConfigurationBuilderTest {
         assertFalse(config.allowNullBytes());
         assertFalse(config.allowControlCharacters());
         assertTrue(config.allowExtendedAscii());
-        assertFalse(config.normalizeUnicode());
+        assertTrue(config.normalizeUnicode()); // Enabled by default since 1.5 (NFKC)
     }
 
     @Test

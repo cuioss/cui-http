@@ -116,7 +116,8 @@ public final class SecurityDefaults {
             "%2e%2e//", "%2e%2e\\\\", "..%2f/", "..%5c\\", "..%2f", "..%5c", "/%2e%2e/",
 
             // UTF-8 overlong encodings (common bypass attempts)
-            "..%c0%af", "..%c1%9c", "%c0%ae%c0%ae%c0%af", "%c1%8s%c1%8s%c1%81"
+            // %c0%af = overlong '/', %c1%9c = overlong '\', %c0%ae = overlong '.'
+            "..%c0%af", "..%c1%9c", "%c0%ae%c0%ae%c0%af", "%c0%ae%c0%ae%c1%9c"
     );
 
     /** Patterns indicating potential directory traversal attempts and protocol handler attacks */

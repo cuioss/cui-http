@@ -128,7 +128,7 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
         this.allowNullBytes = config.allowNullBytes();
         this.allowControlCharacters = config.allowControlCharacters();
         this.allowExtendedAscii = config.allowExtendedAscii();
-        // Use the shared BitSet directly - it's read-only after initialization
+        // Defensive copy per stage - the shared constants cannot be corrupted through this instance
         this.allowedChars = CharacterValidationConstants.getCharacterSet(type);
 
         // Determine if percent encoding is allowed based on type
@@ -268,6 +268,17 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
     }
 
     /**
+     * Header names/values and cookie names/values all travel inside HTTP headers,
+     * so CR/LF in any of them is a response-splitting vector.
+     */
+    private boolean isHeaderOrCookieType() {
+        return validationType == ValidationType.HEADER_NAME
+                || validationType == ValidationType.HEADER_VALUE
+                || validationType == ValidationType.COOKIE_NAME
+                || validationType == ValidationType.COOKIE_VALUE;
+    }
+
+    /**
      * Checks if a character is allowed based on configuration flags and character sets.
      */
     private boolean isCharacterAllowed(char ch) {
@@ -278,6 +289,13 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
 
         // Control characters (1-31, excluding null which is handled above)
         if (ch <= 31) {
+            // CR/LF can never appear in header or cookie names/values - cookies are
+            // transmitted via the Cookie/Set-Cookie headers, so allowing CR/LF would
+            // enable HTTP response splitting / header injection. Rejected unconditionally
+            // regardless of allowControlCharacters.
+            if ((ch == '\r' || ch == '\n') && isHeaderOrCookieType()) {
+                return false;
+            }
             // Always allow common whitespace characters that are in the base character set
             if (allowedChars.get(ch)) {
                 return true;

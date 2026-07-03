@@ -167,6 +167,35 @@ class URLParameterValidationPipelineTest {
             assertThrows(UrlSecurityException.class, () ->
                     pipeline.validate(oversizedParam));
         }
+
+        /**
+         * Regression: a percent-encoded combining character (%CC%80 = U+0300) is valid
+         * percent-encoding before decoding, but the decoded combining mark must be
+         * rejected by the post-decode character re-validation.
+         */
+        @Test
+        void shouldRejectEncodedCombiningCharacter() {
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                    pipeline.validate("value%CC%80"));
+
+            assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
+            assertEquals(ValidationType.PARAMETER_VALUE, exception.getValidationType());
+        }
+
+        /**
+         * Regression: a percent-encoded fullwidth solidus (%EF%BC%8F = U+FF0F) folds to
+         * '/' under NFKC. With normalization on by default, this homoglyph must be
+         * rejected rather than silently normalized into a path separator.
+         */
+        @Test
+        void shouldRejectEncodedFullwidthSolidusHomoglyph() {
+            assertTrue(config.normalizeUnicode(), "Default config must normalize (NFKC) for this guarantee");
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                    pipeline.validate("path%EF%BC%8F%EF%BC%8Fadmin"));
+
+            assertEquals(UrlSecurityFailureType.UNICODE_NORMALIZATION_CHANGED, exception.getFailureType());
+        }
     }
 
     @Nested

@@ -23,9 +23,12 @@ import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import org.jspecify.annotations.Nullable;
 
+import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * Pattern matching validation stage for detecting malicious attack patterns.
@@ -132,7 +135,7 @@ ValidationType validationType) implements HttpSecurityValidator {
                     \\.%2e(%2f|%5c|/|\\\\)|%2e\\.(%2f|%5c|/|\\\\)|\
                     %252e%252e(%252f|%255c)|\
                     \\.\\.(%252f|%255c)|\
-                    %c0%ae%c0%ae(%c0%af|%c1%9c|/|\\\\)|%c1%9c%c1%9c|%c1%8s|\
+                    %c0%ae%c0%ae(%c0%af|%c1%9c|/|\\\\)|%c1%9c%c1%9c|\
                     %c0%ae%c0%ae%c0%af|%c0%ae%c0%af|%c1%9c|\
                     %2e%2e//|%2e%2e\\\\\\\\""",
             Pattern.CASE_INSENSITIVE
@@ -156,6 +159,23 @@ ValidationType validationType) implements HttpSecurityValidator {
     // XSS script pattern removed - application layer responsibility.
     // Application layers have proper context for HTML/JS escaping and validation.
 
+    /**
+     * Pre-computed lowercase variants of the pattern databases. The pattern sets are
+     * constants, so lowercasing them once here avoids re-lowercasing every pattern on
+     * every validation call in case-insensitive mode (the common configuration).
+     */
+    private static final Set<String> PATH_TRAVERSAL_PATTERNS_LOWERCASE =
+            toLowercaseSet(SecurityDefaults.PATH_TRAVERSAL_PATTERNS);
+    private static final Set<String> SUSPICIOUS_PATH_PATTERNS_LOWERCASE =
+            toLowercaseSet(SecurityDefaults.SUSPICIOUS_PATH_PATTERNS);
+    private static final Set<String> SUSPICIOUS_PARAMETER_NAMES_LOWERCASE =
+            toLowercaseSet(SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES);
+
+    private static Set<String> toLowercaseSet(Set<String> patterns) {
+        return patterns.stream()
+                .map(p -> p.toLowerCase(Locale.ROOT))
+                .collect(Collectors.toUnmodifiableSet());
+    }
 
     /**
      * Validates input against attack pattern databases.
@@ -187,8 +207,10 @@ ValidationType validationType) implements HttpSecurityValidator {
             return Optional.of(value);
         }
 
-        // Prepare value for case-insensitive matching if needed
-        String testValue = config.caseSensitiveComparison() ? value : value.toLowerCase();
+        // Prepare value for case-insensitive matching if needed.
+        // Locale.ROOT avoids locale-specific folding (e.g. the Turkish dotless-i)
+        // that could otherwise be exploited to bypass pattern matching.
+        String testValue = config.caseSensitiveComparison() ? value : value.toLowerCase(Locale.ROOT);
 
         // Step 1: Check for path traversal patterns (applies to paths and parameters)
         if (validationType == ValidationType.URL_PATH ||
@@ -228,9 +250,10 @@ ValidationType validationType) implements HttpSecurityValidator {
      */
     private void checkPathTraversalPatterns(String originalValue, String testValue) {
         // Check simple string patterns - ALWAYS fail on path traversal (security critical)
-        for (String pattern : SecurityDefaults.PATH_TRAVERSAL_PATTERNS) {
-            String checkPattern = config.caseSensitiveComparison() ? pattern : pattern.toLowerCase();
-            if (testValue.contains(checkPattern)) {
+        Set<String> patterns = config.caseSensitiveComparison()
+                ? SecurityDefaults.PATH_TRAVERSAL_PATTERNS : PATH_TRAVERSAL_PATTERNS_LOWERCASE;
+        for (String pattern : patterns) {
+            if (testValue.contains(pattern)) {
                 throw UrlSecurityException.builder()
                         .failureType(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED)
                         .validationType(validationType)
@@ -275,9 +298,10 @@ ValidationType validationType) implements HttpSecurityValidator {
      * @throws UrlSecurityException if suspicious patterns are found and policy requires failure
      */
     private void checkSuspiciousPathPatterns(String originalValue, String testValue) {
-        for (String pattern : SecurityDefaults.SUSPICIOUS_PATH_PATTERNS) {
-            String checkPattern = config.caseSensitiveComparison() ? pattern : pattern.toLowerCase();
-            if (testValue.contains(checkPattern) && config.failOnSuspiciousPatterns()) {
+        Set<String> patterns = config.caseSensitiveComparison()
+                ? SecurityDefaults.SUSPICIOUS_PATH_PATTERNS : SUSPICIOUS_PATH_PATTERNS_LOWERCASE;
+        for (String pattern : patterns) {
+            if (testValue.contains(pattern) && config.failOnSuspiciousPatterns()) {
                 throw UrlSecurityException.builder()
                         .failureType(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED)
                         .validationType(validationType)
@@ -298,9 +322,10 @@ ValidationType validationType) implements HttpSecurityValidator {
      * @throws UrlSecurityException if suspicious parameter names are found and policy requires failure
      */
     private void checkSuspiciousParameterNames(String originalValue, String testValue) {
-        for (String suspiciousName : SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES) {
-            String checkName = config.caseSensitiveComparison() ? suspiciousName : suspiciousName.toLowerCase();
-            if ((testValue.equals(checkName) || testValue.contains(checkName)) && config.failOnSuspiciousPatterns()) {
+        Set<String> names = config.caseSensitiveComparison()
+                ? SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES : SUSPICIOUS_PARAMETER_NAMES_LOWERCASE;
+        for (String suspiciousName : names) {
+            if ((testValue.equals(suspiciousName) || testValue.contains(suspiciousName)) && config.failOnSuspiciousPatterns()) {
                 throw UrlSecurityException.builder()
                         .failureType(UrlSecurityFailureType.SUSPICIOUS_PARAMETER_NAME)
                         .validationType(validationType)

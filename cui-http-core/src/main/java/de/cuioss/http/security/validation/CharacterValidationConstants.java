@@ -192,8 +192,11 @@ public final class CharacterValidationConstants {
      * Returns the appropriate character set for the specified validation type.
      *
      * <p>This method provides a centralized mapping from validation types to their
-     * corresponding RFC-compliant character sets. The returned BitSet is the actual
-     * instance (not a copy) for performance reasons and must not be modified.</p>
+     * corresponding RFC-compliant character sets. The returned BitSet is a defensive
+     * copy: {@link BitSet} is mutable, and handing out the shared constant would let
+     * any caller corrupt the allowed-character rules for every validator in the JVM.
+     * The copy is created once per call (validators call this at construction, not
+     * per validation), so the cost is negligible.</p>
      *
      * <h4>Validation Type Mappings:</h4>
      * <ul>
@@ -215,12 +218,13 @@ public final class CharacterValidationConstants {
      * @see #RFC3986_UNRESERVED
      */
     public static BitSet getCharacterSet(ValidationType type) {
-        return switch (type) {
+        BitSet characterSet = switch (type) {
             case URL_PATH -> RFC3986_PATH_CHARS;
             case PARAMETER_NAME, PARAMETER_VALUE -> RFC3986_QUERY_CHARS;
             case HEADER_NAME, HEADER_VALUE -> RFC7230_HEADER_CHARS;
             case BODY -> HTTP_BODY_CHARS;
             case COOKIE_NAME, COOKIE_VALUE -> RFC3986_UNRESERVED;
         };
+        return (BitSet) characterSet.clone();
     }
 }
