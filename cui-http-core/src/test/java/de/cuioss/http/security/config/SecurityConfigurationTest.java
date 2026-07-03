@@ -208,31 +208,26 @@ class SecurityConfigurationTest {
 
     @Test
     void recordConstructorShouldValidateConstraints() {
-        // Direct record construction must enforce the same constraints as the builder
+        // Direct record construction must enforce the same constraints as the builder;
+        // each call violates exactly one guard (path, param name/value, header
+        // name/value, cookie name/value lengths, body size)
+        assertConstructorRejects(0, 128, 2048, 128, 2048, 128, 2048, 1024);
+        assertConstructorRejects(4096, 0, 2048, 128, 2048, 128, 2048, 1024);
+        assertConstructorRejects(4096, 128, 0, 128, 2048, 128, 2048, 1024);
+        assertConstructorRejects(4096, 128, 2048, 0, 2048, 128, 2048, 1024);
+        assertConstructorRejects(4096, 128, 2048, 128, 0, 128, 2048, 1024);
+        assertConstructorRejects(4096, 128, 2048, 128, 2048, 0, 2048, 1024);
+        assertConstructorRejects(4096, 128, 2048, 128, 2048, 128, 0, 1024);
+        assertConstructorRejects(4096, 128, 2048, 128, 2048, 128, 2048, -1);
+    }
+
+    @SuppressWarnings("java:S107")
+    private static void assertConstructorRejects(int pathLength, int paramNameLength, int paramValueLength,
+            int headerNameLength, int headerValueLength, int cookieNameLength, int cookieValueLength, long bodySize) {
         assertThrows(IllegalArgumentException.class, () -> new SecurityConfiguration(
-                0, false, 128, 2048, 128, 2048, 128, 2048, 1024,
-                false, false, true, false, false, false));
-        assertThrows(IllegalArgumentException.class, () -> new SecurityConfiguration(
-                4096, false, 128, 2048, 128, 2048, 128, 2048, -1,
-                false, false, true, false, false, false));
-        assertThrows(IllegalArgumentException.class, () -> new SecurityConfiguration(
-                4096, false, 0, 2048, 128, 2048, 128, 2048, 1024,
-                false, false, true, false, false, false));
-        assertThrows(IllegalArgumentException.class, () -> new SecurityConfiguration(
-                4096, false, 128, 0, 128, 2048, 128, 2048, 1024,
-                false, false, true, false, false, false));
-        assertThrows(IllegalArgumentException.class, () -> new SecurityConfiguration(
-                4096, false, 128, 2048, 0, 2048, 128, 2048, 1024,
-                false, false, true, false, false, false));
-        assertThrows(IllegalArgumentException.class, () -> new SecurityConfiguration(
-                4096, false, 128, 2048, 128, 0, 128, 2048, 1024,
-                false, false, true, false, false, false));
-        assertThrows(IllegalArgumentException.class, () -> new SecurityConfiguration(
-                4096, false, 128, 2048, 128, 2048, 0, 2048, 1024,
-                false, false, true, false, false, false));
-        assertThrows(IllegalArgumentException.class, () -> new SecurityConfiguration(
-                4096, false, 128, 2048, 128, 2048, 128, 0, 1024,
-                false, false, true, false, false, false));
+                pathLength, false, paramNameLength, paramValueLength,
+                headerNameLength, headerValueLength, cookieNameLength, cookieValueLength,
+                bodySize, false, false, true, false, false, false));
     }
 
     @Test

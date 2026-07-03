@@ -73,6 +73,9 @@ package de.cuioss.http.security.config;
  * @since 1.0
  * @see SecurityConfigurationBuilder
  */
+// S107: The canonical constructor has many parameters by design - construction
+// happens through SecurityConfigurationBuilder; the record only carries the data
+@SuppressWarnings("java:S107")
 public record SecurityConfiguration(
 int maxPathLength,
 boolean allowDoubleEncoding,
