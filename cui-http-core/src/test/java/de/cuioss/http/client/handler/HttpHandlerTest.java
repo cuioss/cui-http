@@ -181,6 +181,21 @@ class HttpHandlerTest {
         }
 
         @Test
+        @DisplayName("asBuilder should preserve the configured TLS floor")
+        void asBuilderShouldPreserveTlsFloor() {
+            HttpHandler handler = HttpHandler.builder()
+                    .url(VALID_URL)
+                    .tlsVersions(new SecureSSLContextProvider(SecureSSLContextProvider.TLS_V1_3))
+                    .build();
+
+            HttpHandler cloned = handler.asBuilder().url(VALID_URL).build();
+
+            String[] protocols = cloned.createHttpClient().sslParameters().getProtocols();
+            assertArrayEquals(new String[]{SecureSSLContextProvider.TLS_V1_3}, protocols,
+                    "Cloning via asBuilder() must not silently revert the TLS floor");
+        }
+
+        @Test
         @DisplayName("Should prepend https:// to URL without scheme")
         void shouldPrependHttpsToUrlWithoutScheme() {
             String urlWithoutScheme = "example.com";
