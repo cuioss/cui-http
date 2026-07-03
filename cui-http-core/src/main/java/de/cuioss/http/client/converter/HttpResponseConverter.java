@@ -36,7 +36,8 @@ import java.util.Optional;
  * <ul>
  *   <li><strong>Success:</strong> Return {@code Optional.of(parsedObject)} when conversion succeeds</li>
  *   <li><strong>Parsing Failure:</strong> Return {@code Optional.empty()} when conversion fails
- *       (adapter will create {@code HttpResult.failure()} with {@code HttpErrorCategory.INVALID_CONTENT})</li>
+ *       (adapter will create {@code HttpResult.failure()} with {@code HttpErrorCategory.INVALID_CONTENT},
+ *       unless {@link #emptyContentIsValid()} returns {@code true})</li>
  *   <li><strong>Never throw exceptions:</strong> Always return {@code Optional.empty()} on failure</li>
  * </ul>
  *
@@ -147,6 +148,27 @@ public interface HttpResponseConverter<T> {
     // Callers use the handler to read response bodies, not to access type-specific operations
     @SuppressWarnings("java:S1452")
     HttpResponse.BodyHandler<?> getBodyHandler();
+
+    /**
+     * Indicates whether an empty conversion result is a valid outcome for
+     * successful (2xx) responses.
+     * <p>
+     * By default, an empty {@link #convert(Object)} result on a 2xx response is
+     * treated as a conversion failure and mapped to
+     * {@code HttpErrorCategory.INVALID_CONTENT}. Converters that intentionally
+     * produce no content (such as {@link VoidResponseConverter}, which discards
+     * the body because only the status code matters) must override this method
+     * to return {@code true} so that successful responses are reported as
+     * {@code HttpResult.Success} without content.
+     * </p>
+     *
+     * @return {@code true} if an empty conversion result on a 2xx response
+     *         represents success, {@code false} if it represents a conversion failure
+     * @since 1.5
+     */
+    default boolean emptyContentIsValid() {
+        return false;
+    }
 
     /**
      * Returns the expected content type for responses.

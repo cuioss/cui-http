@@ -173,6 +173,18 @@ class URLPathValidationPipelineTest {
         }
 
         @Test
+        void shouldPreserveStageExceptionAsCause() {
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                    pipeline.validate("/api/../../../etc/passwd"));
+
+            assertInstanceOf(UrlSecurityException.class, exception.getCause(),
+                    "Pipeline must preserve the originating stage exception as cause");
+            UrlSecurityException stageException = (UrlSecurityException) exception.getCause();
+            assertEquals(exception.getFailureType(), stageException.getFailureType(),
+                    "Rewrapped exception must keep the stage's failure type");
+        }
+
+        @Test
         void shouldHaveCorrectEqualsAndHashCode() {
             URLPathValidationPipeline pipeline1 = new URLPathValidationPipeline(config, eventCounter);
             URLPathValidationPipeline pipeline2 = new URLPathValidationPipeline(config, eventCounter);

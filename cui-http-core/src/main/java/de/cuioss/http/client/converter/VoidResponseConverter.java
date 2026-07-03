@@ -115,6 +115,21 @@ public final class VoidResponseConverter implements HttpResponseConverter<Void> 
     }
 
     /**
+     * Returns {@code true} because this converter intentionally produces no content.
+     * <p>
+     * A successful (2xx) response handled by this converter must be reported as
+     * {@code HttpResult.Success} without content instead of being misclassified
+     * as a conversion failure.
+     * </p>
+     *
+     * @return always {@code true}
+     */
+    @Override
+    public boolean emptyContentIsValid() {
+        return true;
+    }
+
+    /**
      * Returns a body handler that efficiently discards the response body.
      * <p>
      * Uses {@link HttpResponse.BodyHandlers#discarding()} which doesn't read

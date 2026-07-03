@@ -83,14 +83,15 @@ public abstract class AbstractValidationPipeline implements HttpSecurityValidato
                 // Track security event
                 eventCounter.increment(e.getFailureType());
 
-                // Re-throw with correct validation type
+                // Re-throw with correct validation type, preserving the original
+                // stage exception as cause to keep the full exception chain
                 throw UrlSecurityException.builder()
                         .failureType(e.getFailureType())
                         .validationType(getValidationType())
                         .originalInput(value) // Use original input, not current result
                         .sanitizedInput(e.getSanitizedInput().orElse(null))
                         .detail(e.getDetail().orElse("Validation failed"))
-                        .cause(e.getCause())
+                        .cause(e)
                         .build();
             }
         }

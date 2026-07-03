@@ -160,7 +160,8 @@ public sealed interface HttpResult<T>
     /**
      * Gets the content if available.
      * <ul>
-     *   <li>For Success: always present (contains the result)</li>
+     *   <li>For Success: present unless the operation intentionally produces no
+     *       content (e.g. status-code-only operations with a {@code Void} content type)</li>
      *   <li>For Failure: present only if fallback content exists</li>
      * </ul>
      *
@@ -240,13 +241,14 @@ public sealed interface HttpResult<T>
      * return HttpResult.success(cachedContent, cachedEtag, 304);
      * </pre>
      *
-     * @param content the response content, must not be null
+     * @param content the response content; may be null only for operations that
+     *                 intentionally produce no content (e.g. {@code Void} status-code-only operations)
      * @param etag optional ETag header value for caching
      * @param httpStatus HTTP status code
      * @param <T> content type
      * @return Success result
      */
-    static <T> HttpResult<T> success(T content, @Nullable String etag, int httpStatus) {
+    static <T> HttpResult<T> success(@Nullable T content, @Nullable String etag, int httpStatus) {
         return new Success<>(content, etag, httpStatus);
     }
 
@@ -316,12 +318,14 @@ public sealed interface HttpResult<T>
      * Successful HTTP operation with content.
      * Contains content loaded from server (HTTP 200) or validated from cache (HTTP 304).
      *
-     * @param content the response content, never null
+     * @param content the response content; null only for operations that intentionally
+     *                produce no content (e.g. {@code Void} status-code-only operations)
      * @param etag optional ETag header value for caching
      * @param httpStatus HTTP status code (typically 200 or 304)
      * @param <T> content type
      */
     record Success<T>(
+    @Nullable
     T content,
     @Nullable
     String etag,
@@ -335,7 +339,7 @@ public sealed interface HttpResult<T>
 
         @Override
         public Optional<T> getContent() {
-            return Optional.of(content);
+            return Optional.ofNullable(content);
         }
 
         @Override
@@ -355,7 +359,8 @@ public sealed interface HttpResult<T>
 
         @Override
         public <U> HttpResult<U> map(Function<T, U> mapper) {
-            return new Success<>(mapper.apply(content), etag, httpStatus);
+            U mappedContent = content != null ? mapper.apply(content) : null;
+            return new Success<>(mappedContent, etag, httpStatus);
         }
     }
 

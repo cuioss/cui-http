@@ -71,6 +71,16 @@ class VoidResponseConverterTest {
     }
 
     /**
+     * Test that emptyContentIsValid() returns true so 2xx responses without
+     * content are reported as success instead of INVALID_CONTENT failures.
+     */
+    @Test
+    void shouldDeclareEmptyContentAsValid() {
+        assertTrue(VoidResponseConverter.INSTANCE.emptyContentIsValid(),
+                "Void converter intentionally produces no content - empty must be valid");
+    }
+
+    /**
      * Test that getBodyHandler() returns a discarding handler.
      * We verify it's not null and is the correct type.
      */
