@@ -313,23 +313,14 @@ public final class SecurityDefaults {
      * <p>Single source of truth for strict preset semantics -
      * {@link SecurityConfiguration#strict()} delegates to this constant.</p>
      */
-    public static final SecurityConfiguration STRICT_CONFIGURATION = SecurityConfiguration.builder()
-            .maxPathLength(MAX_PATH_LENGTH_STRICT)
-            .allowDoubleEncoding(false)
-            .maxParameterNameLength(MAX_PARAMETER_NAME_LENGTH_STRICT)
-            .maxParameterValueLength(MAX_PARAMETER_VALUE_LENGTH_STRICT)
-            .maxHeaderNameLength(MAX_HEADER_NAME_LENGTH_STRICT)
-            .maxHeaderValueLength(MAX_HEADER_VALUE_LENGTH_STRICT)
-            .maxCookieNameLength(MAX_COOKIE_NAME_LENGTH_STRICT)
-            .maxCookieValueLength(MAX_COOKIE_VALUE_LENGTH_STRICT)
-            .maxBodySize(MAX_BODY_SIZE_STRICT)
-            .allowNullBytes(false)
-            .allowControlCharacters(false)
-            .allowExtendedAscii(false)
-            .normalizeUnicode(true)
-            .caseSensitiveComparison(true)
-            .failOnSuspiciousPatterns(true)
-            .build();
+    public static final SecurityConfiguration STRICT_CONFIGURATION = new SecurityConfiguration(
+            MAX_PATH_LENGTH_STRICT, false,
+            MAX_PARAMETER_NAME_LENGTH_STRICT, MAX_PARAMETER_VALUE_LENGTH_STRICT,
+            MAX_HEADER_NAME_LENGTH_STRICT, MAX_HEADER_VALUE_LENGTH_STRICT,
+            MAX_COOKIE_NAME_LENGTH_STRICT, MAX_COOKIE_VALUE_LENGTH_STRICT,
+            MAX_BODY_SIZE_STRICT,
+            false, false, false, true, // no null bytes, no control chars, no extended ASCII, normalize Unicode
+            true, true); // case-sensitive comparison, fail on suspicious patterns
 
     /**
      * Configuration preset for balanced security and usability.
@@ -338,23 +329,7 @@ public final class SecurityDefaults {
      * {@link SecurityConfiguration#defaults()} delegates to this constant.
      * Identical to {@code SecurityConfiguration.builder().build()}.</p>
      */
-    public static final SecurityConfiguration DEFAULT_CONFIGURATION = SecurityConfiguration.builder()
-            .maxPathLength(MAX_PATH_LENGTH_DEFAULT)
-            .allowDoubleEncoding(false)
-            .maxParameterNameLength(MAX_PARAMETER_NAME_LENGTH_DEFAULT)
-            .maxParameterValueLength(MAX_PARAMETER_VALUE_LENGTH_DEFAULT)
-            .maxHeaderNameLength(MAX_HEADER_NAME_LENGTH_DEFAULT)
-            .maxHeaderValueLength(MAX_HEADER_VALUE_LENGTH_DEFAULT)
-            .maxCookieNameLength(MAX_COOKIE_NAME_LENGTH_DEFAULT)
-            .maxCookieValueLength(MAX_COOKIE_VALUE_LENGTH_DEFAULT)
-            .maxBodySize(MAX_BODY_SIZE_DEFAULT)
-            .allowNullBytes(false)
-            .allowControlCharacters(false)
-            .allowExtendedAscii(true)
-            .normalizeUnicode(false)
-            .caseSensitiveComparison(false)
-            .failOnSuspiciousPatterns(false)
-            .build();
+    public static final SecurityConfiguration DEFAULT_CONFIGURATION = SecurityConfiguration.builder().build();
 
     /**
      * Configuration preset for maximum compatibility.
@@ -364,21 +339,12 @@ public final class SecurityDefaults {
      * Even this preset never permits null bytes; path traversal is always
      * blocked by the validation stages regardless of configuration.</p>
      */
-    public static final SecurityConfiguration LENIENT_CONFIGURATION = SecurityConfiguration.builder()
-            .maxPathLength(MAX_PATH_LENGTH_LENIENT)
-            .allowDoubleEncoding(true)
-            .maxParameterNameLength(MAX_PARAMETER_NAME_LENGTH_LENIENT)
-            .maxParameterValueLength(MAX_PARAMETER_VALUE_LENGTH_LENIENT)
-            .maxHeaderNameLength(MAX_HEADER_NAME_LENGTH_LENIENT)
-            .maxHeaderValueLength(MAX_HEADER_VALUE_LENGTH_LENIENT)
-            .maxCookieNameLength(MAX_COOKIE_NAME_LENGTH_LENIENT)
-            .maxCookieValueLength(MAX_COOKIE_VALUE_LENGTH_LENIENT)
-            .maxBodySize(MAX_BODY_SIZE_LENIENT)
-            .allowNullBytes(false) // Still don't allow this
-            .allowControlCharacters(true)
-            .allowExtendedAscii(true)
-            .normalizeUnicode(false)
-            .caseSensitiveComparison(false)
-            .failOnSuspiciousPatterns(false)
-            .build();
+    public static final SecurityConfiguration LENIENT_CONFIGURATION = new SecurityConfiguration(
+            MAX_PATH_LENGTH_LENIENT, true,
+            MAX_PARAMETER_NAME_LENGTH_LENIENT, MAX_PARAMETER_VALUE_LENGTH_LENIENT,
+            MAX_HEADER_NAME_LENGTH_LENIENT, MAX_HEADER_VALUE_LENGTH_LENIENT,
+            MAX_COOKIE_NAME_LENGTH_LENIENT, MAX_COOKIE_VALUE_LENGTH_LENIENT,
+            MAX_BODY_SIZE_LENIENT,
+            false, true, true, false, // no null bytes (never allowed), control chars, extended ASCII, no normalization
+            false, false); // case-insensitive comparison, no suspicious-pattern failures
 }

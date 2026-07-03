@@ -15,19 +15,19 @@
  */
 package de.cuioss.http.security.config;
 
-import de.cuioss.test.generator.Generators;
-import de.cuioss.test.generator.TypedGenerator;
-import de.cuioss.test.generator.junit.EnableGeneratorController;
-import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+
+import java.util.function.BiFunction;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Test for {@link SecurityConfiguration}
  */
-@EnableGeneratorController
 class SecurityConfigurationTest {
 
     @Test
@@ -96,97 +96,40 @@ class SecurityConfigurationTest {
         assertEquals(SecurityConfiguration.builder().build(), SecurityConfiguration.defaults());
     }
 
+    /**
+     * Every length setter rejects non-positive values with a descriptive message.
+     * Covers the builder guards; the record constructor guards are covered by
+     * {@link #recordConstructorShouldValidateConstraints()}.
+     */
     @ParameterizedTest
-    @TypeGeneratorSource(value = InvalidPositiveIntegerGenerator.class, count = 5)
-    @SuppressWarnings("java:S5778")
-    void shouldValidatePositivePathLength(Integer invalidValue) {
+    @MethodSource("lengthSetters")
+    void lengthSettersShouldRejectNonPositiveValues(
+            String property, BiFunction<SecurityConfigurationBuilder, Integer, SecurityConfigurationBuilder> setter) {
         var builder = SecurityConfiguration.builder();
 
-        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                builder.maxPathLength(invalidValue));
-        assertTrue(thrown.getMessage().contains("maxPathLength must be positive"));
+        IllegalArgumentException zero = assertThrows(IllegalArgumentException.class, () -> setter.apply(builder, 0));
+        assertTrue(zero.getMessage().contains(property + " must be positive"));
+
+        IllegalArgumentException negative = assertThrows(IllegalArgumentException.class, () -> setter.apply(builder, -10));
+        assertTrue(negative.getMessage().contains(property + " must be positive"));
     }
 
-    static class InvalidPositiveIntegerGenerator implements TypedGenerator<Integer> {
-        private final TypedGenerator<Integer> gen = Generators.fixedValues(Integer.class, 0, -1, -100, -999, -1000000);
-
-        @Override
-        public Integer next() {
-            return gen.next();
-        }
-
-        @Override
-        public Class<Integer> getType() {
-            return Integer.class;
-        }
-    }
-
-    static class NegativeIntegerGenerator implements TypedGenerator<Integer> {
-        private final TypedGenerator<Integer> gen = Generators.fixedValues(Integer.class, -1, -10, -100, -999, -1000000);
-
-        @Override
-        public Integer next() {
-            return gen.next();
-        }
-
-        @Override
-        public Class<Integer> getType() {
-            return Integer.class;
-        }
-    }
-
-    @ParameterizedTest
-    @TypeGeneratorSource(value = InvalidPositiveIntegerGenerator.class, count = 3)
-    @SuppressWarnings("java:S5778")
-    void shouldValidatePositiveParameterNameLength(Integer invalidValue) {
-        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxParameterNameLength(invalidValue).build());
-        assertTrue(thrown.getMessage().contains("maxParameterNameLength must be positive"));
-    }
-
-    @ParameterizedTest
-    @TypeGeneratorSource(value = InvalidPositiveIntegerGenerator.class, count = 3)
-    @SuppressWarnings("java:S5778")
-    void shouldValidatePositiveParameterValueLength(Integer invalidValue) {
-        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxParameterValueLength(invalidValue).build());
-        assertTrue(thrown.getMessage().contains("maxParameterValueLength must be positive"));
-    }
-
-    @ParameterizedTest
-    @TypeGeneratorSource(value = InvalidPositiveIntegerGenerator.class, count = 3)
-    @SuppressWarnings("java:S5778")
-    void shouldValidatePositiveHeaderNameLength(Integer invalidValue) {
-        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxHeaderNameLength(invalidValue).build());
-        assertTrue(thrown.getMessage().contains("maxHeaderNameLength must be positive"));
-    }
-
-    @ParameterizedTest
-    @TypeGeneratorSource(value = InvalidPositiveIntegerGenerator.class, count = 3)
-    @SuppressWarnings("java:S5778")
-    void shouldValidatePositiveHeaderValueLength(Integer invalidValue) {
-        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxHeaderValueLength(invalidValue).build());
-        assertTrue(thrown.getMessage().contains("maxHeaderValueLength must be positive"));
-    }
-
-    @ParameterizedTest
-    @TypeGeneratorSource(value = InvalidPositiveIntegerGenerator.class, count = 3)
-    @SuppressWarnings("java:S5778")
-    void shouldValidatePositiveCookieNameLength(Integer invalidValue) {
-        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxCookieNameLength(invalidValue).build());
-        assertTrue(thrown.getMessage().contains("maxCookieNameLength must be positive"));
-    }
-
-    @ParameterizedTest
-    @TypeGeneratorSource(value = InvalidPositiveIntegerGenerator.class, count = 3)
-    @SuppressWarnings("java:S5778")
-    void shouldValidatePositiveCookieValueLength(Integer invalidValue) {
-        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxCookieValueLength(invalidValue).build());
-        assertTrue(thrown.getMessage().contains("maxCookieValueLength must be positive"));
+    static Stream<Arguments> lengthSetters() {
+        return Stream.of(
+                Arguments.of("maxPathLength",
+                        (BiFunction<SecurityConfigurationBuilder, Integer, SecurityConfigurationBuilder>) SecurityConfigurationBuilder::maxPathLength),
+                Arguments.of("maxParameterNameLength",
+                        (BiFunction<SecurityConfigurationBuilder, Integer, SecurityConfigurationBuilder>) SecurityConfigurationBuilder::maxParameterNameLength),
+                Arguments.of("maxParameterValueLength",
+                        (BiFunction<SecurityConfigurationBuilder, Integer, SecurityConfigurationBuilder>) SecurityConfigurationBuilder::maxParameterValueLength),
+                Arguments.of("maxHeaderNameLength",
+                        (BiFunction<SecurityConfigurationBuilder, Integer, SecurityConfigurationBuilder>) SecurityConfigurationBuilder::maxHeaderNameLength),
+                Arguments.of("maxHeaderValueLength",
+                        (BiFunction<SecurityConfigurationBuilder, Integer, SecurityConfigurationBuilder>) SecurityConfigurationBuilder::maxHeaderValueLength),
+                Arguments.of("maxCookieNameLength",
+                        (BiFunction<SecurityConfigurationBuilder, Integer, SecurityConfigurationBuilder>) SecurityConfigurationBuilder::maxCookieNameLength),
+                Arguments.of("maxCookieValueLength",
+                        (BiFunction<SecurityConfigurationBuilder, Integer, SecurityConfigurationBuilder>) SecurityConfigurationBuilder::maxCookieValueLength));
     }
 
     @Test
@@ -197,12 +140,11 @@ class SecurityConfigurationTest {
         assertEquals(0, config.maxBodySize());
     }
 
-    @ParameterizedTest
-    @TypeGeneratorSource(value = NegativeIntegerGenerator.class, count = 3)
+    @Test
     @SuppressWarnings("java:S5778")
-    void shouldValidateNonNegativeBodySize(Integer negativeValue) {
+    void shouldValidateNonNegativeBodySize() {
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
-                SecurityConfiguration.builder().maxBodySize(negativeValue).build());
+                SecurityConfiguration.builder().maxBodySize(-1).build());
         assertTrue(thrown.getMessage().contains("maxBodySize must be non-negative"));
     }
 
@@ -231,21 +173,6 @@ class SecurityConfigurationTest {
     }
 
     @Test
-    void configurationAllowingNullBytesShouldNotBeLenient() {
-        // Contract: lenient never permits null bytes
-        SecurityConfiguration withNullBytes = SecurityConfiguration.builder()
-                .allowDoubleEncoding(true)
-                .allowNullBytes(true)
-                .allowControlCharacters(true)
-                .allowExtendedAscii(true)
-                .normalizeUnicode(false)
-                .failOnSuspiciousPatterns(false)
-                .build();
-
-        assertFalse(withNullBytes.isLenient());
-    }
-
-    @Test
     void shouldDetectStrictConfiguration() {
         SecurityConfiguration strict = SecurityConfiguration.strict();
         assertTrue(strict.isStrict());
@@ -264,6 +191,42 @@ class SecurityConfigurationTest {
         SecurityConfiguration defaults = SecurityConfiguration.defaults();
         assertFalse(defaults.isStrict());
         assertFalse(defaults.isLenient());
+    }
+
+    @Test
+    void nearStrictVariantsShouldNotBeStrict() {
+        // Each variant flips exactly one of the strict-defining settings
+        assertFalse(strictBuilder().allowDoubleEncoding(true).build().isStrict());
+        assertFalse(strictBuilder().allowNullBytes(true).build().isStrict());
+        assertFalse(strictBuilder().allowControlCharacters(true).build().isStrict());
+        assertFalse(strictBuilder().allowExtendedAscii(true).build().isStrict());
+        assertFalse(strictBuilder().normalizeUnicode(false).build().isStrict());
+        assertFalse(strictBuilder().failOnSuspiciousPatterns(false).build().isStrict());
+    }
+
+    @Test
+    void nearLenientVariantsShouldNotBeLenient() {
+        // Each variant flips exactly one of the lenient-defining settings;
+        // in particular, allowing null bytes must disqualify a config from lenient
+        assertFalse(lenientBuilder().allowDoubleEncoding(false).build().isLenient());
+        assertFalse(lenientBuilder().allowNullBytes(true).build().isLenient());
+        assertFalse(lenientBuilder().allowControlCharacters(false).build().isLenient());
+        assertFalse(lenientBuilder().allowExtendedAscii(false).build().isLenient());
+        assertFalse(lenientBuilder().normalizeUnicode(true).build().isLenient());
+        assertFalse(lenientBuilder().failOnSuspiciousPatterns(true).build().isLenient());
+    }
+
+    private static SecurityConfigurationBuilder strictBuilder() {
+        return SecurityConfiguration.builder()
+                .encoding(false, false, false, true)
+                .failOnSuspiciousPatterns(true);
+    }
+
+    private static SecurityConfigurationBuilder lenientBuilder() {
+        return SecurityConfiguration.builder()
+                .allowDoubleEncoding(true)
+                .encoding(false, true, true, false)
+                .failOnSuspiciousPatterns(false);
     }
 
     @Test
