@@ -121,7 +121,7 @@ SecurityConfiguration unicodeConfig = SecurityConfiguration.builder()
 
 Pipeline architecture audit:
 
-* ✅ Audit of all attack database / integration test classes (26 in `security/tests/`) completed
+* ✅ Audit of all attack database / integration test classes (26 in `cui-http-core/src/test/java/de/cuioss/http/security/tests`) completed
 * ✅ Pipeline selection decision matrix established
 * ✅ All pipeline assignments verified as architecturally correct
 * ✅ No pipeline mismatches identified after thorough analysis
