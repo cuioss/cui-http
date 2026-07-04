@@ -99,10 +99,6 @@ Error categorization for HTTP operations.
 * `INVALID_CONTENT` - Content conversion failures
 * Retry eligibility determination
 
-==== xref:../cui-http-core/src/main/java/de/cuioss/http/client/result/HttpResultState.java[HttpResultState]
-
-HTTP-specific result states extending CUI result framework.
-
 === Logging
 
 ==== xref:../cui-http-core/src/main/java/de/cuioss/http/client/HttpLogMessages.java[HttpLogMessages]

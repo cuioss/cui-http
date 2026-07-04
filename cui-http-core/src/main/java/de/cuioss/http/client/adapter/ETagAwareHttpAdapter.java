@@ -15,6 +15,7 @@
  */
 package de.cuioss.http.client.adapter;
 
+import de.cuioss.http.client.ContentType;
 import de.cuioss.http.client.HttpMethod;
 import de.cuioss.http.client.converter.HttpRequestConverter;
 import de.cuioss.http.client.converter.HttpResponseConverter;
@@ -408,6 +409,9 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             HttpRequest.Builder requestBuilder = httpHandler.requestBuilder()
                     .method(method.methodName(), bodyPublisher);
 
+            // Negotiate content types from the converters (caller headers take precedence)
+            applyContentTypeHeaders(requestBuilder, headers, body != null ? requestConverter.contentType() : null);
+
             // Add custom headers
             headers.forEach(requestBuilder::header);
 
@@ -433,6 +437,45 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
                     )
             );
         }
+    }
+
+    /**
+     * Applies converter-derived {@code Accept} and {@code Content-Type} headers.
+     *
+     * <p>{@code Accept} is always set from the response converter's content type;
+     * {@code Content-Type} is set only when a request body is present. Both are applied
+     * with {@code setHeader} first so a caller-provided header of the same name in
+     * {@code callerHeaders} (added afterwards) overrides the default.</p>
+     *
+     * @param requestBuilder the request builder to configure
+     * @param callerHeaders caller-supplied headers (used to detect explicit overrides)
+     * @param requestContentType the request body content type, or null when there is no body
+     */
+    private void applyContentTypeHeaders(HttpRequest.Builder requestBuilder,
+            Map<String, String> callerHeaders, @Nullable ContentType requestContentType) {
+        if (!hasHeaderIgnoreCase(callerHeaders, "Accept")) {
+            requestBuilder.setHeader("Accept", responseConverter.contentType().mediaType());
+        }
+        if (requestContentType != null && !hasHeaderIgnoreCase(callerHeaders, "Content-Type")) {
+            requestBuilder.setHeader("Content-Type", requestContentType.toHeaderValue());
+        }
+    }
+
+    /**
+     * Checks whether the header map contains the given header name, ignoring case.
+     *
+     * @param headers the caller-supplied header map to search
+     * @param name the header name to look for (matched case-insensitively)
+     * @return true if a header with that name is present, false otherwise
+     */
+    private static boolean hasHeaderIgnoreCase(Map<String, String> headers, String name) {
+        for (String key : headers.keySet()) {
+            // name is a non-null literal - calling on it is null-key safe for maps allowing null keys
+            if (name.equalsIgnoreCase(key)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -463,6 +506,12 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             // Build HTTP request
             HttpRequest.Builder requestBuilder = httpHandler.requestBuilder()
                     .method(method.methodName(), buildBodyPublisher(body));
+
+            // Negotiate content types from the converters (caller headers take precedence).
+            // Content-Type only applies when a body is serialized via the request converter.
+            ContentType requestContentType = body != null && requestConverter != null
+                    ? requestConverter.contentType() : null;
+            applyContentTypeHeaders(requestBuilder, headers, requestContentType);
 
             // Add custom headers
             headers.forEach(requestBuilder::header);

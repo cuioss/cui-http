@@ -133,18 +133,19 @@ public final class PipelineFactory {
      *   <li>Injection attempts</li>
      * </ul>
      *
-     * <p>Parameter names have stricter validation than parameter values since they
-     * typically map to internal field names or database columns.</p>
+     * <p><strong>Note:</strong> parameter names currently share the exact same
+     * validation as parameter values (they use {@link URLParameterValidationPipeline}).
+     * A dedicated, stricter name-only pipeline is not yet implemented; this method
+     * exists so callers can express intent and so stricter rules can be added later
+     * without changing call sites.</p>
      *
      * @param config The security configuration to use
      * @param eventCounter The event counter for tracking security violations
-     * @return A configured URL parameter name validation pipeline
+     * @return A configured URL parameter validation pipeline (currently identical to the value pipeline)
      * @throws NullPointerException if config or eventCounter is null
      */
     public static HttpSecurityValidator createParameterNamePipeline(
             SecurityConfiguration config, SecurityEventCounter eventCounter) {
-        // Parameter names use similar validation to parameter values but with stricter character requirements
-        // They typically should not contain special characters that could be used for injection
         return new URLParameterValidationPipeline(config, eventCounter);
     }
 

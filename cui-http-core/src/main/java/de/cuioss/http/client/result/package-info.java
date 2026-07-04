@@ -20,7 +20,6 @@
  * <ul>
  *   <li>{@link de.cuioss.http.client.result.HttpResult} - Sealed interface for HTTP operation results</li>
  *   <li>{@link de.cuioss.http.client.result.HttpErrorCategory} - Error classification for retry decisions</li>
- *   <li>{@link de.cuioss.http.client.result.HttpResultState} - State constants for HTTP result tracking</li>
  * </ul>
  *
  * <h2>Usage Examples</h2>
