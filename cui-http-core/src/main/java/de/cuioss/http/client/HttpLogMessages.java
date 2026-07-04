@@ -34,65 +34,11 @@ public final class HttpLogMessages {
     private static final String PREFIX = "HTTP";
 
     /**
-     * Contains informational log messages for successful operations or status updates.
-     */
-    @UtilityClass
-    public static final class INFO {
-
-        public static final LogRecord RETRY_OPERATION_SUCCEEDED_AFTER_ATTEMPTS = LogRecordModel.builder()
-                .prefix(PREFIX)
-                .identifier(10)
-                .template("Operation '%s' succeeded on attempt %s/%s")
-                .build();
-    }
-
-    /**
      * Contains warning-level log messages for potential issues that don't prevent
      * normal operation but may indicate problems.
      */
     @UtilityClass
     public static final class WARN {
-
-        public static final LogRecord CONTENT_CONVERSION_FAILED = LogRecordModel.builder()
-                .prefix(PREFIX)
-                .identifier(100)
-                .template("Content conversion failed for response from %s")
-                .build();
-
-        public static final LogRecord HTTP_STATUS_WARNING = LogRecordModel.builder()
-                .prefix(PREFIX)
-                .identifier(101)
-                .template("HTTP %s (%s) from %s")
-                .build();
-
-        public static final LogRecord HTTP_FETCH_FAILED = LogRecordModel.builder()
-                .prefix(PREFIX)
-                .identifier(102)
-                .template("Failed to fetch HTTP content from %s")
-                .build();
-
-        /**
-         * Logged when thread is interrupted while fetching HTTP content.
-         * Note: Not tested due to complexity of reliably triggering InterruptedException in unit tests.
-         * Used in: ResilientHttpHandler.loadInternal (catch InterruptedException)
-         */
-        public static final LogRecord HTTP_FETCH_INTERRUPTED = LogRecordModel.builder()
-                .prefix(PREFIX)
-                .identifier(103)
-                .template("Interrupted while fetching HTTP content from %s")
-                .build();
-
-        public static final LogRecord RETRY_MAX_ATTEMPTS_REACHED = LogRecordModel.builder()
-                .prefix(PREFIX)
-                .identifier(104)
-                .template("Operation '%s' failed after %s attempts. Final exception: %s")
-                .build();
-
-        public static final LogRecord RETRY_OPERATION_FAILED = LogRecordModel.builder()
-                .prefix(PREFIX)
-                .identifier(105)
-                .template("Retry operation '%s' failed after %s attempts in %sms")
-                .build();
 
         public static final LogRecord HTTP_PING_IO_ERROR = LogRecordModel.builder()
                 .prefix(PREFIX)

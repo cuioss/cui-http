@@ -70,6 +70,12 @@ public class TestApiDispatcher implements ModuleDispatcherElement {
     @Setter
     private String lastIfNoneMatch = null;
 
+    @Setter
+    private String lastAccept = null;
+
+    @Setter
+    private String lastContentType = null;
+
     @Getter
     @Setter
     private boolean successThenErrorMode = false;
@@ -134,8 +140,10 @@ public class TestApiDispatcher implements ModuleDispatcherElement {
     private Optional<MockResponse> handleRequest(RecordedRequest request) {
         callCounter++;
 
-        // Track If-None-Match header
+        // Track If-None-Match and content-negotiation headers
         lastIfNoneMatch = request.getHeaders().get("If-None-Match");
+        lastAccept = request.getHeaders().get("Accept");
+        lastContentType = request.getHeaders().get("Content-Type");
 
         // Special mode: first call succeeds, subsequent calls fail
         if (successThenErrorMode) {
@@ -294,5 +302,19 @@ public class TestApiDispatcher implements ModuleDispatcherElement {
      */
     public Optional<String> getLastRequestBody() {
         return Optional.ofNullable(lastRequestBody);
+    }
+
+    /**
+     * Get last Accept request header value.
+     */
+    public Optional<String> getLastAccept() {
+        return Optional.ofNullable(lastAccept);
+    }
+
+    /**
+     * Get last Content-Type request header value.
+     */
+    public Optional<String> getLastContentType() {
+        return Optional.ofNullable(lastContentType);
     }
 }

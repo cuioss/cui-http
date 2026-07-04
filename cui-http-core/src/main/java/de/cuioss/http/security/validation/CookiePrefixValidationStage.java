@@ -31,6 +31,12 @@ import java.util.Optional;
  * meet the requirements specified in RFC 6265bis. These prefixes provide additional security
  * guarantees to prevent subdomain attacks and ensure HTTPS-only transmission.</p>
  *
+ * <p><strong>Standalone stage:</strong> unlike the URL/parameter/header stages, this stage is
+ * <em>not</em> part of any pipeline built by {@code PipelineFactory} (which does not support
+ * cookie validation types). It is invoked manually via {@link #validateCookie(de.cuioss.http.security.data.Cookie)}
+ * on a {@link de.cuioss.http.security.data.Cookie} instance. The inherited
+ * {@link #validate(String)} method only performs whitespace checks on the raw cookie name.</p>
+ *
  * <h3>Validation Rules</h3>
  * <ol>
  *   <li><strong>__Host- Prefix</strong> - Requires:

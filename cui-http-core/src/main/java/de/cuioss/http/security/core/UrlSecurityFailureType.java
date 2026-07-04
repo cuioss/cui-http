@@ -221,7 +221,8 @@ public enum UrlSecurityFailureType {
      */
     public boolean isStructuralIssue() {
         return this == MALFORMED_INPUT ||
-                this == INVALID_STRUCTURE;
+                this == INVALID_STRUCTURE ||
+                this == INVALID_INPUT;
     }
 
     /**
@@ -252,7 +253,6 @@ public enum UrlSecurityFailureType {
      * @return true if this is a cookie-related failure type
      */
     public boolean isCookieSecurityIssue() {
-        return this == COOKIE_PREFIX_VIOLATION ||
-                this == INVALID_INPUT;
+        return this == COOKIE_PREFIX_VIOLATION;
     }
 }

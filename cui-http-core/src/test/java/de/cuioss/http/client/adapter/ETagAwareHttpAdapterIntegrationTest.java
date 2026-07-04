@@ -32,6 +32,7 @@ import org.junit.jupiter.api.Test;
 
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -260,6 +261,58 @@ class ETagAwareHttpAdapterIntegrationTest {
         assertTrue(result2.isSuccess());
         assertFalse(dispatcher.getLastIfNoneMatch().isPresent(),
                 "No If-None-Match expected - Void responses are never cached");
+    }
+
+    /**
+     * GET should set the Accept header from the response converter's content type.
+     */
+    @Test
+    @DisplayName("GET should send Accept header from response converter")
+    @ModuleDispatcher
+    void getShouldSendAcceptHeaderFromConverter(URIBuilder uriBuilder) {
+        dispatcher.withSuccessAndETag("{}", "\"e\"");
+
+        String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).build();
+
+        HttpAdapter<String> adapter = ETagAwareHttpAdapter.<String>builder()
+                .httpHandler(handler)
+                .responseConverter(new StringResponseConverter()) // APPLICATION_JSON
+                .build();
+
+        adapter.getBlocking();
+
+        assertEquals("application/json", dispatcher.getLastAccept().orElse(null),
+                "Accept must be derived from the response converter's content type");
+    }
+
+    /**
+     * POST should set Content-Type from the request converter, and a caller-provided
+     * header must override the converter default.
+     */
+    @Test
+    @DisplayName("POST should send Content-Type from request converter and honor caller override")
+    @ModuleDispatcher
+    void postShouldSendContentTypeAndHonorOverride(URIBuilder uriBuilder) {
+        dispatcher.withSuccessAndETag("{}", "\"e\"");
+
+        String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).build();
+
+        HttpAdapter<String> adapter = ETagAwareHttpAdapter.<String>builder()
+                .httpHandler(handler)
+                .responseConverter(new StringResponseConverter())
+                .requestConverter(new StringRequestConverter()) // APPLICATION_JSON
+                .build();
+
+        // Default from converter - Content-Type carries the charset (unlike Accept)
+        adapter.postBlocking("{\"a\":1}");
+        assertEquals("application/json; charset=UTF-8", dispatcher.getLastContentType().orElse(null));
+
+        // Caller override wins
+        adapter.post("{\"a\":1}", Map.of("Content-Type", "text/plain")).join();
+        assertEquals("text/plain", dispatcher.getLastContentType().orElse(null),
+                "Caller-provided Content-Type must override the converter default");
     }
 
     /**
