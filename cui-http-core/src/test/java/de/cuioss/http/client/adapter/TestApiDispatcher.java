@@ -285,6 +285,8 @@ public class TestApiDispatcher implements ModuleDispatcherElement {
         this.callCounter = 0;
         this.lastRequestBody = null;
         this.lastIfNoneMatch = null;
+        this.lastAccept = null;
+        this.lastContentType = null;
         this.successThenErrorMode = false;
         this.errorThenSuccessMode = false;
         return this;

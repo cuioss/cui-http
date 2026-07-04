@@ -461,9 +461,17 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         }
     }
 
+    /**
+     * Checks whether the header map contains the given header name, ignoring case.
+     *
+     * @param headers the caller-supplied header map to search
+     * @param name the header name to look for (matched case-insensitively)
+     * @return true if a header with that name is present, false otherwise
+     */
     private static boolean hasHeaderIgnoreCase(Map<String, String> headers, String name) {
         for (String key : headers.keySet()) {
-            if (key.equalsIgnoreCase(name)) {
+            // name is a non-null literal - calling on it is null-key safe for maps allowing null keys
+            if (name.equalsIgnoreCase(key)) {
                 return true;
             }
         }
