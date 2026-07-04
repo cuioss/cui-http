@@ -164,6 +164,9 @@ The following classes implement the validation stages:
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Attack pattern detection
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationConstants.java[CharacterValidationConstants] - RFC-compliant character sets
 
+[#_cookieprefixvalidationstage]
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CookiePrefixValidationStage.java[CookiePrefixValidationStage] - RFC 6265bis cookie prefix validation (standalone; not part of a factory-built pipeline, invoked manually via `validateCookie(Cookie)`)
+
 For implementation details, see the JavaDoc of each validation stage class.
 
 [#_sequential_execution_model]
@@ -204,8 +207,7 @@ The following classes implement security event tracking and monitoring:
 
 [#_event_counter_pattern]
 [#_securityeventcounter]
-* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter] - Thread-safe event counting
- * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter] - Thread-safe event counting and tracking
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter] - Thread-safe event counting and tracking
 
 For implementation details, see the JavaDoc of each monitoring class.
 
