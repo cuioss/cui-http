@@ -26,6 +26,7 @@ import lombok.ToString;
 import org.jspecify.annotations.Nullable;
 
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLParameters;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URI;
@@ -111,6 +112,12 @@ public final class HttpHandler {
     private final URL url;
     @Getter
     private final @Nullable SSLContext sslContext;
+    // Retained so asBuilder() can preserve a caller-configured TLS floor. For HTTP
+    // handlers this holds the default provider and is never used (no TLS).
+    // Excluded from equals/toString: it is an implementation detail derivable from configuration.
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    private final SecureSSLContextProvider secureSSLContextProvider;
     @Getter
     private final int connectionTimeoutSeconds;
     @Getter
@@ -122,6 +129,8 @@ public final class HttpHandler {
         this.uri = uri;
         this.url = url;
         this.sslContext = null;
+        // Unused for HTTP; holds a default so asBuilder() has a non-null value to carry
+        this.secureSSLContextProvider = new SecureSSLContextProvider();
         this.connectionTimeoutSeconds = connectionTimeoutSeconds;
         this.readTimeoutSeconds = readTimeoutSeconds;
 
@@ -132,18 +141,24 @@ public final class HttpHandler {
     }
 
     // Constructor for HTTPS URIs (SSL context required)
-    private HttpHandler(URI uri, URL url, SSLContext sslContext, int connectionTimeoutSeconds, int readTimeoutSeconds) {
+    private HttpHandler(URI uri, URL url, SSLContext sslContext, SecureSSLContextProvider secureSSLContextProvider,
+            int connectionTimeoutSeconds, int readTimeoutSeconds) {
         this.uri = uri;
         this.url = url;
         this.sslContext = sslContext;
+        this.secureSSLContextProvider = secureSSLContextProvider;
         this.connectionTimeoutSeconds = connectionTimeoutSeconds;
         this.readTimeoutSeconds = readTimeoutSeconds;
 
         // JDK 11+ HttpClient enables hostname verification by default.
-        // We intentionally omit explicit SSLParameters to preserve caller flexibility.
+        // Pin the enabled TLS protocols so the configured minimum version is a hard
+        // floor on the wire, not merely the context's default protocol object.
+        SSLParameters sslParameters = new SSLParameters();
+        sslParameters.setProtocols(secureSSLContextProvider.getEnabledProtocols());
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(connectionTimeoutSeconds))
                 .sslContext(sslContext)
+                .sslParameters(sslParameters)
                 .build();
     }
 
@@ -176,7 +191,8 @@ public final class HttpHandler {
         return builder()
                 .connectionTimeoutSeconds(connectionTimeoutSeconds)
                 .readTimeoutSeconds(readTimeoutSeconds)
-                .sslContext(sslContext);
+                .sslContext(sslContext)
+                .tlsVersions(secureSSLContextProvider);
     }
 
     /**
@@ -411,11 +427,12 @@ public final class HttpHandler {
 
             // Use appropriate constructor based on scheme
             if ("https".equalsIgnoreCase(uri.getScheme())) {
-                // For HTTPS, create or validate SSL context
+                // For HTTPS, create or validate SSL context and pin the enabled protocols
                 SecureSSLContextProvider actualSecureSSLContextProvider = secureSSLContextProvider != null ?
                         secureSSLContextProvider : new SecureSSLContextProvider();
                 SSLContext secureContext = actualSecureSSLContextProvider.getOrCreateSecureSSLContext(sslContext);
-                return new HttpHandler(uri, verifiedUrl, secureContext, actualConnectionTimeoutSeconds, actualReadTimeoutSeconds);
+                return new HttpHandler(uri, verifiedUrl, secureContext, actualSecureSSLContextProvider,
+                        actualConnectionTimeoutSeconds, actualReadTimeoutSeconds);
             } else {
                 // For HTTP, no SSL context needed
                 return new HttpHandler(uri, verifiedUrl, actualConnectionTimeoutSeconds, actualReadTimeoutSeconds);

@@ -105,6 +105,47 @@ class SecureSSLContextProviderTest {
     }
 
     @Test
+    @DisplayName("Should enable TLS 1.2 and 1.3 when minimum is TLS 1.2")
+    void shouldEnableTls12AndTls13ForDefaultMinimum() {
+        String[] protocols = new SecureSSLContextProvider().getEnabledProtocols();
+
+        assertArrayEquals(
+                new String[]{SecureSSLContextProvider.TLS_V1_2, SecureSSLContextProvider.TLS_V1_3},
+                protocols);
+    }
+
+    @Test
+    @DisplayName("Should enable TLS 1.2 and 1.3 when minimum is generic TLS")
+    void shouldEnableTls12AndTls13ForGenericTls() {
+        String[] protocols = new SecureSSLContextProvider(SecureSSLContextProvider.TLS).getEnabledProtocols();
+
+        assertArrayEquals(
+                new String[]{SecureSSLContextProvider.TLS_V1_2, SecureSSLContextProvider.TLS_V1_3},
+                protocols);
+    }
+
+    @Test
+    @DisplayName("Should enable only TLS 1.3 when minimum is TLS 1.3")
+    void shouldEnableOnlyTls13ForTls13Minimum() {
+        String[] protocols = new SecureSSLContextProvider(SecureSSLContextProvider.TLS_V1_3).getEnabledProtocols();
+
+        assertArrayEquals(new String[]{SecureSSLContextProvider.TLS_V1_3}, protocols);
+    }
+
+    @Test
+    @DisplayName("Enabled protocols must never include a forbidden version")
+    void enabledProtocolsMustExcludeForbiddenVersions() {
+        for (String minimum : SecureSSLContextProvider.ALLOWED_TLS_VERSIONS) {
+            String[] protocols = new SecureSSLContextProvider(minimum).getEnabledProtocols();
+            assertTrue(protocols.length > 0);
+            for (String protocol : protocols) {
+                assertFalse(SecureSSLContextProvider.FORBIDDEN_TLS_VERSIONS.contains(protocol),
+                        "Enabled protocols for minimum " + minimum + " must not contain forbidden " + protocol);
+            }
+        }
+    }
+
+    @Test
     @DisplayName("Should have no overlap between allowed and forbidden versions")
     void shouldHaveNoOverlapBetweenAllowedAndForbidden() {
         for (String allowed : SecureSSLContextProvider.ALLOWED_TLS_VERSIONS) {
