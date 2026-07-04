@@ -66,9 +66,9 @@ Use `URLPathValidationPipeline` for:
 
 ### Test Organization
 
-- **Attack Databases** (`src/test/java/de/cuioss/http/security/database`): Predefined attack patterns
-- **Generators** (`src/test/java/de/cuioss/http/security/generators`): Test data generators
-- **Integration Tests** (`src/test/java/de/cuioss/http/security/tests`): Attack database validation
+- **Attack Databases** (`cui-http-core/src/test/java/de/cuioss/http/security/database`): Predefined attack patterns
+- **Generators** (`cui-http-core/src/test/java/de/cuioss/http/security/generators`): Test data generators
+- **Integration Tests** (`cui-http-core/src/test/java/de/cuioss/http/security/tests`): Attack database validation
 
 ### Key Dependencies and Modules
 
@@ -199,8 +199,8 @@ Validators are thread-safe, composable, and fail-secure (throw `UrlSecurityExcep
 ### Important Files
 
 - `/doc/http-security/specification/pipeline-architecture-standards.adoc`: Pipeline selection rules
-- `/doc/http-security/specification/generator-contract.adoc`: Generator implementation standards
-- `/src/main/java/module-info.java`: Module definition
+- `/doc/http-security/specification/specification.adoc`: Security architecture specification
+- `/cui-http-core/src/main/java/module-info.java`: Module definition
 
 ## Development Notes
 
