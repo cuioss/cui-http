@@ -239,4 +239,36 @@ public final class CharacterValidationConstants {
             case COOKIE_NAME, COOKIE_VALUE -> RFC3986_UNRESERVED;
         };
     }
+
+    /**
+     * Determines whether a character is a Unicode combining mark.
+     *
+     * <p>Combining marks attach to and alter the rendering of an adjacent base character.
+     * When present in HTTP components they can visually spoof legitimate values and enable
+     * homograph attacks, so they are rejected across all components regardless of which
+     * Unicode block they inhabit.</p>
+     *
+     * <p>This membership test uses the character's general category rather than a fixed
+     * range, covering <em>all</em> combining blocks:</p>
+     * <ul>
+     *   <li>{@link Character#NON_SPACING_MARK} (Mn) - e.g. Combining Diacritical Marks
+     *       (U+0300-U+036F), Combining Cyrillic (U+0483-U+0489), Combining Half Marks
+     *       (U+FE20-U+FE2F)</li>
+     *   <li>{@link Character#COMBINING_SPACING_MARK} (Mc) - spacing combining marks used in
+     *       many Indic scripts</li>
+     *   <li>{@link Character#ENCLOSING_MARK} (Me) - enclosing marks such as U+20DD-U+20E0</li>
+     * </ul>
+     *
+     * <p>This replaces the previous hardcoded {@code U+0300-U+036F} range check, which covered
+     * only the "Combining Diacritical Marks" block and missed every other combining block.</p>
+     *
+     * @param codePoint the character (or code point) to classify
+     * @return {@code true} if the character is a combining mark
+     */
+    public static boolean isCombiningMark(int codePoint) {
+        int type = Character.getType(codePoint);
+        return type == Character.NON_SPACING_MARK
+                || type == Character.COMBINING_SPACING_MARK
+                || type == Character.ENCLOSING_MARK;
+    }
 }

@@ -250,14 +250,21 @@ public class UnicodeControlCharacterAttackGenerator implements TypedGenerator<St
             char c = pattern.charAt(i);
             result.append(c);
 
-            switch (i % 4) {
+            // Combining marks are drawn from several Unicode combining blocks (not just the
+            // U+0300-U+036F "Combining Diacritical Marks" block) so that category-based
+            // combining-mark rejection is exercised across all combining categories.
+            switch (i % 8) {
                 case 0 -> result.append('\uFE00'); // Variation Selector-1
                 case 1 -> result.append('\uFE0F'); // Variation Selector-16
-                case 2 -> result.append('\u0300'); // Combining Grave Accent
-                case 3 -> result.append('\u036F'); // Combining Latin Small Letter X
+                case 2 -> result.append('\u0300'); // Combining Grave Accent (Mn, U+0300-U+036F)
+                case 3 -> result.append('\u036F'); // Combining Latin Small Letter X (Mn, U+0300-U+036F)
+                case 4 -> result.append('\u0483'); // Combining Cyrillic Titlo (Mn, outside base block)
+                case 5 -> result.append('\u20DD'); // Combining Enclosing Circle (Me)
+                case 6 -> result.append('\uFE24'); // Combining Macron Left Half (Mn, Combining Half Marks)
+                case 7 -> result.append('\u0903'); // Devanagari Sign Visarga (Mc, spacing combining mark)
                 default -> {
                     // Intentionally empty - all cases covered by modulo operation
-                } // All cases covered by modulo 4
+                } // All cases covered by modulo 8
             }
         }
         return result.toString();

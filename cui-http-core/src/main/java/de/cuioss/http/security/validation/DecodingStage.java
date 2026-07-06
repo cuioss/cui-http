@@ -226,9 +226,10 @@ ValidationType validationType) implements HttpSecurityValidator {
      * <ul>
      *   <li><strong>Null bytes</strong> - rejected unless explicitly allowed (defense in depth;
      *       encoded {@code %00} is normally already rejected before decoding)</li>
-     *   <li><strong>Combining characters (U+0300-U+036F)</strong> - always rejected, mirroring
-     *       the raw-character rule; decoded combining marks can visually alter adjacent
-     *       characters and enable homograph attacks</li>
+     *   <li><strong>Combining marks (all Unicode combining blocks)</strong> - always rejected,
+     *       mirroring the raw-character rule; decoded combining marks can visually alter adjacent
+     *       characters and enable homograph attacks. Classified by Unicode general category
+     *       ({@link CharacterValidationConstants#isCombiningMark(int)}), not a fixed range</li>
      *   <li><strong>Decoded CR/LF</strong> - always rejected for header names/values and cookie
      *       names/values (they travel inside HTTP headers, so a decoded line break is a
      *       response-splitting vector). For URL paths, rejected unless control characters are
@@ -253,7 +254,7 @@ ValidationType validationType) implements HttpSecurityValidator {
                         .build();
             }
 
-            if (ch >= 0x0300 && ch <= 0x036F) {
+            if (CharacterValidationConstants.isCombiningMark(ch)) {
                 throw UrlSecurityException.builder()
                         .failureType(UrlSecurityFailureType.INVALID_CHARACTER)
                         .validationType(validationType)

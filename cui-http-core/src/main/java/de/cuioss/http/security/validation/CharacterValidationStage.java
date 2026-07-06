@@ -327,8 +327,9 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
         // Unicode characters above 255:
         // For URLs (paths/parameters): Always rejected per RFC 3986 (ASCII-only)
         // For headers/body: Allowed if allowExtendedAscii is true (which enables full Unicode support for these contexts)
-        // Always reject combining characters (U+0300-U+036F) as they can cause normalization issues
-        if (ch >= 0x0300 && ch <= 0x036F) {
+        // Always reject combining marks (any Unicode combining block) as they can cause
+        // normalization issues and enable homograph attacks.
+        if (CharacterValidationConstants.isCombiningMark(ch)) {
             return false;
         }
         // The allowExtendedAscii flag controls both extended ASCII and Unicode for applicable validation types
