@@ -283,9 +283,15 @@ public class SecurityConfigurationBuilder {
     }
 
     /**
-     * Sets whether Unicode normalization should be performed.
+     * Sets whether Unicode normalization is performed during decoding.
      *
-     * @param normalize true to normalize Unicode, false to leave as-is
+     * <p>When enabled, input is canonicalized and the canonical form is passed to downstream
+     * stages (normalize-and-continue). The stage rejects input only when a fold introduces a
+     * structurally significant separator (such as a fullwidth solidus folding to {@code /});
+     * benign compatibility folds of legitimate international text are preserved. When disabled,
+     * input is left as-is.</p>
+     *
+     * @param normalize true to canonicalize Unicode, false to leave as-is
      * @return This builder for method chaining
      */
     public SecurityConfigurationBuilder normalizeUnicode(boolean normalize) {

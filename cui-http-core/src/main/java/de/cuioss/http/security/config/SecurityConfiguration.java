@@ -66,7 +66,12 @@ package de.cuioss.http.security.config;
  * @param allowNullBytes Whether null bytes are allowed in content
  * @param allowControlCharacters Whether control characters are allowed in content
  * @param allowExtendedAscii Whether extended ASCII (128-255) and applicable Unicode characters are allowed
- * @param normalizeUnicode Whether Unicode normalization should be performed during decoding
+ * @param normalizeUnicode Whether Unicode normalization is applied during decoding. When enabled,
+ *        input is canonicalized (normalize-and-continue: the canonical form flows to downstream
+ *        stages) and rejected only when a compatibility/canonical fold introduces a structurally
+ *        significant separator (e.g. fullwidth solidus {@code U+FF0F} &rarr; {@code /}); benign
+ *        folds of legitimate international text are preserved, not rejected. Paths use NFKC,
+ *        parameter values use the lossless NFC form.
  * @param caseSensitiveComparison Whether string comparisons are case-sensitive
  * @param failOnSuspiciousPatterns Whether validation fails on suspicious (non-attack) patterns
  *

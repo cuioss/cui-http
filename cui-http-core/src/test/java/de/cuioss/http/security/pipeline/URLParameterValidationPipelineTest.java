@@ -183,18 +183,21 @@ class URLParameterValidationPipelineTest {
         }
 
         /**
-         * Regression: a percent-encoded fullwidth solidus (%EF%BC%8F = U+FF0F) folds to
-         * '/' under NFKC. With normalization on by default, this homoglyph must be
-         * rejected rather than silently normalized into a path separator.
+         * F-05 re-partition: parameter values are canonicalized with the <em>lossless</em>
+         * NFC form (not NFKC), so a percent-encoded fullwidth solidus (%EF%BC%8F = U+FF0F)
+         * is preserved rather than folded into a path separator. This is deliberate:
+         * parameter values are not parsed as paths, and NFC preserves legitimate
+         * international content (the fullwidth-CJK-in-parameter false positive). Structural
+         * folding to a separator is enforced for {@code URL_PATH} (NFKC), not for parameters.
          */
         @Test
-        void shouldRejectEncodedFullwidthSolidusHomoglyph() {
-            assertTrue(config.normalizeUnicode(), "Default config must normalize (NFKC) for this guarantee");
+        void shouldPreserveEncodedFullwidthContentInParameters() {
+            assertTrue(config.normalizeUnicode(), "Default config normalizes (NFC) parameter values");
 
-            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
-                    pipeline.validate("path%EF%BC%8F%EF%BC%8Fadmin"));
-
-            assertEquals(UrlSecurityFailureType.UNICODE_NORMALIZATION_CHANGED, exception.getFailureType());
+            // The fullwidth solidus does not fold under NFC, so no structural separator is
+            // introduced and the value is accepted (normalize-and-continue).
+            Optional<String> result = pipeline.validate("path%EF%BC%8F%EF%BC%8Fadmin");
+            assertTrue(result.isPresent(), "Fullwidth content in a parameter value should be preserved, not rejected");
         }
     }
 
