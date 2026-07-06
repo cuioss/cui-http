@@ -72,6 +72,9 @@ See `de.cuioss.http.security.pipeline.URLParameterValidationPipeline`.
 * Cookie count: 20
 * Body size: 5MB
 
+See the link:http-security/configuration.adoc[Configuration Reference] for every enforced setting,
+its default across the strict/default/lenient presets, and the stage that enforces it.
+
 == Usage Example
 
 [source,java]
