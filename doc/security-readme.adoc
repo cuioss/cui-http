@@ -47,9 +47,18 @@ See `de.cuioss.http.security.pipeline.URLParameterValidationPipeline`.
 
 == Validation Stages
 
-* `DecodingStage` - URL percent-decoding and UTF-8 overlong encoding detection
-* `NormalizationStage` - Unicode normalization for consistent character representation
-* `CharacterValidationStage` - Invalid and dangerous character detection
+* `DecodingStage` - URL percent-decoding, UTF-8 overlong encoding detection, and Unicode
+  canonicalization. Unicode normalization follows the OWASP _canonicalize-then-validate_ model:
+  input is normalized and the canonical form flows to downstream stages (normalize-and-continue),
+  and it is rejected **only** when a fold introduces a structurally significant separator
+  (`/ \ . : ? # %`) — e.g. a fullwidth solidus `U+FF0F` folding to `/`. Benign compatibility
+  folds of legitimate international text (CJK / Cyrillic / Arabic, fullwidth letters, ligatures)
+  are preserved, not rejected. URL paths use NFKC; parameter values use the lossless NFC form.
+  Note: NFKC is not a confusable/homograph defense — true confusable detection is a UTS&nbsp;#39
+  capability and out of scope here.
+* `NormalizationStage` - Path normalization (RFC&nbsp;3986 dot-segment resolution), not Unicode
+* `CharacterValidationStage` - Invalid and dangerous character detection, including rejection of
+  Unicode combining marks (classified by general category, all combining blocks)
 * `LengthValidationStage` - Length limit enforcement to prevent buffer overflow attacks
 * `PatternMatchingStage` - Attack pattern detection using configured security rules
 
@@ -62,6 +71,9 @@ See `de.cuioss.http.security.pipeline.URLParameterValidationPipeline`.
 * Header count: 50
 * Cookie count: 20
 * Body size: 5MB
+
+See the link:http-security/configuration.adoc[Configuration Reference] for every enforced setting,
+its default across the strict/default/lenient presets, and the stage that enforces it.
 
 == Usage Example
 

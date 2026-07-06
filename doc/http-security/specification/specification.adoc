@@ -155,7 +155,7 @@ The following classes implement the validation stages:
 
 [#_encodingvalidationstage]
 [#_decodingstage]
-* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage] - URL decoding with security checks
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage] - URL decoding with security checks and Unicode canonicalization (OWASP canonicalize-then-validate: normalize-and-continue, rejecting only folds that introduce a structural separator; NFKC for paths, NFC for parameter values). Legitimate international text passes; NFKC is not confusable/homograph defense.
 
 [#_normalizationstage]
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage] - Path normalization per RFC 3986

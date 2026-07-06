@@ -127,19 +127,41 @@ class PipelineFactoryTest {
 
         @Test
         void shouldCreateParameterNamePipeline() {
-            // Test that PARAMETER_NAME now creates a pipeline instead of throwing an exception
+            // F-07: PARAMETER_NAME now creates a genuine PARAMETER_NAME-typed pipeline
+            // (not the parameter-value pipeline).
             HttpSecurityValidator paramNameValidator = PipelineFactory.createPipeline(
                     ValidationType.PARAMETER_NAME, config, eventCounter);
-            assertNotNull(paramNameValidator);
+            assertInstanceOf(URLParameterNameValidationPipeline.class, paramNameValidator);
+            assertEquals(ValidationType.PARAMETER_NAME,
+                    ((URLParameterNameValidationPipeline) paramNameValidator).getValidationType());
 
             // Test factory method directly
             HttpSecurityValidator directValidator = PipelineFactory.createParameterNamePipeline(config, eventCounter);
-            assertNotNull(directValidator);
+            assertInstanceOf(URLParameterNameValidationPipeline.class, directValidator);
 
             // Verify it can validate a simple parameter name
             Optional<String> result = directValidator.validate("page");
             assertTrue(result.isPresent());
             assertEquals("page", result.get());
+        }
+
+        @Test
+        void shouldApplyNameOnlyRulesInParameterNamePipeline() {
+            // F-07: name-only rules are genuinely enforced - a decoded CR/LF and a decoded
+            // parameter delimiter must be rejected for names (they would be accepted in a value).
+            HttpSecurityValidator nameValidator = PipelineFactory.createParameterNamePipeline(config, eventCounter);
+            HttpSecurityValidator valueValidator = PipelineFactory.createUrlParameterPipeline(config, eventCounter);
+
+            // Decoded CR/LF (%0D%0A) - forbidden in a name, allowed in a value
+            assertThrows(UrlSecurityException.class, () -> nameValidator.validate("na%0D%0Ame"));
+            assertTrue(valueValidator.validate("va%0D%0Alue").isPresent());
+
+            // Decoded '=' delimiter (%3D) - forbidden in a name, allowed in a value
+            assertThrows(UrlSecurityException.class, () -> nameValidator.validate("na%3Dme"));
+            assertTrue(valueValidator.validate("va%3Dlue").isPresent());
+
+            // Decoded '&' delimiter (%26) - forbidden in a name
+            assertThrows(UrlSecurityException.class, () -> nameValidator.validate("na%26me"));
         }
 
         @Test

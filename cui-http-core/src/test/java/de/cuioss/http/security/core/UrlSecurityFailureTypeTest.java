@@ -15,12 +15,9 @@
  */
 package de.cuioss.http.security.core;
 
-import de.cuioss.test.generator.Generators;
-import de.cuioss.test.generator.TypedGenerator;
-import de.cuioss.test.generator.junit.EnableGeneratorController;
-import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.Arrays;
 import java.util.Set;
@@ -31,7 +28,6 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Test for {@link UrlSecurityFailureType}
  */
-@EnableGeneratorController
 class UrlSecurityFailureTypeTest {
 
     @Test
@@ -61,33 +57,19 @@ class UrlSecurityFailureTypeTest {
     }
 
     @Test
-    void shouldHave24FailureTypes() {
+    void shouldHave25FailureTypes() {
         // Verify we have the expected number of failure types
         // Original 22 (after removing SQL, Command, XSS) + 2 cookie security types
+        // + TOO_MANY_ELEMENTS (F-12 collection count enforcement)
         UrlSecurityFailureType[] values = UrlSecurityFailureType.values();
-        assertEquals(24, values.length, "Should have 24 failure types (22 + cookie security)");
+        assertEquals(25, values.length, "Should have 25 failure types (22 + 2 cookie security + TOO_MANY_ELEMENTS)");
     }
 
     @ParameterizedTest
-    @TypeGeneratorSource(value = UrlSecurityFailureTypeGenerator.class, count = 23)
+    @EnumSource(UrlSecurityFailureType.class)
     void shouldHaveNonNullDescriptions(UrlSecurityFailureType type) {
         assertNotNull(type.getDescription(), "Description should not be null for: " + type);
         assertFalse(type.getDescription().trim().isEmpty(), "Description should not be empty for: " + type);
-    }
-
-    static class UrlSecurityFailureTypeGenerator implements TypedGenerator<UrlSecurityFailureType> {
-        private final TypedGenerator<UrlSecurityFailureType> gen =
-                Generators.enumValues(UrlSecurityFailureType.class);
-
-        @Override
-        public UrlSecurityFailureType next() {
-            return gen.next();
-        }
-
-        @Override
-        public Class<UrlSecurityFailureType> getType() {
-            return UrlSecurityFailureType.class;
-        }
     }
 
     @Test
@@ -185,7 +167,7 @@ class UrlSecurityFailureTypeTest {
     }
 
     @ParameterizedTest
-    @TypeGeneratorSource(value = UrlSecurityFailureTypeGenerator.class, count = 25)
+    @EnumSource(UrlSecurityFailureType.class)
     void shouldHaveExactlyOneCategory(UrlSecurityFailureType type) {
         int categoryCount = 0;
 
@@ -205,7 +187,7 @@ class UrlSecurityFailureTypeTest {
     }
 
     @ParameterizedTest
-    @TypeGeneratorSource(value = UrlSecurityFailureTypeGenerator.class, count = 25)
+    @EnumSource(UrlSecurityFailureType.class)
     void shouldHaveDescriptiveNames(UrlSecurityFailureType type) {
         String name = type.name();
         assertTrue(name.matches("^[A-Z][A-Z0-9_]*[A-Z0-9]$"),
@@ -215,7 +197,7 @@ class UrlSecurityFailureTypeTest {
     }
 
     @ParameterizedTest
-    @TypeGeneratorSource(value = UrlSecurityFailureTypeGenerator.class, count = 21)
+    @EnumSource(UrlSecurityFailureType.class)
     void shouldSupportToString(UrlSecurityFailureType type) {
         String toString = type.toString();
         assertNotNull(toString);
@@ -224,7 +206,7 @@ class UrlSecurityFailureTypeTest {
     }
 
     @ParameterizedTest
-    @TypeGeneratorSource(value = UrlSecurityFailureTypeGenerator.class, count = 21)
+    @EnumSource(UrlSecurityFailureType.class)
     void shouldSupportValueOf(UrlSecurityFailureType type) {
         UrlSecurityFailureType parsed = UrlSecurityFailureType.valueOf(type.name());
         assertEquals(type, parsed);
@@ -241,7 +223,7 @@ class UrlSecurityFailureTypeTest {
     }
 
     @ParameterizedTest
-    @TypeGeneratorSource(value = UrlSecurityFailureTypeGenerator.class, count = 21)
+    @EnumSource(UrlSecurityFailureType.class)
     void shouldBeSerializable(UrlSecurityFailureType type) {
         // This would work in actual serialization
         assertNotNull(type.name());

@@ -18,7 +18,7 @@ package de.cuioss.http.security.validation;
 import de.cuioss.http.security.core.ValidationType;
 import org.junit.jupiter.api.Test;
 
-import java.util.BitSet;
+import java.util.function.IntPredicate;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -26,152 +26,144 @@ class CharacterValidationConstantsTest {
 
     @Test
     void shouldInitializeRFC3986UnreservedCharacters() {
-        BitSet unreserved = CharacterValidationConstants.RFC3986_UNRESERVED;
+        IntPredicate unreserved = CharacterValidationConstants.RFC3986_UNRESERVED;
 
         // Test ALPHA characters
         for (char c = 'A'; c <= 'Z'; c++) {
-            assertTrue(unreserved.get(c), "Uppercase letter " + c + " should be allowed");
+            assertTrue(unreserved.test(c), "Uppercase letter " + c + " should be allowed");
         }
         for (char c = 'a'; c <= 'z'; c++) {
-            assertTrue(unreserved.get(c), "Lowercase letter " + c + " should be allowed");
+            assertTrue(unreserved.test(c), "Lowercase letter " + c + " should be allowed");
         }
 
         // Test DIGIT characters
         for (char c = '0'; c <= '9'; c++) {
-            assertTrue(unreserved.get(c), "Digit " + c + " should be allowed");
+            assertTrue(unreserved.test(c), "Digit " + c + " should be allowed");
         }
 
         // Test specific unreserved characters
-        assertTrue(unreserved.get('-'));
-        assertTrue(unreserved.get('.'));
-        assertTrue(unreserved.get('_'));
-        assertTrue(unreserved.get('~'));
+        assertTrue(unreserved.test('-'));
+        assertTrue(unreserved.test('.'));
+        assertTrue(unreserved.test('_'));
+        assertTrue(unreserved.test('~'));
 
         // Test some characters that should NOT be allowed
-        assertFalse(unreserved.get(' '));
-        assertFalse(unreserved.get('/'));
-        assertFalse(unreserved.get('?'));
-        assertFalse(unreserved.get('#'));
+        assertFalse(unreserved.test(' '));
+        assertFalse(unreserved.test('/'));
+        assertFalse(unreserved.test('?'));
+        assertFalse(unreserved.test('#'));
     }
 
     @Test
+    @SuppressWarnings("java:S5961") // Exhaustive RFC 3986 path character-set membership check
     void shouldInitializeRFC3986PathCharacters() {
-        BitSet pathChars = CharacterValidationConstants.RFC3986_PATH_CHARS;
+        IntPredicate pathChars = CharacterValidationConstants.RFC3986_PATH_CHARS;
 
         // Should include all unreserved characters
-        assertTrue(pathChars.get('A'));
-        assertTrue(pathChars.get('0'));
-        assertTrue(pathChars.get('-'));
+        assertTrue(pathChars.test('A'));
+        assertTrue(pathChars.test('0'));
+        assertTrue(pathChars.test('-'));
 
         // Should include path-specific characters
-        assertTrue(pathChars.get('/'));
-        assertTrue(pathChars.get('@'));
-        assertTrue(pathChars.get(':'));
+        assertTrue(pathChars.test('/'));
+        assertTrue(pathChars.test('@'));
+        assertTrue(pathChars.test(':'));
 
         // Should include sub-delims for path
-        assertTrue(pathChars.get('!'));
-        assertTrue(pathChars.get('$'));
-        assertTrue(pathChars.get('&'));
-        assertTrue(pathChars.get('\''));
-        assertTrue(pathChars.get('('));
-        assertTrue(pathChars.get(')'));
-        assertTrue(pathChars.get('*'));
-        assertTrue(pathChars.get('+'));
-        assertTrue(pathChars.get(','));
-        assertTrue(pathChars.get(';'));
-        assertTrue(pathChars.get('='));
+        assertTrue(pathChars.test('!'));
+        assertTrue(pathChars.test('$'));
+        assertTrue(pathChars.test('&'));
+        assertTrue(pathChars.test('\''));
+        assertTrue(pathChars.test('('));
+        assertTrue(pathChars.test(')'));
+        assertTrue(pathChars.test('*'));
+        assertTrue(pathChars.test('+'));
+        assertTrue(pathChars.test(','));
+        assertTrue(pathChars.test(';'));
+        assertTrue(pathChars.test('='));
 
         // Should NOT include some characters
-        assertFalse(pathChars.get(' '));
-        assertFalse(pathChars.get('?'));
-        assertFalse(pathChars.get('#'));
+        assertFalse(pathChars.test(' '));
+        assertFalse(pathChars.test('?'));
+        assertFalse(pathChars.test('#'));
     }
 
     @Test
     void shouldInitializeRFC3986QueryCharacters() {
-        BitSet queryChars = CharacterValidationConstants.RFC3986_QUERY_CHARS;
+        IntPredicate queryChars = CharacterValidationConstants.RFC3986_QUERY_CHARS;
 
         // Should include all unreserved characters
-        assertTrue(queryChars.get('A'));
-        assertTrue(queryChars.get('0'));
-        assertTrue(queryChars.get('-'));
+        assertTrue(queryChars.test('A'));
+        assertTrue(queryChars.test('0'));
+        assertTrue(queryChars.test('-'));
 
         // Should include query-specific characters
-        assertTrue(queryChars.get('?'));
-        assertTrue(queryChars.get('&'));
-        assertTrue(queryChars.get('='));
+        assertTrue(queryChars.test('?'));
+        assertTrue(queryChars.test('&'));
+        assertTrue(queryChars.test('='));
 
         // Should include some sub-delims for query
-        assertTrue(queryChars.get('!'));
-        assertTrue(queryChars.get('$'));
-        assertTrue(queryChars.get('\''));
+        assertTrue(queryChars.test('!'));
+        assertTrue(queryChars.test('$'));
+        assertTrue(queryChars.test('\''));
 
         // Should NOT include some characters
-        assertFalse(queryChars.get(' '));
-        assertFalse(queryChars.get('#'));
+        assertFalse(queryChars.test(' '));
+        assertFalse(queryChars.test('#'));
     }
 
     @Test
+    @SuppressWarnings("java:S5961") // Exhaustive RFC 7230 header character-set membership check
     void shouldInitializeRFC7230HeaderCharacters() {
-        BitSet headerChars = CharacterValidationConstants.RFC7230_HEADER_CHARS;
+        IntPredicate headerChars = CharacterValidationConstants.RFC7230_HEADER_CHARS;
 
         // Should include most visible ASCII
-        assertTrue(headerChars.get('A'));
-        assertTrue(headerChars.get('0'));
-        assertTrue(headerChars.get('-'));
-        assertTrue(headerChars.get('_'));
-        assertTrue(headerChars.get('/'));
-        assertTrue(headerChars.get(':'));
-        assertTrue(headerChars.get('='));
+        assertTrue(headerChars.test('A'));
+        assertTrue(headerChars.test('0'));
+        assertTrue(headerChars.test('-'));
+        assertTrue(headerChars.test('_'));
+        assertTrue(headerChars.test('/'));
+        assertTrue(headerChars.test(':'));
+        assertTrue(headerChars.test('='));
 
         // Should include space and tab
-        assertTrue(headerChars.get(' '));
-        assertTrue(headerChars.get('\t'));
+        assertTrue(headerChars.test(' '));
+        assertTrue(headerChars.test('\t'));
 
         // Should exclude control characters
-        assertFalse(headerChars.get('\0'));
-        assertFalse(headerChars.get('\n'));
-        assertFalse(headerChars.get('\r'));
-        assertFalse(headerChars.get('\u0001'));
+        assertFalse(headerChars.test('\0'));
+        assertFalse(headerChars.test('\n'));
+        assertFalse(headerChars.test('\r'));
+        assertFalse(headerChars.test(1));
 
         // Should exclude characters outside printable range
-        assertFalse(headerChars.get((char) 127)); // DEL
-        assertFalse(headerChars.get((char) 31));  // Below space
+        assertFalse(headerChars.test(127)); // DEL
+        assertFalse(headerChars.test(31));  // Below space
     }
 
     @Test
     void shouldReturnCorrectCharacterSetForValidationType() {
-        assertEquals(CharacterValidationConstants.RFC3986_PATH_CHARS,
+        // The accessor now returns the shared immutable predicate instance (no defensive
+        // copy), so identity equality is both correct and the strongest available assertion.
+        assertSame(CharacterValidationConstants.RFC3986_PATH_CHARS,
                 CharacterValidationConstants.getCharacterSet(ValidationType.URL_PATH));
 
-        assertEquals(CharacterValidationConstants.RFC3986_QUERY_CHARS,
+        assertSame(CharacterValidationConstants.RFC3986_QUERY_CHARS,
                 CharacterValidationConstants.getCharacterSet(ValidationType.PARAMETER_NAME));
-        assertEquals(CharacterValidationConstants.RFC3986_QUERY_CHARS,
+        assertSame(CharacterValidationConstants.RFC3986_QUERY_CHARS,
                 CharacterValidationConstants.getCharacterSet(ValidationType.PARAMETER_VALUE));
 
-        assertEquals(CharacterValidationConstants.RFC7230_HEADER_CHARS,
+        assertSame(CharacterValidationConstants.RFC7230_HEADER_CHARS,
                 CharacterValidationConstants.getCharacterSet(ValidationType.HEADER_NAME));
-        assertEquals(CharacterValidationConstants.RFC7230_HEADER_CHARS,
+        assertSame(CharacterValidationConstants.RFC7230_HEADER_CHARS,
                 CharacterValidationConstants.getCharacterSet(ValidationType.HEADER_VALUE));
 
-        assertEquals(CharacterValidationConstants.HTTP_BODY_CHARS,
+        assertSame(CharacterValidationConstants.HTTP_BODY_CHARS,
                 CharacterValidationConstants.getCharacterSet(ValidationType.BODY));
-        assertEquals(CharacterValidationConstants.RFC3986_UNRESERVED,
+        assertSame(CharacterValidationConstants.RFC3986_UNRESERVED,
                 CharacterValidationConstants.getCharacterSet(ValidationType.COOKIE_NAME));
-        assertEquals(CharacterValidationConstants.RFC3986_UNRESERVED,
+        assertSame(CharacterValidationConstants.RFC3986_UNRESERVED,
                 CharacterValidationConstants.getCharacterSet(ValidationType.COOKIE_VALUE));
-    }
-
-    @Test
-    void shouldReturnDefensiveCopies() {
-        // Mutating a returned set must not corrupt the shared constants
-        var copy = CharacterValidationConstants.getCharacterSet(ValidationType.URL_PATH);
-        assertNotSame(CharacterValidationConstants.RFC3986_PATH_CHARS, copy);
-
-        copy.set('<');
-        assertFalse(CharacterValidationConstants.RFC3986_PATH_CHARS.get('<'),
-                "Shared constant must be unaffected by mutation of the returned copy");
-        assertFalse(CharacterValidationConstants.getCharacterSet(ValidationType.URL_PATH).get('<'));
     }
 
     @Test
