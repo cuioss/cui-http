@@ -73,7 +73,7 @@ class ETagAwareHttpAdapterIntegrationTest {
         dispatcher.withSuccessAndETag("{\"id\":1,\"name\":\"test\"}", "\"etag-123\"");
 
         String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
-        HttpHandler handler = HttpHandler.builder().url(serverUrl).build();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
 
         HttpAdapter<String> adapter = ETagAwareHttpAdapter.<String>builder()
                 .httpHandler(handler)
@@ -112,7 +112,7 @@ class ETagAwareHttpAdapterIntegrationTest {
         dispatcher.withSuccessAndETag("{\"id\":2,\"name\":\"created\"}", "\"etag-456\"");
 
         String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
-        HttpHandler handler = HttpHandler.builder().url(serverUrl).build();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
 
         HttpAdapter<String> adapter = ETagAwareHttpAdapter.<String>builder()
                 .httpHandler(handler)
@@ -150,7 +150,7 @@ class ETagAwareHttpAdapterIntegrationTest {
         dispatcher.withSuccessAndETag("{\"id\":1,\"name\":\"updated\"}", "\"etag-updated\"");
 
         String serverUrl = uriBuilder.addPathSegments("api", "data", "1").build().toString();
-        HttpHandler handler = HttpHandler.builder().url(serverUrl).build();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
 
         HttpAdapter<String> adapter = ETagAwareHttpAdapter.<String>builder()
                 .httpHandler(handler)
@@ -177,7 +177,7 @@ class ETagAwareHttpAdapterIntegrationTest {
         dispatcher.withNoContent();
 
         String serverUrl = uriBuilder.addPathSegments("api", "data", "1").build().toString();
-        HttpHandler handler = HttpHandler.builder().url(serverUrl).build();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
 
         HttpAdapter<String> adapter = ETagAwareHttpAdapter.<String>builder()
                 .httpHandler(handler)
@@ -203,7 +203,7 @@ class ETagAwareHttpAdapterIntegrationTest {
         dispatcher.withNoContent();
 
         String serverUrl = uriBuilder.addPathSegments("api", "data", "1").build().toString();
-        HttpHandler handler = HttpHandler.builder().url(serverUrl).build();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
 
         HttpAdapter<Void> adapter = ETagAwareHttpAdapter.statusCodeOnly(handler);
 
@@ -225,7 +225,7 @@ class ETagAwareHttpAdapterIntegrationTest {
         dispatcher.withSuccessAndETag("", "\"etag-head\"");
 
         String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
-        HttpHandler handler = HttpHandler.builder().url(serverUrl).build();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
 
         HttpAdapter<Void> adapter = ETagAwareHttpAdapter.statusCodeOnly(handler);
 
@@ -247,7 +247,7 @@ class ETagAwareHttpAdapterIntegrationTest {
         dispatcher.withSuccessAndETag("ignored-body", "\"etag-get\"");
 
         String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
-        HttpHandler handler = HttpHandler.builder().url(serverUrl).build();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
 
         HttpAdapter<Void> adapter = ETagAwareHttpAdapter.statusCodeOnly(handler);
 
@@ -273,7 +273,7 @@ class ETagAwareHttpAdapterIntegrationTest {
         dispatcher.withSuccessAndETag("{}", "\"e\"");
 
         String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
-        HttpHandler handler = HttpHandler.builder().url(serverUrl).build();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
 
         HttpAdapter<String> adapter = ETagAwareHttpAdapter.<String>builder()
                 .httpHandler(handler)
@@ -297,7 +297,7 @@ class ETagAwareHttpAdapterIntegrationTest {
         dispatcher.withSuccessAndETag("{}", "\"e\"");
 
         String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
-        HttpHandler handler = HttpHandler.builder().url(serverUrl).build();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
 
         HttpAdapter<String> adapter = ETagAwareHttpAdapter.<String>builder()
                 .httpHandler(handler)
@@ -325,7 +325,7 @@ class ETagAwareHttpAdapterIntegrationTest {
         dispatcher.withServerError();
 
         String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
-        HttpHandler handler = HttpHandler.builder().url(serverUrl).build();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
 
         HttpAdapter<String> adapter = ETagAwareHttpAdapter.<String>builder()
                 .httpHandler(handler)
@@ -350,7 +350,7 @@ class ETagAwareHttpAdapterIntegrationTest {
         dispatcher.withClientError();
 
         String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
-        HttpHandler handler = HttpHandler.builder().url(serverUrl).build();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
 
         HttpAdapter<String> adapter = ETagAwareHttpAdapter.<String>builder()
                 .httpHandler(handler)
@@ -375,7 +375,7 @@ class ETagAwareHttpAdapterIntegrationTest {
     void connectionRefusedShouldReturnFailure() {
         // Use an unreachable URL to simulate connection failure
         String unreachableUrl = "http://localhost:1/unreachable";
-        HttpHandler handler = HttpHandler.builder().url(unreachableUrl).build();
+        HttpHandler handler = HttpHandler.builder().url(unreachableUrl).allowInsecureHttp(true).build();
 
         HttpAdapter<String> adapter = ETagAwareHttpAdapter.<String>builder()
                 .httpHandler(handler)

@@ -71,7 +71,7 @@ class ResilientHttpAdapterIntegrationTest {
         dispatcher.withSuccessThenError("{\"status\":\"ok\"}", "\"etag-retry\"");
 
         String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
-        HttpHandler handler = HttpHandler.builder().url(serverUrl).build();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
 
         HttpAdapter<String> baseAdapter = ETagAwareHttpAdapter.<String>builder()
                 .httpHandler(handler)
@@ -116,7 +116,7 @@ class ResilientHttpAdapterIntegrationTest {
         dispatcher.withClientError();
 
         String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
-        HttpHandler handler = HttpHandler.builder().url(serverUrl).build();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
 
         HttpAdapter<String> baseAdapter = ETagAwareHttpAdapter.<String>builder()
                 .httpHandler(handler)
@@ -148,7 +148,7 @@ class ResilientHttpAdapterIntegrationTest {
         dispatcher.withSuccessAndETag("{\"data\":\"cached\"}", "\"etag-composed\"");
 
         String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
-        HttpHandler handler = HttpHandler.builder().url(serverUrl).build();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
 
         // Stack: ResilientHttpAdapter -> ETagAwareHttpAdapter
         HttpAdapter<String> etagAdapter = ETagAwareHttpAdapter.<String>builder()
@@ -190,7 +190,7 @@ class ResilientHttpAdapterIntegrationTest {
         dispatcher.withSuccessAndETag("{\"data\":\"original\"}", "\"etag-304\"");
 
         String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
-        HttpHandler handler = HttpHandler.builder().url(serverUrl).build();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
 
         HttpAdapter<String> etagAdapter = ETagAwareHttpAdapter.<String>builder()
                 .httpHandler(handler)
@@ -225,7 +225,7 @@ class ResilientHttpAdapterIntegrationTest {
         dispatcher.withServerError();
 
         String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
-        HttpHandler handler = HttpHandler.builder().url(serverUrl).build();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
 
         HttpAdapter<String> baseAdapter = ETagAwareHttpAdapter.<String>builder()
                 .httpHandler(handler)
@@ -254,7 +254,7 @@ class ResilientHttpAdapterIntegrationTest {
         dispatcher.withServerErrorThenSuccess("{\"created\":true}", null);
 
         String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
-        HttpHandler handler = HttpHandler.builder().url(serverUrl).build();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
 
         HttpAdapter<String> baseAdapter = ETagAwareHttpAdapter.<String>builder()
                 .httpHandler(handler)
