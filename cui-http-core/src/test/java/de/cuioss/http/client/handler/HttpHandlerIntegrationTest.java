@@ -58,6 +58,7 @@ class HttpHandlerIntegrationTest {
         String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
         HttpHandler handler = HttpHandler.builder()
                 .url(serverUrl)
+                .allowInsecureHttp(true)
                 .build();
 
         HttpStatusFamily status = handler.pingHead();
@@ -74,6 +75,7 @@ class HttpHandlerIntegrationTest {
         String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
         HttpHandler handler = HttpHandler.builder()
                 .url(serverUrl)
+                .allowInsecureHttp(true)
                 .build();
 
         HttpStatusFamily status = handler.pingGet();
@@ -90,6 +92,7 @@ class HttpHandlerIntegrationTest {
         String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
         HttpHandler handler = HttpHandler.builder()
                 .url(serverUrl)
+                .allowInsecureHttp(true)
                 .build();
 
         HttpStatusFamily status = handler.pingHead();
@@ -106,6 +109,7 @@ class HttpHandlerIntegrationTest {
         String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
         HttpHandler handler = HttpHandler.builder()
                 .url(serverUrl)
+                .allowInsecureHttp(true)
                 .build();
 
         HttpStatusFamily status = handler.pingGet();

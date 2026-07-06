@@ -112,6 +112,20 @@ String validated = validator.validate(userInput)
 ----
 
 
+== TLS Floor
+
+For HTTPS connections, `SecureSSLContextProvider` pins the enabled protocols on the wire (via
+`SSLParameters.setProtocols`) so the configured minimum TLS version is a hard floor, not merely
+the context's default protocol object:
+
+* Minimum `TLSv1.3` enforces `[TLSv1.3]`.
+* Minimum `TLSv1.2` *and* the generic `TLS` value both enforce `[TLSv1.2, TLSv1.3]` — this is
+  deliberate and a security improvement over JVM-default negotiation.
+
+A consequence is that a caller cannot express a "TLS 1.3-only" policy through the generic `TLS`
+string; select `TLSv1.3` explicitly for that. This is a behavior change from the earlier
+JVM-default negotiation (release note).
+
 == Pipeline Selection Rules
 
 See xref:http-security/specification/pipeline-architecture-standards.adoc[Pipeline Architecture Standards] for detailed selection criteria.

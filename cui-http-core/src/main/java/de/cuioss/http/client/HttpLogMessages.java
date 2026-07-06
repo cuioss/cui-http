@@ -92,6 +92,16 @@ public final class HttpLogMessages {
                 .identifier(114)
                 .template("Network error during %s request: %s")
                 .build();
+
+        /**
+         * Logged when a cleartext HTTP handler is built under the {@code allowInsecureHttp} opt-in.
+         * Used in: HttpHandler.HttpHandlerBuilder.build (http scheme with allowInsecureHttp=true)
+         */
+        public static final LogRecord INSECURE_HTTP_CONNECTION = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(115)
+                .template("Using cleartext HTTP for %s (allowInsecureHttp=true); data is transmitted unencrypted")
+                .build();
     }
 
     /**

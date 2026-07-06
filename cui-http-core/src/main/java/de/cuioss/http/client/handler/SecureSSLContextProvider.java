@@ -157,6 +157,12 @@ public record SecureSSLContextProvider(String minimumTlsVersion) {
      *   <li>Minimum {@link #TLS_V1_3} → {@code [TLSv1.3]}</li>
      *   <li>Minimum {@link #TLS_V1_2} or generic {@link #TLS} → {@code [TLSv1.2, TLSv1.3]}</li>
      * </ul>
+     * <p>
+     * The generic {@link #TLS} value deliberately enforces the same {@code [TLSv1.2, TLSv1.3]}
+     * floor as an explicit 1.2 minimum - this is a security improvement over JVM-default
+     * negotiation (which could include older enabled protocols). A consequence is that a caller
+     * <strong>cannot</strong> express a "TLS&nbsp;1.3-only" policy via the generic {@code "TLS"}
+     * string; select {@link #TLS_V1_3} explicitly for that.
      *
      * @return the ordered array of enabled protocol versions (never empty)
      */

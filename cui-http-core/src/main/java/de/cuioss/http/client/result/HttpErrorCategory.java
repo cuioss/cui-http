@@ -15,6 +15,10 @@
  */
 package de.cuioss.http.client.result;
 
+import java.io.IOException;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
+
 /**
  * Error categories for HTTP operations, used to classify failures for retry decisions.
  * Each category indicates whether the error is transient (retryable) or permanent.
@@ -81,6 +85,35 @@ public enum HttpErrorCategory {
      */
     public boolean isRetryable() {
         return this == NETWORK_ERROR || this == SERVER_ERROR;
+    }
+
+    /**
+     * Classifies a {@link Throwable} raised while executing or building an HTTP request into an
+     * error category. An {@link IOException} (connection/read timeout, DNS or connection failure)
+     * maps to the retryable {@link #NETWORK_ERROR}; any other throwable (e.g.
+     * {@link IllegalArgumentException} / {@link IllegalStateException} from request building, or a
+     * misconfiguration) maps to the non-retryable {@link #CONFIGURATION_ERROR}.
+     *
+     * <p>Asynchronous pipelines ({@link java.util.concurrent.CompletableFuture}) deliver failures
+     * wrapped in {@link CompletionException} / {@link ExecutionException}. Such wrappers are
+     * unwrapped to their cause before classification, so an {@code IOException} surfaced through a
+     * {@code CompletableFuture.exceptionally(...)} callback is still correctly classified as a
+     * retryable network error.</p>
+     *
+     * <p>This is the single source of truth for exception classification. It deliberately uses a
+     * JDK-only import so the {@code client.result} package does not depend on
+     * {@code client.handler}, preserving the {@code handler &rarr; result} layering.</p>
+     *
+     * @param throwable the failure to classify
+     * @return the corresponding error category
+     */
+    public static HttpErrorCategory fromException(Throwable throwable) {
+        Throwable unwrapped = throwable;
+        while ((unwrapped instanceof CompletionException || unwrapped instanceof ExecutionException)
+                && unwrapped.getCause() != null && unwrapped.getCause() != unwrapped) {
+            unwrapped = unwrapped.getCause();
+        }
+        return unwrapped instanceof IOException ? NETWORK_ERROR : CONFIGURATION_ERROR;
     }
 
 }

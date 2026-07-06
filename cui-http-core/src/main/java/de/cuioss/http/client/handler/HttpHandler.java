@@ -82,8 +82,22 @@ import java.util.regex.Pattern;
  *   <li>URI must be valid and convertible to URL (validated at build time)</li>
  *   <li>SSL context created automatically for HTTPS if not provided</li>
  *   <li>Default timeout: 10 seconds for both connection and read</li>
- *   <li>URLs without scheme prefix default to HTTPS</li>
+ *   <li>Schemeless string URLs default to HTTPS</li>
  * </ul>
+ *
+ * <h3>Scheme policy (fail-secure)</h3>
+ * <p>HTTPS is required by default. {@link HttpHandlerBuilder#build()} rejects an {@code http://}
+ * URI with {@link IllegalArgumentException} unless {@link HttpHandlerBuilder#allowInsecureHttp(boolean)}
+ * is set (default {@code false}); when permitted, a cleartext handler is built and a WARN is logged.
+ * Any scheme other than {@code http}/{@code https} is always rejected. This applies uniformly to
+ * {@code uri(URI)}, {@code url(URL)}, and string inputs.</p>
+ *
+ * <h3>TLS floor</h3>
+ * <p>For HTTPS, the configured minimum TLS version is pinned on the wire via
+ * {@link SSLParameters#setProtocols}. A minimum of TLS&nbsp;1.2 and the generic {@code "TLS"}
+ * context both enforce {@code [TLSv1.2, TLSv1.3]} (deliberate); a 1.3 minimum enforces
+ * {@code [TLSv1.3]}. A caller cannot express "TLS&nbsp;1.3-only" via the generic {@code "TLS"}
+ * string. See {@link SecureSSLContextProvider}.</p>
  *
  * @since 1.0
  * @see HttpClient
@@ -122,6 +136,18 @@ public final class HttpHandler {
     private final int connectionTimeoutSeconds;
     @Getter
     private final int readTimeoutSeconds;
+    /**
+     * Whether this handler was built with the cleartext-HTTP opt-in
+     * ({@link HttpHandlerBuilder#allowInsecureHttp(boolean)}). A build-time scheme policy retained
+     * so {@link #asBuilder()} preserves the opt-in; it does not affect the wire behavior of an
+     * already-built handler, so it is excluded from {@code equals}/{@code toString}.
+     *
+     * @return {@code true} if cleartext HTTP was explicitly permitted for this handler
+     */
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    @Getter
+    private final boolean allowInsecureHttp;
     private final HttpClient httpClient;
 
     // Constructor for HTTP URIs (no SSL context needed)
@@ -133,6 +159,8 @@ public final class HttpHandler {
         this.secureSSLContextProvider = new SecureSSLContextProvider();
         this.connectionTimeoutSeconds = connectionTimeoutSeconds;
         this.readTimeoutSeconds = readTimeoutSeconds;
+        // Reached only via the opt-in, so this handler was explicitly permitted to use cleartext.
+        this.allowInsecureHttp = true;
 
         // Create the HttpClient for HTTP
         this.httpClient = HttpClient.newBuilder()
@@ -142,13 +170,14 @@ public final class HttpHandler {
 
     // Constructor for HTTPS URIs (SSL context required)
     private HttpHandler(URI uri, URL url, SSLContext sslContext, SecureSSLContextProvider secureSSLContextProvider,
-            int connectionTimeoutSeconds, int readTimeoutSeconds) {
+            int connectionTimeoutSeconds, int readTimeoutSeconds, boolean allowInsecureHttp) {
         this.uri = uri;
         this.url = url;
         this.sslContext = sslContext;
         this.secureSSLContextProvider = secureSSLContextProvider;
         this.connectionTimeoutSeconds = connectionTimeoutSeconds;
         this.readTimeoutSeconds = readTimeoutSeconds;
+        this.allowInsecureHttp = allowInsecureHttp;
 
         // JDK 11+ HttpClient enables hostname verification by default.
         // Pin the enabled TLS protocols so the configured minimum version is a hard
@@ -192,7 +221,8 @@ public final class HttpHandler {
                 .connectionTimeoutSeconds(connectionTimeoutSeconds)
                 .readTimeoutSeconds(readTimeoutSeconds)
                 .sslContext(sslContext)
-                .tlsVersions(secureSSLContextProvider);
+                .tlsVersions(secureSSLContextProvider)
+                .allowInsecureHttp(allowInsecureHttp);
     }
 
     /**
@@ -266,6 +296,7 @@ public final class HttpHandler {
         private @Nullable SecureSSLContextProvider secureSSLContextProvider;
         private @Nullable Integer connectionTimeoutSeconds;
         private @Nullable Integer readTimeoutSeconds;
+        private boolean allowInsecureHttp = false;
 
         /**
          * Sets the URI as a string.
@@ -391,6 +422,23 @@ public final class HttpHandler {
         }
 
         /**
+         * Permits building a handler for a plaintext {@code http://} URI.
+         * <p>
+         * HTTPS is required by default (fail-secure): {@link #build()} rejects an {@code http://}
+         * URI unless this flag is set. When enabled, a cleartext handler is built and a WARN is
+         * logged recording the unencrypted connection. Schemes other than {@code http}/{@code https}
+         * are always rejected. Default: {@code false}.
+         * </p>
+         *
+         * @param allowInsecureHttp {@code true} to permit cleartext HTTP.
+         * @return This builder instance.
+         */
+        public HttpHandlerBuilder allowInsecureHttp(boolean allowInsecureHttp) {
+            this.allowInsecureHttp = allowInsecureHttp;
+            return this;
+        }
+
+        /**
          * Builds a new {@link HttpHandler} instance with the configured parameters.
          *
          * @return A new {@link HttpHandler} instance.
@@ -425,18 +473,28 @@ public final class HttpHandler {
                 throw new IllegalStateException("Failed to convert URI to URL: " + uri, e);
             }
 
-            // Use appropriate constructor based on scheme
-            if ("https".equalsIgnoreCase(uri.getScheme())) {
+            // Fail-secure scheme policy: HTTPS is required; http is opt-in; anything else is rejected.
+            String scheme = uri.getScheme();
+            if ("https".equalsIgnoreCase(scheme)) {
                 // For HTTPS, create or validate SSL context and pin the enabled protocols
                 SecureSSLContextProvider actualSecureSSLContextProvider = secureSSLContextProvider != null ?
                         secureSSLContextProvider : new SecureSSLContextProvider();
                 SSLContext secureContext = actualSecureSSLContextProvider.getOrCreateSecureSSLContext(sslContext);
                 return new HttpHandler(uri, verifiedUrl, secureContext, actualSecureSSLContextProvider,
-                        actualConnectionTimeoutSeconds, actualReadTimeoutSeconds);
-            } else {
+                        actualConnectionTimeoutSeconds, actualReadTimeoutSeconds, allowInsecureHttp);
+            }
+            if ("http".equalsIgnoreCase(scheme)) {
+                if (!allowInsecureHttp) {
+                    throw new IllegalArgumentException("Refusing to build a plaintext HTTP handler for " + uri
+                            + "; HTTPS is required. Call allowInsecureHttp(true) to permit cleartext HTTP, "
+                            + "or use an https:// URI.");
+                }
+                LOGGER.warn(HttpLogMessages.WARN.INSECURE_HTTP_CONNECTION, uri);
                 // For HTTP, no SSL context needed
                 return new HttpHandler(uri, verifiedUrl, actualConnectionTimeoutSeconds, actualReadTimeoutSeconds);
             }
+            throw new IllegalArgumentException("Unsupported URI scheme '" + scheme + "' for " + uri
+                    + "; only http and https are supported.");
         }
 
         /**

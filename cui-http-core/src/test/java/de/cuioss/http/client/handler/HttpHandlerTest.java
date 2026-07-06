@@ -292,6 +292,7 @@ class HttpHandlerTest {
         void shouldNotCreateSslContextForHttpUrls() {
             HttpHandler handler = HttpHandler.builder()
                     .url("http://example.com")
+                    .allowInsecureHttp(true) // fail-secure: http requires explicit opt-in (F-20)
                     .build();
 
             assertNotNull(handler);
@@ -545,6 +546,69 @@ class HttpHandlerTest {
             var exception = assertThrows(IllegalArgumentException.class, builder::build);
             assertEquals("URI must not be null or empty.", exception.getMessage(),
                     "Should throw IllegalArgumentException for missing URL");
+        }
+    }
+
+    @Nested
+    @DisplayName("Scheme policy (F-20)")
+    class SchemePolicy {
+
+        @Test
+        @DisplayName("http is rejected by default (fail-secure)")
+        void shouldRejectHttpByDefault() {
+            var builder = HttpHandler.builder().uri("http://example.com");
+            var exception = assertThrows(IllegalArgumentException.class, builder::build);
+            assertTrue(exception.getMessage().contains("HTTPS is required"),
+                    "Plaintext HTTP must be rejected without opt-in");
+        }
+
+        @Test
+        @DisplayName("http is permitted with allowInsecureHttp and logs a WARN")
+        void shouldAllowHttpWithOptIn() {
+            HttpHandler handler = HttpHandler.builder()
+                    .uri("http://example.com")
+                    .allowInsecureHttp(true)
+                    .build();
+
+            assertNotNull(handler);
+            assertNull(handler.getSslContext(), "HTTP handler must not create an SSL context");
+            assertTrue(handler.isAllowInsecureHttp());
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "allowInsecureHttp=true");
+        }
+
+        @Test
+        @DisplayName("https is unchanged (allowed, TLS)")
+        void shouldAllowHttps() {
+            HttpHandler handler = HttpHandler.builder()
+                    .uri("https://example.com")
+                    .build();
+
+            assertNotNull(handler.getSslContext(), "HTTPS handler must have an SSL context");
+        }
+
+        @Test
+        @DisplayName("non-http(s) schemes are always rejected")
+        void shouldRejectOtherSchemes() {
+            for (String badUri : new String[]{"ftp://example.com/file", "file:///etc/passwd"}) {
+                var builder = HttpHandler.builder().uri(badUri).allowInsecureHttp(true);
+                var exception = assertThrows(IllegalArgumentException.class, builder::build,
+                        "Scheme must be rejected: " + badUri);
+                assertTrue(exception.getMessage().contains("Unsupported URI scheme"),
+                        "Message should identify the unsupported scheme for: " + badUri);
+            }
+        }
+
+        @Test
+        @DisplayName("asBuilder preserves allowInsecureHttp")
+        void asBuilderShouldPreserveAllowInsecureHttp() {
+            HttpHandler handler = HttpHandler.builder()
+                    .uri("http://example.com")
+                    .allowInsecureHttp(true)
+                    .build();
+
+            // Rebuild an HTTP handler from the clone - would be rejected if the flag were lost.
+            HttpHandler cloned = handler.asBuilder().uri("http://other.example.com").build();
+            assertTrue(cloned.isAllowInsecureHttp(), "asBuilder() must carry the allowInsecureHttp flag");
         }
     }
 }
