@@ -61,11 +61,12 @@ class UrlSecurityFailureTypeTest {
     }
 
     @Test
-    void shouldHave24FailureTypes() {
+    void shouldHave25FailureTypes() {
         // Verify we have the expected number of failure types
         // Original 22 (after removing SQL, Command, XSS) + 2 cookie security types
+        // + TOO_MANY_ELEMENTS (F-12 collection count enforcement)
         UrlSecurityFailureType[] values = UrlSecurityFailureType.values();
-        assertEquals(24, values.length, "Should have 24 failure types (22 + cookie security)");
+        assertEquals(25, values.length, "Should have 25 failure types (22 + 2 cookie security + TOO_MANY_ELEMENTS)");
     }
 
     @ParameterizedTest

@@ -22,12 +22,11 @@ package de.cuioss.http.security.config;
  * validation stages and pipelines of this library. It provides a type-safe, immutable
  * configuration object that can be shared across multiple validation operations.</p>
  *
- * <p>Every setting in this record is consumed by at least one validation stage. Settings
- * that would require request-level context (parameter counts, header counts, allow/block
- * lists, cookie attribute requirements) are intentionally not part of this configuration:
- * the validation pipelines operate on single values and cannot enforce them. Enforce such
- * policies at the application layer, optionally using the reference constants in
- * {@link SecurityDefaults}.</p>
+ * <p>Every setting in this record is enforced. Single-value settings are consumed by the
+ * validation stages/pipelines; request-level settings that need collection or attribute
+ * context are enforced by dedicated validators: parameter/header/cookie <em>counts</em> by
+ * {@code RequestCollectionValidator}, and cookie {@code Secure}/{@code HttpOnly} requirements
+ * by {@code CookiePrefixValidationStage.validateCookie}.</p>
  *
  * <h3>Design Principles</h3>
  * <ul>
@@ -81,6 +80,12 @@ package de.cuioss.http.security.config;
  * @param requireHttpOnlyCookies Whether cookies must carry the {@code HttpOnly} attribute
  *        (enforced by {@code CookiePrefixValidationStage.validateCookie}). Opt-in, default
  *        {@code false}. Meaningful only for attribute-bearing (Set-Cookie) cookies.
+ * @param maxParameterCount Maximum number of request parameters (positive; enforced by the
+ *        collection-level {@code RequestCollectionValidator}, not a single-value pipeline)
+ * @param maxHeaderCount Maximum number of request headers (positive; enforced by
+ *        {@code RequestCollectionValidator})
+ * @param maxCookieCount Maximum number of request cookies (positive; enforced by
+ *        {@code RequestCollectionValidator})
  *
  * @since 1.0
  * @see SecurityConfigurationBuilder
@@ -105,7 +110,10 @@ boolean normalizeUnicode,
 boolean caseSensitiveComparison,
 boolean failOnSuspiciousPatterns,
 boolean requireSecureCookies,
-boolean requireHttpOnlyCookies
+boolean requireHttpOnlyCookies,
+int maxParameterCount,
+int maxHeaderCount,
+int maxCookieCount
 ) {
 
     /**
@@ -137,6 +145,15 @@ boolean requireHttpOnlyCookies
         }
         if (maxBodySize < 0) {
             throw new IllegalArgumentException("maxBodySize must be non-negative, got: " + maxBodySize);
+        }
+        if (maxParameterCount <= 0) {
+            throw new IllegalArgumentException("maxParameterCount must be positive, got: " + maxParameterCount);
+        }
+        if (maxHeaderCount <= 0) {
+            throw new IllegalArgumentException("maxHeaderCount must be positive, got: " + maxHeaderCount);
+        }
+        if (maxCookieCount <= 0) {
+            throw new IllegalArgumentException("maxCookieCount must be positive, got: " + maxCookieCount);
         }
     }
 

@@ -170,7 +170,7 @@ class SecurityConfigurationTest {
                 pathLength, false, paramNameLength, paramValueLength,
                 headerNameLength, headerValueLength, cookieNameLength, cookieValueLength,
                 bodySize, false, false, true, false, false, false,
-                false, false));
+                false, false, 100, 50, 20));
     }
 
     @Test

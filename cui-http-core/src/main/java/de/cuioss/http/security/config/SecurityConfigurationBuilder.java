@@ -101,6 +101,11 @@ public class SecurityConfigurationBuilder {
     private boolean requireSecureCookies = false;
     private boolean requireHttpOnlyCookies = false;
 
+    // Collection count defaults (enforced by RequestCollectionValidator)
+    private int maxParameterCount = SecurityDefaults.MAX_PARAMETER_COUNT_DEFAULT;
+    private int maxHeaderCount = SecurityDefaults.MAX_HEADER_COUNT_DEFAULT;
+    private int maxCookieCount = SecurityDefaults.MAX_COOKIE_COUNT_DEFAULT;
+
     /**
      * Package-private constructor for internal use.
      */
@@ -375,6 +380,60 @@ public class SecurityConfigurationBuilder {
         return this;
     }
 
+    // === Collection Count Methods ===
+
+    /**
+     * Sets the maximum number of request parameters.
+     *
+     * <p>Enforced by the collection-level {@code RequestCollectionValidator} (a single-value
+     * pipeline cannot count a collection). Defends against parameter-flood / hash-collision DoS.</p>
+     *
+     * @param maxCount Maximum parameter count (must be positive)
+     * @return This builder for method chaining
+     * @throws IllegalArgumentException if maxCount is not positive
+     */
+    public SecurityConfigurationBuilder maxParameterCount(int maxCount) {
+        if (maxCount <= 0) {
+            throw new IllegalArgumentException("maxParameterCount must be positive, got: " + maxCount);
+        }
+        this.maxParameterCount = maxCount;
+        return this;
+    }
+
+    /**
+     * Sets the maximum number of request headers.
+     *
+     * <p>Enforced by the collection-level {@code RequestCollectionValidator}.</p>
+     *
+     * @param maxCount Maximum header count (must be positive)
+     * @return This builder for method chaining
+     * @throws IllegalArgumentException if maxCount is not positive
+     */
+    public SecurityConfigurationBuilder maxHeaderCount(int maxCount) {
+        if (maxCount <= 0) {
+            throw new IllegalArgumentException("maxHeaderCount must be positive, got: " + maxCount);
+        }
+        this.maxHeaderCount = maxCount;
+        return this;
+    }
+
+    /**
+     * Sets the maximum number of request cookies.
+     *
+     * <p>Enforced by the collection-level {@code RequestCollectionValidator}.</p>
+     *
+     * @param maxCount Maximum cookie count (must be positive)
+     * @return This builder for method chaining
+     * @throws IllegalArgumentException if maxCount is not positive
+     */
+    public SecurityConfigurationBuilder maxCookieCount(int maxCount) {
+        if (maxCount <= 0) {
+            throw new IllegalArgumentException("maxCookieCount must be positive, got: " + maxCount);
+        }
+        this.maxCookieCount = maxCount;
+        return this;
+    }
+
     /**
      * Builds the SecurityConfiguration with the current settings.
      *
@@ -390,7 +449,8 @@ public class SecurityConfigurationBuilder {
                 maxBodySize,
                 allowNullBytes, allowControlCharacters, allowExtendedAscii, normalizeUnicode,
                 caseSensitiveComparison, failOnSuspiciousPatterns,
-                requireSecureCookies, requireHttpOnlyCookies
+                requireSecureCookies, requireHttpOnlyCookies,
+                maxParameterCount, maxHeaderCount, maxCookieCount
         );
     }
 }
