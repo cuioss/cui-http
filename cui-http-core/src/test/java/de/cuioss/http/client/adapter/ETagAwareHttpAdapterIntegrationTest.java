@@ -85,7 +85,7 @@ class ETagAwareHttpAdapterIntegrationTest {
         assertTrue(result1.isSuccess(), "First request should succeed");
         assertEquals("{\"id\":1,\"name\":\"test\"}", result1.getContent().orElse(null));
         assertEquals("\"etag-123\"", result1.getETag().orElse(null));
-        assertEquals(200, result1.getHttpStatus().orElse(-1));
+        assertEquals(Optional.of(200), result1.getHttpStatus());
 
         // Configure dispatcher to return 304 for second request
         dispatcher.with304();
@@ -95,7 +95,7 @@ class ETagAwareHttpAdapterIntegrationTest {
         assertTrue(result2.isSuccess(), "Second request should succeed with cached content");
         assertEquals("{\"id\":1,\"name\":\"test\"}", result2.getContent().orElse(null), "Should return cached content");
         assertEquals("\"etag-123\"", result2.getETag().orElse(null), "Should preserve cached ETag");
-        assertEquals(304, result2.getHttpStatus().orElse(-1), "Status code should be 304");
+        assertEquals(Optional.of(304), result2.getHttpStatus(), "Status code should be 304");
 
         // Verify If-None-Match header was sent on second request
         assertTrue(dispatcher.getLastIfNoneMatch().isPresent(), "If-None-Match header should be sent");
@@ -189,7 +189,7 @@ class ETagAwareHttpAdapterIntegrationTest {
         assertTrue(result.isSuccess(), "DELETE should succeed");
         // 204 response has empty body, but StringResponseConverter converts empty string to empty Optional
         // Content may be present (empty string) or absent depending on converter implementation
-        assertEquals(204, result.getHttpStatus().orElse(-1));
+        assertEquals(Optional.of(204), result.getHttpStatus());
     }
 
     /**
@@ -210,7 +210,7 @@ class ETagAwareHttpAdapterIntegrationTest {
         HttpResult<Void> result = adapter.deleteBlocking();
 
         assertTrue(result.isSuccess(), "204 with Void converter must be success, not INVALID_CONTENT failure");
-        assertEquals(204, result.getHttpStatus().orElse(-1));
+        assertEquals(Optional.of(204), result.getHttpStatus());
         assertTrue(result.getContent().isEmpty(), "Void result carries no content");
         assertTrue(result.getErrorCategory().isEmpty(), "Success must not carry an error category");
     }
@@ -232,7 +232,7 @@ class ETagAwareHttpAdapterIntegrationTest {
         HttpResult<Void> result = adapter.headBlocking();
 
         assertTrue(result.isSuccess(), "200 with Void converter must be success");
-        assertEquals(200, result.getHttpStatus().orElse(-1));
+        assertEquals(Optional.of(200), result.getHttpStatus());
         assertEquals("\"etag-head\"", result.getETag().orElse(null), "ETag should be exposed");
     }
 
@@ -254,7 +254,7 @@ class ETagAwareHttpAdapterIntegrationTest {
         HttpResult<Void> result = adapter.getBlocking();
 
         assertTrue(result.isSuccess(), "200 with Void converter must be success");
-        assertEquals(200, result.getHttpStatus().orElse(-1));
+        assertEquals(Optional.of(200), result.getHttpStatus());
 
         // Second GET must not send If-None-Match (nothing was cached)
         HttpResult<Void> result2 = adapter.getBlocking();
@@ -336,7 +336,7 @@ class ETagAwareHttpAdapterIntegrationTest {
 
         assertFalse(result.isSuccess(), "Server error should result in failure");
         assertEquals(HttpErrorCategory.SERVER_ERROR, result.getErrorCategory().orElse(null));
-        assertEquals(503, result.getHttpStatus().orElse(-1));
+        assertEquals(Optional.of(503), result.getHttpStatus());
         assertTrue(result.isRetryable(), "Server errors should be retryable");
     }
 
@@ -361,7 +361,7 @@ class ETagAwareHttpAdapterIntegrationTest {
 
         assertFalse(result.isSuccess(), "Client error should result in failure");
         assertEquals(HttpErrorCategory.CLIENT_ERROR, result.getErrorCategory().orElse(null));
-        assertEquals(404, result.getHttpStatus().orElse(-1));
+        assertEquals(Optional.of(404), result.getHttpStatus());
         assertFalse(result.isRetryable(), "Client errors should not be retryable");
     }
 

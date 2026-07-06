@@ -173,7 +173,7 @@ class ResilientHttpAdapterIntegrationTest {
         assertTrue(result2.isSuccess(), "304 response should be success (from cache)");
         assertEquals("{\"data\":\"cached\"}", result2.getContent().orElse(null), "Should return cached content");
         assertEquals("\"etag-composed\"", result2.getETag().orElse(null));
-        assertEquals(304, result2.getHttpStatus().orElse(-1));
+        assertEquals(Optional.of(304), result2.getHttpStatus());
 
         // 304 is a success, not retried
         assertTrue(result2.isSuccess(), "304 should not trigger retry");
@@ -210,7 +210,7 @@ class ResilientHttpAdapterIntegrationTest {
         HttpResult<String> result2 = resilientAdapter.getBlocking();
 
         assertTrue(result2.isSuccess(), "304 should be treated as success");
-        assertEquals(304, result2.getHttpStatus().orElse(-1));
+        assertEquals(Optional.of(304), result2.getHttpStatus());
         assertEquals("{\"data\":\"original\"}", result2.getContent().orElse(null), "Should return cached content");
         assertEquals(1, dispatcher.getCallCounter(), "304 should not trigger retry (only 1 call)");
     }
