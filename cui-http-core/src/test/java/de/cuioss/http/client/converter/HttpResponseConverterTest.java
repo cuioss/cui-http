@@ -107,7 +107,9 @@ class HttpResponseConverterTest {
 
     @Test
     void emptyContentIsValidDefaultsToFalse() {
-        var converter = new TestStringConverter();
+        // Assert the interface default through a production converter that does not override it,
+        // so the test proves the real shipping contract rather than a synthetic double.
+        var converter = StringContentConverter.identity();
 
         assertFalse(converter.emptyContentIsValid(),
                 "Content-producing converters must treat empty conversion results as failures");

@@ -17,8 +17,12 @@ package de.cuioss.http.client.result;
 
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.net.SocketTimeoutException;
 import java.util.Arrays;
 import java.util.Set;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -87,5 +91,42 @@ class HttpErrorCategoryTest {
                 .collect(Collectors.toSet());
         assertEquals(Set.of(HttpErrorCategory.CLIENT_ERROR, HttpErrorCategory.INVALID_CONTENT, HttpErrorCategory.CONFIGURATION_ERROR), nonRetryable,
                 "CLIENT_ERROR, INVALID_CONTENT, and CONFIGURATION_ERROR should be non-retryable.");
+    }
+
+    @Test
+    void fromExceptionShouldMapIOExceptionToNetworkError() {
+        assertEquals(HttpErrorCategory.NETWORK_ERROR,
+                HttpErrorCategory.fromException(new IOException("timeout")));
+        assertEquals(HttpErrorCategory.NETWORK_ERROR,
+                HttpErrorCategory.fromException(new SocketTimeoutException()),
+                "IOException subclasses are network errors too");
+    }
+
+    @Test
+    void fromExceptionShouldUnwrapAsyncWrappersAroundIOException() {
+        // CompletableFuture pipelines deliver failures wrapped in CompletionException/ExecutionException.
+        assertEquals(HttpErrorCategory.NETWORK_ERROR,
+                HttpErrorCategory.fromException(new CompletionException(new IOException("connect failed"))),
+                "CompletionException-wrapped IOException must be a retryable network error");
+        assertEquals(HttpErrorCategory.NETWORK_ERROR,
+                HttpErrorCategory.fromException(new ExecutionException(new SocketTimeoutException())),
+                "ExecutionException-wrapped IOException must be a retryable network error");
+        // Nested wrappers are unwrapped too.
+        assertEquals(HttpErrorCategory.NETWORK_ERROR,
+                HttpErrorCategory.fromException(
+                        new CompletionException(new ExecutionException(new IOException("read timeout")))));
+        // A wrapper around a non-IOException stays a configuration error.
+        assertEquals(HttpErrorCategory.CONFIGURATION_ERROR,
+                HttpErrorCategory.fromException(new CompletionException(new IllegalStateException("bad state"))));
+    }
+
+    @Test
+    void fromExceptionShouldMapOtherThrowablesToConfigurationError() {
+        assertEquals(HttpErrorCategory.CONFIGURATION_ERROR,
+                HttpErrorCategory.fromException(new IllegalArgumentException("bad request")));
+        assertEquals(HttpErrorCategory.CONFIGURATION_ERROR,
+                HttpErrorCategory.fromException(new IllegalStateException("bad state")));
+        assertEquals(HttpErrorCategory.CONFIGURATION_ERROR,
+                HttpErrorCategory.fromException(new RuntimeException("other")));
     }
 }

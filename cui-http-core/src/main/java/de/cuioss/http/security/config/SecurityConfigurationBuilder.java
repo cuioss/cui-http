@@ -15,6 +15,10 @@
  */
 package de.cuioss.http.security.config;
 
+import org.jspecify.annotations.Nullable;
+
+import java.util.Set;
+
 /**
  * Builder class for constructing {@link SecurityConfiguration} instances with fluent API.
  *
@@ -96,6 +100,21 @@ public class SecurityConfigurationBuilder {
     // General Policy defaults
     private boolean caseSensitiveComparison = false;
     private boolean failOnSuspiciousPatterns = false;
+
+    // Cookie Security defaults (opt-in; enforced by CookiePrefixValidationStage.validateCookie)
+    private boolean requireSecureCookies = false;
+    private boolean requireHttpOnlyCookies = false;
+
+    // Collection count defaults (enforced by RequestCollectionValidator)
+    private int maxParameterCount = SecurityDefaults.MAX_PARAMETER_COUNT_DEFAULT;
+    private int maxHeaderCount = SecurityDefaults.MAX_HEADER_COUNT_DEFAULT;
+    private int maxCookieCount = SecurityDefaults.MAX_COOKIE_COUNT_DEFAULT;
+
+    // Allow/block list defaults (empty = allow-all / block-none; enforced by AllowBlockListStage)
+    private Set<String> allowedHeaderNames = Set.of();
+    private Set<String> blockedHeaderNames = Set.of();
+    private Set<String> allowedContentTypes = Set.of();
+    private Set<String> blockedContentTypes = Set.of();
 
     /**
      * Package-private constructor for internal use.
@@ -283,9 +302,15 @@ public class SecurityConfigurationBuilder {
     }
 
     /**
-     * Sets whether Unicode normalization should be performed.
+     * Sets whether Unicode normalization is performed during decoding.
      *
-     * @param normalize true to normalize Unicode, false to leave as-is
+     * <p>When enabled, input is canonicalized and the canonical form is passed to downstream
+     * stages (normalize-and-continue). The stage rejects input only when a fold introduces a
+     * structurally significant separator (such as a fullwidth solidus folding to {@code /});
+     * benign compatibility folds of legitimate international text are preserved. When disabled,
+     * input is left as-is.</p>
+     *
+     * @param normalize true to canonicalize Unicode, false to leave as-is
      * @return This builder for method chaining
      */
     public SecurityConfigurationBuilder normalizeUnicode(boolean normalize) {
@@ -334,6 +359,141 @@ public class SecurityConfigurationBuilder {
         return this;
     }
 
+    // === Cookie Security Methods ===
+
+    /**
+     * Sets whether cookies must carry the {@code Secure} attribute.
+     *
+     * <p>Enforced by {@code CookiePrefixValidationStage.validateCookie(Cookie)}. Opt-in
+     * (default {@code false}); meaningful only for attribute-bearing (Set-Cookie) cookies,
+     * not for request {@code Cookie}-header {@code name=value} pairs.</p>
+     *
+     * @param require true to require the Secure attribute on validated cookies
+     * @return This builder for method chaining
+     */
+    public SecurityConfigurationBuilder requireSecureCookies(boolean require) {
+        this.requireSecureCookies = require;
+        return this;
+    }
+
+    /**
+     * Sets whether cookies must carry the {@code HttpOnly} attribute.
+     *
+     * <p>Enforced by {@code CookiePrefixValidationStage.validateCookie(Cookie)}. Opt-in
+     * (default {@code false}); meaningful only for attribute-bearing (Set-Cookie) cookies.</p>
+     *
+     * @param require true to require the HttpOnly attribute on validated cookies
+     * @return This builder for method chaining
+     */
+    public SecurityConfigurationBuilder requireHttpOnlyCookies(boolean require) {
+        this.requireHttpOnlyCookies = require;
+        return this;
+    }
+
+    // === Collection Count Methods ===
+
+    /**
+     * Sets the maximum number of request parameters.
+     *
+     * <p>Enforced by the collection-level {@code RequestCollectionValidator} (a single-value
+     * pipeline cannot count a collection). Defends against parameter-flood / hash-collision DoS.</p>
+     *
+     * @param maxCount Maximum parameter count (must be positive)
+     * @return This builder for method chaining
+     * @throws IllegalArgumentException if maxCount is not positive
+     */
+    public SecurityConfigurationBuilder maxParameterCount(int maxCount) {
+        if (maxCount <= 0) {
+            throw new IllegalArgumentException("maxParameterCount must be positive, got: " + maxCount);
+        }
+        this.maxParameterCount = maxCount;
+        return this;
+    }
+
+    /**
+     * Sets the maximum number of request headers.
+     *
+     * <p>Enforced by the collection-level {@code RequestCollectionValidator}.</p>
+     *
+     * @param maxCount Maximum header count (must be positive)
+     * @return This builder for method chaining
+     * @throws IllegalArgumentException if maxCount is not positive
+     */
+    public SecurityConfigurationBuilder maxHeaderCount(int maxCount) {
+        if (maxCount <= 0) {
+            throw new IllegalArgumentException("maxHeaderCount must be positive, got: " + maxCount);
+        }
+        this.maxHeaderCount = maxCount;
+        return this;
+    }
+
+    /**
+     * Sets the maximum number of request cookies.
+     *
+     * <p>Enforced by the collection-level {@code RequestCollectionValidator}.</p>
+     *
+     * @param maxCount Maximum cookie count (must be positive)
+     * @return This builder for method chaining
+     * @throws IllegalArgumentException if maxCount is not positive
+     */
+    public SecurityConfigurationBuilder maxCookieCount(int maxCount) {
+        if (maxCount <= 0) {
+            throw new IllegalArgumentException("maxCookieCount must be positive, got: " + maxCount);
+        }
+        this.maxCookieCount = maxCount;
+        return this;
+    }
+
+    // === Header / Content-Type Allow-Block List Methods ===
+
+    /**
+     * Sets the case-insensitive allow-list of header names. An empty set (the default) means
+     * allow-all. Enforced by {@code AllowBlockListStage} in the header-name pipeline.
+     *
+     * @param headerNames allowed header names (null is treated as empty)
+     * @return This builder for method chaining
+     */
+    public SecurityConfigurationBuilder allowedHeaderNames(@Nullable Set<String> headerNames) {
+        this.allowedHeaderNames = headerNames == null ? Set.of() : Set.copyOf(headerNames);
+        return this;
+    }
+
+    /**
+     * Sets the case-insensitive block-list of header names (takes precedence over the allow-list).
+     * Enforced by {@code AllowBlockListStage} in the header-name pipeline.
+     *
+     * @param headerNames blocked header names (null is treated as empty)
+     * @return This builder for method chaining
+     */
+    public SecurityConfigurationBuilder blockedHeaderNames(@Nullable Set<String> headerNames) {
+        this.blockedHeaderNames = headerNames == null ? Set.of() : Set.copyOf(headerNames);
+        return this;
+    }
+
+    /**
+     * Sets the case-insensitive allow-list of content types. An empty set (the default) means
+     * allow-all. Enforced by the content-type validator ({@code AllowBlockListStage}).
+     *
+     * @param contentTypes allowed content types (null is treated as empty)
+     * @return This builder for method chaining
+     */
+    public SecurityConfigurationBuilder allowedContentTypes(@Nullable Set<String> contentTypes) {
+        this.allowedContentTypes = contentTypes == null ? Set.of() : Set.copyOf(contentTypes);
+        return this;
+    }
+
+    /**
+     * Sets the case-insensitive block-list of content types (takes precedence over the allow-list).
+     * Enforced by the content-type validator ({@code AllowBlockListStage}).
+     *
+     * @param contentTypes blocked content types (null is treated as empty)
+     * @return This builder for method chaining
+     */
+    public SecurityConfigurationBuilder blockedContentTypes(@Nullable Set<String> contentTypes) {
+        this.blockedContentTypes = contentTypes == null ? Set.of() : Set.copyOf(contentTypes);
+        return this;
+    }
+
     /**
      * Builds the SecurityConfiguration with the current settings.
      *
@@ -348,7 +508,10 @@ public class SecurityConfigurationBuilder {
                 maxCookieNameLength, maxCookieValueLength,
                 maxBodySize,
                 allowNullBytes, allowControlCharacters, allowExtendedAscii, normalizeUnicode,
-                caseSensitiveComparison, failOnSuspiciousPatterns
+                caseSensitiveComparison, failOnSuspiciousPatterns,
+                requireSecureCookies, requireHttpOnlyCookies,
+                maxParameterCount, maxHeaderCount, maxCookieCount,
+                allowedHeaderNames, blockedHeaderNames, allowedContentTypes, blockedContentTypes
         );
     }
 }

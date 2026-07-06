@@ -60,6 +60,11 @@ LogMessages Classes:
 |Handler
 |Network error during %s request: %s
 |Logged when a network error occurs during an HTTP request. Parameters: HTTP method, error message.
+
+|HTTP-115
+|Handler
+|Using cleartext HTTP for %s (allowInsecureHttp=true); data is transmitted unencrypted
+|Logged when a cleartext HTTP handler is built under the allowInsecureHttp opt-in. Parameters: URI.
 |===
 
 == ERROR Level (200-299)

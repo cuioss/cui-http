@@ -15,6 +15,8 @@
  */
 package de.cuioss.http.security.config;
 
+import java.util.Set;
+
 /**
  * Immutable record representing security configuration for HTTP validation.
  *
@@ -22,12 +24,11 @@ package de.cuioss.http.security.config;
  * validation stages and pipelines of this library. It provides a type-safe, immutable
  * configuration object that can be shared across multiple validation operations.</p>
  *
- * <p>Every setting in this record is consumed by at least one validation stage. Settings
- * that would require request-level context (parameter counts, header counts, allow/block
- * lists, cookie attribute requirements) are intentionally not part of this configuration:
- * the validation pipelines operate on single values and cannot enforce them. Enforce such
- * policies at the application layer, optionally using the reference constants in
- * {@link SecurityDefaults}.</p>
+ * <p>Every setting in this record is enforced. Single-value settings are consumed by the
+ * validation stages/pipelines; request-level settings that need collection or attribute
+ * context are enforced by dedicated validators: parameter/header/cookie <em>counts</em> by
+ * {@code RequestCollectionValidator}, and cookie {@code Secure}/{@code HttpOnly} requirements
+ * by {@code CookiePrefixValidationStage.validateCookie}.</p>
  *
  * <h3>Design Principles</h3>
  * <ul>
@@ -66,9 +67,35 @@ package de.cuioss.http.security.config;
  * @param allowNullBytes Whether null bytes are allowed in content
  * @param allowControlCharacters Whether control characters are allowed in content
  * @param allowExtendedAscii Whether extended ASCII (128-255) and applicable Unicode characters are allowed
- * @param normalizeUnicode Whether Unicode normalization should be performed during decoding
+ * @param normalizeUnicode Whether Unicode normalization is applied during decoding. When enabled,
+ *        input is canonicalized (normalize-and-continue: the canonical form flows to downstream
+ *        stages) and rejected only when a compatibility/canonical fold introduces a structurally
+ *        significant separator (e.g. fullwidth solidus {@code U+FF0F} &rarr; {@code /}); benign
+ *        folds of legitimate international text are preserved, not rejected. Paths use NFKC,
+ *        parameter values use the lossless NFC form.
  * @param caseSensitiveComparison Whether string comparisons are case-sensitive
  * @param failOnSuspiciousPatterns Whether validation fails on suspicious (non-attack) patterns
+ * @param requireSecureCookies Whether cookies must carry the {@code Secure} attribute
+ *        (enforced by {@code CookiePrefixValidationStage.validateCookie}). Opt-in, default
+ *        {@code false}. Meaningful only for attribute-bearing (Set-Cookie) cookies, not for
+ *        request {@code Cookie}-header {@code name=value} pairs.
+ * @param requireHttpOnlyCookies Whether cookies must carry the {@code HttpOnly} attribute
+ *        (enforced by {@code CookiePrefixValidationStage.validateCookie}). Opt-in, default
+ *        {@code false}. Meaningful only for attribute-bearing (Set-Cookie) cookies.
+ * @param maxParameterCount Maximum number of request parameters (positive; enforced by the
+ *        collection-level {@code RequestCollectionValidator}, not a single-value pipeline)
+ * @param maxHeaderCount Maximum number of request headers (positive; enforced by
+ *        {@code RequestCollectionValidator})
+ * @param maxCookieCount Maximum number of request cookies (positive; enforced by
+ *        {@code RequestCollectionValidator})
+ * @param allowedHeaderNames Case-insensitive allow-list of header names; empty means allow-all.
+ *        Enforced by {@code AllowBlockListStage} in the header-name pipeline.
+ * @param blockedHeaderNames Case-insensitive block-list of header names (takes precedence over
+ *        the allow-list). Enforced by {@code AllowBlockListStage} in the header-name pipeline.
+ * @param allowedContentTypes Case-insensitive allow-list of content types; empty means allow-all.
+ *        Enforced by the content-type validator ({@code AllowBlockListStage}).
+ * @param blockedContentTypes Case-insensitive block-list of content types (takes precedence over
+ *        the allow-list). Enforced by the content-type validator ({@code AllowBlockListStage}).
  *
  * @since 1.0
  * @see SecurityConfigurationBuilder
@@ -91,7 +118,16 @@ boolean allowControlCharacters,
 boolean allowExtendedAscii,
 boolean normalizeUnicode,
 boolean caseSensitiveComparison,
-boolean failOnSuspiciousPatterns
+boolean failOnSuspiciousPatterns,
+boolean requireSecureCookies,
+boolean requireHttpOnlyCookies,
+int maxParameterCount,
+int maxHeaderCount,
+int maxCookieCount,
+Set<String> allowedHeaderNames,
+Set<String> blockedHeaderNames,
+Set<String> allowedContentTypes,
+Set<String> blockedContentTypes
 ) {
 
     /**
@@ -124,6 +160,20 @@ boolean failOnSuspiciousPatterns
         if (maxBodySize < 0) {
             throw new IllegalArgumentException("maxBodySize must be non-negative, got: " + maxBodySize);
         }
+        if (maxParameterCount <= 0) {
+            throw new IllegalArgumentException("maxParameterCount must be positive, got: " + maxParameterCount);
+        }
+        if (maxHeaderCount <= 0) {
+            throw new IllegalArgumentException("maxHeaderCount must be positive, got: " + maxHeaderCount);
+        }
+        if (maxCookieCount <= 0) {
+            throw new IllegalArgumentException("maxCookieCount must be positive, got: " + maxCookieCount);
+        }
+        // Defensive, null-tolerant immutable copies of the allow/block lists.
+        allowedHeaderNames = allowedHeaderNames == null ? Set.of() : Set.copyOf(allowedHeaderNames);
+        blockedHeaderNames = blockedHeaderNames == null ? Set.of() : Set.copyOf(blockedHeaderNames);
+        allowedContentTypes = allowedContentTypes == null ? Set.of() : Set.copyOf(allowedContentTypes);
+        blockedContentTypes = blockedContentTypes == null ? Set.of() : Set.copyOf(blockedContentTypes);
     }
 
     /**

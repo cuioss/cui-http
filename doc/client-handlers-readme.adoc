@@ -34,6 +34,25 @@ Builder-based HTTP client wrapper with automatic SSL context creation for HTTPS.
 * Configurable connection and read timeouts (default: 10 seconds)
 * Thread-safe after construction
 
+*Scheme policy (fail-secure):* HTTPS is required by default. `build()` rejects an `http://`
+URI with `IllegalArgumentException` unless `allowInsecureHttp(true)` is set (default `false`);
+when permitted, a cleartext handler is built and a WARN (`HTTP-115`) is logged. Any scheme
+other than `http`/`https` is always rejected. Schemeless string URLs default to `https`. This
+applies uniformly to `uri(URI)`, `url(URL)`, and string inputs.
+
+[source,java]
+----
+// Rejected: plaintext HTTP requires an explicit opt-in
+HttpHandler.builder().uri("http://api.example.com").build(); // throws IllegalArgumentException
+
+// Permitted (logs a WARN), e.g. for a trusted plaintext test endpoint
+HttpHandler.builder().uri("http://localhost:8080").allowInsecureHttp(true).build();
+----
+
+*TLS floor:* for HTTPS the configured minimum TLS version is pinned on the wire. A TLS 1.2
+minimum and the generic `TLS` context both enforce `[TLSv1.2, TLSv1.3]` (deliberate); a caller
+cannot express "TLS 1.3-only" via the generic `TLS` string.
+
 ==== xref:../cui-http-core/src/main/java/de/cuioss/http/client/adapter/package-info.java[HTTP Adapters (New Architecture)]
 
 Async-first HTTP client adapters with composable retry and caching.

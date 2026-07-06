@@ -1,0 +1,132 @@
+= HTTP Security Configuration Reference
+:toc: macro
+:toclevels: 3
+
+This document is the central reference for every *enforced* setting in
+`de.cuioss.http.security.config.SecurityConfiguration`. For each knob it lists the default
+value across the three presets and the stage / validator that enforces it.
+
+Every setting listed here is enforced. Single-value settings are consumed by the validation
+stages inside the pipelines built by `PipelineFactory`; request-level settings that need
+collection or attribute context are enforced by dedicated validators
+(`RequestCollectionValidator`, `CookiePrefixValidationStage`).
+
+toc::[]
+
+== Presets
+
+Three presets are provided as the single source of truth
+(`de.cuioss.http.security.config.SecurityDefaults`):
+
+* `SecurityConfiguration.defaults()` — balanced (identical to `builder().build()`)
+* `SecurityConfiguration.strict()` — security over compatibility
+* `SecurityConfiguration.lenient()` — maximum compatibility (trusted environments only)
+
+Build a custom configuration with `SecurityConfiguration.builder()`.
+
+== Length limits
+
+Enforced by `LengthValidationStage` (runs first in every pipeline to prevent DoS).
+
+[cols="3,1,1,1", options="header"]
+|===
+| Setting | default | strict | lenient
+| `maxPathLength`          | 4096 | 1024 | 8192
+| `maxParameterNameLength` | 128  | 64   | 256
+| `maxParameterValueLength`| 2048 | 1024 | 8192
+| `maxHeaderNameLength`    | 128  | 64   | 256
+| `maxHeaderValueLength`   | 2048 | 1024 | 8192
+| `maxCookieNameLength`    | 128  | 64   | 256
+| `maxCookieValueLength`   | 2048 | 1024 | 8192
+| `maxBodySize` (bytes)    | 5 MB | 1 MB | 10 MB
+|===
+
+== Encoding and character policy
+
+[cols="3,1,1,1,3", options="header"]
+|===
+| Setting | default | strict | lenient | Enforced by
+| `allowDoubleEncoding`     | false | false | true  | `DecodingStage`
+| `allowNullBytes`          | false | false | false | `CharacterValidationStage`, `DecodingStage`
+| `allowControlCharacters`  | false | false | true  | `CharacterValidationStage`
+| `allowExtendedAscii`      | true  | false | true  | `CharacterValidationStage`
+| `normalizeUnicode`        | true  | true  | false | `DecodingStage`
+|===
+
+`normalizeUnicode` follows the OWASP _canonicalize-then-validate_ model: input is normalized and
+the canonical form flows to downstream stages (normalize-and-continue). It is rejected only when a
+fold introduces a structurally significant separator (`/ \ . : ? # %`) — e.g. a fullwidth solidus
+`U+FF0F` folding to `/`. Benign compatibility folds of legitimate international text are preserved.
+Paths use NFKC; parameter values use the lossless NFC form. NFKC is not confusable/homograph
+defense (that is a UTS #39 capability).
+
+== Pattern matching policy
+
+Enforced by `PatternMatchingStage`.
+
+[cols="3,1,1,1", options="header"]
+|===
+| Setting | default | strict | lenient
+| `caseSensitiveComparison`  | false | true  | false
+| `failOnSuspiciousPatterns` | false | true  | false
+|===
+
+== Collection count limits
+
+Request-level limits enforced by `RequestCollectionValidator` (a single-value pipeline cannot
+count a collection). Defend against resource-exhaustion / hash-collision DoS.
+
+[cols="3,1,1,1", options="header"]
+|===
+| Setting | default | strict | lenient
+| `maxParameterCount` | 100 | 20 | 500
+| `maxHeaderCount`    | 50  | 20 | 100
+| `maxCookieCount`    | 20  | 10 | 50
+|===
+
+[source,java]
+----
+RequestCollectionValidator validator = new RequestCollectionValidator(config, counter);
+validator.validateParameters(request.getParameterMap());
+validator.validateHeaders(request.getHeaderMap());
+validator.validateCookies(request.getCookies());
+----
+
+== Cookie attribute requirements
+
+Opt-in (default `false`) requirements enforced by `CookiePrefixValidationStage.validateCookie(Cookie)`.
+Meaningful only for attribute-bearing (Set-Cookie) cookies, not request `Cookie`-header
+`name=value` pairs.
+
+[cols="3,1,1,1", options="header"]
+|===
+| Setting | default | strict | lenient
+| `requireSecureCookies`   | false | false | false
+| `requireHttpOnlyCookies` | false | false | false
+|===
+
+== Header-name and content-type allow/block lists
+
+Case-insensitive allow/block lists (default empty). Block-list takes precedence; an empty
+allow-list means allow-all. Enforced by `AllowBlockListStage`.
+
+[cols="3,1,3", options="header"]
+|===
+| Setting | default (all presets) | Enforced by
+| `allowedHeaderNames`   | empty (allow-all) | header-name pipeline (`HTTPHeaderValidationPipeline`, `HEADER_NAME`)
+| `blockedHeaderNames`   | empty (block-none)| header-name pipeline (`HTTPHeaderValidationPipeline`, `HEADER_NAME`)
+| `allowedContentTypes`  | empty (allow-all) | `ContentTypeValidationPipeline` / `PipelineFactory.createContentTypePipeline`
+| `blockedContentTypes`  | empty (block-none)| `ContentTypeValidationPipeline` / `PipelineFactory.createContentTypePipeline`
+|===
+
+[source,java]
+----
+SecurityConfiguration config = SecurityConfiguration.builder()
+    .blockedHeaderNames(Set.of("X-Debug", "X-Test"))
+    .allowedContentTypes(Set.of("application/json"))
+    .build();
+----
+
+The classification constants in `SecurityDefaults` (`DANGEROUS_HEADER_NAMES`,
+`DANGEROUS_CONTENT_TYPES`, `SAFE_CONTENT_TYPES`, …) are reference values you may feed into these
+lists.

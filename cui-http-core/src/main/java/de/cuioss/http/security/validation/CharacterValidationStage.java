@@ -24,8 +24,8 @@ import lombok.EqualsAndHashCode;
 import lombok.ToString;
 import org.jspecify.annotations.Nullable;
 
-import java.util.BitSet;
 import java.util.Optional;
+import java.util.function.IntPredicate;
 
 /**
  * Character validation stage that enforces RFC-compliant character sets for HTTP components.
@@ -116,7 +116,7 @@ import java.util.Optional;
 @ToString
 public final class CharacterValidationStage implements HttpSecurityValidator {
 
-    private final BitSet allowedChars;
+    private final IntPredicate allowedChars;
     private final ValidationType validationType;
     private final boolean allowPercentEncoding;
     private final boolean allowNullBytes;
@@ -128,7 +128,8 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
         this.allowNullBytes = config.allowNullBytes();
         this.allowControlCharacters = config.allowControlCharacters();
         this.allowExtendedAscii = config.allowExtendedAscii();
-        // Defensive copy per stage - the shared constants cannot be corrupted through this instance
+        // Shared immutable membership test - the backing character set is private and
+        // cannot be corrupted, so no per-stage defensive copy is needed.
         this.allowedChars = CharacterValidationConstants.getCharacterSet(type);
 
         // Determine if percent encoding is allowed based on type
@@ -297,7 +298,7 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
                 return false;
             }
             // Always allow common whitespace characters that are in the base character set
-            if (allowedChars.get(ch)) {
+            if (allowedChars.test(ch)) {
                 return true;
             }
             // Other control characters depend on configuration
@@ -306,7 +307,7 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
 
         // Characters 32-127 (basic ASCII) - check against the base character set
         if (ch <= 127) {
-            return allowedChars.get(ch);
+            return allowedChars.test(ch);
         }
 
         // Extended ASCII characters (128-255)
@@ -320,14 +321,15 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
             }
             // For other types (URL paths, parameters, header values, body),
             // allow extended ASCII based on configuration
-            return allowExtendedAscii || allowedChars.get(ch);
+            return allowExtendedAscii || allowedChars.test(ch);
         }
 
         // Unicode characters above 255:
         // For URLs (paths/parameters): Always rejected per RFC 3986 (ASCII-only)
         // For headers/body: Allowed if allowExtendedAscii is true (which enables full Unicode support for these contexts)
-        // Always reject combining characters (U+0300-U+036F) as they can cause normalization issues
-        if (ch >= 0x0300 && ch <= 0x036F) {
+        // Always reject combining marks (any Unicode combining block) as they can cause
+        // normalization issues and enable homograph attacks.
+        if (CharacterValidationConstants.isCombiningMark(ch)) {
             return false;
         }
         // The allowExtendedAscii flag controls both extended ASCII and Unicode for applicable validation types
@@ -351,7 +353,7 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
                 return UrlSecurityFailureType.INVALID_CHARACTER;
             }
             // If it's in the base character set, it's just an invalid character for this context
-            if (allowedChars.get(ch)) {
+            if (allowedChars.test(ch)) {
                 return UrlSecurityFailureType.INVALID_CHARACTER;
             }
             return UrlSecurityFailureType.CONTROL_CHARACTERS;

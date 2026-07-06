@@ -133,20 +133,20 @@ public final class PipelineFactory {
      *   <li>Injection attempts</li>
      * </ul>
      *
-     * <p><strong>Note:</strong> parameter names currently share the exact same
-     * validation as parameter values (they use {@link URLParameterValidationPipeline}).
-     * A dedicated, stricter name-only pipeline is not yet implemented; this method
-     * exists so callers can express intent and so stricter rules can be added later
-     * without changing call sites.</p>
+     * <p>Parameter names are validated with genuine name-only rules via a
+     * {@link URLParameterNameValidationPipeline} (typed {@link ValidationType#PARAMETER_NAME}),
+     * <strong>not</strong> the parameter-value pipeline. In particular, decoded CR/LF and
+     * decoded parameter delimiters ({@code = &amp; ; space}) are rejected for names, and the
+     * stricter {@code maxParameterNameLength} limit applies.</p>
      *
      * @param config The security configuration to use
      * @param eventCounter The event counter for tracking security violations
-     * @return A configured URL parameter validation pipeline (currently identical to the value pipeline)
+     * @return A configured URL parameter name validation pipeline
      * @throws NullPointerException if config or eventCounter is null
      */
     public static HttpSecurityValidator createParameterNamePipeline(
             SecurityConfiguration config, SecurityEventCounter eventCounter) {
-        return new URLParameterValidationPipeline(config, eventCounter);
+        return new URLParameterNameValidationPipeline(config, eventCounter);
     }
 
     /**
@@ -193,6 +193,24 @@ public final class PipelineFactory {
         return new HTTPHeaderValidationPipeline(config, eventCounter, ValidationType.HEADER_VALUE);
     }
 
+
+    /**
+     * Creates a content-type validation pipeline that enforces the configured content-type
+     * allow/block lists ({@code allowedContentTypes} / {@code blockedContentTypes}).
+     *
+     * <p>Content types are single values checkable against a set; this pipeline applies the
+     * block-list (precedence) then the allow-list (empty = allow-all). Because a content type
+     * travels as a header value, the pipeline reports {@link ValidationType#HEADER_VALUE}.</p>
+     *
+     * @param config The security configuration to use
+     * @param eventCounter The event counter for tracking security violations
+     * @return A configured content-type validation pipeline
+     * @throws NullPointerException if config or eventCounter is null
+     */
+    public static HttpSecurityValidator createContentTypePipeline(
+            SecurityConfiguration config, SecurityEventCounter eventCounter) {
+        return new ContentTypeValidationPipeline(config, eventCounter);
+    }
 
     /**
      * Generic factory method that creates the appropriate validation pipeline

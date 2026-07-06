@@ -15,6 +15,7 @@
  */
 package de.cuioss.http.security.validation;
 
+import de.cuioss.http.security.config.SecurityConfiguration;
 import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.data.Cookie;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
@@ -305,6 +306,57 @@ class CookiePrefixValidationStageTest {
         void shouldTreatWrongPositionAsRegular(String name) {
             Cookie regular = new Cookie(name, "value", "");
             assertDoesNotThrow(() -> validator.validateCookie(regular));
+        }
+    }
+
+    @Nested
+    @DisplayName("Cookie attribute requirements (F-11)")
+    class AttributeRequirements {
+
+        @Test
+        @DisplayName("Default config does not require Secure or HttpOnly")
+        void shouldNotEnforceByDefault() {
+            // Default validator (no-arg) leaves both flags off - behavior unchanged.
+            Cookie plain = new Cookie("session", "abc123", "");
+            assertDoesNotThrow(() -> validator.validateCookie(plain));
+        }
+
+        @Test
+        @DisplayName("requireSecureCookies rejects a cookie without Secure")
+        void shouldRejectMissingSecureWhenRequired() {
+            var secureValidator = new CookiePrefixValidationStage(
+                    SecurityConfiguration.builder()
+                            .requireSecureCookies(true)
+                            .build());
+
+            Cookie missingSecure = new Cookie("session", "abc123", "HttpOnly");
+            var exception = assertThrows(UrlSecurityException.class,
+                    () -> secureValidator.validateCookie(missingSecure));
+            assertEquals(UrlSecurityFailureType.COOKIE_PREFIX_VIOLATION, exception.getFailureType());
+            assertTrue(exception.getDetail().orElse("").contains("Secure"));
+
+            // A cookie that carries Secure passes.
+            Cookie withSecure = new Cookie("session", "abc123", "Secure");
+            assertDoesNotThrow(() -> secureValidator.validateCookie(withSecure));
+        }
+
+        @Test
+        @DisplayName("requireHttpOnlyCookies rejects a cookie without HttpOnly")
+        void shouldRejectMissingHttpOnlyWhenRequired() {
+            var httpOnlyValidator = new CookiePrefixValidationStage(
+                    SecurityConfiguration.builder()
+                            .requireHttpOnlyCookies(true)
+                            .build());
+
+            Cookie missingHttpOnly = new Cookie("session", "abc123", "Secure");
+            var exception = assertThrows(UrlSecurityException.class,
+                    () -> httpOnlyValidator.validateCookie(missingHttpOnly));
+            assertEquals(UrlSecurityFailureType.COOKIE_PREFIX_VIOLATION, exception.getFailureType());
+            assertTrue(exception.getDetail().orElse("").contains("HttpOnly"));
+
+            // A cookie that carries HttpOnly passes.
+            Cookie withHttpOnly = new Cookie("session", "abc123", "HttpOnly");
+            assertDoesNotThrow(() -> httpOnlyValidator.validateCookie(withHttpOnly));
         }
     }
 }

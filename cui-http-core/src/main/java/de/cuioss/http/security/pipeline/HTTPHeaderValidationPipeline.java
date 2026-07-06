@@ -19,6 +19,7 @@ import de.cuioss.http.security.config.SecurityConfiguration;
 import de.cuioss.http.security.core.HttpSecurityValidator;
 import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
+import de.cuioss.http.security.validation.AllowBlockListStage;
 import de.cuioss.http.security.validation.CharacterValidationStage;
 import de.cuioss.http.security.validation.LengthValidationStage;
 import de.cuioss.http.security.validation.NormalizationStage;
@@ -27,6 +28,7 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.ToString;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -39,6 +41,8 @@ import java.util.Objects;
  *   <li><strong>Character Validation</strong> - Validates RFC 7230 header characters</li>
  *   <li><strong>Normalization</strong> - Header normalization and security checks</li>
  *   <li><strong>Pattern Matching</strong> - Detects injection attacks and suspicious patterns</li>
+ *   <li><strong>Allow/Block List</strong> - (header names only) enforces the configured
+ *       {@code allowedHeaderNames}/{@code blockedHeaderNames} lists</li>
  * </ol>
  *
  * <h3>Design Principles</h3>
@@ -113,12 +117,17 @@ public final class HTTPHeaderValidationPipeline extends AbstractValidationPipeli
 
         // Create validation stages in the correct order for HTTP headers
         // Note: Headers typically don't need URL decoding, so we skip DecodingStage
-        return List.of(
+        List<HttpSecurityValidator> stages = new ArrayList<>(List.of(
                 new LengthValidationStage(config, validationType),
                 new CharacterValidationStage(config, validationType),
                 new NormalizationStage(config, validationType),
                 new PatternMatchingStage(config, validationType)
-        );
+        ));
+        // Header-name allow/block list enforcement (empty lists => no-op, allow-all).
+        if (validationType == ValidationType.HEADER_NAME) {
+            stages.add(AllowBlockListStage.forHeaderNames(config));
+        }
+        return List.copyOf(stages);
     }
 
     @Override

@@ -40,7 +40,8 @@ import java.util.regex.Pattern;
  *   <li><strong>Double Encoding Detection</strong> - Identifies %25XX patterns indicating double encoding</li>
  *   <li><strong>Overlong UTF-8 Detection</strong> - Blocks malformed UTF-8 encoding attacks</li>
  *   <li><strong>URL Decoding</strong> - Performs standard URL percent-decoding</li>
- *   <li><strong>Unicode Normalization</strong> - Optionally normalizes Unicode and detects changes</li>
+ *   <li><strong>Unicode Normalization</strong> - Optionally canonicalizes Unicode (normalize and
+ *       continue), rejecting only folds that introduce a structural separator</li>
  * </ol>
  *
  * <h3>Design Principles</h3>
@@ -56,7 +57,8 @@ import java.util.regex.Pattern;
  *   <li><strong>Double Encoding</strong> - Detects %25XX patterns that could bypass filters</li>
  *   <li><strong>Overlong UTF-8</strong> - Blocks malformed UTF-8 encoding attacks</li>
  *   <li><strong>Invalid Encoding</strong> - Catches malformed percent-encoded sequences</li>
- *   <li><strong>Unicode Normalization Attacks</strong> - Detects normalization changes that could alter meaning</li>
+ *   <li><strong>Unicode Normalization Attacks</strong> - Canonicalizes input and rejects folds that
+ *       introduce a structural separator (e.g. fullwidth solidus U+FF0F &rarr; {@code /})</li>
  * </ul>
  *
  * <h3>Usage Examples</h3>
@@ -138,16 +140,18 @@ ValidationType validationType) implements HttpSecurityValidator {
      *   <li>Double encoding detection - fails fast if %25XX patterns found</li>
      *   <li>UTF-8 overlong encoding detection - blocks malformed UTF-8 attack patterns</li>
      *   <li>URL decoding - converts percent-encoded sequences to characters</li>
-     *   <li>Unicode normalization - optionally normalizes and detects changes</li>
+     *   <li>Unicode normalization - optionally canonicalizes and continues with the canonical form,
+     *       rejecting only structural-separator folds</li>
      * </ol>
      *
      * @param value The input string to validate and decode
-     * @return The validated and decoded string wrapped in Optional, or Optional.empty() if input was null
+     * @return The validated and canonicalized string wrapped in Optional, or Optional.empty() if input was null
      * @throws UrlSecurityException if any security violations are detected:
      *                              <ul>
      *                                <li>DOUBLE_ENCODING - if double encoding patterns are found</li>
      *                                <li>INVALID_ENCODING - if URL decoding fails due to malformed input</li>
-     *                                <li>UNICODE_NORMALIZATION_CHANGED - if Unicode normalization changes the string</li>
+     *                                <li>UNICODE_NORMALIZATION_CHANGED - if normalization introduces a
+     *                                    structurally significant separator character</li>
      *                              </ul>
      */
     @Override
@@ -197,20 +201,25 @@ ValidationType validationType) implements HttpSecurityValidator {
         // again or encoding becomes a bypass for the character rules.
         validateDecodedCharacters(value, decoded);
 
-        // Step 3: Unicode normalization with change detection.
-        // NFKC (not NFC) is required to fold compatibility homoglyphs such as the
-        // fullwidth solidus U+FF0F to their canonical form: a change after folding
-        // indicates an input that would read differently after normalization.
+        // Step 3: Unicode normalization - canonicalize-then-validate (OWASP model).
+        // Normalize and CONTINUE with the canonical form downstream, rejecting only
+        // when the fold introduces a structurally significant character (a separator
+        // such as / \ . : ? # %) that was not present before -- i.e. the
+        // homoglyph-separator attack (fullwidth solidus U+FF0F -> '/'). Benign
+        // compatibility folds (fullwidth letters, ligatures, CJK compatibility
+        // ideographs) are preserved rather than rejected, so legitimate international
+        // content passes. Form is chosen by type: NFKC for URL paths (must fold
+        // compatibility homoglyphs of separators), NFC for parameter values (lossless,
+        // preserves legitimate international text).
         if (config.normalizeUnicode()) {
-            String normalized = Normalizer.normalize(decoded, Normalizer.Form.NFKC);
-            if (!decoded.equals(normalized)) {
-                // Normalization changed the string - potential attack
+            String normalized = Normalizer.normalize(decoded, normalizationForm());
+            if (introducesStructuralCharacter(decoded, normalized)) {
                 throw UrlSecurityException.builder()
                         .failureType(UrlSecurityFailureType.UNICODE_NORMALIZATION_CHANGED)
                         .validationType(validationType)
                         .originalInput(value)
                         .sanitizedInput(normalized)
-                        .detail("Unicode normalization changed string content")
+                        .detail("Unicode normalization introduced a structurally significant character")
                         .build();
             }
             decoded = normalized;
@@ -220,20 +229,80 @@ ValidationType validationType) implements HttpSecurityValidator {
     }
 
     /**
+     * Structurally significant characters: separators whose introduction changes how a
+     * value parses (path/segment/scheme/query/fragment/encoding delimiters). The
+     * dot-dot traversal sequence is covered transitively by counting {@code '.'}.
+     */
+    private static final String STRUCTURAL_CHARS = "/\\.:?#%";
+
+    /**
+     * Selects the Unicode normalization form for this validation type.
+     *
+     * <p><strong>NFKC</strong> (compatibility) for {@code URL_PATH}: fullwidth /
+     * compatibility homoglyphs of path separators must fold to their canonical ASCII
+     * form so the structural-fold check below and downstream path parsing see them.
+     * <strong>NFC</strong> (canonical, lossless) for {@code PARAMETER_VALUE} and any
+     * other type: preserves legitimate international content. {@code BODY} is not routed
+     * through this stage today.</p>
+     *
+     * @return the normalization form to apply
+     */
+    private Normalizer.Form normalizationForm() {
+        return switch (validationType) {
+            case URL_PATH -> Normalizer.Form.NFKC;
+            default -> Normalizer.Form.NFC;
+        };
+    }
+
+    /**
+     * Determines whether normalization <em>introduced</em> a structurally significant
+     * character - i.e. added occurrences of a separator that were not present before the
+     * fold. Per-character counts are compared so a fold that adds a new separator is
+     * caught even when the same separator already appears in the input.
+     *
+     * @param before the decoded string prior to normalization
+     * @param after the normalized string
+     * @return {@code true} if any structural character occurs more often after folding
+     */
+    private static boolean introducesStructuralCharacter(String before, String after) {
+        for (int i = 0; i < STRUCTURAL_CHARS.length(); i++) {
+            char structural = STRUCTURAL_CHARS.charAt(i);
+            if (countOccurrences(after, structural) > countOccurrences(before, structural)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int countOccurrences(String value, char target) {
+        int count = 0;
+        for (int i = 0; i < value.length(); i++) {
+            if (value.charAt(i) == target) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
      * Validates security-critical characters in decoded output.
      *
      * <p>Checks applied to the decoded string:</p>
      * <ul>
      *   <li><strong>Null bytes</strong> - rejected unless explicitly allowed (defense in depth;
      *       encoded {@code %00} is normally already rejected before decoding)</li>
-     *   <li><strong>Combining characters (U+0300-U+036F)</strong> - always rejected, mirroring
-     *       the raw-character rule; decoded combining marks can visually alter adjacent
-     *       characters and enable homograph attacks</li>
-     *   <li><strong>Decoded CR/LF</strong> - always rejected for header names/values and cookie
+     *   <li><strong>Combining marks (all Unicode combining blocks)</strong> - always rejected,
+     *       mirroring the raw-character rule; decoded combining marks can visually alter adjacent
+     *       characters and enable homograph attacks. Classified by Unicode general category
+     *       ({@link CharacterValidationConstants#isCombiningMark(int)}), not a fixed range</li>
+     *   <li><strong>Decoded CR/LF</strong> - always rejected for header names/values, cookie
      *       names/values (they travel inside HTTP headers, so a decoded line break is a
-     *       response-splitting vector). For URL paths, rejected unless control characters are
-     *       explicitly allowed. Parameter values are exempt because encoded line breaks are
-     *       legitimate form data.</li>
+     *       response-splitting vector) and parameter <em>names</em> (structural). For URL paths,
+     *       rejected unless control characters are explicitly allowed. Parameter <em>values</em>
+     *       are exempt because encoded line breaks are legitimate form data.</li>
+     *   <li><strong>Decoded parameter-name delimiters</strong> ({@code = &amp; ; space}) - rejected
+     *       for parameter <em>names</em> only, since a decoded delimiter would split the name and
+     *       enable parameter injection</li>
      * </ul>
      *
      * @param originalInput The original (still encoded) input for error reporting
@@ -253,7 +322,7 @@ ValidationType validationType) implements HttpSecurityValidator {
                         .build();
             }
 
-            if (ch >= 0x0300 && ch <= 0x036F) {
+            if (CharacterValidationConstants.isCombiningMark(ch)) {
                 throw UrlSecurityException.builder()
                         .failureType(UrlSecurityFailureType.INVALID_CHARACTER)
                         .validationType(validationType)
@@ -271,18 +340,40 @@ ValidationType validationType) implements HttpSecurityValidator {
                         .detail("Decoded line break at position " + i)
                         .build();
             }
+
+            // Parameter names are structural: a decoded delimiter (=, &, ;, space) would split
+            // the name and enable parameter-injection. These are legitimate inside a parameter
+            // VALUE (form data), so this rule is name-only.
+            if (validationType == ValidationType.PARAMETER_NAME && isParameterNameDelimiter(ch)) {
+                throw UrlSecurityException.builder()
+                        .failureType(UrlSecurityFailureType.INVALID_CHARACTER)
+                        .validationType(validationType)
+                        .originalInput(originalInput)
+                        .detail("Decoded parameter-name delimiter '" + ch + "' at position " + i)
+                        .build();
+            }
         }
     }
 
     /**
-     * A decoded CR/LF is forbidden for header/cookie contexts unconditionally (response
-     * splitting), and for URL paths unless control characters are explicitly allowed.
+     * Characters that delimit parameters in a query string and therefore must not appear
+     * inside a decoded parameter <em>name</em>.
+     */
+    private static boolean isParameterNameDelimiter(char ch) {
+        return ch == '&' || ch == '=' || ch == ';' || ch == ' ';
+    }
+
+    /**
+     * A decoded CR/LF is forbidden for header/cookie contexts and for parameter <em>names</em>
+     * unconditionally (response splitting / parameter injection), and for URL paths unless
+     * control characters are explicitly allowed. Parameter <em>values</em> and bodies may
+     * legitimately carry decoded line breaks (form data).
      */
     private boolean decodedLineBreakForbidden() {
         return switch (validationType) {
-            case HEADER_NAME, HEADER_VALUE, COOKIE_NAME, COOKIE_VALUE -> true;
+            case HEADER_NAME, HEADER_VALUE, COOKIE_NAME, COOKIE_VALUE, PARAMETER_NAME -> true;
             case URL_PATH -> !config.allowControlCharacters();
-            case PARAMETER_NAME, PARAMETER_VALUE, BODY -> false;
+            case PARAMETER_VALUE, BODY -> false;
         };
     }
 
