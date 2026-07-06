@@ -27,7 +27,6 @@ import de.cuioss.http.client.result.HttpResult;
 import de.cuioss.tools.logging.CuiLogger;
 import org.jspecify.annotations.Nullable;
 
-import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -433,7 +432,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
                     HttpResult.failure(
                             "Failed to build HTTP request: " + e.getMessage(),
                             e,
-                            HttpErrorCategory.CONFIGURATION_ERROR
+                            HttpErrorCategory.fromException(e)
                     )
             );
         }
@@ -535,7 +534,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
                     HttpResult.failure(
                             "Failed to build HTTP request: " + e.getMessage(),
                             e,
-                            HttpErrorCategory.CONFIGURATION_ERROR
+                            HttpErrorCategory.fromException(e)
                     )
             );
         }
@@ -564,13 +563,11 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         return httpClient.sendAsync(request, responseConverter.getBodyHandler())
                 .thenApply(response -> handleHttpResponse(response, method, cachedEntry, cacheKey))
                 .exceptionally(throwable -> {
-                    // Classify exceptions
-                    HttpErrorCategory category;
-                    if (throwable instanceof IOException) {
-                        category = HttpErrorCategory.NETWORK_ERROR;
+                    // Classify via the single source of truth in client.result
+                    HttpErrorCategory category = HttpErrorCategory.fromException(throwable);
+                    if (category == HttpErrorCategory.NETWORK_ERROR) {
                         LOGGER.warn(WARN.NETWORK_ERROR_DURING_REQUEST, method.methodName(), throwable.getMessage());
                     } else {
-                        category = HttpErrorCategory.CONFIGURATION_ERROR;
                         LOGGER.error(ERROR.CONFIGURATION_ERROR_DURING_REQUEST, method.methodName(), throwable.getMessage());
                     }
 
