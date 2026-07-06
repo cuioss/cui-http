@@ -323,7 +323,8 @@ public final class SecurityDefaults {
             false, false, false, true, // no null bytes, no control chars, no extended ASCII, normalize Unicode
             true, true, // case-sensitive comparison, fail on suspicious patterns
             false, false, // requireSecureCookies, requireHttpOnlyCookies (opt-in)
-            MAX_PARAMETER_COUNT_STRICT, MAX_HEADER_COUNT_STRICT, MAX_COOKIE_COUNT_STRICT);
+            MAX_PARAMETER_COUNT_STRICT, MAX_HEADER_COUNT_STRICT, MAX_COOKIE_COUNT_STRICT,
+            Set.of(), Set.of(), Set.of(), Set.of()); // allow/block lists (empty = allow-all, opt-in)
 
     /**
      * Configuration preset for balanced security and usability.
@@ -351,5 +352,6 @@ public final class SecurityDefaults {
             false, true, true, false, // no null bytes (never allowed), control chars, extended ASCII, no normalization
             false, false, // case-insensitive comparison, no suspicious-pattern failures
             false, false, // requireSecureCookies, requireHttpOnlyCookies (opt-in)
-            MAX_PARAMETER_COUNT_LENIENT, MAX_HEADER_COUNT_LENIENT, MAX_COOKIE_COUNT_LENIENT);
+            MAX_PARAMETER_COUNT_LENIENT, MAX_HEADER_COUNT_LENIENT, MAX_COOKIE_COUNT_LENIENT,
+            Set.of(), Set.of(), Set.of(), Set.of()); // allow/block lists (empty = allow-all, opt-in)
 }

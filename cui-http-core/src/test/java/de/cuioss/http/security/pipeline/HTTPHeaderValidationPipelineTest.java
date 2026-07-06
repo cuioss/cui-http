@@ -55,7 +55,8 @@ class HTTPHeaderValidationPipelineTest {
             HTTPHeaderValidationPipeline pipeline = new HTTPHeaderValidationPipeline(config, eventCounter, ValidationType.HEADER_NAME);
 
             assertEquals(ValidationType.HEADER_NAME, pipeline.getValidationType());
-            assertEquals(4, pipeline.getStages().size());
+            // 4 common stages + the header-name allow/block-list stage (F-08)
+            assertEquals(5, pipeline.getStages().size());
             assertSame(eventCounter, pipeline.getEventCounter());
         }
 

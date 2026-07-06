@@ -15,6 +15,8 @@
  */
 package de.cuioss.http.security.config;
 
+import java.util.Set;
+
 /**
  * Immutable record representing security configuration for HTTP validation.
  *
@@ -86,6 +88,14 @@ package de.cuioss.http.security.config;
  *        {@code RequestCollectionValidator})
  * @param maxCookieCount Maximum number of request cookies (positive; enforced by
  *        {@code RequestCollectionValidator})
+ * @param allowedHeaderNames Case-insensitive allow-list of header names; empty means allow-all.
+ *        Enforced by {@code AllowBlockListStage} in the header-name pipeline.
+ * @param blockedHeaderNames Case-insensitive block-list of header names (takes precedence over
+ *        the allow-list). Enforced by {@code AllowBlockListStage} in the header-name pipeline.
+ * @param allowedContentTypes Case-insensitive allow-list of content types; empty means allow-all.
+ *        Enforced by the content-type validator ({@code AllowBlockListStage}).
+ * @param blockedContentTypes Case-insensitive block-list of content types (takes precedence over
+ *        the allow-list). Enforced by the content-type validator ({@code AllowBlockListStage}).
  *
  * @since 1.0
  * @see SecurityConfigurationBuilder
@@ -113,7 +123,11 @@ boolean requireSecureCookies,
 boolean requireHttpOnlyCookies,
 int maxParameterCount,
 int maxHeaderCount,
-int maxCookieCount
+int maxCookieCount,
+Set<String> allowedHeaderNames,
+Set<String> blockedHeaderNames,
+Set<String> allowedContentTypes,
+Set<String> blockedContentTypes
 ) {
 
     /**
@@ -155,6 +169,11 @@ int maxCookieCount
         if (maxCookieCount <= 0) {
             throw new IllegalArgumentException("maxCookieCount must be positive, got: " + maxCookieCount);
         }
+        // Defensive, null-tolerant immutable copies of the allow/block lists.
+        allowedHeaderNames = allowedHeaderNames == null ? Set.of() : Set.copyOf(allowedHeaderNames);
+        blockedHeaderNames = blockedHeaderNames == null ? Set.of() : Set.copyOf(blockedHeaderNames);
+        allowedContentTypes = allowedContentTypes == null ? Set.of() : Set.copyOf(allowedContentTypes);
+        blockedContentTypes = blockedContentTypes == null ? Set.of() : Set.copyOf(blockedContentTypes);
     }
 
     /**

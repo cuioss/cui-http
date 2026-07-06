@@ -20,6 +20,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.stream.Stream;
 
@@ -170,7 +171,8 @@ class SecurityConfigurationTest {
                 pathLength, false, paramNameLength, paramValueLength,
                 headerNameLength, headerValueLength, cookieNameLength, cookieValueLength,
                 bodySize, false, false, true, false, false, false,
-                false, false, 100, 50, 20));
+                false, false, 100, 50, 20,
+                Set.of(), Set.of(), Set.of(), Set.of()));
     }
 
     @Test

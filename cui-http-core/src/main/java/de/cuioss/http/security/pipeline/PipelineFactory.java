@@ -195,6 +195,24 @@ public final class PipelineFactory {
 
 
     /**
+     * Creates a content-type validation pipeline that enforces the configured content-type
+     * allow/block lists ({@code allowedContentTypes} / {@code blockedContentTypes}).
+     *
+     * <p>Content types are single values checkable against a set; this pipeline applies the
+     * block-list (precedence) then the allow-list (empty = allow-all). Because a content type
+     * travels as a header value, the pipeline reports {@link ValidationType#HEADER_VALUE}.</p>
+     *
+     * @param config The security configuration to use
+     * @param eventCounter The event counter for tracking security violations
+     * @return A configured content-type validation pipeline
+     * @throws NullPointerException if config or eventCounter is null
+     */
+    public static HttpSecurityValidator createContentTypePipeline(
+            SecurityConfiguration config, SecurityEventCounter eventCounter) {
+        return new ContentTypeValidationPipeline(config, eventCounter);
+    }
+
+    /**
      * Generic factory method that creates the appropriate validation pipeline
      * based on the specified validation type.
      *

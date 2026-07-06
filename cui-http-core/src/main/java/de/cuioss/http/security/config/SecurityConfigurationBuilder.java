@@ -15,6 +15,10 @@
  */
 package de.cuioss.http.security.config;
 
+import org.jspecify.annotations.Nullable;
+
+import java.util.Set;
+
 /**
  * Builder class for constructing {@link SecurityConfiguration} instances with fluent API.
  *
@@ -105,6 +109,12 @@ public class SecurityConfigurationBuilder {
     private int maxParameterCount = SecurityDefaults.MAX_PARAMETER_COUNT_DEFAULT;
     private int maxHeaderCount = SecurityDefaults.MAX_HEADER_COUNT_DEFAULT;
     private int maxCookieCount = SecurityDefaults.MAX_COOKIE_COUNT_DEFAULT;
+
+    // Allow/block list defaults (empty = allow-all / block-none; enforced by AllowBlockListStage)
+    private Set<String> allowedHeaderNames = Set.of();
+    private Set<String> blockedHeaderNames = Set.of();
+    private Set<String> allowedContentTypes = Set.of();
+    private Set<String> blockedContentTypes = Set.of();
 
     /**
      * Package-private constructor for internal use.
@@ -434,6 +444,56 @@ public class SecurityConfigurationBuilder {
         return this;
     }
 
+    // === Header / Content-Type Allow-Block List Methods ===
+
+    /**
+     * Sets the case-insensitive allow-list of header names. An empty set (the default) means
+     * allow-all. Enforced by {@code AllowBlockListStage} in the header-name pipeline.
+     *
+     * @param headerNames allowed header names (null is treated as empty)
+     * @return This builder for method chaining
+     */
+    public SecurityConfigurationBuilder allowedHeaderNames(@Nullable Set<String> headerNames) {
+        this.allowedHeaderNames = headerNames == null ? Set.of() : Set.copyOf(headerNames);
+        return this;
+    }
+
+    /**
+     * Sets the case-insensitive block-list of header names (takes precedence over the allow-list).
+     * Enforced by {@code AllowBlockListStage} in the header-name pipeline.
+     *
+     * @param headerNames blocked header names (null is treated as empty)
+     * @return This builder for method chaining
+     */
+    public SecurityConfigurationBuilder blockedHeaderNames(@Nullable Set<String> headerNames) {
+        this.blockedHeaderNames = headerNames == null ? Set.of() : Set.copyOf(headerNames);
+        return this;
+    }
+
+    /**
+     * Sets the case-insensitive allow-list of content types. An empty set (the default) means
+     * allow-all. Enforced by the content-type validator ({@code AllowBlockListStage}).
+     *
+     * @param contentTypes allowed content types (null is treated as empty)
+     * @return This builder for method chaining
+     */
+    public SecurityConfigurationBuilder allowedContentTypes(@Nullable Set<String> contentTypes) {
+        this.allowedContentTypes = contentTypes == null ? Set.of() : Set.copyOf(contentTypes);
+        return this;
+    }
+
+    /**
+     * Sets the case-insensitive block-list of content types (takes precedence over the allow-list).
+     * Enforced by the content-type validator ({@code AllowBlockListStage}).
+     *
+     * @param contentTypes blocked content types (null is treated as empty)
+     * @return This builder for method chaining
+     */
+    public SecurityConfigurationBuilder blockedContentTypes(@Nullable Set<String> contentTypes) {
+        this.blockedContentTypes = contentTypes == null ? Set.of() : Set.copyOf(contentTypes);
+        return this;
+    }
+
     /**
      * Builds the SecurityConfiguration with the current settings.
      *
@@ -450,7 +510,8 @@ public class SecurityConfigurationBuilder {
                 allowNullBytes, allowControlCharacters, allowExtendedAscii, normalizeUnicode,
                 caseSensitiveComparison, failOnSuspiciousPatterns,
                 requireSecureCookies, requireHttpOnlyCookies,
-                maxParameterCount, maxHeaderCount, maxCookieCount
+                maxParameterCount, maxHeaderCount, maxCookieCount,
+                allowedHeaderNames, blockedHeaderNames, allowedContentTypes, blockedContentTypes
         );
     }
 }
