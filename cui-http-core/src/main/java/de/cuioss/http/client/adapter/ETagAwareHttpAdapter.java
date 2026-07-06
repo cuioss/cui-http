@@ -442,10 +442,11 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
     /**
      * Applies converter-derived {@code Accept} and {@code Content-Type} headers.
      *
-     * <p>{@code Accept} is always set from the response converter's content type;
-     * {@code Content-Type} is set only when a request body is present. Both are applied
-     * with {@code setHeader} first so a caller-provided header of the same name in
-     * {@code callerHeaders} (added afterwards) overrides the default.</p>
+     * <p>Each default is applied <strong>only when the caller has not already supplied that
+     * header</strong> (checked case-insensitively against {@code callerHeaders}), so a
+     * caller-provided value always wins. {@code Accept} is defaulted from the response
+     * converter's content type; {@code Content-Type} is defaulted only when a request body is
+     * present.</p>
      *
      * @param requestBuilder the request builder to configure
      * @param callerHeaders caller-supplied headers (used to detect explicit overrides)
