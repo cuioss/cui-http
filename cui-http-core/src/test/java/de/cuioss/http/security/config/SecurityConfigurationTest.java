@@ -169,7 +169,8 @@ class SecurityConfigurationTest {
         assertThrows(IllegalArgumentException.class, () -> new SecurityConfiguration(
                 pathLength, false, paramNameLength, paramValueLength,
                 headerNameLength, headerValueLength, cookieNameLength, cookieValueLength,
-                bodySize, false, false, true, false, false, false));
+                bodySize, false, false, true, false, false, false,
+                false, false));
     }
 
     @Test

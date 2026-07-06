@@ -97,6 +97,10 @@ public class SecurityConfigurationBuilder {
     private boolean caseSensitiveComparison = false;
     private boolean failOnSuspiciousPatterns = false;
 
+    // Cookie Security defaults (opt-in; enforced by CookiePrefixValidationStage.validateCookie)
+    private boolean requireSecureCookies = false;
+    private boolean requireHttpOnlyCookies = false;
+
     /**
      * Package-private constructor for internal use.
      */
@@ -340,6 +344,37 @@ public class SecurityConfigurationBuilder {
         return this;
     }
 
+    // === Cookie Security Methods ===
+
+    /**
+     * Sets whether cookies must carry the {@code Secure} attribute.
+     *
+     * <p>Enforced by {@code CookiePrefixValidationStage.validateCookie(Cookie)}. Opt-in
+     * (default {@code false}); meaningful only for attribute-bearing (Set-Cookie) cookies,
+     * not for request {@code Cookie}-header {@code name=value} pairs.</p>
+     *
+     * @param require true to require the Secure attribute on validated cookies
+     * @return This builder for method chaining
+     */
+    public SecurityConfigurationBuilder requireSecureCookies(boolean require) {
+        this.requireSecureCookies = require;
+        return this;
+    }
+
+    /**
+     * Sets whether cookies must carry the {@code HttpOnly} attribute.
+     *
+     * <p>Enforced by {@code CookiePrefixValidationStage.validateCookie(Cookie)}. Opt-in
+     * (default {@code false}); meaningful only for attribute-bearing (Set-Cookie) cookies.</p>
+     *
+     * @param require true to require the HttpOnly attribute on validated cookies
+     * @return This builder for method chaining
+     */
+    public SecurityConfigurationBuilder requireHttpOnlyCookies(boolean require) {
+        this.requireHttpOnlyCookies = require;
+        return this;
+    }
+
     /**
      * Builds the SecurityConfiguration with the current settings.
      *
@@ -354,7 +389,8 @@ public class SecurityConfigurationBuilder {
                 maxCookieNameLength, maxCookieValueLength,
                 maxBodySize,
                 allowNullBytes, allowControlCharacters, allowExtendedAscii, normalizeUnicode,
-                caseSensitiveComparison, failOnSuspiciousPatterns
+                caseSensitiveComparison, failOnSuspiciousPatterns,
+                requireSecureCookies, requireHttpOnlyCookies
         );
     }
 }

@@ -15,6 +15,7 @@
  */
 package de.cuioss.http.security.validation;
 
+import de.cuioss.http.security.config.SecurityConfiguration;
 import de.cuioss.http.security.core.HttpSecurityValidator;
 import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.core.ValidationType;
@@ -22,6 +23,7 @@ import de.cuioss.http.security.data.Cookie;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import org.jspecify.annotations.Nullable;
 
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -30,6 +32,12 @@ import java.util.Optional;
  * <p>This stage validates that cookies with security prefixes ({@code __Host-} and {@code __Secure-})
  * meet the requirements specified in RFC 6265bis. These prefixes provide additional security
  * guarantees to prevent subdomain attacks and ensure HTTPS-only transmission.</p>
+ *
+ * <p>In addition, {@link #validateCookie(Cookie)} enforces the opt-in configuration flags
+ * {@code requireSecureCookies} and {@code requireHttpOnlyCookies} (both default {@code false}):
+ * when enabled, every validated cookie must carry the {@code Secure} / {@code HttpOnly}
+ * attribute respectively. These are meaningful only for attribute-bearing (Set-Cookie) cookies,
+ * not request {@code Cookie}-header {@code name=value} pairs.</p>
  *
  * <p><strong>Standalone stage:</strong> unlike the URL/parameter/header stages, this stage is
  * <em>not</em> part of any pipeline built by {@code PipelineFactory} (which does not support
@@ -114,7 +122,26 @@ import java.util.Optional;
  * @see <a href="https://portswigger.net/research/cookie-chaos-how-to-bypass-host-and-secure-cookie-prefixes">Cookie Chaos Research</a>
  * @since 1.0
  */
-public record CookiePrefixValidationStage() implements HttpSecurityValidator {
+public record CookiePrefixValidationStage(SecurityConfiguration config) implements HttpSecurityValidator {
+
+    /**
+     * Canonical constructor.
+     *
+     * @param config the security configuration driving optional attribute requirements
+     *               ({@code requireSecureCookies} / {@code requireHttpOnlyCookies}); must not be null
+     */
+    public CookiePrefixValidationStage {
+        Objects.requireNonNull(config, "config must not be null");
+    }
+
+    /**
+     * Creates a stage using the default configuration, i.e. only RFC 6265bis prefix rules
+     * (the {@code requireSecureCookies}/{@code requireHttpOnlyCookies} attribute requirements
+     * default to off).
+     */
+    public CookiePrefixValidationStage() {
+        this(SecurityConfiguration.defaults());
+    }
 
     /** Prefix for host-locked cookies */
     private static final String HOST_PREFIX = "__Host-";
@@ -181,6 +208,26 @@ public record CookiePrefixValidationStage() implements HttpSecurityValidator {
 
         // Validate name format (no leading/trailing whitespace)
         validate(cookieName);
+
+        // Opt-in attribute requirements (default off). Meaningful for attribute-bearing
+        // Set-Cookie cookies; a request Cookie-header name=value pair carries no attributes
+        // and would always fail if these are enabled - enable them only for the Set-Cookie side.
+        if (config.requireSecureCookies() && !cookie.isSecure()) {
+            throw UrlSecurityException.builder()
+                    .failureType(UrlSecurityFailureType.COOKIE_PREFIX_VIOLATION)
+                    .validationType(ValidationType.COOKIE_NAME)
+                    .originalInput(cookieName)
+                    .detail("Cookie must have the Secure attribute (requireSecureCookies)")
+                    .build();
+        }
+        if (config.requireHttpOnlyCookies() && !cookie.isHttpOnly()) {
+            throw UrlSecurityException.builder()
+                    .failureType(UrlSecurityFailureType.COOKIE_PREFIX_VIOLATION)
+                    .validationType(ValidationType.COOKIE_NAME)
+                    .originalInput(cookieName)
+                    .detail("Cookie must have the HttpOnly attribute (requireHttpOnlyCookies)")
+                    .build();
+        }
 
         // Check for __Host- prefix requirements
         if (cookieName.startsWith(HOST_PREFIX)) {

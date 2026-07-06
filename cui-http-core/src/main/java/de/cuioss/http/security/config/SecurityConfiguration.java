@@ -74,6 +74,13 @@ package de.cuioss.http.security.config;
  *        parameter values use the lossless NFC form.
  * @param caseSensitiveComparison Whether string comparisons are case-sensitive
  * @param failOnSuspiciousPatterns Whether validation fails on suspicious (non-attack) patterns
+ * @param requireSecureCookies Whether cookies must carry the {@code Secure} attribute
+ *        (enforced by {@code CookiePrefixValidationStage.validateCookie}). Opt-in, default
+ *        {@code false}. Meaningful only for attribute-bearing (Set-Cookie) cookies, not for
+ *        request {@code Cookie}-header {@code name=value} pairs.
+ * @param requireHttpOnlyCookies Whether cookies must carry the {@code HttpOnly} attribute
+ *        (enforced by {@code CookiePrefixValidationStage.validateCookie}). Opt-in, default
+ *        {@code false}. Meaningful only for attribute-bearing (Set-Cookie) cookies.
  *
  * @since 1.0
  * @see SecurityConfigurationBuilder
@@ -96,7 +103,9 @@ boolean allowControlCharacters,
 boolean allowExtendedAscii,
 boolean normalizeUnicode,
 boolean caseSensitiveComparison,
-boolean failOnSuspiciousPatterns
+boolean failOnSuspiciousPatterns,
+boolean requireSecureCookies,
+boolean requireHttpOnlyCookies
 ) {
 
     /**

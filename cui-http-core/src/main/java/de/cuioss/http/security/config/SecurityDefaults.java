@@ -321,7 +321,8 @@ public final class SecurityDefaults {
             MAX_COOKIE_NAME_LENGTH_STRICT, MAX_COOKIE_VALUE_LENGTH_STRICT,
             MAX_BODY_SIZE_STRICT,
             false, false, false, true, // no null bytes, no control chars, no extended ASCII, normalize Unicode
-            true, true); // case-sensitive comparison, fail on suspicious patterns
+            true, true, // case-sensitive comparison, fail on suspicious patterns
+            false, false); // requireSecureCookies, requireHttpOnlyCookies (opt-in)
 
     /**
      * Configuration preset for balanced security and usability.
@@ -347,5 +348,6 @@ public final class SecurityDefaults {
             MAX_COOKIE_NAME_LENGTH_LENIENT, MAX_COOKIE_VALUE_LENGTH_LENIENT,
             MAX_BODY_SIZE_LENIENT,
             false, true, true, false, // no null bytes (never allowed), control chars, extended ASCII, no normalization
-            false, false); // case-insensitive comparison, no suspicious-pattern failures
+            false, false, // case-insensitive comparison, no suspicious-pattern failures
+            false, false); // requireSecureCookies, requireHttpOnlyCookies (opt-in)
 }
