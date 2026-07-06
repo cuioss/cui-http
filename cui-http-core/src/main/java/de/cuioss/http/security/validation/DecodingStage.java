@@ -295,11 +295,14 @@ ValidationType validationType) implements HttpSecurityValidator {
      *       mirroring the raw-character rule; decoded combining marks can visually alter adjacent
      *       characters and enable homograph attacks. Classified by Unicode general category
      *       ({@link CharacterValidationConstants#isCombiningMark(int)}), not a fixed range</li>
-     *   <li><strong>Decoded CR/LF</strong> - always rejected for header names/values and cookie
+     *   <li><strong>Decoded CR/LF</strong> - always rejected for header names/values, cookie
      *       names/values (they travel inside HTTP headers, so a decoded line break is a
-     *       response-splitting vector). For URL paths, rejected unless control characters are
-     *       explicitly allowed. Parameter values are exempt because encoded line breaks are
-     *       legitimate form data.</li>
+     *       response-splitting vector) and parameter <em>names</em> (structural). For URL paths,
+     *       rejected unless control characters are explicitly allowed. Parameter <em>values</em>
+     *       are exempt because encoded line breaks are legitimate form data.</li>
+     *   <li><strong>Decoded parameter-name delimiters</strong> ({@code = &amp; ; space}) - rejected
+     *       for parameter <em>names</em> only, since a decoded delimiter would split the name and
+     *       enable parameter injection</li>
      * </ul>
      *
      * @param originalInput The original (still encoded) input for error reporting
@@ -337,18 +340,40 @@ ValidationType validationType) implements HttpSecurityValidator {
                         .detail("Decoded line break at position " + i)
                         .build();
             }
+
+            // Parameter names are structural: a decoded delimiter (=, &, ;, space) would split
+            // the name and enable parameter-injection. These are legitimate inside a parameter
+            // VALUE (form data), so this rule is name-only.
+            if (validationType == ValidationType.PARAMETER_NAME && isParameterNameDelimiter(ch)) {
+                throw UrlSecurityException.builder()
+                        .failureType(UrlSecurityFailureType.INVALID_CHARACTER)
+                        .validationType(validationType)
+                        .originalInput(originalInput)
+                        .detail("Decoded parameter-name delimiter '" + ch + "' at position " + i)
+                        .build();
+            }
         }
     }
 
     /**
-     * A decoded CR/LF is forbidden for header/cookie contexts unconditionally (response
-     * splitting), and for URL paths unless control characters are explicitly allowed.
+     * Characters that delimit parameters in a query string and therefore must not appear
+     * inside a decoded parameter <em>name</em>.
+     */
+    private static boolean isParameterNameDelimiter(char ch) {
+        return ch == '&' || ch == '=' || ch == ';' || ch == ' ';
+    }
+
+    /**
+     * A decoded CR/LF is forbidden for header/cookie contexts and for parameter <em>names</em>
+     * unconditionally (response splitting / parameter injection), and for URL paths unless
+     * control characters are explicitly allowed. Parameter <em>values</em> and bodies may
+     * legitimately carry decoded line breaks (form data).
      */
     private boolean decodedLineBreakForbidden() {
         return switch (validationType) {
-            case HEADER_NAME, HEADER_VALUE, COOKIE_NAME, COOKIE_VALUE -> true;
+            case HEADER_NAME, HEADER_VALUE, COOKIE_NAME, COOKIE_VALUE, PARAMETER_NAME -> true;
             case URL_PATH -> !config.allowControlCharacters();
-            case PARAMETER_NAME, PARAMETER_VALUE, BODY -> false;
+            case PARAMETER_VALUE, BODY -> false;
         };
     }
 

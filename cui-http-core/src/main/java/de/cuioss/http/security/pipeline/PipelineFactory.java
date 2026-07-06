@@ -133,20 +133,20 @@ public final class PipelineFactory {
      *   <li>Injection attempts</li>
      * </ul>
      *
-     * <p><strong>Note:</strong> parameter names currently share the exact same
-     * validation as parameter values (they use {@link URLParameterValidationPipeline}).
-     * A dedicated, stricter name-only pipeline is not yet implemented; this method
-     * exists so callers can express intent and so stricter rules can be added later
-     * without changing call sites.</p>
+     * <p>Parameter names are validated with genuine name-only rules via a
+     * {@link URLParameterNameValidationPipeline} (typed {@link ValidationType#PARAMETER_NAME}),
+     * <strong>not</strong> the parameter-value pipeline. In particular, decoded CR/LF and
+     * decoded parameter delimiters ({@code = &amp; ; space}) are rejected for names, and the
+     * stricter {@code maxParameterNameLength} limit applies.</p>
      *
      * @param config The security configuration to use
      * @param eventCounter The event counter for tracking security violations
-     * @return A configured URL parameter validation pipeline (currently identical to the value pipeline)
+     * @return A configured URL parameter name validation pipeline
      * @throws NullPointerException if config or eventCounter is null
      */
     public static HttpSecurityValidator createParameterNamePipeline(
             SecurityConfiguration config, SecurityEventCounter eventCounter) {
-        return new URLParameterValidationPipeline(config, eventCounter);
+        return new URLParameterNameValidationPipeline(config, eventCounter);
     }
 
     /**
