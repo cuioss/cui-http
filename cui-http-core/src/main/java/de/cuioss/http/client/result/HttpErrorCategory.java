@@ -15,6 +15,8 @@
  */
 package de.cuioss.http.client.result;
 
+import org.jspecify.annotations.NonNull;
+
 import java.io.IOException;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
@@ -104,10 +106,21 @@ public enum HttpErrorCategory {
      * JDK-only import so the {@code client.result} package does not depend on
      * {@code client.handler}, preserving the {@code handler &rarr; result} layering.</p>
      *
-     * @param throwable the failure to classify
+     * <h3>Usage</h3>
+     * <pre>{@code
+     * try {
+     *     HttpResponse<String> response = httpClient.send(request, ofString());
+     *     return HttpResult.success(response.body(), etag, response.statusCode());
+     * } catch (IOException | InterruptedException e) {
+     *     HttpErrorCategory category = HttpErrorCategory.fromException(e);
+     *     return HttpResult.failure("Request failed", e, category);
+     * }
+     * }</pre>
+     *
+     * @param throwable the failure to classify (must not be {@code null})
      * @return the corresponding error category
      */
-    public static HttpErrorCategory fromException(Throwable throwable) {
+    public static HttpErrorCategory fromException(@NonNull Throwable throwable) {
         Throwable unwrapped = throwable;
         while ((unwrapped instanceof CompletionException || unwrapped instanceof ExecutionException)
                 && unwrapped.getCause() != null && unwrapped.getCause() != unwrapped) {
