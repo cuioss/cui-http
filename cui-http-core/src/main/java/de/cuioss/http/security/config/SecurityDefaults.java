@@ -42,12 +42,12 @@ import java.util.Set;
  *   <li><strong>Configuration Presets</strong> - Pre-built configurations for common scenarios</li>
  * </ul>
  *
- * <h3>Advisory Constants</h3>
- * <p>The count limits (parameter/header/cookie counts) and header/content-type
- * classification sets are <strong>reference values for application-layer enforcement</strong>.
- * The validation pipelines in this library operate on single values and therefore cannot
- * enforce request-level policies such as counts or header allow/block lists - enforce
- * those in your request-processing layer using these constants as recommended values.</p>
+ * <h3>Count and Classification Constants</h3>
+ * <p>The count limits (parameter/header/cookie counts) are the preset defaults enforced by
+ * {@code RequestCollectionValidator} (parameters 100, headers 50, cookies 20; strict 20/20/10,
+ * lenient 500/100/50). The header/content-type classification sets
+ * ({@code DANGEROUS_HEADER_NAMES}, {@code DANGEROUS_CONTENT_TYPES}, etc.) remain reference
+ * values you may feed into the configurable allow/block lists.</p>
  *
  * <h3>Usage Examples</h3>
  * <pre>
@@ -321,7 +321,10 @@ public final class SecurityDefaults {
             MAX_COOKIE_NAME_LENGTH_STRICT, MAX_COOKIE_VALUE_LENGTH_STRICT,
             MAX_BODY_SIZE_STRICT,
             false, false, false, true, // no null bytes, no control chars, no extended ASCII, normalize Unicode
-            true, true); // case-sensitive comparison, fail on suspicious patterns
+            true, true, // case-sensitive comparison, fail on suspicious patterns
+            false, false, // requireSecureCookies, requireHttpOnlyCookies (opt-in)
+            MAX_PARAMETER_COUNT_STRICT, MAX_HEADER_COUNT_STRICT, MAX_COOKIE_COUNT_STRICT,
+            Set.of(), Set.of(), Set.of(), Set.of()); // allow/block lists (empty = allow-all, opt-in)
 
     /**
      * Configuration preset for balanced security and usability.
@@ -347,5 +350,8 @@ public final class SecurityDefaults {
             MAX_COOKIE_NAME_LENGTH_LENIENT, MAX_COOKIE_VALUE_LENGTH_LENIENT,
             MAX_BODY_SIZE_LENIENT,
             false, true, true, false, // no null bytes (never allowed), control chars, extended ASCII, no normalization
-            false, false); // case-insensitive comparison, no suspicious-pattern failures
+            false, false, // case-insensitive comparison, no suspicious-pattern failures
+            false, false, // requireSecureCookies, requireHttpOnlyCookies (opt-in)
+            MAX_PARAMETER_COUNT_LENIENT, MAX_HEADER_COUNT_LENIENT, MAX_COOKIE_COUNT_LENIENT,
+            Set.of(), Set.of(), Set.of(), Set.of()); // allow/block lists (empty = allow-all, opt-in)
 }

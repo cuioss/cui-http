@@ -207,28 +207,51 @@ class DecodingStageTest {
     }
 
     @Test
-    @DisplayName("Should detect Unicode normalization changes")
-    void shouldDetectUnicodeNormalizationChanges() {
+    @DisplayName("Should reject folds that introduce a structural separator")
+    void shouldRejectStructuralNormalizationFold() {
         SecurityConfiguration unicodeConfig = SecurityConfiguration.builder()
                 .normalizeUnicode(true)
                 .build();
 
-        DecodingStage unicodeDecoder = new DecodingStage(unicodeConfig, ValidationType.HEADER_VALUE);
+        DecodingStage unicodeDecoder = new DecodingStage(unicodeConfig, ValidationType.URL_PATH);
 
-        // Fullwidth 'A' (U+FF21) is a compatibility character that NFKC folds to 'A'.
-        // NFKC (not NFC) is required to catch this; it is not a combining mark, so it
-        // reaches the normalization step rather than the post-decode character check.
-        String compatibility = "ＡBC"; // fullwidth A + BC
-        String folded = "ABC";
+        // Fullwidth solidus U+FF0F folds to '/' under NFKC - a homoglyph path separator.
+        // Introducing a structural separator that was not present before the fold is the
+        // attack the check targets, so it is rejected (normalize-and-continue rejects only
+        // structural folds, not benign compatibility folds).
+        String structural = "a\uFF0Fb"; // a + fullwidth solidus + b
+        String folded = "a/b";
 
         UrlSecurityException exception = assertThrows(UrlSecurityException.class,
-                () -> unicodeDecoder.validate(compatibility));
+                () -> unicodeDecoder.validate(structural));
 
         assertEquals(UrlSecurityFailureType.UNICODE_NORMALIZATION_CHANGED, exception.getFailureType());
-        assertEquals(compatibility, exception.getOriginalInput());
+        assertEquals(structural, exception.getOriginalInput());
         assertEquals(Optional.of(folded), exception.getSanitizedInput());
         assertTrue(exception.getDetail().isPresent());
-        assertTrue(exception.getDetail().get().contains("Unicode normalization changed"));
+        assertTrue(exception.getDetail().get().contains("structurally significant"));
+    }
+
+    @Test
+    @DisplayName("Should preserve benign compatibility folds (normalize-and-continue)")
+    void shouldPreserveBenignCompatibilityFold() {
+        SecurityConfiguration unicodeConfig = SecurityConfiguration.builder()
+                .normalizeUnicode(true)
+                .build();
+
+        // URL_PATH uses NFKC: a fullwidth letter folds to its ASCII form but introduces no
+        // separator, so it is canonicalized and passed downstream rather than rejected.
+        DecodingStage nfkcPathDecoder = new DecodingStage(unicodeConfig, ValidationType.URL_PATH);
+        Optional<String> pathResult = nfkcPathDecoder.validate("ＡBC"); // fullwidth A + BC
+        assertTrue(pathResult.isPresent());
+        assertEquals("ABC", pathResult.get(), "NFKC folds the fullwidth letter to ASCII and continues");
+
+        // PARAMETER_VALUE uses the lossless NFC form: legitimate international content is
+        // preserved unchanged (fullwidth letters do not fold under NFC).
+        DecodingStage paramDecoder = new DecodingStage(unicodeConfig, ValidationType.PARAMETER_VALUE);
+        Optional<String> paramResult = paramDecoder.validate("ＡBC");
+        assertTrue(paramResult.isPresent());
+        assertEquals("ＡBC", paramResult.get(), "NFC preserves fullwidth letters in parameter values");
     }
 
     @Test
@@ -241,7 +264,7 @@ class DecodingStageTest {
         DecodingStage noUnicodeDecoder = new DecodingStage(noUnicodeConfig, ValidationType.HEADER_VALUE);
 
         // With normalization disabled the compatibility character passes through unchanged
-        String compatibility = "ＡBC";
+        String compatibility = "ＡBC"; // fullwidth A + BC
         assertDoesNotThrow(() -> {
             Optional<String> result = noUnicodeDecoder.validate(compatibility);
             assertTrue(result.isPresent());

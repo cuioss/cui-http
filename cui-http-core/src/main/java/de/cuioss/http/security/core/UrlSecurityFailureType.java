@@ -85,6 +85,9 @@ public enum UrlSecurityFailureType {
     /** Excessive directory nesting depth detected */
     EXCESSIVE_NESTING("Excessive directory nesting"),
 
+    /** A collection (parameters, headers, cookies) exceeds its configured maximum count */
+    TOO_MANY_ELEMENTS("Too many elements in collection"),
+
     // === Pattern-Based Detection ===
 
     /** Suspicious patterns that match attack signatures */
@@ -197,7 +200,8 @@ public enum UrlSecurityFailureType {
     public boolean isSizeViolation() {
         return this == PATH_TOO_LONG ||
                 this == INPUT_TOO_LONG ||
-                this == EXCESSIVE_NESTING;
+                this == EXCESSIVE_NESTING ||
+                this == TOO_MANY_ELEMENTS;
     }
 
     /**

@@ -166,6 +166,22 @@ public class EdgeCaseValidURLsDatabase implements LegitimatePatternDatabase {
             "Commas are valid for representing lists in path segments"
     );
 
+    // F-05 (normalize-and-continue): percent-encoded compatibility characters that fold to
+    // benign, non-separator ASCII under NFKC must be canonicalized and accepted, not rejected.
+    // These lock in the OWASP canonicalize-then-validate model so legitimate international /
+    // compatibility content is not a false positive. (%EF%BD%81 = U+FF41 fullwidth 'a', etc.)
+    public static final LegitimateTestCase NFKC_FULLWIDTH_LETTER_FOLD = new LegitimateTestCase(
+            "/search/%EF%BD%81%EF%BD%82%EF%BD%83",
+            "Percent-encoded fullwidth letters (abc) that NFKC-fold to ASCII letters",
+            "Benign compatibility folds introduce no separator and must be canonicalized, not rejected"
+    );
+
+    public static final LegitimateTestCase NFKC_ROMAN_NUMERAL_FOLD = new LegitimateTestCase(
+            "/chapter/%E2%85%A2",
+            "Percent-encoded Roman numeral three (U+2162) that NFKC-folds to 'III'",
+            "Compatibility folds to letters (no structural separator) are legitimate and accepted"
+    );
+
     private static final List<LegitimateTestCase> ALL_LEGITIMATE_TEST_CASES = List.of(
             SINGLE_CHAR_PATH,
             ROOT_ONLY,
@@ -186,7 +202,9 @@ public class EdgeCaseValidURLsDatabase implements LegitimatePatternDatabase {
             PERCENT_ENCODED_SLASH,
             SEMICOLON_PARAMS,
             COLON_IN_PATH,
-            COMMA_SEPARATED
+            COMMA_SEPARATED,
+            NFKC_FULLWIDTH_LETTER_FOLD,
+            NFKC_ROMAN_NUMERAL_FOLD
     );
 
     @Override
