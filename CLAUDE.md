@@ -146,7 +146,7 @@ Validators are:
 ## Important Files
 
 - `/doc/http-security/specification/pipeline-architecture-standards.adoc`: Pipeline selection rules
-- `/doc/http-security/specification/generator-contract.adoc`: Generator implementation standards
+- `/doc/test-generators-readme.adoc`: Generator implementation standards
 - `/agents.md`: AI agent guidance and CUI development standards
 - `/cui-http-core/src/main/java/module-info.java`: Module definition
 
