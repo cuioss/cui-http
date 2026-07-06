@@ -172,10 +172,11 @@ class URLPathValidationPipelineTest {
             assertTrue(eventCounter.getTotalCount() > 0);
         }
 
-        @Test
-        void shouldPreserveStageExceptionAsCause() {
+        @ParameterizedTest
+        @TypeGeneratorSource(value = PathTraversalURLGenerator.class, count = 5)
+        void shouldPreserveStageExceptionAsCause(String attackPath) {
             UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
-                    pipeline.validate("/api/../../../etc/passwd"));
+                    pipeline.validate(attackPath));
 
             assertInstanceOf(UrlSecurityException.class, exception.getCause(),
                     "Pipeline must preserve the originating stage exception as cause");
