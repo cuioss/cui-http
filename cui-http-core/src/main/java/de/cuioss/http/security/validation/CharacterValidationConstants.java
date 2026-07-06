@@ -18,13 +18,20 @@ package de.cuioss.http.security.validation;
 import de.cuioss.http.security.core.ValidationType;
 
 import java.util.BitSet;
+import java.util.function.IntPredicate;
 
 /**
  * RFC-compliant character set definitions for HTTP component validation.
  *
- * <p>This utility class provides pre-computed BitSet instances containing allowed characters
- * for different HTTP components according to RFC 3986 (URI) and RFC 7230 (HTTP) specifications.
- * All character sets provide O(1) character lookups.</p>
+ * <p>This utility class exposes the allowed-character sets for different HTTP components
+ * according to RFC 3986 (URI) and RFC 7230 (HTTP) specifications as immutable
+ * {@link IntPredicate} membership tests. The predicates are backed by pre-computed,
+ * <strong>private</strong> {@link BitSet} instances and provide O(1) character lookups.</p>
+ *
+ * <p><strong>Immutability:</strong> the backing {@code BitSet}s are private and never handed
+ * out, so the security character rules cannot be corrupted by any JVM code. Callers receive an
+ * {@link IntPredicate} membership test ({@code predicate.test(ch)}) with no mutation vector,
+ * replacing the previous mutable {@code public static final BitSet} fields.</p>
  *
  * <h3>Design Principles</h3>
  * <ul>
@@ -46,17 +53,17 @@ import java.util.BitSet;
  * <h3>Usage Examples</h3>
  * <pre>
  * // Get character set for URL path validation
- * BitSet pathChars = CharacterValidationConstants.getCharacterSet(ValidationType.URL_PATH);
+ * IntPredicate pathChars = CharacterValidationConstants.getCharacterSet(ValidationType.URL_PATH);
  *
  * // Check if character is allowed in URL paths
  * char ch = '/';
- * boolean isAllowed = pathChars.get(ch); // Returns true
+ * boolean isAllowed = pathChars.test(ch); // Returns true
  *
  * // Validate string characters
  * String input = "/api/users";
  * for (int i = 0; i &lt; input.length(); i++) {
  *     char c = input.charAt(i);
- *     if (!pathChars.get(c)) {
+ *     if (!pathChars.test(c)) {
  *         throw new IllegalArgumentException("Invalid character: " + c);
  *     }
  * }
@@ -95,32 +102,37 @@ public final class CharacterValidationConstants {
     /**
      * RFC 3986 unreserved characters: ALPHA / DIGIT / "-" / "." / "_" / "~".
      * <p>These are the basic safe characters allowed in URIs without percent-encoding.</p>
+     * <p>Immutable membership test; the backing {@link BitSet} is private and cannot be mutated.</p>
      */
-    public static final BitSet RFC3986_UNRESERVED;
+    public static final IntPredicate RFC3986_UNRESERVED;
 
     /**
      * RFC 3986 path characters including unreserved + path-specific characters.
      * <p>Includes all unreserved characters plus: / @ : ! $ &amp; ' ( ) * + , ; =</p>
+     * <p>Immutable membership test; the backing {@link BitSet} is private and cannot be mutated.</p>
      */
-    public static final BitSet RFC3986_PATH_CHARS;
+    public static final IntPredicate RFC3986_PATH_CHARS;
 
     /**
      * RFC 3986 query characters including unreserved + query-specific characters.
      * <p>Includes all unreserved characters plus: ? &amp; = ! $ ' ( ) * + , ;</p>
+     * <p>Immutable membership test; the backing {@link BitSet} is private and cannot be mutated.</p>
      */
-    public static final BitSet RFC3986_QUERY_CHARS;
+    public static final IntPredicate RFC3986_QUERY_CHARS;
 
     /**
      * RFC 7230 header field characters (visible ASCII minus delimiters).
      * <p>Includes space through tilde (32-126) plus tab character.</p>
+     * <p>Immutable membership test; the backing {@link BitSet} is private and cannot be mutated.</p>
      */
-    public static final BitSet RFC7230_HEADER_CHARS;
+    public static final IntPredicate RFC7230_HEADER_CHARS;
 
     /**
      * HTTP body content characters (permissive for JSON, XML, text, etc.).
      * <p>Includes printable ASCII (32-126), tab, LF, CR, and extended ASCII (128-255).</p>
+     * <p>Immutable membership test; the backing {@link BitSet} is private and cannot be mutated.</p>
      */
-    public static final BitSet HTTP_BODY_CHARS;
+    public static final IntPredicate HTTP_BODY_CHARS;
 
     static {
         // Initialize RFC3986_UNRESERVED
@@ -135,7 +147,8 @@ public final class CharacterValidationConstants {
         unreserved.set('.');
         unreserved.set('_');
         unreserved.set('~');
-        RFC3986_UNRESERVED = unreserved;
+        // Publish as an immutable membership test bound to the private BitSet.
+        RFC3986_UNRESERVED = unreserved::get;
 
         // Initialize RFC3986_PATH_CHARS
         BitSet pathChars = new BitSet(256);
@@ -145,7 +158,7 @@ public final class CharacterValidationConstants {
         pathChars.set(':');
         // sub-delims for path: "!" / "$" / "&" / "'" / "(" / ")" / "*" / "+" / "," / ";" / "="
         "!$&'()*+,;=".chars().forEach(pathChars::set);
-        RFC3986_PATH_CHARS = pathChars;
+        RFC3986_PATH_CHARS = pathChars::get;
 
         // Initialize RFC3986_QUERY_CHARS
         BitSet queryChars = new BitSet(256);
@@ -155,7 +168,7 @@ public final class CharacterValidationConstants {
         queryChars.set('=');
         // sub-delims for query
         "!$'()*+,;".chars().forEach(queryChars::set);
-        RFC3986_QUERY_CHARS = queryChars;
+        RFC3986_QUERY_CHARS = queryChars::get;
 
         // Initialize RFC7230_HEADER_CHARS
         BitSet headerChars = new BitSet(256);
@@ -167,7 +180,7 @@ public final class CharacterValidationConstants {
         headerChars.set('\t'); // Tab is allowed in headers
         // Only exclude characters that could break HTTP: CR, LF, NULL
         // Note: Other dangerous chars are handled at application level
-        RFC7230_HEADER_CHARS = headerChars;
+        RFC7230_HEADER_CHARS = headerChars::get;
 
         // Initialize HTTP_BODY_CHARS (very permissive for body content)
         BitSet bodyChars = new BitSet(256);
@@ -185,18 +198,18 @@ public final class CharacterValidationConstants {
         }
         // Note: Null bytes and other control chars (1-31) are excluded by default
         // They can be allowed via configuration if needed
-        HTTP_BODY_CHARS = bodyChars;
+        HTTP_BODY_CHARS = bodyChars::get;
     }
 
     /**
      * Returns the appropriate character set for the specified validation type.
      *
      * <p>This method provides a centralized mapping from validation types to their
-     * corresponding RFC-compliant character sets. The returned BitSet is a defensive
-     * copy: {@link BitSet} is mutable, and handing out the shared constant would let
-     * any caller corrupt the allowed-character rules for every validator in the JVM.
-     * The copy is created once per call (validators call this at construction, not
-     * per validation), so the cost is negligible.</p>
+     * corresponding RFC-compliant character sets. The returned {@link IntPredicate} is the
+     * <strong>shared, immutable</strong> membership test: because the backing {@link BitSet}
+     * is private and never exposed, there is no mutation vector and no defensive copy is
+     * required (nor is one made). This is both safer and faster than the previous
+     * clone-per-call approach.</p>
      *
      * <h4>Validation Type Mappings:</h4>
      * <ul>
@@ -208,7 +221,7 @@ public final class CharacterValidationConstants {
      * </ul>
      *
      * @param type The validation type specifying which HTTP component is being validated
-     * @return The corresponding BitSet containing allowed characters for the validation type
+     * @return The shared immutable {@link IntPredicate} membership test for the validation type
      * @throws NullPointerException if {@code type} is null
      * @see ValidationType
      * @see #RFC3986_PATH_CHARS
@@ -217,14 +230,13 @@ public final class CharacterValidationConstants {
      * @see #HTTP_BODY_CHARS
      * @see #RFC3986_UNRESERVED
      */
-    public static BitSet getCharacterSet(ValidationType type) {
-        BitSet characterSet = switch (type) {
+    public static IntPredicate getCharacterSet(ValidationType type) {
+        return switch (type) {
             case URL_PATH -> RFC3986_PATH_CHARS;
             case PARAMETER_NAME, PARAMETER_VALUE -> RFC3986_QUERY_CHARS;
             case HEADER_NAME, HEADER_VALUE -> RFC7230_HEADER_CHARS;
             case BODY -> HTTP_BODY_CHARS;
             case COOKIE_NAME, COOKIE_VALUE -> RFC3986_UNRESERVED;
         };
-        return (BitSet) characterSet.clone();
     }
 }
