@@ -29,9 +29,6 @@ class SecurityDefaultsTest {
         assertEquals(1024, SecurityDefaults.MAX_PATH_LENGTH_STRICT);
         assertEquals(4096, SecurityDefaults.MAX_PATH_LENGTH_DEFAULT);
         assertEquals(8192, SecurityDefaults.MAX_PATH_LENGTH_LENIENT);
-
-        assertTrue(SecurityDefaults.MAX_PATH_LENGTH_STRICT < SecurityDefaults.MAX_PATH_LENGTH_DEFAULT);
-        assertTrue(SecurityDefaults.MAX_PATH_LENGTH_DEFAULT < SecurityDefaults.MAX_PATH_LENGTH_LENIENT);
     }
 
     @Test
@@ -39,9 +36,6 @@ class SecurityDefaultsTest {
         assertEquals(20, SecurityDefaults.MAX_PARAMETER_COUNT_STRICT);
         assertEquals(100, SecurityDefaults.MAX_PARAMETER_COUNT_DEFAULT);
         assertEquals(500, SecurityDefaults.MAX_PARAMETER_COUNT_LENIENT);
-
-        assertTrue(SecurityDefaults.MAX_PARAMETER_COUNT_STRICT < SecurityDefaults.MAX_PARAMETER_COUNT_DEFAULT);
-        assertTrue(SecurityDefaults.MAX_PARAMETER_COUNT_DEFAULT < SecurityDefaults.MAX_PARAMETER_COUNT_LENIENT);
     }
 
     @Test
@@ -90,9 +84,6 @@ class SecurityDefaultsTest {
         assertEquals(SecurityDefaults.MAX_BODY_SIZE_STRICT, 1024 * 1024);
         assertEquals(SecurityDefaults.MAX_BODY_SIZE_DEFAULT, 5 * 1024 * 1024);
         assertEquals(SecurityDefaults.MAX_BODY_SIZE_LENIENT, 10 * 1024 * 1024);
-
-        assertTrue(SecurityDefaults.MAX_BODY_SIZE_STRICT < SecurityDefaults.MAX_BODY_SIZE_DEFAULT);
-        assertTrue(SecurityDefaults.MAX_BODY_SIZE_DEFAULT < SecurityDefaults.MAX_BODY_SIZE_LENIENT);
     }
 
     @Test
@@ -310,17 +301,5 @@ class SecurityDefaultsTest {
         assertTrue(SecurityDefaults.PROBLEMATIC_CONTROL_CHARS.size() > 10);
         assertTrue(SecurityDefaults.INJECTION_CHARACTERS.size() > 5);
         // XSS patterns removed - application layer responsibility
-    }
-
-    @Test
-    void shouldHaveLogicalProgression() {
-        assertTrue(SecurityDefaults.MAX_PATH_LENGTH_STRICT < SecurityDefaults.MAX_PATH_LENGTH_DEFAULT);
-        assertTrue(SecurityDefaults.MAX_PATH_LENGTH_DEFAULT < SecurityDefaults.MAX_PATH_LENGTH_LENIENT);
-
-        assertTrue(SecurityDefaults.MAX_BODY_SIZE_STRICT < SecurityDefaults.MAX_BODY_SIZE_DEFAULT);
-        assertTrue(SecurityDefaults.MAX_BODY_SIZE_DEFAULT < SecurityDefaults.MAX_BODY_SIZE_LENIENT);
-
-        assertTrue(SecurityDefaults.MAX_PARAMETER_COUNT_STRICT < SecurityDefaults.MAX_PARAMETER_COUNT_DEFAULT);
-        assertTrue(SecurityDefaults.MAX_PARAMETER_COUNT_DEFAULT < SecurityDefaults.MAX_PARAMETER_COUNT_LENIENT);
     }
 }
