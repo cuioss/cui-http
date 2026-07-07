@@ -367,8 +367,8 @@ class HttpResultTest {
             HttpResult<String> result = HttpResult.failure(errorMsg, null, HttpErrorCategory.CLIENT_ERROR);
 
             String matched = switch (result) {
-                case HttpResult.Success<String>(var c, var e, var s) ->
-                    "Success: " + c;
+                case HttpResult.Success<String> success ->
+                    "Success: " + success.content();
                 case HttpResult.Failure<String> f ->
                     "Failure: " + f.errorMessage();
             };
