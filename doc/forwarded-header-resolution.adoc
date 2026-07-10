@@ -1,0 +1,286 @@
+= Forwarded / Reverse-Proxy Header Resolution
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+toc::[]
+
+== Maven Coordinates
+
+[source,xml]
+----
+<dependency>
+    <groupId>de.cuioss</groupId>
+    <artifactId>cui-http</artifactId>
+</dependency>
+----
+
+== Overview
+
+The `de.cuioss.http.forwarded` package resolves the family of reverse-proxy / forwarded HTTP
+headers into a single, normalized, *sanitized*, immutable structure. It folds the three otherwise
+duplicated concerns of forwarded-header handling into one component:
+
+. *Precedence* across an overlapping set of headers (proprietary + de-facto + standard).
+. *Normalization* (context-path slashes, host/port splitting, canonical client IP).
+. *Injection hardening + sanitization* (CR/LF and control characters, protocol-relative `//host`,
+  backslashes) — reusing the existing xref:security-readme.adoc[security validation pipelines]
+  rather than hand-rolling guards.
+
+It is *transport-agnostic* (it consumes a `Function<String,String>` header accessor, so no
+servlet/Jetty type leaks in) and *secure-by-default* (nothing is honored unless a deployment opts
+in explicitly).
+
+=== The header family
+
+[cols="2,1,3", options="header"]
+|===
+| Header(s) | Status | Resolved into
+
+| `X-Forwarded-Proto` / `-Host` / `-Port`
+| de-facto convention (no RFC)
+| scheme / host / port
+
+| `X-Forwarded-Prefix`
+| de-facto (Spring Cloud Gateway, Traefik, …)
+| context-path prefix
+
+| `X-Forwarded-For`
+| de-facto convention (no RFC)
+| client IP (via the trusted-proxy walk)
+
+| `Forwarded` (RFC 7239)
+| the only IETF-standard header — but it has *no* prefix/context-path directive
+| scheme (`proto`), host (`host`), client IP (`for`)
+
+| `X-ProxyScheme` / `-Host` / `-Port` / `-ContextPath`
+| Apache NiFi-proprietary
+| scheme / host / port / context-path prefix
+|===
+
+Because the one standardized header (RFC 7239 `Forwarded`) cannot express a path prefix, the
+prefix is resolved only from the proprietary/de-facto headers.
+
+== Components
+
+=== xref:../cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedHeaderResolver.java[ForwardedHeaderResolver]
+
+The entry point. Immutable and thread-safe. Constructed with a
+xref:../cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedResolverConfig.java[ForwardedResolverConfig]
+and a `SecurityEventCounter`; it internally builds a header-value sanitization pipeline via
+`PipelineFactory.createHeaderValuePipeline(...)`.
+
+[source,java]
+----
+ResolvedForwarding resolve(Function<String, String> headerLookup)
+----
+
+The `Function<String,String>` header accessor (typically `request::getHeader`) is the only input,
+so the resolver works with Jetty `Request`, `jakarta.servlet.HttpServletRequest`, or a plain
+`Map::get` in tests — without leaking any transport type.
+
+For each field the resolver:
+
+. selects the raw value by header *precedence*,
+. *sanitizes* it through the header-value pipeline (rejecting CR/LF, NUL, control characters,
+  over-length, and suspicious patterns),
+. applies field-specific *normalization* and injection guards, and
+. *honors* it only when the configured trust model permits.
+
+Values that fail sanitization or are not trusted are dropped (and logged) rather than honored —
+`resolve` never throws; it is fail-safe for request-time use.
+
+=== xref:../cui-http-core/src/main/java/de/cuioss/http/forwarded/ResolvedForwarding.java[ResolvedForwarding]
+
+The immutable result. Each field carries a value only when it was present and honored:
+
+[source,java]
+----
+record ResolvedForwarding(
+    Optional<String> scheme,      // "http" | "https"
+    Optional<String> host,        // host without port
+    OptionalInt      port,        // 1..65535
+    String           contextPath, // normalized prefix, "" when none / not honored
+    Optional<String> clientIp)    // canonical client IP
+----
+
+`ResolvedForwarding.empty()` is the all-absent result a secure-by-default resolver returns for an
+un-proxied or fully un-honored request.
+
+=== xref:../cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedResolverConfig.java[ForwardedResolverConfig]
+
+Immutable trust-model configuration built through a validating builder. See <<trust-model>>.
+
+=== xref:../cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedLogMessages.java[ForwardedLogMessages]
+
+`HTTP-120`..`HTTP-123` WARN records for rejected/malformed values (context-path control
+characters, protocol-relative/backslash prefixes, values that failed sanitization, and
+unparseable client-IP chain entries).
+
+== Header precedence
+
+Per field, the first present, non-blank value wins:
+
+[cols="1,4", options="header"]
+|===
+| Field | Precedence
+
+| scheme      | `X-Forwarded-Proto` → `X-ProxyScheme` → RFC 7239 `proto`
+| host        | `X-Forwarded-Host` → `X-ProxyHost` → RFC 7239 `host`
+| port        | `X-Forwarded-Port` → `X-ProxyPort` → port carried by the resolved host (`host:port`)
+| contextPath | `X-ProxyContextPath` → `X-Forwarded-Prefix` (RFC 7239 has no prefix directive → empty)
+| clientIp    | `X-Forwarded-For` chain → RFC 7239 `for` chain
+|===
+
+Comma-separated list headers (e.g. `X-Forwarded-Proto: https,http`) resolve to their first token.
+
+[[trust-model]]
+== Trust model (secure by default)
+
+The resolver honors nothing unless a deployment opts in. This is deliberate: a gateway may listen
+on `0.0.0.0`, so a direct client can spoof forwarded headers to manipulate routing, the reflected
+prefix in generated URLs, or the apparent client IP.
+
+[cols="1,3", options="header"]
+|===
+| Setting | Effect
+
+| `trustAll`
+| Honor the sanitized `scheme` / `host` / `port` and any sanitized `contextPath`. Use only when
+  the application sits fully behind a trusted proxy.
+
+| `allowedContextPaths`
+| Honor these specific normalized context paths even when `trustAll` is `false` (mirrors NiFi's
+  `nifi.web.proxy.context.path` allowlist).
+
+| `trustedProxies`
+| CIDR ranges / IP literals (IPv4 + IPv6) defining trusted proxy hops. Required for
+  `X-Forwarded-For` client-IP resolution — an empty set honors no client IP.
+|===
+
+With the secure default (`ForwardedResolverConfig.secureDefault()`: no allowlist, no trusted
+proxies, `trustAll=false`), every forwarded value is ignored.
+
+=== Client-IP resolution
+
+The client IP is resolved by walking the `X-Forwarded-For` (or RFC 7239 `for`) chain
+*right-to-left*, skipping hops that fall within `trustedProxies`; the first non-trusted,
+well-formed address is the client. This prevents a spoofed prepended entry from being trusted.
+
+* Each entry is sanitized, then parsed as an IP literal (optional `:port` stripped, bracketed IPv6
+  unwrapped, RFC 7239 `unknown`/obfuscated node identifiers dropped). Parsing is literal-only and
+  never performs DNS resolution.
+* An empty `trustedProxies` set, an all-trusted chain, or an unparseable hop all yield an empty
+  `clientIp` (fail-safe).
+
+[source,text]
+----
+trustedProxies = [10.0.0.0/8]
+
+X-Forwarded-For: 203.0.113.7, 10.0.0.5              -> clientIp = 203.0.113.7
+X-Forwarded-For: 1.2.3.4, 203.0.113.7, 10.0.0.5     -> clientIp = 203.0.113.7  (spoofed 1.2.3.4 ignored)
+X-Forwarded-For: 10.0.0.1, 10.0.0.5                 -> clientIp = empty         (all hops trusted)
+(no trustedProxies configured)                       -> clientIp = empty         (nothing honored)
+----
+
+== Sanitization and injection guards
+
+* Every honored value first passes through the header-value pipeline
+  (xref:security-readme.adoc[Security Validation Framework]), which rejects CR/LF, NUL, other
+  control characters, over-length input, and suspicious patterns.
+* The *context-path* additionally rejects protocol-relative (`//host`) and backslash values — and
+  this guard runs on the *raw* value *before* the pipeline, because the pipeline would otherwise
+  collapse `//host` to `/host` and mask the attack. Honoring `//attacker.com` would compose into a
+  protocol-relative URL (`//attacker.com/...`) in the browser and exfiltrate the request.
+* The context-path is normalized to exactly one leading slash and no trailing slash; a slash-only
+  value collapses to empty.
+* The *host* rejects embedded path separators, backslashes, and whitespace; a trailing `:port` is
+  split into the port field. The *port* is honored only within `1..65535`. The *scheme* is
+  lowercased and honored only when it is `http` or `https`.
+
+== Serialization
+
+`ResolvedForwarding` can be emitted back as proxy headers — useful when forwarding a request
+upstream and for round-trip testing.
+
+[source,java]
+----
+Map<String,String> toXForwardedHeaders()   // X-Forwarded-Proto/-Host/-Port/-Prefix/-For (present fields only)
+Optional<String>   toForwardedHeader()      // single RFC 7239 Forwarded value: for=…;host=…;proto=…
+----
+
+[IMPORTANT]
+====
+*Asymmetry:* RFC 7239 `Forwarded` has no prefix/context-path directive, so `contextPath` is
+expressible only through `X-Forwarded-Prefix` (via `toXForwardedHeaders()`), never through
+`toForwardedHeader()`. IPv6 client addresses are bracketed and quoted per RFC 7239; other values
+are quoted only when they are not a valid RFC 7239 token.
+====
+
+== Usage Examples
+
+=== Fully behind a trusted proxy
+
+[source,java]
+----
+ForwardedResolverConfig config = ForwardedResolverConfig.builder()
+    .trustAll(true)                        // honor scheme/host/port + context-path
+    .trustedProxies(Set.of("10.0.0.0/8"))  // for X-Forwarded-For client-IP resolution
+    .build();
+
+ForwardedHeaderResolver resolver =
+    new ForwardedHeaderResolver(config, new SecurityEventCounter());
+
+ResolvedForwarding fwd = resolver.resolve(request::getHeader);
+
+String scheme = fwd.scheme().orElse("http");
+String host   = fwd.host().orElse(request.getServerName());
+int    port   = fwd.port().orElse(scheme.equals("https") ? 443 : 80);
+String prefix = fwd.contextPath();          // "" when none
+fwd.clientIp().ifPresent(ip -> log.info("client %s", ip));
+----
+
+=== Context-path allowlist only (no trustAll)
+
+[source,java]
+----
+// Honor only /app and /gateway as reverse-proxy prefixes; ignore everything else.
+ForwardedResolverConfig config = ForwardedResolverConfig.builder()
+    .allowedContextPaths(Set.of("/app", "/gateway"))
+    .build();
+
+ForwardedHeaderResolver resolver =
+    new ForwardedHeaderResolver(config, new SecurityEventCounter());
+
+String prefix = resolver.resolve(request::getHeader).contextPath();
+----
+
+The allowlist may also be parsed from an operator-supplied comma-separated string:
+
+[source,java]
+----
+Set<String> allowed = ForwardedResolverConfig.parseAllowlist("/app, /gateway/");
+----
+
+=== Secure default (honors nothing)
+
+[source,java]
+----
+ForwardedHeaderResolver resolver = new ForwardedHeaderResolver(
+    ForwardedResolverConfig.secureDefault(), new SecurityEventCounter());
+
+// Any forwarded header is ignored; result is ResolvedForwarding.empty()
+ResolvedForwarding fwd = resolver.resolve(request::getHeader);
+----
+
+== Thread Safety
+
+`ForwardedHeaderResolver`, `ForwardedResolverConfig`, and `ResolvedForwarding` are immutable and
+thread-safe. A single resolver instance can be shared across requests and threads.
+
+== Related Documentation
+
+* xref:security-readme.adoc[Security Validation Framework]
+* https://www.rfc-editor.org/rfc/rfc7239[RFC 7239 - Forwarded HTTP Extension]

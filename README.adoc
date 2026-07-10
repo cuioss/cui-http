@@ -72,6 +72,15 @@ xref:doc/client-handlers-readme.adoc[HTTP Client Handlers]:
 * `SecureSSLContextProvider` - TLS 1.2+ SSL context
 * `HttpStatusFamily` - RFC 7231 status classification
 
+=== Forwarded / Reverse-Proxy Header Resolution
+
+xref:doc/forwarded-header-resolution.adoc[Forwarded Header Resolution]:
+
+* Resolves `X-Forwarded-*`, RFC 7239 `Forwarded`, and NiFi `X-Proxy*` into one sanitized result
+* Scheme / host / port / context-path / client-IP with configurable per-field precedence
+* Secure-by-default trust model (allowlist, `trustAll`, trusted-proxy CIDR walk)
+* Built-in sanitization via the security pipelines; transport-agnostic `Function<String,String>` accessor
+
 === Security Testing
 
 xref:doc/test-generators-readme.adoc[Test Generators]:
@@ -122,6 +131,7 @@ String validated = pipeline.validate("/api/users/123").orElseThrow();
 === Component Documentation
 
 * xref:doc/client-handlers-readme.adoc[HTTP Client Handlers]
+* xref:doc/forwarded-header-resolution.adoc[Forwarded / Reverse-Proxy Header Resolution]
 * xref:doc/security-readme.adoc[Security Validation Framework]
 * xref:doc/test-generators-readme.adoc[Security Testing Framework]
 
