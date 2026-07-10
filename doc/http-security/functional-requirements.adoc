@@ -318,7 +318,7 @@ The following classes implement the functional requirements:
 | HTTP-14 | Type Configuration | xref:specification/specification.adoc#_validation_type_configurations[§Type Config]
 | HTTP-15 | Security Exceptions | xref:specification/specification.adoc#_urlsecurityexception[§Exceptions]
 | HTTP-16 | Event Tracking | xref:specification/specification.adoc#_event_counter_pattern[§Event Counter]
-| HTTP-17 | Logging and Monitoring Integration | xref:specification/specification.adoc#_securityeventcounter[§Logging]
+| HTTP-17 | Logging and Monitoring Integration | xref:specification/specification.adoc#_securityeventcounter[§Security Event Tracking]
 | HTTP-18 | Efficient Processing | xref:specification/testing.adoc#_performance_benchmarking[§Performance]
 | HTTP-19 | Resource Constraints | xref:specification/specification.adoc#_lengthvalidationstage[§Constraints]
 |===

@@ -221,6 +221,17 @@ These requirements are derived from:
 * Configuration relaxation must require explicit action
 * Reference: xref:specification/specification.adoc#_configuration_architecture[Secure Configuration]
 
+[NOTE]
+====
+The shipped out-of-the-box default (`SecurityConfiguration.defaults()`, identical to
+`builder().build()`) is the *balanced* preset: it is secure by default and requires an explicit,
+opt-in change to relax, but it is not the maximum-security preset (for example it ships
+`failOnSuspiciousPatterns=false`). Use `SecurityConfiguration.strict()` for the maximum-security
+posture with "strict validation / maximum checks" described above. See
+xref:specification/specification.adoc#_default_security_posture[Default Security Posture] and
+xref:configuration.adoc[Configuration Reference] for the exact per-preset values.
+====
+
 == Compliance and Audit Requirements
 
 [#SEC-15]

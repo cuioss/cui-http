@@ -188,8 +188,11 @@ adapter.get(Map.of("Accept", "application/json"))
             // Handle error with detailed information
             result.getErrorMessage().ifPresent(msg -> logger.error("Load failed: %s", msg));
             result.getErrorCategory().ifPresent(category -> {
+                // isRetryable() reports eligibility only. When using ResilientHttpAdapter the
+                // configured attempts are already exhausted by the time this result is returned;
+                // this callback just logs the outcome, it does not schedule a further retry.
                 if (category.isRetryable()) {
-                    logger.info("Retryable error (%s), will retry", category);
+                    logger.info("Retryable error category (%s) after configured attempts", category);
                 } else {
                     logger.error("Non-retryable error (%s), giving up", category);
                 }

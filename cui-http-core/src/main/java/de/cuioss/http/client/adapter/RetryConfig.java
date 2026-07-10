@@ -244,7 +244,13 @@ boolean idempotentOnly
         /**
          * Sets the maximum delay cap.
          *
-         * @param maxDelay cap on delay regardless of exponential growth (must be positive, non-null)
+         * <p>The cap is applied to the exponential backoff <em>before</em> jitter (see
+         * {@link RetryConfig#calculateDelay(int)}), so that capped retries still spread out instead
+         * of firing in lockstep. Consequently the final returned delay may exceed {@code maxDelay}
+         * by up to the configured {@code jitter} factor; it bounds the exponential growth, not the
+         * post-jitter value.</p>
+         *
+         * @param maxDelay cap on the exponential backoff before jitter (must be positive, non-null)
          * @return this builder for chaining
          * @throws IllegalArgumentException if maxDelay is null, negative, or zero
          */

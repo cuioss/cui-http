@@ -307,9 +307,12 @@ For usage examples, see the JavaDoc of link:../../../cui-http-core/src/main/java
 - Unicode attacks: Normalization, control characters (NFKC folds compatibility homoglyphs of separators; note NFKC is not confusable/homograph defense)
 - Protocol attacks: Header injection (CRLF), request smuggling patterns
 - DoS: Size limits, algorithmic complexity
-- NOTE: Application-layer injection detection (XSS, SQL, LDAP, command injection) is
-  *out of scope* and was deliberately removed from `PatternMatchingStage`; these must be
-  handled at the application layer. See
+- NOTE: Signature/pattern-based application-layer injection *detection* (XSS, SQL, LDAP, command
+  injection) is *out of scope* and was deliberately removed from `PatternMatchingStage`; these
+  must be handled at the application layer. This is scope of *detection*, not of URL validation:
+  `URLPathValidationPipeline` still validates URLs structurally, and character/encoding validation
+  rejects many script-injection URL forms (e.g. control characters, `<`/`>`, malformed encoding)
+  as a side effect — it simply does not perform XSS signature matching. See
   xref:compliance-traceability.adoc#_limitations_and_scope[Limitations and Scope].
 
 === Default Security Posture

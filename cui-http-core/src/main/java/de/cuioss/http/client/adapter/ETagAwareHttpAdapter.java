@@ -849,14 +849,18 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         // Return failure for error status codes. When a cached entry is in hand (a GET that was
         // revalidated but the server returned an error instead of 304), surface it as fallback
         // content so callers can degrade gracefully - the documented "Failure with fallback" state.
+        // Only GET may use cached fallback: the cache is populated exclusively by GET (see above),
+        // so gating on the method prevents a non-GET failure from surfacing a prior GET's body/ETag
+        // through a method-agnostic cache key.
         HttpErrorCategory errorCategory = HttpStatusFamily.fromStatusCode(statusCode).toErrorCategory();
+        boolean canUseCachedFallback = method == HttpMethod.GET && cachedEntry != null;
 
         return HttpResult.<T>failureWithFallback(
                 "HTTP %d: %s".formatted(statusCode, method.methodName()),
                 null,
-                cachedEntry != null ? cachedEntry.content() : null, // fallback to cached content when available
+                canUseCachedFallback ? cachedEntry.content() : null, // fallback to cached GET content when available
                 errorCategory,
-                cachedEntry != null ? cachedEntry.etag() : null, // cached ETag when available
+                canUseCachedFallback ? cachedEntry.etag() : null, // cached GET ETag when available
                 statusCode // include HTTP status code
         );
     }

@@ -348,7 +348,8 @@ The cui-http library provides HTTP **component** validation (headers, paths, par
 
 3. **Pattern Matching:** link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Attack pattern detection
 
-4. **Test Coverage:** 553 tests total
+4. **Test Coverage:** 553 tests total across the two generator-driven attack-test classes below
+   (the `Http1VulnerabilitiesTest` focused regression suite of 11 parameterized methods is separate)
    * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] (395 tests)
    * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java[HttpHeaderInjectionAttackTest] (158 tests: 150 generated + 8 fixed)
    * Generator-based testing with reproducible patterns
@@ -485,7 +486,7 @@ All request smuggling patterns are tested using parameterized tests with generat
 
 **Test Generator:** link:../../../cui-http-core/src/test/java/de/cuioss/http/security/generators/injection/HttpRequestSmugglingAttackGenerator.java[HttpRequestSmugglingAttackGenerator]
 
-**Test Coverage (395 total test cases):**
+**Test Coverage (395 test cases — the HttpRequestSmugglingAttackTest subset of the 553 total):**
 
 1. **CL.TE Smuggling**: 25 parameterized tests covering Content-Length/Transfer-Encoding conflicts
 2. **TE.CL Smuggling**: 25 parameterized tests covering Transfer-Encoding/Content-Length conflicts

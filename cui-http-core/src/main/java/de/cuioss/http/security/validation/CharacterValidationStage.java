@@ -218,7 +218,12 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
      */
     private void handleInvalidCharacter(String value, int ch, int position) throws UrlSecurityException {
         UrlSecurityFailureType failureType = getFailureTypeForCharacter(ch);
-        String display = new String(Character.toChars(ch));
+        // Do not render control characters (CR/LF, NUL, ...) verbatim: the detail is included in
+        // UrlSecurityException.getMessage(), which callers log, so a raw CR/LF would allow log
+        // forging/injection. Non-printable code points are shown as their escaped U+XXXX form.
+        String display = Character.isISOControl(ch)
+                ? "U+%04X".formatted(ch)
+                : new String(Character.toChars(ch));
         throw UrlSecurityException.builder()
                 .failureType(failureType)
                 .validationType(validationType)

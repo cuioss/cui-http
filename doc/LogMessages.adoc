@@ -13,7 +13,7 @@ Module: `de.cuioss.http`
 
 LogMessages Classes:
 
-- `de.cuioss.http.client.HttpLogMessages` - HTTP client operations (HTTP-106–115, HTTP-200–201)
+- `de.cuioss.http.client.HttpLogMessages` - HTTP client operations (HTTP-106–108, HTTP-110–115, HTTP-200–201)
 - `de.cuioss.http.forwarded.ForwardedLogMessages` - Forwarded / reverse-proxy header resolution (HTTP-120–123)
 
 == HttpLogMessages

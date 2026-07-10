@@ -25,7 +25,9 @@ Validation framework for HTTP components (paths, parameters, headers, bodies) wi
 
 `HttpSecurityValidator`: Functional interface following the "`Optional<String> validate(String)`,
 throws on violation" pattern — it returns the (possibly sanitized) value wrapped in an `Optional`
-and throws `UrlSecurityException` on a security violation. See
+and throws `UrlSecurityException` on a security violation. The input is nullable: a `null` input
+returns `Optional.empty()` (no violation), and input that is malformed in a way that prevents
+security analysis (as opposed to a security violation) raises `IllegalArgumentException`. See
 `de.cuioss.http.security.core.HttpSecurityValidator`.
 
 == Validation Pipelines
@@ -115,6 +117,11 @@ SecurityConfiguration config = SecurityConfiguration.builder().build();
 SecurityEventCounter counter = new SecurityEventCounter();
 HttpSecurityValidator validator = PipelineFactory.createPipeline(
     ValidationType.URL_PATH, config, counter);
+// validate(null) returns Optional.empty(), so reject null before the orElseThrow fallback -
+// UrlSecurityException.originalInput(...) is non-null and must not receive a null userInput.
+if (userInput == null) {
+    throw new IllegalArgumentException("userInput must not be null");
+}
 String validated = validator.validate(userInput)
     .orElseThrow(() -> UrlSecurityException.builder()
         .failureType(UrlSecurityFailureType.INVALID_INPUT)
