@@ -200,6 +200,29 @@ X-Forwarded-For: 10.0.0.1, 10.0.0.5                 -> clientIp = empty         
   split into the port field. The *port* is honored only within `1..65535`. The *scheme* is
   lowercased and honored only when it is `http` or `https`.
 
+=== Configuring the sanitization
+
+The header-value pipeline is *configurable* through the `securityConfig` of
+`ForwardedResolverConfig` (default `SecurityConfiguration.defaults()`). Because it is built with
+`PipelineFactory.createHeaderValuePipeline(securityConfig, counter)`, the full
+xref:security-readme.adoc[`SecurityConfiguration`] surface applies — length limits
+(`maxHeaderValueLength`), `allowControlCharacters`, `allowNullBytes`, `allowExtendedAscii`,
+`normalizeUnicode`, `failOnSuspiciousPatterns`, and the header allow/block lists — including the
+`SecurityConfiguration.strict()` and `.lenient()` presets.
+
+[source,java]
+----
+ForwardedResolverConfig config = ForwardedResolverConfig.builder()
+    .trustAll(true)
+    .securityConfig(SecurityConfiguration.strict())   // tighten header-value sanitization
+    .build();
+----
+
+The *field-specific* guards, by contrast, are fixed fail-secure invariants and are *not* affected
+by `securityConfig`: the context-path protocol-relative (`//`) and backslash rejection, the
+`http`/`https` scheme whitelist, the `1..65535` port range, and host-separator rejection always
+apply.
+
 == Serialization
 
 `ResolvedForwarding` can be emitted back as proxy headers — useful when forwarding a request
