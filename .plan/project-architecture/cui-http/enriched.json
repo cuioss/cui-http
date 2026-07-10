@@ -1,0 +1,115 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [],
+  "key_dependencies": [
+    "de.cuioss:cui-java-tools",
+    "org.projectlombok:lombok",
+    "org.jspecify:jspecify"
+  ],
+  "key_dependencies_reasoning": "cui-java-tools supplies CuiLogger and core utilities; Lombok generates builders/values; JSpecify provides null-safety annotations mandated by CUI standards",
+  "key_packages": {
+    "de.cuioss.http.client.adapter": {
+      "description": "Async HTTP adapters layering ETag-aware caching and resilient retry (RetryConfig) over HttpHandler; HttpResult-based error handling."
+    },
+    "de.cuioss.http.forwarded": {
+      "description": "RFC 7239 Forwarded and X-Forwarded-* header resolution with trusted-proxy CIDR matching and configurable sanitization (ForwardedHeaderResolver, ForwardedResolverConfig, RfcForwardedParser)."
+    },
+    "de.cuioss.http.security.pipeline": {
+      "description": "Composed validation pipelines per HTTP component type (URL path, parameters, headers, cookies, body) built via PipelineFactory; the primary public entry point for security validation."
+    },
+    "de.cuioss.http.security.validation": {
+      "description": "Individual validation stages (decoding, normalization, character/length validation, pattern matching, allow/block lists) chained by the pipelines; each implements HttpSecurityValidator."
+    }
+  },
+  "purpose": "library",
+  "purpose_reasoning": "packaging=jar, no runtime entry point, published to Maven Central",
+  "responsibility": "The library core (artifactId cui-http, directory cui-http-core): security validation pipelines for HTTP components (paths, parameters, headers, bodies, cookies) with attack-pattern detection, RFC 7239 forwarded-header resolution, and HTTP client infrastructure (HttpHandler, SSL/TLS context provider, HttpResult error handling, resilient/ETag-aware adapters, content converters).",
+  "responsibility_reasoning": "source: package-info files and CLAUDE.md architecture section; packages de.cuioss.http.security.*, .forwarded, .client.*",
+  "skills_by_profile": {
+    "implementation": {
+      "defaults": [
+        {
+          "description": "Foundational agent behavior rules (user interaction, tool usage, research, dependency management)",
+          "skill": "plan-marshall:persona-plan-marshall-agent"
+        },
+        {
+          "description": "Language-agnostic code quality, refactoring, and documentation principles",
+          "skill": "plan-marshall:ref-code-quality"
+        },
+        {
+          "description": "Core Java patterns including modern features and performance optimization",
+          "skill": "pm-dev-java:java-core"
+        },
+        "pm-dev-java-cui:cui-logging",
+        "pm-dev-java-cui:cui-http",
+        "pm-dev-java:java-null-safety",
+        "pm-dev-java:java-lombok",
+        "pm-dev-java:java-maintenance"
+      ]
+    },
+    "module_testing": {
+      "defaults": [
+        {
+          "description": "Foundational agent behavior rules (user interaction, tool usage, research, dependency management)",
+          "skill": "plan-marshall:persona-plan-marshall-agent"
+        },
+        {
+          "description": "Language-agnostic code quality principles (SRP, CQS, complexity, error handling)",
+          "skill": "plan-marshall:ref-code-quality"
+        },
+        {
+          "description": "Language-agnostic testing methodology (AAA, coverage, reliability, determinism)",
+          "skill": "plan-marshall:persona-module-tester"
+        },
+        {
+          "description": "Core Java patterns including modern features and performance optimization",
+          "skill": "pm-dev-java:java-core"
+        },
+        {
+          "description": "JUnit 5 testing patterns with AAA structure, coverage analysis, and assertion standards",
+          "skill": "pm-dev-java:junit-core"
+        },
+        "pm-dev-java-cui:cui-logging",
+        "pm-dev-java-cui:cui-testing",
+        "pm-dev-java-cui:cui-http-testing",
+        "pm-dev-java:java-null-safety",
+        "pm-dev-java:java-lombok"
+      ]
+    },
+    "quality": {
+      "defaults": [
+        {
+          "description": "Foundational agent behavior rules (user interaction, tool usage, research, dependency management)",
+          "skill": "plan-marshall:persona-plan-marshall-agent"
+        },
+        {
+          "description": "Language-agnostic code quality, refactoring, and documentation principles",
+          "skill": "plan-marshall:ref-code-quality"
+        },
+        {
+          "description": "Core Java patterns including modern features and performance optimization",
+          "skill": "pm-dev-java:java-core"
+        },
+        {
+          "description": "JavaDoc documentation standards including class, method, and code example patterns",
+          "skill": "pm-dev-java:javadoc"
+        },
+        "pm-dev-java-cui:cui-logging",
+        "pm-dev-java:java-null-safety",
+        "pm-dev-java:java-lombok"
+      ]
+    },
+    "security": {
+      "defaults": [
+        "pm-dev-java-cui:cui-logging",
+        {
+          "description": "CUI HTTP request-sanitization security surface",
+          "skill": "pm-dev-java-cui:cui-http"
+        }
+      ]
+    }
+  },
+  "skills_by_profile_reasoning": "Java library using Lombok and JSpecify; user-selected optionals java-null-safety, java-lombok, java-maintenance; Quarkus/CDI/Weld optionals excluded (plain Java library, no CDI runtime)",
+  "tips": []
+}
