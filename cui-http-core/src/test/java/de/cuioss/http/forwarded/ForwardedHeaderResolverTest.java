@@ -30,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @EnableTestLogger
 @DisplayName("ForwardedHeaderResolver")
+@SuppressWarnings("java:S5778") // assertThrows lambdas intentionally wrap the whole failing call chain
 class ForwardedHeaderResolverTest {
 
     private static Function<String, String> headers(Map<String, String> values) {

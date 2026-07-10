@@ -69,19 +69,6 @@ Optional<String> clientIp
             new ResolvedForwarding(Optional.empty(), Optional.empty(), OptionalInt.empty(), "", Optional.empty());
 
     /**
-     * Defensive, null-tolerant canonical constructor: a {@code null} {@link Optional} field
-     * becomes {@link Optional#empty()}, a {@code null} {@code port} becomes
-     * {@link OptionalInt#empty()}, and a {@code null} {@code contextPath} becomes the empty string.
-     */
-    public ResolvedForwarding {
-        scheme = scheme == null ? Optional.empty() : scheme;
-        host = host == null ? Optional.empty() : host;
-        port = port == null ? OptionalInt.empty() : port;
-        contextPath = contextPath == null ? "" : contextPath;
-        clientIp = clientIp == null ? Optional.empty() : clientIp;
-    }
-
-    /**
      * Returns the empty result: no scheme, host, port, or client IP, and an empty context-path.
      * This is what a secure-by-default resolver returns for an un-proxied or fully un-honored request.
      *

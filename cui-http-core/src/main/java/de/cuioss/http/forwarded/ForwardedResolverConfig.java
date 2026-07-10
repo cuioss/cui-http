@@ -74,18 +74,19 @@ public final class ForwardedResolverConfig {
     }
 
     /**
-     * @return the normalized context paths honored even when {@link #trustAll()} is {@code false}
-     *         (unmodifiable)
+     * @return the normalized context paths honored even when {@link #trustAll()} is {@code false},
+     *         as an order-preserving unmodifiable copy
      */
     public Set<String> allowedContextPaths() {
-        return allowedContextPaths;
+        return Collections.unmodifiableSet(new LinkedHashSet<>(allowedContextPaths));
     }
 
     /**
-     * @return the raw trusted-proxy CIDR / IP specs, in configuration order (unmodifiable)
+     * @return the raw trusted-proxy CIDR / IP specs, in configuration order, as an order-preserving
+     *         unmodifiable copy
      */
     public Set<String> trustedProxies() {
-        return trustedProxies;
+        return Collections.unmodifiableSet(new LinkedHashSet<>(trustedProxies));
     }
 
     /**
@@ -175,12 +176,10 @@ public final class ForwardedResolverConfig {
          *                            entry is normalized (leading slash added, trailing slash
          *                            stripped) and empties are dropped
          * @return this builder
-         * @throws IllegalArgumentException if {@code allowedContextPaths} is {@code null}
+         * @throws NullPointerException if {@code allowedContextPaths} is {@code null}
          */
         public Builder allowedContextPaths(Set<String> allowedContextPaths) {
-            if (allowedContextPaths == null) {
-                throw new IllegalArgumentException("allowedContextPaths must not be null");
-            }
+            Objects.requireNonNull(allowedContextPaths, "allowedContextPaths must not be null");
             Set<String> normalized = new LinkedHashSet<>();
             for (String entry : allowedContextPaths) {
                 String value = ContextPaths.normalize(entry);
@@ -196,17 +195,15 @@ public final class ForwardedResolverConfig {
          * @param trustedProxies CIDR ranges / IP literals defining trusted proxy hops for
          *                       client-IP resolution
          * @return this builder
-         * @throws IllegalArgumentException if {@code trustedProxies} is {@code null} or any entry
-         *                                  is not a valid IP literal / CIDR
+         * @throws NullPointerException if {@code trustedProxies} is {@code null}
+         * @throws IllegalArgumentException if any entry is not a valid IP literal / CIDR
          */
         public Builder trustedProxies(Set<String> trustedProxies) {
-            if (trustedProxies == null) {
-                throw new IllegalArgumentException("trustedProxies must not be null");
-            }
+            Objects.requireNonNull(trustedProxies, "trustedProxies must not be null");
             Set<String> raw = new LinkedHashSet<>();
             List<CidrRange> ranges = new ArrayList<>();
             for (String entry : trustedProxies) {
-                if (entry == null || entry.isBlank()) {
+                if (entry.isBlank()) {
                     continue;
                 }
                 ranges.add(CidrRange.parse(entry));
@@ -220,13 +217,10 @@ public final class ForwardedResolverConfig {
         /**
          * @param securityConfig the security configuration for the sanitization pipeline
          * @return this builder
-         * @throws IllegalArgumentException if {@code securityConfig} is {@code null}
+         * @throws NullPointerException if {@code securityConfig} is {@code null}
          */
         public Builder securityConfig(SecurityConfiguration securityConfig) {
-            if (securityConfig == null) {
-                throw new IllegalArgumentException("securityConfig must not be null");
-            }
-            this.securityConfig = securityConfig;
+            this.securityConfig = Objects.requireNonNull(securityConfig, "securityConfig must not be null");
             return this;
         }
 

@@ -52,39 +52,43 @@ final class RfcForwardedParser {
     }
 
     static Parsed parse(String headerValue) {
-        Optional<String> proto = Optional.empty();
-        Optional<String> host = Optional.empty();
-        List<String> forValues = new ArrayList<>();
-
+        Accumulator acc = new Accumulator();
         for (String element : splitTopLevel(headerValue, ',')) {
             for (String pair : splitTopLevel(element, ';')) {
-                int eq = pair.indexOf('=');
-                if (eq <= 0) {
-                    continue;
-                }
-                String name = pair.substring(0, eq).strip().toLowerCase(Locale.ROOT);
-                String value = unquote(pair.substring(eq + 1).strip());
-                if (value.isEmpty()) {
-                    continue;
-                }
-                switch (name) {
-                    case "proto" -> {
-                        if (proto.isEmpty()) {
-                            proto = Optional.of(value);
-                        }
-                    }
-                    case "host" -> {
-                        if (host.isEmpty()) {
-                            host = Optional.of(value);
-                        }
-                    }
-                    case "for" -> forValues.add(value);
-                    default -> { /* ignore by, ext, and unknown directives */
-                    }
+                acc.apply(pair);
+            }
+        }
+        return new Parsed(Optional.ofNullable(acc.proto), Optional.ofNullable(acc.host), acc.forValues);
+    }
+
+    /**
+     * Mutable accumulator that applies one {@code token=value} pair, keeping the first
+     * {@code proto}/{@code host} and appending every {@code for} in appearance order.
+     */
+    private static final class Accumulator {
+
+        private String proto;
+        private String host;
+        private final List<String> forValues = new ArrayList<>();
+
+        private void apply(String pair) {
+            int eq = pair.indexOf('=');
+            if (eq <= 0) {
+                return;
+            }
+            String name = pair.substring(0, eq).strip().toLowerCase(Locale.ROOT);
+            String value = unquote(pair.substring(eq + 1).strip());
+            if (value.isEmpty()) {
+                return;
+            }
+            switch (name) {
+                case "proto" -> proto = proto == null ? value : proto;
+                case "host" -> host = host == null ? value : host;
+                case "for" -> forValues.add(value);
+                default -> { /* ignore by, ext, and unknown directives */
                 }
             }
         }
-        return new Parsed(proto, host, forValues);
     }
 
     /**

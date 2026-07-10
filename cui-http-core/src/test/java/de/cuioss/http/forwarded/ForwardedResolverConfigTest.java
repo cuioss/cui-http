@@ -30,6 +30,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("ForwardedResolverConfig")
+@SuppressWarnings("java:S5778") // assertThrows lambdas intentionally wrap the whole failing call chain
 class ForwardedResolverConfigTest {
 
     @Nested
@@ -77,12 +78,10 @@ class ForwardedResolverConfigTest {
         @Test
         @DisplayName("rejects null setters")
         void rejectsNullSetters() {
-            assertThrows(IllegalArgumentException.class,
-                    () -> ForwardedResolverConfig.builder().allowedContextPaths(null));
-            assertThrows(IllegalArgumentException.class,
-                    () -> ForwardedResolverConfig.builder().trustedProxies(null));
-            assertThrows(IllegalArgumentException.class,
-                    () -> ForwardedResolverConfig.builder().securityConfig(null));
+            ForwardedResolverConfig.Builder builder = ForwardedResolverConfig.builder();
+            assertThrows(NullPointerException.class, () -> builder.allowedContextPaths(null));
+            assertThrows(NullPointerException.class, () -> builder.trustedProxies(null));
+            assertThrows(NullPointerException.class, () -> builder.securityConfig(null));
         }
 
         @ParameterizedTest(name = "rejects malformed trusted proxy \"{0}\"")

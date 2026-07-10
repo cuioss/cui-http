@@ -66,6 +66,9 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  *
  * @since 1.0
  */
+// S4276: Function<String,String> is the intentional transport-agnostic header-accessor abstraction
+// (e.g. request::getHeader) per issue #88 — not a UnaryOperator (which implies operating on a value).
+@SuppressWarnings("java:S4276")
 public final class ForwardedHeaderResolver {
 
     private static final CuiLogger LOGGER = new CuiLogger(ForwardedHeaderResolver.class);

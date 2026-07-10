@@ -43,15 +43,6 @@ class ResolvedForwardingTest {
             assertEquals("", empty.contextPath());
             assertTrue(empty.clientIp().isEmpty());
         }
-
-        @Test
-        @DisplayName("null components are normalized to empty by the canonical constructor")
-        void nullComponentsNormalized() {
-            ResolvedForwarding value = new ResolvedForwarding(null, null, null, null, null);
-
-            assertEquals(ResolvedForwarding.empty(), value,
-                    "A fully-null construction must equal the empty result");
-        }
     }
 
     @Nested
