@@ -18,33 +18,18 @@ cui-http/                         (root, packaging=pom, artifactId=cui-http-pare
 └── .github/workflows/benchmark.yml
 ```
 
-## Build Commands
+### Build Commands
 
-```bash
-# Build and install locally (all modules)
-./mvnw clean install
+Never hard-code build tool commands (`./mvnw`, `mvn`) — invoke builds via the canonical executor commands below:
 
-# Run tests (core module only)
-./mvnw test -pl cui-http-core
+- Compile: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "compile"`
+- Quality gate: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -Ppre-commit"`
+- Full verify: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify"`
+- Coverage: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -Pcoverage"`
+- Tests (cui-http): `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "test -pl cui-http-core -am"` — only on cui-http
+- Benchmark (cui-http-benchmarking): `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -Pquick -pl cui-http-benchmarking -am"` — only on cui-http-benchmarking
 
-# Run specific test
-./mvnw test -pl cui-http-core -Dtest=ClassName#methodName
-
-# Run pre-commit checks (MANDATORY before commits)
-./mvnw -Ppre-commit clean verify
-
-# Generate coverage report
-./mvnw -Pcoverage clean verify
-
-# Build with skipping tests
-./mvnw clean install -DskipTests
-
-# Run benchmarks (quick profile for local testing)
-./mvnw verify -pl cui-http-benchmarking -am -Pbenchmark -Pquick
-
-# Run benchmarks (full)
-./mvnw verify -pl cui-http-benchmarking -am -Pbenchmark
-```
+Use a 10-minute Bash timeout (600000ms) for build invocations. Analyze each build's TOON result: `status`, `errors[N]{file,line,message,category}`, `log_file`.
 
 ## Git Workflow
 
@@ -176,3 +161,8 @@ All cuioss repositories have branch protection on `main`. Direct pushes to `main
    - Every comment MUST get a reply (reason for fix or reason for not fixing) and MUST be resolved
 7. Do **NOT** enable auto-merge unless explicitly instructed. Wait for user approval.
 8. Return to main: `git checkout main && git pull`
+
+## Tool Usage
+
+- Use proper tools (Edit, Read, Write) instead of shell commands (echo, cat)
+- Never use Bash for file operations (find, grep, cat, ls) — use Glob, Read, Grep tools instead

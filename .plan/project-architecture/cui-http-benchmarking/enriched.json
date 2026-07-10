@@ -1,0 +1,109 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [
+    "cui-http"
+  ],
+  "key_dependencies": [
+    "org.openjdk.jmh:jmh-core"
+  ],
+  "key_dependencies_reasoning": "JMH is the benchmark harness; benchmarks exercise the cui-http validation pipelines and forwarded resolver",
+  "key_packages": {
+    "de.cuioss.http.forwarded.benchmark": {
+      "description": "JMH benchmarks for the forwarded-header resolver."
+    },
+    "de.cuioss.http.security.benchmark": {
+      "description": "JMH benchmarks for pipeline latency/throughput and per-stage validation cost."
+    }
+  },
+  "purpose": "benchmark",
+  "purpose_reasoning": "JMH benchmark classes only",
+  "responsibility": "JMH micro-benchmarks measuring latency and throughput of the security validation pipelines and the forwarded-header resolver; results feed the GitHub Pages benchmark dashboard via benchmark-pages.py.",
+  "responsibility_reasoning": "source: pom description 'JMH micro-benchmarks' and benchmark package contents",
+  "skills_by_profile": {
+    "implementation": {
+      "defaults": [
+        {
+          "description": "Foundational agent behavior rules (user interaction, tool usage, research, dependency management)",
+          "skill": "plan-marshall:persona-plan-marshall-agent"
+        },
+        {
+          "description": "Language-agnostic code quality, refactoring, and documentation principles",
+          "skill": "plan-marshall:ref-code-quality"
+        },
+        {
+          "description": "Core Java patterns including modern features and performance optimization",
+          "skill": "pm-dev-java:java-core"
+        },
+        "pm-dev-java-cui:cui-logging",
+        "pm-dev-java-cui:cui-http",
+        "pm-dev-java:java-null-safety",
+        "pm-dev-java:java-lombok",
+        "pm-dev-java:java-maintenance"
+      ]
+    },
+    "module_testing": {
+      "defaults": [
+        {
+          "description": "Foundational agent behavior rules (user interaction, tool usage, research, dependency management)",
+          "skill": "plan-marshall:persona-plan-marshall-agent"
+        },
+        {
+          "description": "Language-agnostic code quality principles (SRP, CQS, complexity, error handling)",
+          "skill": "plan-marshall:ref-code-quality"
+        },
+        {
+          "description": "Language-agnostic testing methodology (AAA, coverage, reliability, determinism)",
+          "skill": "plan-marshall:persona-module-tester"
+        },
+        {
+          "description": "Core Java patterns including modern features and performance optimization",
+          "skill": "pm-dev-java:java-core"
+        },
+        {
+          "description": "JUnit 5 testing patterns with AAA structure, coverage analysis, and assertion standards",
+          "skill": "pm-dev-java:junit-core"
+        },
+        "pm-dev-java-cui:cui-logging",
+        "pm-dev-java-cui:cui-testing",
+        "pm-dev-java-cui:cui-http-testing",
+        "pm-dev-java:java-null-safety",
+        "pm-dev-java:java-lombok"
+      ]
+    },
+    "quality": {
+      "defaults": [
+        {
+          "description": "Foundational agent behavior rules (user interaction, tool usage, research, dependency management)",
+          "skill": "plan-marshall:persona-plan-marshall-agent"
+        },
+        {
+          "description": "Language-agnostic code quality, refactoring, and documentation principles",
+          "skill": "plan-marshall:ref-code-quality"
+        },
+        {
+          "description": "Core Java patterns including modern features and performance optimization",
+          "skill": "pm-dev-java:java-core"
+        },
+        {
+          "description": "JavaDoc documentation standards including class, method, and code example patterns",
+          "skill": "pm-dev-java:javadoc"
+        },
+        "pm-dev-java-cui:cui-logging",
+        "pm-dev-java:java-null-safety",
+        "pm-dev-java:java-lombok"
+      ]
+    },
+    "security": {
+      "defaults": [
+        "pm-dev-java-cui:cui-logging",
+        {
+          "description": "CUI HTTP request-sanitization security surface",
+          "skill": "pm-dev-java-cui:cui-http"
+        }
+      ]
+    }
+  },
+  "skills_by_profile_reasoning": "Java library using Lombok and JSpecify; user-selected optionals java-null-safety, java-lombok, java-maintenance; Quarkus/CDI/Weld optionals excluded (plain Java library, no CDI runtime)",
+  "tips": []
+}
