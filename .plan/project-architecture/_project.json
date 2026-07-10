@@ -1,0 +1,15 @@
+{
+  "description": "Security-focused HTTP utilities library providing validation pipelines with comprehensive attack pattern detection, SSL/TLS context management, resilient HTTP client handlers/adapters, and RFC 7239 forwarded-header resolution.",
+  "description_reasoning": "source: README.adoc 'What is it?' section plus root pom description",
+  "extensions_used": [
+    "plan-marshall",
+    "pm-documents"
+  ],
+  "modules": {
+    "cui-http": {},
+    "cui-http-benchmarking": {},
+    "cui-http-parent": {},
+    "documentation": {}
+  },
+  "name": "cui-http"
+}
