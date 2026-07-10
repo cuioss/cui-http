@@ -282,6 +282,10 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
     /**
      * Checks if a character is allowed based on configuration flags and character sets.
      */
+    // S3776: cognitive complexity is 16 vs the 15 limit — the sequential per-character-class
+    // guards (null byte, control chars incl. the unconditional CR/LF header rejection, extended
+    // ASCII, Unicode) are each simple and clearer inline than split across helpers.
+    @SuppressWarnings("java:S3776")
     private boolean isCharacterAllowed(char ch) {
         // Null byte (0) - should be allowed if configured (already checked earlier but may reach here)
         if (ch == 0) {
