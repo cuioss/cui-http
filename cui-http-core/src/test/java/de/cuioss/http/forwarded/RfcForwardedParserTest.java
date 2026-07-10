@@ -47,6 +47,16 @@ class RfcForwardedParserTest {
     }
 
     @Test
+    @DisplayName("unescapes backslash-escaped characters inside a quoted value")
+    void unescapesEscapedCharacters() {
+        // host="a\"b" -> a"b ; for="x\\y" -> x\y
+        RfcForwardedParser.Parsed parsed = RfcForwardedParser.parse("host=\"a\\\"b\";for=\"x\\\\y\"");
+
+        assertEquals("a\"b", parsed.host().orElseThrow());
+        assertEquals("x\\y", parsed.forValues().getFirst());
+    }
+
+    @Test
     @DisplayName("takes the first proto/host across elements")
     void firstProtoWins() {
         RfcForwardedParser.Parsed parsed = RfcForwardedParser.parse("proto=https, proto=http");

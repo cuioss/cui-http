@@ -89,6 +89,30 @@ final class RfcForwardedParser {
                 }
             }
         }
+
+        /**
+         * Strips surrounding double quotes and unescapes {@code \\x} sequences; returns non-quoted
+         * input unchanged.
+         */
+        private static String unquote(String value) {
+            if (value.length() < 2 || value.charAt(0) != '"' || value.charAt(value.length() - 1) != '"') {
+                return value;
+            }
+            StringBuilder out = new StringBuilder(value.length() - 2);
+            boolean escaped = false;
+            for (int i = 1; i < value.length() - 1; i++) {
+                char c = value.charAt(i);
+                if (escaped) {
+                    out.append(c);
+                    escaped = false;
+                } else if (c == '\\') {
+                    escaped = true;
+                } else {
+                    out.append(c);
+                }
+            }
+            return out.toString();
+        }
     }
 
     /**
@@ -120,29 +144,5 @@ final class RfcForwardedParser {
         }
         parts.add(current.toString());
         return parts;
-    }
-
-    /**
-     * Strips surrounding double quotes and unescapes {@code \\x} sequences; returns non-quoted
-     * input unchanged.
-     */
-    private static String unquote(String value) {
-        if (value.length() < 2 || value.charAt(0) != '"' || value.charAt(value.length() - 1) != '"') {
-            return value;
-        }
-        StringBuilder out = new StringBuilder(value.length() - 2);
-        boolean escaped = false;
-        for (int i = 1; i < value.length() - 1; i++) {
-            char c = value.charAt(i);
-            if (escaped) {
-                out.append(c);
-                escaped = false;
-            } else if (c == '\\') {
-                escaped = true;
-            } else {
-                out.append(c);
-            }
-        }
-        return out.toString();
     }
 }
