@@ -146,7 +146,7 @@ ValidationType validationType) implements HttpSecurityValidator {
         // computed without allocating a byte array (value.getBytes(...)) so that a large body
         // cannot force a multi-megabyte allocation inside the very stage meant to cap it. All
         // other validation types measure length in characters.
-        int inputLength = validationType == ValidationType.BODY
+        long inputLength = validationType == ValidationType.BODY
                 ? utf8ByteLength(value)
                 : value.length();
 
@@ -176,11 +176,15 @@ ValidationType validationType) implements HttpSecurityValidator {
      * itself allocate a multi-megabyte {@code byte[]} (via {@code String.getBytes}) to measure a
      * large body. Well-formed surrogate pairs are counted as a single 4-byte code point.</p>
      *
+     * <p>The accumulator is a {@code long} so the count cannot overflow {@code int} and wrap
+     * negative for very large bodies (~700M+ three-byte characters) - a negative length would
+     * otherwise compare as {@code < limit} and bypass the DoS size cap this stage enforces.</p>
+     *
      * @param value the string to measure (never null)
      * @return the number of bytes the string occupies when encoded as UTF-8
      */
-    private static int utf8ByteLength(String value) {
-        int count = 0;
+    private static long utf8ByteLength(String value) {
+        long count = 0;
         for (int i = 0, len = value.length(); i < len; i++) {
             char ch = value.charAt(i);
             if (ch <= 0x7F) {
