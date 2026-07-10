@@ -16,6 +16,7 @@
 package de.cuioss.http.forwarded;
 
 import de.cuioss.http.security.config.SecurityConfiguration;
+import org.jspecify.annotations.Nullable;
 
 import java.net.InetAddress;
 import java.util.*;
@@ -132,7 +133,7 @@ public final class ForwardedResolverConfig {
      * @param commaSeparated the raw comma-separated allowlist (may be {@code null})
      * @return an unmodifiable set of normalized context paths in input order
      */
-    public static Set<String> parseAllowlist(String commaSeparated) {
+    public static Set<String> parseAllowlist(@Nullable String commaSeparated) {
         Set<String> allowed = new LinkedHashSet<>();
         if (commaSeparated == null || commaSeparated.isBlank()) {
             return Collections.unmodifiableSet(allowed);
