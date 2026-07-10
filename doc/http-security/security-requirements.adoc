@@ -77,15 +77,16 @@ These requirements are derived from:
 [#SEC-5]
 === SEC-5: Canonicalization Security
 
-* The system must safely canonicalize paths
-* Must resolve all symbolic references before validation
-* Must handle:
+* The system must safely canonicalize the URL/path *string* (RFC 3986 dot-segment resolution
+  and Unicode canonicalization) before pattern matching
+* NOTE: Filesystem-level canonicalization is *out of scope and not implementable* in a
+  string-based HTTP-component validator. The following are the responsibility of the
+  application / filesystem layer and are *not* handled here:
   ** Symbolic links
   ** Hard links
   ** Junction points (Windows)
   ** UNC paths
-
-* Must prevent TOCTOU (Time-of-Check-Time-of-Use) vulnerabilities
+  ** TOCTOU (Time-of-Check-Time-of-Use) resolution — requires filesystem access, not string input
 * Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
 == Input Validation Security Requirements
@@ -129,8 +130,9 @@ These requirements are derived from:
   ** Zero-width character abuse
   ** Case transformation attacks
 
-* Must normalize to NFC before validation
-* Must detect significant changes during normalization
+* Must canonicalize Unicode in `DecodingStage` using NFKC for URL paths and NFC for
+  parameter values (normalize-and-continue per the OWASP canonicalize-then-validate model)
+* Must detect when a fold introduces a structurally significant separator character
 * Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
 == Denial of Service Prevention Requirements
@@ -164,31 +166,31 @@ These requirements are derived from:
 == Security Monitoring Requirements
 
 [#SEC-11]
-=== SEC-11: Security Event Logging
+=== SEC-11: Security Event Counting
 
-* The system must log all security events
-* Must log:
-  ** Validation failures with context
-  ** Attack patterns detected
-  ** Threshold violations
-  ** Configuration changes
-
-* Must not log sensitive data (passwords, tokens)
-* Must support security information and event management (SIEM) integration
+* The system counts security events via `SecurityEventCounter` (in-memory, per-failure-type
+  atomic counters). Detected violations are also surfaced as `UrlSecurityException`.
+* NOTE: The validation core does *not* log security events itself and does *not* provide
+  built-in SIEM integration. Logging (with context redaction) is performed by the caller at
+  the trust boundary where the exception is caught. The following are therefore *not
+  implemented* inside `de.cuioss.http.security`:
+  ** Structured event logging
+  ** Threshold-violation logging
+  ** SIEM shipping
 * Reference: xref:specification/specification.adoc#_security_event_tracking[Security Event Tracking]
 
 [#SEC-12]
 === SEC-12: Attack Pattern Recognition
 
-* The system must recognize attack patterns
-* Must detect:
-  ** Repeated validation failures (brute force)
-  ** Pattern scanning attempts
-  ** Automated tool signatures
-  ** Coordinated attacks
-
-* Must support rate limiting and blocking
-* Must generate alerts for suspicious patterns
+* The system recognizes individual attack patterns per request (`PatternMatchingStage`)
+* NOTE: Cross-request correlation and active response are *not implemented*.
+  `SecurityEventCounter` provides raw per-failure-type counts only; the library performs
+  *no* rate limiting, blocking, or alerting. The following are therefore the caller's
+  responsibility and are *not* provided:
+  ** Repeated-failure / brute-force detection
+  ** Automated-tool signature correlation
+  ** Rate limiting and blocking
+  ** Alert generation
 * Reference: xref:specification/specification.adoc#_security_event_tracking[Security Event Tracking]
 
 == Cryptographic and Encoding Requirements
@@ -224,15 +226,13 @@ These requirements are derived from:
 [#SEC-15]
 === SEC-15: Audit Trail Support
 
-* The system must support comprehensive audit trails
-* Must record:
-  ** All security decisions
-  ** Configuration changes
-  ** Validation rule updates
-  ** Security exceptions granted
-
-* Must support tamper-evident logging
-* Must integrate with enterprise audit systems
+* Each violation carries audit-relevant context on the thrown `UrlSecurityException`
+  (failure type, validation type, original input, sanitized input, detail message), and is
+  counted by `SecurityEventCounter`.
+* NOTE: A persistent, tamper-evident audit trail is *not implemented*. `SecurityEventCounter`
+  holds only in-memory, resettable counts; it does not persist records, sign them, or
+  integrate with enterprise audit systems. Durable, tamper-evident audit logging is the
+  caller's responsibility.
 * Reference: xref:specification/specification.adoc#_security_event_tracking[Security Event Tracking]
 
 [#SEC-16]
@@ -268,13 +268,12 @@ These requirements are derived from:
 [#SEC-18]
 === SEC-18: Attack Pattern Configuration
 
-* The system must support configurable attack patterns
-* Must:
-  ** Allow configuration of new attack patterns
-  ** Update validation rules based on pattern definitions
-  ** Support pattern updates without code changes
-
-* Must handle pattern configuration updates safely
+* NOTE: Runtime-configurable attack patterns are *not implemented*. The attack patterns in
+  `PatternMatchingStage` / `SecurityDefaults` are `static final` compile-time constants, and
+  `SecurityConfiguration` exposes *no* pattern knob. Updating patterns therefore requires a
+  code change and a new release.
+* `SecurityConfiguration` does expose configurable *policy* toggles (length limits,
+  encoding/character policy, allow/block lists), but not the attack-pattern set itself.
 * Reference: xref:analysis/cve-analysis.adoc[Attack Pattern Analysis]
 
 == Implementation References
@@ -291,12 +290,11 @@ The following classes implement the security requirements:
 
 === Security Monitoring Implementation
 
-* link:../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter] - Event tracking and attack recognition (SEC-11, SEC-12, SEC-15)
- * link:../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter] - Security event logging (SEC-11)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter] - In-memory event counting by failure type (SEC-11; partial coverage of SEC-12/SEC-15 — counting only, no logging/alerting/audit trail)
 
 === Security Configuration Implementation
 
-* link:../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration] - Secure defaults (SEC-14, SEC-18)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration] - Secure defaults and policy toggles (SEC-14). SEC-18 runtime pattern configuration is not implemented.
 * link:../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityDefaults.java[SecurityDefaults] - OWASP-compliant defaults (SEC-1, SEC-2, SEC-14)
 
 === Security Pipeline Implementation
@@ -325,12 +323,12 @@ The following classes implement the security requirements:
 | SEC-8 | Unicode Security | xref:specification/specification.adoc#_encodingvalidationstage[Unicode]
 | SEC-9 | Resource Limits | xref:specification/specification.adoc#_lengthvalidationstage[Limits]
 | SEC-10 | Complexity Protection | xref:specification/testing.adoc#_performance_validation[Performance]
-| SEC-11 | Event Logging | xref:specification/specification.adoc#_securityeventcounter[Monitoring]
-| SEC-12 | Attack Recognition | xref:specification/specification.adoc#_event_counter_pattern[Detection]
+| SEC-11 | Event Counting (no logging) | xref:specification/specification.adoc#_securityeventcounter[Monitoring]
+| SEC-12 | Per-request Pattern Recognition (no rate-limit/alerting) | xref:specification/specification.adoc#_event_counter_pattern[Detection]
 | SEC-13 | Encoding Security | xref:specification/specification.adoc#_decodingstage[Encoding]
 | SEC-14 | Secure Defaults | xref:specification/specification.adoc#_configuration_architecture[Defaults]
-| SEC-15 | Audit Trail | xref:specification/specification.adoc#_securityeventcounter[Audit]
+| SEC-15 | Audit context on exceptions (no tamper-evident trail) | xref:specification/specification.adoc#_securityeventcounter[Audit]
 | SEC-16 | Testing Support | xref:specification/testing.adoc[Testing]
 | SEC-17 | API Security | xref:specification/specification.adoc#_core_interfaces_and_data_types[API]
-| SEC-18 | Attack Pattern Config | xref:analysis/cve-analysis.adoc[Attack Pattern Analysis]
+| SEC-18 | Attack Pattern Config (NOT IMPLEMENTED — patterns are compile-time constants) | xref:analysis/cve-analysis.adoc[Attack Pattern Analysis]
 |===

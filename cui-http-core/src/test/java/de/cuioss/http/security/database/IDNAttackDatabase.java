@@ -128,10 +128,10 @@ public class IDNAttackDatabase implements AttackDatabase {
     );
 
     public static final AttackTestCase DECOMPOSED_ACCENT_CAFE = new AttackTestCase(
-            "http://cafe\\u0301.com/../../config",
+            "http://café.com/../../config",
             UrlSecurityFailureType.INVALID_CHARACTER,
-            "Unicode normalization attack using decomposed form: 'e' (U+0065) + combining acute accent (U+0301) instead of composed 'é'. This tests normalization handling differences where the same visual appearance can be encoded in multiple ways, bypassing simple string matching filters.",
-            "INVALID_CHARACTER is expected because combining characters and escape sequences (\\u0301) in URLs often indicate attempts to bypass security filters through Unicode normalization differences."
+            "Unicode normalization attack using decomposed form: 'e' (U+0065) + a real combining acute accent code point (U+0301) instead of composed 'é'. This tests normalization handling differences where the same visual appearance can be encoded in multiple ways, bypassing simple string matching filters.",
+            "INVALID_CHARACTER is expected because the raw combining mark (U+0301) is a Unicode combining diacritical character, and combining marks are always rejected for URL paths (they enable homograph and normalization-bypass attacks) before any traversal detection runs."
     );
 
     // Right-to-left override attacks

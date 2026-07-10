@@ -12,9 +12,10 @@ on:
 permissions:
   contents: read
 
-# Prevent concurrent benchmark runs to avoid interference
+# Serialize all benchmark runs behind a single static group so that closely-merged PRs
+# queue instead of racing the git push to cuioss.github.io (which has no fetch/rebase/retry).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}
   cancel-in-progress: false  # Don't cancel in-progress runs as benchmarks are expensive
 
 jobs:

@@ -16,6 +16,7 @@
 package de.cuioss.http.client.converter;
 
 import de.cuioss.http.client.ContentType;
+import org.jspecify.annotations.Nullable;
 
 import java.net.http.HttpResponse;
 import java.util.Optional;
@@ -124,10 +125,11 @@ public interface HttpResponseConverter<T> {
      *   <li>Never throw exceptions - return {@code Optional.empty()} instead</li>
      * </ul>
      *
-     * @param rawContent Raw response content from HTTP response (typically String or byte[])
+     * @param rawContent Raw response content from HTTP response (typically String or byte[]);
+     *                   may be {@code null} for converters whose body handler discards the body
      * @return Converted object, or {@code Optional.empty()} if conversion failed
      */
-    Optional<T> convert(Object rawContent);
+    Optional<T> convert(@Nullable Object rawContent);
 
     /**
      * Returns body handler for HTTP response processing.
@@ -173,8 +175,9 @@ public interface HttpResponseConverter<T> {
     /**
      * Returns the expected content type for responses.
      * <p>
-     * This content type is used to set the {@code Accept} header in requests
-     * and to validate that responses contain the expected content type.
+     * This content type is used to set the {@code Accept} header in requests. The adapter does
+     * <strong>not</strong> inspect or validate the response {@code Content-Type} against this value;
+     * any content-type checking is the responsibility of the {@link #convert(Object)} implementation.
      * </p>
      *
      * @return Content type (e.g., APPLICATION_JSON, TEXT_XML, APPLICATION_PDF)

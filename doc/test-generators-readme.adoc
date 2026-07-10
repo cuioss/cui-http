@@ -17,6 +17,15 @@
 </dependency>
 ----
 
+[NOTE]
+====
+The classes in the `generators` classifier artifact depend on test-scope libraries
+(`de.cuioss:cui-test-generator` and JUnit 5) that are **not** transitively propagated to
+consumers. Add those dependencies explicitly (in `test` scope) alongside the classifier
+artifact, otherwise the generator and attack-database classes will not compile in the
+consuming project.
+====
+
 == Overview
 
 Test artifact containing attack databases with curated real-world attack patterns and test data generators for security validation testing.

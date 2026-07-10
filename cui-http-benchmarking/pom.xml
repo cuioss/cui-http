@@ -26,13 +26,20 @@
         <benchmark.runner>de.cuioss.http.security.benchmark.SecurityBenchmarkRunner</benchmark.runner>
 
         <!-- JMH Configuration Properties -->
-        <jmh.include>de\.cuioss\.http\.security\.benchmark\.standard\..*</jmh.include>
+        <!-- Matches both the security pipeline benchmarks (de.cuioss.http.security.benchmark.standard.*)
+             and the forwarded-header resolver benchmarks (de.cuioss.http.forwarded.benchmark.*). -->
+        <jmh.include>de\.cuioss\.http\.(security\.benchmark\.standard|forwarded\.benchmark)\..*</jmh.include>
         <jmh.result.format>JSON</jmh.result.format>
         <jmh.result.filePrefix>target/benchmark-results/micro-result</jmh.result.filePrefix>
         <jmh.iterations>5</jmh.iterations>
         <jmh.warmupIterations>3</jmh.warmupIterations>
         <jmh.forks>1</jmh.forks>
-        <jmh.threads>4</jmh.threads>
+        <!-- Single-threaded for all benchmarks. The shared AbstractBenchmarkRunner applies this
+             value globally via Options.threads(), which overrides any per-benchmark @Threads
+             annotation; running single-threaded honors the documented single-threaded latency
+             intent of PipelineLatencyBenchmark / ValidationStageBenchmark and yields reproducible
+             micro-benchmark numbers free of cross-thread contention. -->
+        <jmh.threads>1</jmh.threads>
         <jmh.time>4s</jmh.time>
         <jmh.warmupTime>1s</jmh.warmupTime>
         <!-- Benchmark history directory for trend analysis (passed from CI) -->
@@ -80,15 +87,6 @@
 
     <build>
         <plugins>
-            <!-- Skip unit tests by default -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <configuration>
-                    <skipTests>${skipTests}</skipTests>
-                </configuration>
-            </plugin>
-
             <!-- Enable annotation processing for JMH -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -99,6 +97,10 @@
                             <groupId>org.openjdk.jmh</groupId>
                             <artifactId>jmh-generator-annprocess</artifactId>
                             <version>${version.jmh}</version>
+                        </path>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
                         </path>
                     </annotationProcessorPaths>
                     <release>21</release>
@@ -132,7 +134,7 @@
                                 <argument>-Djmh.time=${jmh.time}</argument>
                                 <argument>-Djmh.warmupTime=${jmh.warmupTime}</argument>
                                 <argument>-Dbenchmark.history.dir=${benchmark.history.dir}</argument>
-                                <argument>-Djava.util.logging.config.file=benchmark-logging.properties</argument>
+                                <argument>-Djava.util.logging.config.file=${project.build.outputDirectory}/benchmark-logging.properties</argument>
                                 <argument>-XX:+UnlockDiagnosticVMOptions</argument>
                                 <argument>-XX:+DebugNonSafepoints</argument>
                                 <argument>${benchmark.runner}</argument>

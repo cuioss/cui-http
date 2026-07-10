@@ -26,7 +26,6 @@ import org.jspecify.annotations.Nullable;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -325,7 +324,10 @@ ValidationType validationType) implements HttpSecurityValidator {
         Set<String> names = config.caseSensitiveComparison()
                 ? SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES : SUSPICIOUS_PARAMETER_NAMES_LOWERCASE;
         for (String suspiciousName : names) {
-            if ((testValue.equals(suspiciousName) || testValue.contains(suspiciousName)) && config.failOnSuspiciousPatterns()) {
+            // Exact-match only: substring matching (contains) would reject legitimate names such
+            // as "transcript", "profile" or "filepath" merely because they embed a suspicious
+            // token like "script", "file" or "path".
+            if (testValue.equals(suspiciousName) && config.failOnSuspiciousPatterns()) {
                 throw UrlSecurityException.builder()
                         .failureType(UrlSecurityFailureType.SUSPICIOUS_PARAMETER_NAME)
                         .validationType(validationType)
@@ -337,22 +339,5 @@ ValidationType validationType) implements HttpSecurityValidator {
 
         }
     }
-
-    /**
-     * Creates a conditional validator that only processes inputs matching the condition.
-     *
-     * @param condition The condition to test before validation
-     * @return A conditional HttpSecurityValidator that applies pattern matching conditionally
-     */
-    @Override
-    public HttpSecurityValidator when(Predicate<String> condition) {
-        return input -> {
-            if (input == null || !condition.test(input)) {
-                return Optional.ofNullable(input);
-            }
-            return validate(input);
-        };
-    }
-
 
 }

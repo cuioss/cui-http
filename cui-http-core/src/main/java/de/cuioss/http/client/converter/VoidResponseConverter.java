@@ -16,6 +16,7 @@
 package de.cuioss.http.client.converter;
 
 import de.cuioss.http.client.ContentType;
+import org.jspecify.annotations.Nullable;
 
 import java.net.http.HttpResponse;
 import java.util.Optional;
@@ -110,7 +111,7 @@ public final class VoidResponseConverter implements HttpResponseConverter<Void> 
      * @return {@code Optional.empty()} - body is always discarded
      */
     @Override
-    public Optional<Void> convert(Object rawContent) {
+    public Optional<Void> convert(@Nullable Object rawContent) {
         return Optional.empty();  // Always empty - body is discarded
     }
 
@@ -149,17 +150,18 @@ public final class VoidResponseConverter implements HttpResponseConverter<Void> 
     }
 
     /**
-     * Returns {@code ContentType.APPLICATION_JSON} (value doesn't matter).
+     * Returns {@code ContentType.APPLICATION_JSON}.
      * <p>
-     * Since the body is discarded, the content type is irrelevant. We return
-     * APPLICATION_JSON as a sensible default, but this value is never used
-     * in practice because {@link #getBodyHandler()} discards the body entirely.
+     * The response body is discarded (see {@link #getBodyHandler()}), so this value does not affect
+     * response parsing. It is, however, still used by the adapter as the default {@code Accept}
+     * request header (unless the caller supplies their own {@code Accept}), including on
+     * status-code-only operations. {@code APPLICATION_JSON} is chosen as a sensible default.
      * </p>
      *
-     * @return {@code ContentType.APPLICATION_JSON} (arbitrary choice, body discarded anyway)
+     * @return {@code ContentType.APPLICATION_JSON}
      */
     @Override
     public ContentType contentType() {
-        return ContentType.APPLICATION_JSON;  // Doesn't matter, body discarded
+        return ContentType.APPLICATION_JSON;
     }
 }

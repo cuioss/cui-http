@@ -26,7 +26,9 @@ Build a custom configuration with `SecurityConfiguration.builder()`.
 
 == Length limits
 
-Enforced by `LengthValidationStage` (runs first in every pipeline to prevent DoS).
+Enforced by `LengthValidationStage`, which runs first in each of the five value pipelines to
+prevent DoS. (The exception is `ContentTypeValidationPipeline`, which is a single
+`AllowBlockListStage` and has no length stage.)
 
 [cols="3,1,1,1", options="header"]
 |===

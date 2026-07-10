@@ -15,6 +15,7 @@
  */
 package de.cuioss.http.security.generators.injection;
 
+import de.cuioss.test.generator.Generators;
 import de.cuioss.test.generator.TypedGenerator;
 
 /**
@@ -71,9 +72,9 @@ public class HttpRequestSmugglingAttackGenerator implements TypedGenerator<Strin
 
     @Override
     public String next() {
-        String baseUrl = BASE_URLS[hashBasedSelection(BASE_URLS.length)];
+        String baseUrl = BASE_URLS[randomSelection(BASE_URLS.length)];
 
-        return switch (hashBasedSelection(15)) {
+        return switch (randomSelection(15)) {
             case 0 -> createClTeSmuggling(baseUrl);
             case 1 -> createTeClSmuggling(baseUrl);
             case 2 -> createTeTeSmuggling(baseUrl);
@@ -103,7 +104,7 @@ public class HttpRequestSmugglingAttackGenerator implements TypedGenerator<Strin
                 pattern + "?attack=smuggle%0d%0aContent-Length: 44%0d%0aTransfer-Encoding: chunked%0d%0a%0d%0a0%0d%0a%0d%0aGET /admin HTTP/1.1%0d%0aHost: vulnerable-website.com",
                 pattern + "?method=get%0d%0aContent-Length: 30%0d%0aTransfer-Encoding: chunked%0d%0a%0d%0a0%0d%0a%0d%0aDELETE /admin/users HTTP/1.1"
         };
-        return clTeAttacks[hashBasedSelection(clTeAttacks.length)];
+        return clTeAttacks[randomSelection(clTeAttacks.length)];
     }
 
     private String createTeClSmuggling(String pattern) {
@@ -116,7 +117,7 @@ public class HttpRequestSmugglingAttackGenerator implements TypedGenerator<Strin
                 pattern + "?attack=request%0d%0aTransfer-Encoding: chunked%0d%0aContent-Length: 44%0d%0a%0d%0a71%0d%0aPOST /admin/users HTTP/1.1%0d%0aHost: vulnerable%0d%0aContent-Length: 15%0d%0a%0d%0ax=1%0d%0a0%0d%0a%0d%0a",
                 pattern + "?method=post%0d%0aTransfer-Encoding: chunked%0d%0aContent-Length: 30%0d%0a%0d%0a3c%0d%0aDELETE /admin/users/victim HTTP/1.1%0d%0aHost: internal-admin%0d%0a%0d%0a0%0d%0a%0d%0a"
         };
-        return teClAttacks[hashBasedSelection(teClAttacks.length)];
+        return teClAttacks[randomSelection(teClAttacks.length)];
     }
 
     private String createTeTeSmuggling(String pattern) {
@@ -129,7 +130,7 @@ public class HttpRequestSmugglingAttackGenerator implements TypedGenerator<Strin
                 pattern + "?attack=double%0d%0aTransfer-Encoding: identity%0d%0aTransfer-Encoding: chunked%0d%0a%0d%0a71%0d%0aPOST /admin/users HTTP/1.1%0d%0a0%0d%0a%0d%0a",
                 pattern + "?method=multiple%0d%0aTransfer-Encoding: chunked%0d%0aTransfer-Encoding:%20chunked%0d%0a%0d%0a3c%0d%0aDELETE /users HTTP/1.1%0d%0a0%0d%0a%0d%0a"
         };
-        return teTeAttacks[hashBasedSelection(teTeAttacks.length)];
+        return teTeAttacks[randomSelection(teTeAttacks.length)];
     }
 
     private String createClClSmuggling(String pattern) {
@@ -142,7 +143,7 @@ public class HttpRequestSmugglingAttackGenerator implements TypedGenerator<Strin
                 pattern + "?attack=duplicate%0d%0aContent-Length: 44%0d%0aContent-Length: 6%0d%0a%0d%0aPOST /admin/users HTTP/1.1%0d%0ax=1",
                 pattern + "?method=conflict%0d%0aContent-Length: 30%0d%0aContent-Length: 60%0d%0a%0d%0aDELETE /admin/users/victim HTTP/1.1%0d%0aHost: internal"
         };
-        return clClAttacks[hashBasedSelection(clClAttacks.length)];
+        return clClAttacks[randomSelection(clClAttacks.length)];
     }
 
     private String createHttp2DowngradeSmuggling(String pattern) {
@@ -155,7 +156,7 @@ public class HttpRequestSmugglingAttackGenerator implements TypedGenerator<Strin
                 pattern + "?attack=version%0d%0aPRI * HTTP/2.0%0d%0a%0d%0aSM%0d%0a%0d%0aPOST /admin/users HTTP/1.1%0d%0aHost: vulnerable",
                 pattern + "?method=upgrade%0d%0aUpgrade: h2c%0d%0aConnection: Upgrade%0d%0aHTTP2-Settings: exploit%0d%0aContent-Length: 30"
         };
-        return http2Attacks[hashBasedSelection(http2Attacks.length)];
+        return http2Attacks[randomSelection(http2Attacks.length)];
     }
 
     private String createPipelinePoisoning(String pattern) {
@@ -168,7 +169,7 @@ public class HttpRequestSmugglingAttackGenerator implements TypedGenerator<Strin
                 pattern + "?attack=queue%0d%0aConnection: keep-alive%0d%0aContent-Length: 35%0d%0a%0d%0aGET /admin/users/victim HTTP/1.1%0d%0aHost: internal-admin",
                 pattern + "?method=persistent%0d%0aConnection: keep-alive%0d%0aContent-Length: 60%0d%0a%0d%0aPUT /admin/settings HTTP/1.1%0d%0aHost: vulnerable%0d%0aContent-Length: 20"
         };
-        return pipelineAttacks[hashBasedSelection(pipelineAttacks.length)];
+        return pipelineAttacks[randomSelection(pipelineAttacks.length)];
     }
 
     private String createCacheDeception(String pattern) {
@@ -181,7 +182,7 @@ public class HttpRequestSmugglingAttackGenerator implements TypedGenerator<Strin
                 pattern + "?attack=cdn%0d%0aVary: Authorization%0d%0aContent-Length: 35%0d%0a%0d%0aGET /admin/secrets HTTP/1.1%0d%0aAuthorization: Basic admin:pass",
                 pattern + "?method=edge%0d%0aCache-Control: public, max-age=86400%0d%0aContent-Length: 60%0d%0a%0d%0aPUT /admin/cache HTTP/1.1%0d%0aHost: edge-cache"
         };
-        return cacheAttacks[hashBasedSelection(cacheAttacks.length)];
+        return cacheAttacks[randomSelection(cacheAttacks.length)];
     }
 
     private String createAuthenticationBypass(String pattern) {
@@ -194,7 +195,7 @@ public class HttpRequestSmugglingAttackGenerator implements TypedGenerator<Strin
                 pattern + "?attack=identity%0d%0aX-User-Role: administrator%0d%0aContent-Length: 35%0d%0a%0d%0aGET /admin/config HTTP/1.1%0d%0aX-Internal-User: admin",
                 pattern + "?method=spoof%0d%0aX-Original-URL: /admin%0d%0aContent-Length: 60%0d%0a%0d%0aPUT /admin/users HTTP/1.1%0d%0aHost: spoofed%0d%0aAuthorization: spoofed"
         };
-        return authBypassAttacks[hashBasedSelection(authBypassAttacks.length)];
+        return authBypassAttacks[randomSelection(authBypassAttacks.length)];
     }
 
     private String createHeaderManipulation(String pattern) {
@@ -207,7 +208,7 @@ public class HttpRequestSmugglingAttackGenerator implements TypedGenerator<Strin
                 pattern + "?attack=replace%0d%0aReferer: http://admin.internal%0d%0aContent-Length: 35%0d%0a%0d%0aGET /internal/api HTTP/1.1%0d%0aReferer: http://evil.com",
                 pattern + "?method=swap%0d%0aUser-Agent: AdminBot/1.0%0d%0aContent-Length: 60%0d%0a%0d%0aPUT /config HTTP/1.1%0d%0aUser-Agent: AttackerBot/2.0"
         };
-        return headerAttacks[hashBasedSelection(headerAttacks.length)];
+        return headerAttacks[randomSelection(headerAttacks.length)];
     }
 
     private String createMethodOverrideSmuggling(String pattern) {
@@ -220,7 +221,7 @@ public class HttpRequestSmugglingAttackGenerator implements TypedGenerator<Strin
                 pattern + "?attack=disguise%0d%0aX-Method: DELETE%0d%0aContent-Length: 35%0d%0a%0d%0aGET /users HTTP/1.1%0d%0aX-HTTP-Method-Override: DELETE",
                 pattern + "?method=hidden%0d%0a_method: PATCH%0d%0aContent-Length: 60%0d%0a%0d%0aPOST /admin/config HTTP/1.1%0d%0aX-Method-Override: PUT"
         };
-        return methodOverrideAttacks[hashBasedSelection(methodOverrideAttacks.length)];
+        return methodOverrideAttacks[randomSelection(methodOverrideAttacks.length)];
     }
 
     private String createUrlRewritingAttack(String pattern) {
@@ -233,7 +234,7 @@ public class HttpRequestSmugglingAttackGenerator implements TypedGenerator<Strin
                 pattern + "?attack=route%0d%0aX-Forwarded-Path: /admin/users%0d%0aContent-Length: 35%0d%0a%0d%0aGET /normal HTTP/1.1%0d%0aX-Original-URL: /admin/delete",
                 pattern + "?method=proxy%0d%0aX-Proxy-URL: /admin/config%0d%0aContent-Length: 60%0d%0a%0d%0aPUT /public/data HTTP/1.1%0d%0aX-Forwarded-URI: /admin"
         };
-        return urlRewriteAttacks[hashBasedSelection(urlRewriteAttacks.length)];
+        return urlRewriteAttacks[randomSelection(urlRewriteAttacks.length)];
     }
 
     private String createRequestHijacking(String pattern) {
@@ -246,7 +247,7 @@ public class HttpRequestSmugglingAttackGenerator implements TypedGenerator<Strin
                 pattern + "?attack=poison%0d%0aContent-Length: 60%0d%0a%0d%0aPOISONED_REQUEST_QUEUEGET /admin/users HTTP/1.1%0d%0aHost: admin%0d%0aX-API-Key: secret",
                 pattern + "?method=queue%0d%0aContent-Length: 35%0d%0a%0d%0aQUEUE_POISONING_ATTACKDELETE /users HTTP/1.1%0d%0aHost: api%0d%0aAuthorization: admin"
         };
-        return hijackingAttacks[hashBasedSelection(hijackingAttacks.length)];
+        return hijackingAttacks[randomSelection(hijackingAttacks.length)];
     }
 
     private String createResponseQueuePoisoning(String pattern) {
@@ -259,7 +260,7 @@ public class HttpRequestSmugglingAttackGenerator implements TypedGenerator<Strin
                 pattern + "?attack=desynchronize%0d%0aContent-Length: 60%0d%0a%0d%0aDESYNC_ATTACK_RESPONSEHTTP/1.1 200 OK%0d%0aSet-Cookie: admin=true%0d%0aContent-Length: 10",
                 pattern + "?method=mismatch%0d%0aContent-Length: 35%0d%0a%0d%0aRESPONSE_MISMATCH_ATTACKHTTP/1.1 301 Moved%0d%0aLocation: javascript:alert(1)"
         };
-        return queuePoisonAttacks[hashBasedSelection(queuePoisonAttacks.length)];
+        return queuePoisonAttacks[randomSelection(queuePoisonAttacks.length)];
     }
 
     private String createWebSocketUpgradeSmuggling(String pattern) {
@@ -272,7 +273,7 @@ public class HttpRequestSmugglingAttackGenerator implements TypedGenerator<Strin
                 pattern + "?attack=handshake%0d%0aSec-WebSocket-Extensions: smuggle%0d%0aUpgrade: websocket%0d%0aContent-Length: 35%0d%0a%0d%0aGET /admin/secrets HTTP/1.1",
                 pattern + "?method=switch%0d%0aConnection: Upgrade%0d%0aUpgrade: websocket%0d%0aContent-Length: 60%0d%0a%0d%0aPUT /admin/websocket HTTP/1.1%0d%0aHost: target"
         };
-        return websocketAttacks[hashBasedSelection(websocketAttacks.length)];
+        return websocketAttacks[randomSelection(websocketAttacks.length)];
     }
 
     private String createChunkedEncodingBypass(String pattern) {
@@ -285,11 +286,20 @@ public class HttpRequestSmugglingAttackGenerator implements TypedGenerator<Strin
                 pattern + "?attack=split%0d%0aTransfer-Encoding: chunked%0d%0a%0d%0a3c%0d%0aGET /admin/config HTTP/1.1%0d%0aHost: target%0d%0aX-Admin: true%0d%0a0%0d%0a%0d%0a",
                 pattern + "?method=fragment%0d%0aTransfer-Encoding: chunked%0d%0a%0d%0a4a%0d%0aPUT /admin/settings HTTP/1.1%0d%0aHost: vulnerable%0d%0aContent-Length: 20%0d%0a0%0d%0a%0d%0a"
         };
-        return chunkedBypassAttacks[hashBasedSelection(chunkedBypassAttacks.length)];
+        return chunkedBypassAttacks[randomSelection(chunkedBypassAttacks.length)];
     }
 
-    private int hashBasedSelection(int max) {
-        return Math.abs(this.hashCode()) % max;
+    /**
+     * Selects a random index in the range {@code [0, max)} using the
+     * cui-test-generator infrastructure. This makes selection seed-reproducible
+     * (governed by the framework seed) while allowing every {@link #next()}
+     * invocation to cover any of the documented attack branches.
+     *
+     * @param max exclusive upper bound (number of choices), must be positive
+     * @return a pseudo-random index in {@code [0, max)}
+     */
+    private int randomSelection(int max) {
+        return Generators.integers(0, max - 1).next();
     }
 
     @Override

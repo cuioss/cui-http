@@ -25,14 +25,14 @@ import java.util.function.Predicate;
  * Core functional interface for HTTP security validation.
  *
  * <p>This interface defines the contract for validating HTTP components against security threats.
- * It follows the "String in, String out, throws on violation" pattern consistently across all
- * implementations, enabling clean functional programming patterns and easy composition.</p>
+ * It follows the "String in, {@code Optional<String>} out, throws on violation" pattern consistently
+ * across all implementations, enabling clean functional programming patterns and easy composition.</p>
  *
  * <h3>Design Principles</h3>
  * <ul>
  *   <li><strong>Functional Interface</strong> - Can be used with lambda expressions and method references</li>
  *   <li><strong>Fail Secure</strong> - Throws UrlSecurityException on any security violation</li>
- *   <li><strong>String/throws Pattern</strong> - Simple contract: input string, output string, throws on failure</li>
+ *   <li><strong>Optional/throws Pattern</strong> - Simple contract: input string, {@code Optional<String>} output, throws on failure</li>
  *   <li><strong>Composable</strong> - Multiple validators can be chained or combined</li>
  *   <li><strong>Thread Safe</strong> - Implementations should be thread-safe for concurrent use</li>
  * </ul>

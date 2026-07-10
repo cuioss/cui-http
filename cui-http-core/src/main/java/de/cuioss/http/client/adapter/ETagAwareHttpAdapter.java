@@ -53,6 +53,13 @@ import static de.cuioss.http.client.HttpLogMessages.WARN;
  *   <li>ETags extracted from all responses for optimistic locking patterns</li>
  * </ul>
  *
+ * <p><strong>Do not supply your own {@code If-None-Match} header.</strong> The adapter manages
+ * conditional GETs itself: when it holds a cached entry for a GET it sets {@code If-None-Match} to
+ * the cached ETag, replacing (not appending to) any caller-supplied value. A caller-driven
+ * conditional request is therefore only partially honored, and on a caching-disabled adapter a
+ * caller-triggered {@code 304} has no cached entry to return and is reported as an
+ * {@code INVALID_CONTENT} failure. Let the adapter drive revalidation instead.</p>
+ *
  * <h2>Example: Basic Usage</h2>
  * <pre>{@code
  * HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
@@ -396,46 +403,20 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             Map<String, String> headers
     ) {
         CacheContext<T> cacheContext = prepareCacheContext(method, body, headers);
-        String cacheKey = cacheContext.cacheKey();
-        CacheEntry<T> cachedEntry = cacheContext.cachedEntry();
 
+        // Serialize the body via the explicit converter. Serialization failures map to
+        // INVALID_CONTENT per the HttpRequestConverter contract (see serializationFailure).
+        HttpRequest.BodyPublisher bodyPublisher;
         try {
-            // Build HTTP request with explicit converter
-            HttpRequest.BodyPublisher bodyPublisher = body == null
+            bodyPublisher = body == null
                     ? HttpRequest.BodyPublishers.noBody()
                     : requestConverter.toBodyPublisher(body);
-
-            HttpRequest.Builder requestBuilder = httpHandler.requestBuilder()
-                    .method(method.methodName(), bodyPublisher);
-
-            // Negotiate content types from the converters (caller headers take precedence)
-            applyContentTypeHeaders(requestBuilder, headers, body != null ? requestConverter.contentType() : null);
-
-            // Add custom headers
-            headers.forEach(requestBuilder::header);
-
-            // Add If-None-Match header if cached entry exists (GET only)
-            if (cachedEntry != null && method == HttpMethod.GET) {
-                requestBuilder.header("If-None-Match", cachedEntry.etag());
-                LOGGER.debug("Adding If-None-Match header for GET request: %s", cachedEntry.etag());
-            }
-
-            HttpRequest request = requestBuilder.build();
-
-            // Execute async request with extracted response handler
-            return executeAsyncRequest(request, method, cachedEntry, cacheKey);
-
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            // Request building failed: invalid method, headers, body publisher, or builder state
-            LOGGER.error(ERROR.REQUEST_BUILD_FAILED, method.methodName(), e.getMessage());
-            return CompletableFuture.completedFuture(
-                    HttpResult.failure(
-                            "Failed to build HTTP request: " + e.getMessage(),
-                            e,
-                            HttpErrorCategory.fromException(e)
-                    )
-            );
+        } catch (IllegalArgumentException e) {
+            return serializationFailure(method, e);
         }
+
+        ContentType requestContentType = body != null ? requestConverter.contentType() : null;
+        return buildAndExecute(method, bodyPublisher, requestContentType, headers, cacheContext);
     }
 
     /**
@@ -496,29 +477,72 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      * @param headers Additional HTTP headers
      * @return CompletableFuture with HttpResult (never null)
      * @throws IllegalArgumentException if safe methods (GET/HEAD/OPTIONS) called with body
+     * @throws IllegalStateException if a body is supplied but no request converter is configured
      */
     private CompletableFuture<HttpResult<T>> send(HttpMethod method, @Nullable T body, Map<String, String> headers) {
         CacheContext<T> cacheContext = prepareCacheContext(method, body, headers);
+
+        // Enforce the documented contract: a request body requires a configured request converter.
+        // Thrown (not returned as a failure) so callers see the promised IllegalStateException rather
+        // than an empty body being sent silently.
+        if (body != null && requestConverter == null) {
+            throw new IllegalStateException(
+                    "No request converter configured: cannot send a %s request body. Configure a requestConverter on the adapter, or use the explicit-converter method overload."
+                            .formatted(method.methodName()));
+        }
+
+        // Serialize the body via the adapter's converter. Serialization failures map to
+        // INVALID_CONTENT per the HttpRequestConverter contract (see serializationFailure).
+        HttpRequest.BodyPublisher bodyPublisher;
+        try {
+            bodyPublisher = buildBodyPublisher(body);
+        } catch (IllegalArgumentException e) {
+            return serializationFailure(method, e);
+        }
+
+        // Content-Type only applies when a body is serialized via the request converter.
+        ContentType requestContentType = body != null && requestConverter != null
+                ? requestConverter.contentType() : null;
+        return buildAndExecute(method, bodyPublisher, requestContentType, headers, cacheContext);
+    }
+
+    /**
+     * Builds the HTTP request from an already-serialized body publisher, negotiates content-type
+     * headers, applies the conditional {@code If-None-Match} header for cached GETs, and executes
+     * the request asynchronously. Shared by {@link #send} and {@link #sendWithConverter} so that
+     * fixes to header/cache/If-None-Match handling land in one place.
+     *
+     * @param method HTTP method
+     * @param bodyPublisher already-serialized request body publisher
+     * @param requestContentType request body content type, or null when there is no body
+     * @param headers caller-supplied headers
+     * @param cacheContext prepared cache key and (optional) cached entry
+     * @return CompletableFuture with HttpResult
+     */
+    private CompletableFuture<HttpResult<T>> buildAndExecute(
+            HttpMethod method,
+            HttpRequest.BodyPublisher bodyPublisher,
+            @Nullable ContentType requestContentType,
+            Map<String, String> headers,
+            CacheContext<T> cacheContext) {
         String cacheKey = cacheContext.cacheKey();
         CacheEntry<T> cachedEntry = cacheContext.cachedEntry();
 
         try {
-            // Build HTTP request
             HttpRequest.Builder requestBuilder = httpHandler.requestBuilder()
-                    .method(method.methodName(), buildBodyPublisher(body));
+                    .method(method.methodName(), bodyPublisher);
 
-            // Negotiate content types from the converters (caller headers take precedence).
-            // Content-Type only applies when a body is serialized via the request converter.
-            ContentType requestContentType = body != null && requestConverter != null
-                    ? requestConverter.contentType() : null;
+            // Negotiate content types from the converters (caller headers take precedence)
             applyContentTypeHeaders(requestBuilder, headers, requestContentType);
 
             // Add custom headers
             headers.forEach(requestBuilder::header);
 
-            // Add If-None-Match header if cached entry exists (GET only)
+            // Add If-None-Match header if cached entry exists (GET only). Uses setHeader (replace),
+            // not header (append), so the adapter's conditional validator wins over any caller-
+            // supplied If-None-Match instead of sending two conflicting values.
             if (cachedEntry != null && method == HttpMethod.GET) {
-                requestBuilder.header("If-None-Match", cachedEntry.etag());
+                requestBuilder.setHeader("If-None-Match", cachedEntry.etag());
                 LOGGER.debug("Adding If-None-Match header for GET request: %s", cachedEntry.etag());
             }
 
@@ -528,7 +552,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             return executeAsyncRequest(request, method, cachedEntry, cacheKey);
 
         } catch (IllegalArgumentException | IllegalStateException e) {
-            // Request building failed: invalid method, headers, body publisher, or builder state
+            // Request building failed: invalid method, headers, or builder state
             LOGGER.error(ERROR.REQUEST_BUILD_FAILED, method.methodName(), e.getMessage());
             return CompletableFuture.completedFuture(
                     HttpResult.failure(
@@ -538,6 +562,28 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
                     )
             );
         }
+    }
+
+    /**
+     * Produces the failure result for a request-body serialization error.
+     *
+     * <p>Per the {@link HttpRequestConverter} contract, a serialization failure surfaces as an
+     * {@link IllegalArgumentException} and is mapped to {@link HttpErrorCategory#INVALID_CONTENT}
+     * (a client-data problem), not {@code CONFIGURATION_ERROR}.</p>
+     *
+     * @param method HTTP method for logging
+     * @param e the serialization failure
+     * @return a completed future with an INVALID_CONTENT failure result
+     */
+    private CompletableFuture<HttpResult<T>> serializationFailure(HttpMethod method, IllegalArgumentException e) {
+        LOGGER.warn(WARN.REQUEST_SERIALIZATION_FAILED, method.methodName(), e.getMessage());
+        return CompletableFuture.completedFuture(
+                HttpResult.failure(
+                        "Failed to serialize request body: " + e.getMessage(),
+                        e,
+                        HttpErrorCategory.INVALID_CONTENT
+                )
+        );
     }
 
     /**
@@ -617,7 +663,10 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         filteredEntries.sort(Map.Entry.comparingByKey(String.CASE_INSENSITIVE_ORDER));
         for (Map.Entry<String, String> entry : filteredEntries) {
             keyBuilder.append('|');
-            keyBuilder.append(escapeCacheKeyToken(entry.getKey()));
+            // Normalize the header name to lower case so that maps differing only in header-name
+            // case (e.g. "Accept-Language" vs "accept-language" - identical on the wire) resolve to
+            // the same cache entry instead of duplicate downloads.
+            keyBuilder.append(escapeCacheKeyToken(entry.getKey().toLowerCase(Locale.ROOT)));
             keyBuilder.append(':');
             keyBuilder.append(escapeCacheKeyToken(entry.getValue()));
         }
@@ -644,15 +693,12 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
     }
 
     /**
-     * Builds HTTP request body publisher.
+     * Builds the HTTP request body publisher using the adapter's request converter.
      *
-     * <p>
-     * Returns noBody() if:
-     * </p>
-     * <ul>
-     *   <li>Body is null (safe methods like GET/HEAD/OPTIONS)</li>
-     *   <li>Request converter not configured</li>
-     * </ul>
+     * <p>Returns {@code noBody()} for a null body (e.g. GET/HEAD/OPTIONS). A non-null body with no
+     * configured request converter is rejected by the caller ({@link #send}) with
+     * {@link IllegalStateException} before this method is reached, so the null-converter guard here
+     * only ever applies to the null-body case.</p>
      *
      * @param body Request body (nullable)
      * @return BodyPublisher for the request
@@ -758,6 +804,12 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         // Handle 304 Not Modified - return cached content
         if (statusCode == 304 && cachedEntry != null) {
             LOGGER.debug("304 Not Modified - returning cached content");
+            // Refresh the entry's timestamp on successful revalidation so that hot entries
+            // (revalidated frequently) are not evicted before cold entries under the timestamp-based
+            // eviction heuristic. Only GET responses are cached, so this only applies to GET.
+            if (method == HttpMethod.GET) {
+                putInCache(cacheKey, new CacheEntry<>(cachedEntry.content(), cachedEntry.etag(), System.currentTimeMillis()));
+            }
             return HttpResult.<T>success(cachedEntry.content(), cachedEntry.etag(), 304);
         }
 
@@ -794,15 +846,17 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             return HttpResult.<T>success(content.orElse(null), etag, statusCode);
         }
 
-        // Return failure for error status codes
+        // Return failure for error status codes. When a cached entry is in hand (a GET that was
+        // revalidated but the server returned an error instead of 304), surface it as fallback
+        // content so callers can degrade gracefully - the documented "Failure with fallback" state.
         HttpErrorCategory errorCategory = HttpStatusFamily.fromStatusCode(statusCode).toErrorCategory();
 
         return HttpResult.<T>failureWithFallback(
                 "HTTP %d: %s".formatted(statusCode, method.methodName()),
                 null,
-                null, // no fallback content
+                cachedEntry != null ? cachedEntry.content() : null, // fallback to cached content when available
                 errorCategory,
-                null, // no cached ETag
+                cachedEntry != null ? cachedEntry.etag() : null, // cached ETag when available
                 statusCode // include HTTP status code
         );
     }
@@ -817,7 +871,9 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      * @throws IllegalArgumentException if safe method called with body
      */
     private CacheContext<T> prepareCacheContext(HttpMethod method, @Nullable Object body, Map<String, String> headers) {
-        // Validate safe methods don't have bodies
+        // Defensive guard: the public methods for safe methods (GET/HEAD/OPTIONS) always pass a null
+        // body, so this is not reachable via the public API. It is retained to fail fast on a
+        // programming error if a body is ever routed to a safe method internally.
         if (method.isSafe() && body != null) {
             throw new IllegalArgumentException(
                     "Safe method %s must not have a request body".formatted(method.methodName())

@@ -99,7 +99,8 @@ public class SecurityEventCounter {
      * type has been observed, a new counter will be created and initialized to the delta value.</p>
      *
      * @param failureType The type of security failure to increment. Must not be null.
-     * @param delta The amount to add to the counter. Must be positive.
+     * @param delta The amount to add to the counter. Must be non-negative (&gt;= 0);
+     *              a delta of zero is permitted and leaves the counter unchanged.
      * @return The new count value after incrementing
      * @throws NullPointerException if failureType is null
      * @throws IllegalArgumentException if delta is negative

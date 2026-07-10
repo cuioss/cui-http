@@ -15,7 +15,6 @@
  */
 package de.cuioss.http.client.handler;
 
-import de.cuioss.http.client.HttpLogMessages;
 import de.cuioss.tools.collect.CollectionLiterals;
 import de.cuioss.tools.logging.CuiLogger;
 import org.jspecify.annotations.Nullable;
@@ -29,8 +28,8 @@ import java.util.Set;
 /**
  * Provider for secure SSL contexts used in HTTPS communications.
  * <p>
- * This class enforces secure TLS versions when establishing connections to JWKS endpoints
- * and other services. It ensures that only modern, secure TLS protocols are used:
+ * This class enforces secure TLS versions when establishing HTTPS connections.
+ * It ensures that only modern, secure TLS protocols are used:
  * <ul>
  *   <li>TLS 1.2 - Minimum recommended version</li>
  *   <li>TLS 1.3 - Preferred when available</li>
@@ -75,9 +74,14 @@ public record SecureSSLContextProvider(String minimumTlsVersion) {
     public static final String DEFAULT_TLS_VERSION = TLS_V1_2;
 
     /**
-     * TLS version 1.0 - Insecure, deprecated
+     * TLS version 1.0 - Insecure, deprecated.
+     * <p>
+     * Uses the canonical JSSE protocol name {@code "TLSv1"} (not {@code "TLSv1.0"}), so that
+     * {@link #FORBIDDEN_TLS_VERSIONS} can match the protocol string reported by a real TLS 1.0
+     * {@link SSLContext}.
+     * </p>
      */
-    public static final String TLS_V1_0 = "TLSv1.0";
+    public static final String TLS_V1_0 = "TLSv1";
 
     /**
      * TLS version 1.1 - Insecure, deprecated
@@ -204,50 +208,47 @@ public record SecureSSLContextProvider(String minimumTlsVersion) {
     }
 
     /**
-     * Validates the provided SSLContext and returns a secure SSLContext.
+     * Returns an SSLContext for HTTPS, honoring a caller-supplied context as-is.
      * <p>
      * This method:
      * <ol>
-     *   <li>If the provided SSLContext is null, creates a new secure SSLContext</li>
-     *   <li>If the provided SSLContext is not null, checks if its protocol is secure</li>
-     *   <li>If the protocol is secure, returns the provided SSLContext</li>
-     *   <li>If the protocol is not secure, creates a new secure SSLContext</li>
-     *   <li>If a secure context cannot be created, fails hard with {@link IllegalStateException}</li>
+     *   <li>If the provided SSLContext is null, creates a new secure SSLContext backed by the
+     *       JVM default trust store</li>
+     *   <li>If the provided SSLContext is not null, returns it <strong>unchanged</strong> so that
+     *       any custom {@code TrustManager}/{@code KeyManager} (including mutual-TLS identity
+     *       material) is preserved</li>
+     *   <li>If a secure context cannot be created (null case only), fails hard with
+     *       {@link IllegalStateException}</li>
      * </ol>
      * <p>
-     * Note that the returned context's reported protocol is only part of the guarantee:
-     * {@link HttpHandler} additionally pins the enabled protocols via
-     * {@link #getEnabledProtocols()} so that the minimum version is enforced on the wire.
+     * The context's reported protocol string is intentionally <em>not</em> used to accept or reject
+     * a caller-supplied context. That string is unreliable (e.g. {@code SSLContext.getDefault()}
+     * reports {@code "Default"}, and a {@code "TLSv1.2"} context can still negotiate TLS 1.3), and
+     * rejecting on it would silently drop the caller's trust material. The minimum version is
+     * instead enforced on the wire by {@link HttpHandler}, which pins the enabled protocols via
+     * {@link #getEnabledProtocols()} using {@code SSLParameters.setProtocols(...)}. That pinning is
+     * the real TLS floor, so an older protocol simply cannot be negotiated regardless of the
+     * provided context's default protocol object.
      *
-     * @param sslContext the SSLContext to validate, may be null
-     * @return a secure SSLContext, either the validated input or a newly created one (never null)
-     * @throws IllegalStateException if a secure SSLContext cannot be created
+     * @param sslContext the SSLContext to use, may be null
+     * @return the caller-supplied context unchanged, or a newly created secure context when null
+     *         (never null)
+     * @throws IllegalStateException if a secure SSLContext cannot be created (null-input case)
      */
     public SSLContext getOrCreateSecureSSLContext(@Nullable SSLContext sslContext) {
+        if (sslContext != null) {
+            // Trust the caller's context verbatim. Its TrustManager/KeyManager (e.g. mTLS identity)
+            // must not be discarded; the TLS floor is enforced separately via SSLParameters pinning
+            // in HttpHandler (see getEnabledProtocols()).
+            LOGGER.debug("Using caller-provided SSL context (protocol=%s); TLS floor is enforced "
+                    + "on the wire via SSLParameters pinning", sslContext.getProtocol());
+            return sslContext;
+        }
         try {
-            if (sslContext != null) {
-                // Validate the provided SSL context
-                String protocol = sslContext.getProtocol();
-                LOGGER.debug("SSL context protocol: %s", protocol);
-
-                // Check if the protocol is secure according to the configured TLS versions
-                if (isSecureTlsVersion(protocol)) {
-                    // The provided context was secure and is being used
-                    LOGGER.debug("Using provided SSL context with protocol: %s", protocol);
-                    return sslContext;
-                }
-
-                // If not secure, create a new secure context
-                LOGGER.warn(HttpLogMessages.WARN.SSL_INSECURE_PROTOCOL, protocol);
-                SSLContext secureContext = createSecureSSLContext();
-                LOGGER.debug("Created secure SSL context with minimum TLS version: %s", minimumTlsVersion);
-                return secureContext;
-            } else {
-                // If no context provided, create a new secure one
-                SSLContext secureContext = createSecureSSLContext();
-                LOGGER.debug("No SSL context provided, created secure context with minimum TLS version: %s", minimumTlsVersion);
-                return secureContext;
-            }
+            // If no context provided, create a new secure one
+            SSLContext secureContext = createSecureSSLContext();
+            LOGGER.debug("No SSL context provided, created secure context with minimum TLS version: %s", minimumTlsVersion);
+            return secureContext;
         } catch (NoSuchAlgorithmException | KeyStoreException | KeyManagementException e) {
             // If a secure context cannot be created, we must fail hard.
             throw new IllegalStateException("Failed to create a secure SSL context", e);

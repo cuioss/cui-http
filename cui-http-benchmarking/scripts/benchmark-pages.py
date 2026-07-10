@@ -153,7 +153,6 @@ def assemble(args: argparse.Namespace) -> None:
     # Summary
     print(f"\nAssembled deployment artifacts in {output_dir}/")
     for entry in sorted(output_dir.iterdir()):
-        kind = "dir" if entry.is_dir() else "file"
         print(f"  {entry.name}/ " if entry.is_dir() else f"  {entry.name}")
 
 
@@ -196,7 +195,8 @@ def main() -> None:
     )
     asm.add_argument(
         "--commit-sha", required=True,
-        help="Git commit SHA for metadata and history archive naming",
+        help="Git commit SHA recorded in the deployment metadata.json (metadata only; "
+             "history archive naming is handled Maven-side by HistoricalDataManager)",
     )
     asm.add_argument(
         "--max-history", type=int, default=_DEFAULT_MAX_HISTORY,

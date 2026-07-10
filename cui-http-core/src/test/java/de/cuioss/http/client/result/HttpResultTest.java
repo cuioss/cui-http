@@ -133,14 +133,8 @@ class HttpResultTest {
             String fallback = strings.next();
             String etag = strings.next();
 
-            HttpResult<String> result = HttpResult.Failure.<String>builder()
-                    .errorMessage("Error")
-                    .cause(cause)
-                    .fallbackContent(fallback)
-                    .category(HttpErrorCategory.SERVER_ERROR)
-                    .etag(etag)
-                    .httpStatus(500)
-                    .build();
+            HttpResult<String> result = HttpResult.failureWithFallback(
+                    "Error", cause, fallback, HttpErrorCategory.SERVER_ERROR, etag, 500);
 
             assertFalse(result.isSuccess());
             assertTrue(result.getErrorMessage().isPresent());
@@ -155,10 +149,8 @@ class HttpResultTest {
 
         @Test
         void shouldBuildMinimalFailure() {
-            HttpResult<String> result = HttpResult.Failure.<String>builder()
-                    .errorMessage("Error")
-                    .category(HttpErrorCategory.INVALID_CONTENT)
-                    .build();
+            HttpResult<String> result = HttpResult.failure(
+                    "Error", null, HttpErrorCategory.INVALID_CONTENT);
 
             assertFalse(result.isSuccess());
             assertTrue(result.getErrorMessage().isPresent());

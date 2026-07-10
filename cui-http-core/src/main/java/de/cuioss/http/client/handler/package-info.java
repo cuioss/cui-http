@@ -34,7 +34,10 @@
  *
  * // Execute request with proper error handling
  * try {
- *     HttpResponse&lt;String&gt; response = handler.executeGetRequest();
+ *     HttpClient client = handler.createHttpClient();
+ *     HttpResponse&lt;String&gt; response = client.send(
+ *         handler.requestBuilder().GET().build(),
+ *         HttpResponse.BodyHandlers.ofString());
  *     if (HttpStatusFamily.isSuccess(response.statusCode())) {
  *         processData(response.body());
  *     } else if (HttpStatusFamily.isClientError(response.statusCode())) {

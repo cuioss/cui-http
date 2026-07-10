@@ -65,14 +65,14 @@ Defines the security-specific requirements and controls:
 |===
 | Category | Total | Functional | Security
 
-| **Total Requirements** | 36 | 19 | 17
+| **Total Requirements** | 37 | 19 | 18
 | **General/OWASP** | 5 | 3 (HTTP-1 to HTTP-3) | 2 (SEC-1 to SEC-2)
 | **Validation/Path** | 11 | 6 (HTTP-4 to HTTP-9) | 5 (SEC-3 to SEC-7)
 | **Configuration/Cryptographic** | 4 | 2 (HTTP-13 to HTTP-14) | 2 (SEC-13 to SEC-14)
 | **Error/Monitoring** | 4 | 2 (HTTP-15 to HTTP-16) | 2 (SEC-11 to SEC-12)
 | **Integration** | 2 | 1 (HTTP-17) | 1 (SEC-17)
 | **Performance/DoS** | 4 | 2 (HTTP-18 to HTTP-19) | 2 (SEC-9 to SEC-10)
-| **Character/Audit/Updates** | 6 | 3 (HTTP-10 to HTTP-12) | 3 (SEC-8, SEC-15 to SEC-16, SEC-18)
+| **Character/Audit/Updates** | 7 | 3 (HTTP-10 to HTTP-12) | 4 (SEC-8, SEC-15 to SEC-16, SEC-18)
 |===
 
 == Requirement Prefixes

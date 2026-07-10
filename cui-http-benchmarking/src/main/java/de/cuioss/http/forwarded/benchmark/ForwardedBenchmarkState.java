@@ -29,7 +29,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
 /**
@@ -66,9 +65,22 @@ public class ForwardedBenchmarkState {
             Map.of("X-Forwarded-Prefix", "/app\\..\\..", "X-Forwarded-For", "not-an-ip, 10.0.0.5"),
             Map.of("X-Forwarded-Proto", "javascript:alert(1)", "X-Forwarded-Host", "evil.com/../../etc"));
 
-    private final AtomicInteger cleanIndex = new AtomicInteger(0);
-    private final AtomicInteger forwardedIndex = new AtomicInteger(0);
-    private final AtomicInteger attackIndex = new AtomicInteger(0);
+    // Pre-built header accessors, one bound {@code map::get} per header set, so no Function is
+    // allocated inside the measured region.
+    private static final List<Function<String, String>> CLEAN_ACCESSORS = toAccessors(CLEAN_XFORWARDED);
+    private static final List<Function<String, String>> FORWARDED_ACCESSORS = toAccessors(FORWARDED_RFC);
+    private static final List<Function<String, String>> ATTACK_ACCESSORS = toAccessors(ATTACK_XFORWARDED);
+
+    private static List<Function<String, String>> toAccessors(List<Map<String, String>> headerSets) {
+        return headerSets.stream().<Function<String, String>>map(m -> m::get).toList();
+    }
+
+    // Plain int counters: @State(Scope.Thread) allocates one instance per benchmark thread,
+    // so no cross-thread synchronization is required. The & Integer.MAX_VALUE guard keeps the
+    // modulo index non-negative after the counter overflows past Integer.MAX_VALUE.
+    private int cleanIndex;
+    private int forwardedIndex;
+    private int attackIndex;
 
     @Setup(Level.Trial)
     public void setup() {
@@ -83,16 +95,16 @@ public class ForwardedBenchmarkState {
 
     /** @return the next clean {@code X-Forwarded-*} header accessor, cycling. */
     public Function<String, String> nextCleanXForwarded() {
-        return CLEAN_XFORWARDED.get((cleanIndex.getAndIncrement() & Integer.MAX_VALUE) % CLEAN_XFORWARDED.size())::get;
+        return CLEAN_ACCESSORS.get((cleanIndex++ & Integer.MAX_VALUE) % CLEAN_ACCESSORS.size());
     }
 
     /** @return the next RFC 7239 {@code Forwarded} header accessor, cycling. */
     public Function<String, String> nextForwarded() {
-        return FORWARDED_RFC.get((forwardedIndex.getAndIncrement() & Integer.MAX_VALUE) % FORWARDED_RFC.size())::get;
+        return FORWARDED_ACCESSORS.get((forwardedIndex++ & Integer.MAX_VALUE) % FORWARDED_ACCESSORS.size());
     }
 
     /** @return the next injection header accessor, cycling. */
     public Function<String, String> nextAttack() {
-        return ATTACK_XFORWARDED.get((attackIndex.getAndIncrement() & Integer.MAX_VALUE) % ATTACK_XFORWARDED.size())::get;
+        return ATTACK_ACCESSORS.get((attackIndex++ & Integer.MAX_VALUE) % ATTACK_ACCESSORS.size());
     }
 }

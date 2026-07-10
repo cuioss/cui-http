@@ -26,7 +26,6 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
 import java.util.Optional;
-import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 /**
@@ -310,10 +309,13 @@ ValidationType validationType) implements HttpSecurityValidator {
      * @throws UrlSecurityException if a security-critical character is found
      */
     private void validateDecodedCharacters(String originalInput, String decoded) throws UrlSecurityException {
-        for (int i = 0; i < decoded.length(); i++) {
-            char ch = decoded.charAt(i);
+        // Iterate by Unicode code point (not char) so that supplementary-plane combining marks,
+        // which arrive as surrogate pairs, are classified against their real code point rather
+        // than an individual surrogate half.
+        for (int i = 0; i < decoded.length(); ) {
+            int cp = decoded.codePointAt(i);
 
-            if (ch == '\0' && !config.allowNullBytes()) {
+            if (cp == '\0' && !config.allowNullBytes()) {
                 throw UrlSecurityException.builder()
                         .failureType(UrlSecurityFailureType.NULL_BYTE_INJECTION)
                         .validationType(validationType)
@@ -322,17 +324,17 @@ ValidationType validationType) implements HttpSecurityValidator {
                         .build();
             }
 
-            if (CharacterValidationConstants.isCombiningMark(ch)) {
+            if (CharacterValidationConstants.isCombiningMark(cp)) {
                 throw UrlSecurityException.builder()
                         .failureType(UrlSecurityFailureType.INVALID_CHARACTER)
                         .validationType(validationType)
                         .originalInput(originalInput)
-                        .detail("Decoded combining character (U+" + Integer.toHexString(ch).toUpperCase()
+                        .detail("Decoded combining character (U+" + Integer.toHexString(cp).toUpperCase()
                                 + ") at position " + i)
                         .build();
             }
 
-            if ((ch == '\r' || ch == '\n') && decodedLineBreakForbidden()) {
+            if ((cp == '\r' || cp == '\n') && decodedLineBreakForbidden()) {
                 throw UrlSecurityException.builder()
                         .failureType(UrlSecurityFailureType.CONTROL_CHARACTERS)
                         .validationType(validationType)
@@ -344,14 +346,16 @@ ValidationType validationType) implements HttpSecurityValidator {
             // Parameter names are structural: a decoded delimiter (=, &, ;, space) would split
             // the name and enable parameter-injection. These are legitimate inside a parameter
             // VALUE (form data), so this rule is name-only.
-            if (validationType == ValidationType.PARAMETER_NAME && isParameterNameDelimiter(ch)) {
+            if (validationType == ValidationType.PARAMETER_NAME && isParameterNameDelimiter(cp)) {
                 throw UrlSecurityException.builder()
                         .failureType(UrlSecurityFailureType.INVALID_CHARACTER)
                         .validationType(validationType)
                         .originalInput(originalInput)
-                        .detail("Decoded parameter-name delimiter '" + ch + "' at position " + i)
+                        .detail("Decoded parameter-name delimiter '" + (char) cp + "' at position " + i)
                         .build();
             }
+
+            i += Character.charCount(cp);
         }
     }
 
@@ -359,7 +363,7 @@ ValidationType validationType) implements HttpSecurityValidator {
      * Characters that delimit parameters in a query string and therefore must not appear
      * inside a decoded parameter <em>name</em>.
      */
-    private static boolean isParameterNameDelimiter(char ch) {
+    private static boolean isParameterNameDelimiter(int ch) {
         return ch == '&' || ch == '=' || ch == ';' || ch == ' ';
     }
 
@@ -376,21 +380,5 @@ ValidationType validationType) implements HttpSecurityValidator {
             case PARAMETER_VALUE, BODY -> false;
         };
     }
-
-    /**
-     * Creates a conditional validator that only processes non-null, non-empty inputs.
-     *
-     * @return A conditional HttpSecurityValidator that skips null/empty inputs
-     */
-    @Override
-    public HttpSecurityValidator when(Predicate<String> condition) {
-        return input -> {
-            if (input == null || !condition.test(input)) {
-                return Optional.ofNullable(input);
-            }
-            return validate(input);
-        };
-    }
-
 
 }

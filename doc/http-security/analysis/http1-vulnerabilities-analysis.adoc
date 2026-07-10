@@ -348,9 +348,9 @@ The cui-http library provides HTTP **component** validation (headers, paths, par
 
 3. **Pattern Matching:** link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Attack pattern detection
 
-4. **Test Coverage:** 395+ tests total
-   * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] (200 tests)
-   * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java[HttpHeaderInjectionAttackTest] (195 tests)
+4. **Test Coverage:** 553 tests total
+   * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] (395 tests)
+   * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java[HttpHeaderInjectionAttackTest] (158 tests: 150 generated + 8 fixed)
    * Generator-based testing with reproducible patterns
 
 ==== Usage Guide for Library Users
@@ -478,11 +478,14 @@ Transfer-Encoding: identity
 
 All request smuggling patterns are tested using parameterized tests with generators:
 
-**Test Class:** link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest]
+**Test Classes:**
+
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] - generator-driven CL.TE/TE.CL/TE.TE/CL.CL and related smuggling patterns
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/Http1VulnerabilitiesTest.java[Http1VulnerabilitiesTest] - focused regression cases for the specific HTTP/1.x parser-differential vectors analysed in this document
 
 **Test Generator:** link:../../../cui-http-core/src/test/java/de/cuioss/http/security/generators/injection/HttpRequestSmugglingAttackGenerator.java[HttpRequestSmugglingAttackGenerator]
 
-**Test Coverage (200 total test cases):**
+**Test Coverage (395 total test cases):**
 
 1. **CL.TE Smuggling**: 25 parameterized tests covering Content-Length/Transfer-Encoding conflicts
 2. **TE.CL Smuggling**: 25 parameterized tests covering Transfer-Encoding/Content-Length conflicts
@@ -578,7 +581,7 @@ All request smuggling patterns are tested using parameterized tests with generat
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] - Header component validation
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - CRLF and control character detection
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Attack pattern detection
-* Comprehensive test coverage (395+ tests)
+* Comprehensive test coverage (553 tests across HttpRequestSmugglingAttackTest and HttpHeaderInjectionAttackTest)
 
 **Infrastructure-Level Protection (Required):**
 

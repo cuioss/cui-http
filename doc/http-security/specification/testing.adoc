@@ -17,8 +17,8 @@ Testing framework for HTTP security validation with generator-based testing, att
 ----
 src/test/java/de/cuioss/http/security/
 ├── config/                                  # Configuration tests
-│   ├── SecurityConfigurationTest.java
 │   ├── SecurityConfigurationBuilderTest.java
+│   ├── SecurityConfigurationTest.java
 │   └── SecurityDefaultsTest.java
 │
 ├── core/                                    # Core component tests
@@ -26,56 +26,76 @@ src/test/java/de/cuioss/http/security/
 │   ├── UrlSecurityFailureTypeTest.java
 │   └── ValidationTypeTest.java
 │
-├── database/                                # Attack pattern databases
-│   ├── AttackDatabase.java                 # Database interface
-│   ├── AttackTestCase.java                 # Test case record
-│   ├── ApacheCVEAttackDatabase.java        # Apache CVE patterns
-│   ├── HomographAttackDatabase.java        # Unicode homograph attacks
-│   ├── IDNAttackDatabase.java              # Internationalized domain attacks
-│   ├── IISCVEAttackDatabase.java           # IIS CVE patterns
-│   ├── IPv6AttackDatabase.java             # IPv6 address exploits
-│   ├── NginxCVEAttackDatabase.java         # Nginx CVE patterns
-│   ├── OWASPTop10AttackDatabase.java       # OWASP Top 10 patterns
-│   └── ProtocolHandlerAttackDatabase.java  # Protocol handler exploits
+├── data/                                    # Data-model tests
+│   ├── AttributeParserTest.java
+│   ├── CookieTest.java
+│   ├── HTTPBodyTest.java
+│   └── URLParameterTest.java
+│
+├── database/                                # Attack & legitimate pattern databases
+│   ├── AttackDatabase.java                  # Attack-database interface
+│   ├── AttackTestCase.java                  # Attack test-case record
+│   ├── LegitimateTestCase.java              # Legitimate test-case record
+│   ├── package-info.java
+│   ├── ApacheCVEAttackDatabase.java         # Apache CVE patterns
+│   ├── HomographAttackDatabase.java         # Unicode homograph attacks
+│   ├── IDNAttackDatabase.java               # Internationalized domain attacks
+│   ├── IISCVEAttackDatabase.java            # IIS CVE patterns
+│   ├── IPv6AttackDatabase.java              # IPv6 address exploits
+│   ├── ModSecurityCRSAttackDatabase.java    # ModSecurity CRS patterns
+│   ├── NginxCVEAttackDatabase.java          # Nginx CVE patterns
+│   ├── OWASPTop10AttackDatabase.java        # OWASP Top 10 patterns
+│   ├── OWASPZAPAttackDatabase.java          # OWASP ZAP scanner patterns
+│   ├── ProtocolHandlerAttackDatabase.java   # Protocol handler exploits
+│   ├── EdgeCaseValidURLsDatabase.java       # Legitimate edge-case URLs
+│   ├── LegitimatePathPatternsDatabase.java  # Legitimate path patterns
+│   ├── LegitimatePatternDatabase.java       # Legitimate-pattern interface
+│   └── LegitimateSpecialCharactersDatabase.java # Legitimate special chars
 │
 ├── exceptions/                              # Exception handling tests
 │   └── UrlSecurityExceptionTest.java
 │
-├── generators/                              # Test data generators (organized by type)
-│   ├── AllGeneratorsIntegrationTest.java   # Generator integration tests
+├── generators/                              # Test data generators + their tests (by type)
+│   ├── AllGeneratorsIntegrationTest.java
 │   ├── SupportedValidationTypeGenerator.java
-│   ├── cookie/                             # Cookie generators
-│   │   ├── AttackCookieGenerator.java
-│   │   └── ValidCookieGenerator.java
-│   ├── encoding/                           # Encoding attack generators
-│   │   ├── BoundaryFuzzingGenerator.java
-│   │   ├── DoubleEncodingAttackGenerator.java
-│   │   ├── EncodingCombinationGenerator.java
-│   │   ├── PathTraversalGenerator.java
-│   │   ├── UnicodeAttackGenerator.java
+│   ├── SupportedValidationTypeGeneratorContractTest.java
+│   ├── cookie/
+│   │   ├── AttackCookieGenerator.java / AttackCookieGeneratorTest.java
+│   │   ├── CookieNameAsciiWhitespaceGenerator.java
+│   │   ├── CookieNameLegacyParsingGenerator.java
+│   │   ├── CookieNameUnicodeWhitespaceGenerator.java
+│   │   ├── CookieNameZeroWidthGenerator.java
+│   │   └── ValidCookieGenerator.java / ValidCookieGeneratorTest.java
+│   ├── encoding/
+│   │   ├── BoundaryFuzzingGenerator.java / BoundaryFuzzingGeneratorTest.java
+│   │   ├── DoubleEncodingAttackGenerator.java / DoubleEncodingAttackGeneratorTest.java
+│   │   ├── EncodingCombinationGenerator.java / EncodingCombinationGeneratorTest.java
+│   │   ├── PathTraversalGenerator.java / PathTraversalGeneratorTest.java
+│   │   ├── UnicodeAttackGenerator.java / UnicodeAttackGeneratorTest.java
 │   │   ├── UnicodeControlCharacterAttackGenerator.java
 │   │   └── UnicodeNormalizationAttackGenerator.java
-│   ├── header/                             # HTTP header generators
+│   ├── header/
 │   │   ├── HttpHeaderInjectionAttackGenerator.java
-│   │   ├── HTTPHeaderInjectionGenerator.java
-│   │   ├── InvalidHTTPHeaderNameGenerator.java
-│   │   ├── ValidHTTPHeaderNameGenerator.java
+│   │   ├── HTTPHeaderInjectionGenerator.java / HTTPHeaderInjectionGeneratorTest.java
+│   │   ├── InvalidHTTPHeaderNameGenerator.java / InvalidHTTPHeaderNameGeneratorTest.java
+│   │   ├── ValidHTTPHeaderNameGenerator.java / ValidHTTPHeaderNameGeneratorTest.java
 │   │   └── ValidHTTPHeaderValueGenerator.java
-│   ├── injection/                          # Protocol injection generators
-│   │   ├── HttpRequestSmugglingAttackGenerator.java
-│   │   └── ProtocolHandlerAttackGenerator.java
-│   └── url/                                # URL-specific generators
+│   ├── injection/
+│   │   ├── HttpRequestSmugglingAttackGenerator.java / HttpRequestSmugglingAttackGeneratorTest.java
+│   │   ├── ProtocolHandlerAttackGenerator.java
+│   │   └── URLLengthLimitAttackGeneratorTest.java
+│   └── url/
 │       ├── AttackURLParameterGenerator.java
-│       ├── InvalidURLGenerator.java
+│       ├── InvalidURLGenerator.java / InvalidURLGeneratorTest.java
 │       ├── NullByteInjectionParameterGenerator.java
-│       ├── NullByteURLGenerator.java
-│       ├── PathTraversalParameterGenerator.java
-│       ├── PathTraversalURLGenerator.java
+│       ├── NullByteURLGenerator.java / NullByteURLGeneratorTest.java
+│       ├── PathTraversalParameterGenerator.java / PathTraversalParameterGeneratorTest.java
+│       ├── PathTraversalURLGenerator.java / PathTraversalURLGeneratorTest.java
 │       ├── URLLengthLimitAttackGenerator.java
-│       ├── ValidURLGenerator.java
-│       ├── ValidURLParameterGenerator.java
+│       ├── ValidURLGenerator.java / ValidURLGeneratorTest.java
+│       ├── ValidURLParameterGenerator.java / ValidURLParameterGeneratorTest.java
 │       ├── ValidURLParameterStringGenerator.java
-│       └── ValidURLPathGenerator.java
+│       └── ValidURLPathGenerator.java / ValidURLPathGeneratorTest.java
 │
 ├── monitoring/                              # Security monitoring tests
 │   └── SecurityEventCounterTest.java
@@ -86,33 +106,44 @@ src/test/java/de/cuioss/http/security/
 │   ├── URLParameterValidationPipelineTest.java
 │   └── URLPathValidationPipelineTest.java
 │
-├── tests/                                   # Attack-specific test classes
-│   ├── ApacheCVEAttackDatabaseTest.java    # Apache CVE database tests
-│   ├── DoubleEncodingAttackTest.java       # Double encoding attacks
-│   ├── EncodedPathTraversalAttackTest.java # Encoded traversal tests
-│   ├── HomographAttackDatabaseTest.java    # Homograph database tests
-│   ├── HttpHeaderInjectionAttackTest.java  # Header injection tests
-│   ├── HttpRequestSmugglingAttackTest.java # Request smuggling tests
-│   ├── IDNAttackDatabaseTest.java          # IDN database tests
-│   ├── IISCVEAttackDatabaseTest.java       # IIS CVE database tests
-│   ├── IPv6AttackDatabaseTest.java         # IPv6 database tests
-│   ├── MixedEncodingAttackTest.java        # Mixed encoding tests
-│   ├── NginxCVEAttackDatabaseTest.java     # Nginx CVE database tests
-│   ├── NullBytePathTraversalAttackTest.java # Null byte traversal tests
-│   ├── OWASPTop10AttackDatabaseTest.java   # OWASP database tests
-│   ├── PathTraversalAttackTest.java        # Path traversal tests
-│   ├── ProtocolHandlerAttackTest.java      # Protocol handler tests
-│   ├── UnicodeControlCharacterAttackTest.java # Unicode control tests
-│   ├── UnicodeNormalizationAttackTest.java # Unicode normalization tests
-│   ├── UnicodePathTraversalAttackTest.java # Unicode traversal tests
-│   └── URLLengthLimitAttackTest.java       # URL length limit tests
+├── tests/                                   # Attack-specific test classes (26)
+│   ├── ApacheCVEAttackDatabaseTest.java
+│   ├── CookieChaosAttackTest.java
+│   ├── DoubleEncodingAttackTest.java
+│   ├── EdgeCaseValidURLsDatabaseTest.java
+│   ├── EncodedPathTraversalAttackTest.java
+│   ├── HomographAttackDatabaseTest.java
+│   ├── Http1VulnerabilitiesTest.java
+│   ├── HttpHeaderInjectionAttackTest.java
+│   ├── HttpRequestSmugglingAttackTest.java
+│   ├── IDNAttackDatabaseTest.java
+│   ├── IISCVEAttackDatabaseTest.java
+│   ├── IPv6AttackDatabaseTest.java
+│   ├── LegitimatePathPatternsDatabaseTest.java
+│   ├── LegitimateSpecialCharactersDatabaseTest.java
+│   ├── MixedEncodingAttackTest.java
+│   ├── ModSecurityCRSAttackDatabaseTest.java
+│   ├── NginxCVEAttackDatabaseTest.java
+│   ├── NullBytePathTraversalAttackTest.java
+│   ├── OWASPTop10AttackDatabaseTest.java
+│   ├── OWASPZAPAttackDatabaseTest.java
+│   ├── PathTraversalAttackTest.java
+│   ├── ProtocolHandlerAttackTest.java
+│   ├── UnicodeControlCharacterAttackTest.java
+│   ├── UnicodeNormalizationAttackTest.java
+│   ├── UnicodePathTraversalAttackTest.java
+│   └── URLLengthLimitAttackTest.java
 │
 └── validation/                              # Validation stage tests
+    ├── AllowBlockListStageTest.java
+    ├── CharacterValidationConstantsTest.java
     ├── CharacterValidationStageTest.java
+    ├── CookiePrefixValidationStageTest.java
     ├── DecodingStageTest.java
     ├── LengthValidationStageTest.java
     ├── NormalizationStageTest.java
-    └── PatternMatchingStageTest.java
+    ├── PatternMatchingStageTest.java
+    └── RequestCollectionValidatorTest.java
 ----
 
 == Test Components
@@ -132,7 +163,7 @@ Each database provides structured test cases with expected failure types and att
 
 [source,java]
 ----
-package de.cuioss.http.security.attacks;
+package de.cuioss.http.security.tests;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -296,291 +327,45 @@ void shouldRejectApacheCVEs(AttackTestCase testCase) {
 [#_performance_validation]
 === Performance Benchmarking
 
-==== JMH Integration Setup
+Performance benchmarks are *not* part of `cui-http-core`. They live in the separate
+`cui-http-benchmarking` Maven module (artifactId `cui-http-benchmarking`), which depends on
+`cui-http-core` and uses JMH. There is no maven-shade `benchmarks.jar`, no
+`PerformanceValidationBenchmark` class, and no benchmark code under a
+`de.cuioss.http.security.attacks` package in the core module.
 
-Add JMH dependency to `pom.xml`:
+==== Benchmark classes
 
-[source,xml]
-----
-<dependencies>
-    <!-- JMH for performance benchmarking -->
-    <dependency>
-        <groupId>org.openjdk.jmh</groupId>
-        <artifactId>jmh-core</artifactId>
-        <version>1.37</version>
-        <scope>test</scope>
-    </dependency>
-    <dependency>
-        <groupId>org.openjdk.jmh</groupId>
-        <artifactId>jmh-generator-annprocess</artifactId>
-        <version>1.37</version>
-        <scope>test</scope>
-    </dependency>
-</dependencies>
+The benchmark classes live under `cui-http-benchmarking/src/main/java` and include:
 
-<build>
-    <plugins>
-        <!-- JMH benchmark plugin -->
-        <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-shade-plugin</artifactId>
-            <version>3.4.1</version>
-            <executions>
-                <execution>
-                    <phase>package</phase>
-                    <goals>
-                        <goal>shade</goal>
-                    </goals>
-                    <configuration>
-                        <finalName>benchmarks</finalName>
-                        <transformers>
-                            <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                <mainClass>org.openjdk.jmh.Main</mainClass>
-                            </transformer>
-                        </transformers>
-                        <filters>
-                            <filter>
-                                <artifact>*:*</artifact>
-                                <excludes>
-                                    <exclude>META-INF/*.SF</exclude>
-                                    <exclude>META-INF/*.DSA</exclude>
-                                    <exclude>META-INF/*.RSA</exclude>
-                                </excludes>
-                            </filter>
-                        </filters>
-                    </configuration>
-                </execution>
-            </executions>
-        </plugin>
-    </plugins>
-</build>
-----
+* `PipelineLatencyBenchmark` — per-pipeline validation latency
+* `ValidationStageBenchmark` — per-stage latency
+* `SecurityBenchmarkState` / `ForwardedBenchmarkState` — JMH `@State` inputs
+* `ForwardedResolverBenchmark` — forwarded-header resolution throughput
 
-==== Performance Benchmark Implementation
+JMH thread count and the include pattern are controlled by properties in the benchmarking
+module's `pom.xml` (`jmh.threads`, `jmh.include`), which override the per-class annotations.
 
-[source,java]
-----
-package de.cuioss.http.security.attacks;
+==== Running the benchmarks
 
-import org.openjdk.jmh.annotations.*;
-import org.openjdk.jmh.runner.Runner;
-import org.openjdk.jmh.runner.RunnerException;
-import org.openjdk.jmh.runner.options.Options;
-import org.openjdk.jmh.runner.options.OptionsBuilder;
-import java.util.concurrent.TimeUnit;
-
-/**
- * Performance validation benchmarks with JMH integration.
- * Run with: mvn clean package && java -jar target/benchmarks.jar
- * Or: mvn exec:java -Dexec.mainClass="org.openjdk.jmh.Main" -Dexec.args="PerformanceValidationBenchmark"
- */
-@BenchmarkMode({Mode.AverageTime, Mode.Throughput})
-@OutputTimeUnit(TimeUnit.MICROSECONDS)
-@Warmup(iterations = 3, time = 2, timeUnit = TimeUnit.SECONDS)
-@Measurement(iterations = 5, time = 3, timeUnit = TimeUnit.SECONDS)
-@Fork(value = 1, jvmArgs = {"-Xmx2G", "-Xms2G"})
-@State(Scope.Benchmark)
-public class PerformanceValidationBenchmark {
-    
-    private HttpSecurityValidator pathValidator;
-    private HttpSecurityValidator paramNameValidator;
-    private HttpSecurityValidator paramValueValidator;
-    private HttpSecurityValidator headerNameValidator;
-    private HttpSecurityValidator headerValueValidator;
-    
-    private PathTraversalGenerator attackGen;
-    private ValidURLGenerator validGen;
-    private EncodingCombinationGenerator encodingGen;
-    private UnicodeAttackGenerator unicodeGen;
-    
-    @Setup(Level.Trial)
-    public void setupBenchmark() {
-        // Setup configuration
-        var config = SecurityConfiguration.builder()
-            .maxPathLength(2048)
-            .build();
-        
-        var eventCounter = new SecurityEventCounter();
-        
-        // Create validators using PipelineFactory
-        pathValidator = PipelineFactory.createUrlPathPipeline(config, eventCounter);
-        paramNameValidator = PipelineFactory.createParameterNamePipeline(config, eventCounter);
-        paramValueValidator = PipelineFactory.createUrlParameterPipeline(config, eventCounter);
-        headerNameValidator = PipelineFactory.createHeaderNamePipeline(config, eventCounter);
-        headerValueValidator = PipelineFactory.createHeaderValuePipeline(config, eventCounter);
-        
-        // Setup generators
-        attackGen = new PathTraversalGenerator();
-        validGen = new ValidURLGenerator();
-        encodingGen = new EncodingCombinationGenerator();
-        unicodeGen = new UnicodeAttackGenerator();
-    }
-    
-    @Benchmark
-    @Group("path_validation")
-    public void benchmarkValidPaths_T34() {
-        // T34: Verify <1ms for typical inputs
-        String validPath = validGen.next();
-        try {
-            pathValidator.validate(validPath);
-        } catch (UrlSecurityException e) {
-            // Should not happen for valid URLs
-        }
-    }
-    
-    @Benchmark
-    @Group("attack_detection")
-    public void benchmarkPathTraversalAttacks_T35() {
-        // T35: Verify <1ms even with attacks
-        String attack = attackGen.next();
-        try {
-            pathValidator.validate(attack);
-        } catch (UrlSecurityException e) {
-            // Expected for attacks
-        }
-    }
-    
-    @Benchmark
-    @Group("http_encoding_attacks")
-    public void benchmarkHttpEncodingAttacks_T35() {
-        String encodedAttack = encodingGen.next(); // HTTP protocol-layer encoding only
-        try {
-            pathValidator.validate(encodedAttack);
-        } catch (UrlSecurityException e) {
-            // Expected for HTTP protocol encoding attacks
-        }
-    }
-    
-    @Benchmark
-    @Group("unicode_attacks")
-    public void benchmarkUnicodeAttacks_T35() {
-        String unicodeAttack = unicodeGen.next();
-        try {
-            pathValidator.validate(unicodeAttack);
-        } catch (UrlSecurityException e) {
-            // Expected for unicode attacks
-        }
-    }
-    
-    @Benchmark
-    @Group("parameter_validation")
-    public void benchmarkParameterNames_T36() {
-        // Test parameter name validation performance
-        try {
-            paramNameValidator.validate("validParamName123");
-        } catch (UrlSecurityException e) {
-            // Should not happen for valid names
-        }
-    }
-    
-    @Benchmark
-    @Group("parameter_validation")
-    public void benchmarkParameterValues_T36() {
-        // Test parameter value validation performance
-        try {
-            paramValueValidator.validate("valid%20parameter%20value");
-        } catch (UrlSecurityException e) {
-            // Should not happen for valid values
-        }
-    }
-    
-    @Benchmark
-    @Group("header_validation")
-    public void benchmarkHeaderNames_T36() {
-        // Test header name validation performance
-        try {
-            headerNameValidator.validate("Content-Type");
-        } catch (UrlSecurityException e) {
-            // Should not happen for valid header names
-        }
-    }
-    
-    @Benchmark
-    @Group("header_validation")
-    public void benchmarkHeaderValues_T36() {
-        // Test header value validation performance
-        try {
-            headerValueValidator.validate("application/json; charset=utf-8");
-        } catch (UrlSecurityException e) {
-            // Should not happen for valid header values
-        }
-    }
-    
-    // PipelineFactory static methods used directly in setupBenchmark()
-    // Available factory methods:
-    //   PipelineFactory.createUrlPathPipeline(config, eventCounter)
-    //   PipelineFactory.createParameterNamePipeline(config, eventCounter)
-    //   PipelineFactory.createUrlParameterPipeline(config, eventCounter)
-    //   PipelineFactory.createHeaderNamePipeline(config, eventCounter)
-    //   PipelineFactory.createHeaderValuePipeline(config, eventCounter)
-    //   PipelineFactory.createPipeline(ValidationType, config, eventCounter)
-    
-    /**
-     * Main method for running benchmarks standalone
-     */
-    static void main(String[] args) throws RunnerException {
-        Options opt = new OptionsBuilder()
-            .include(PerformanceValidationBenchmark.class.getSimpleName())
-            .shouldDoGC(true)
-            .build();
-        
-        new Runner(opt).run();
-    }
-}
-----
-
-==== Running Performance Benchmarks
-
-===== Command Line Execution
+Benchmark execution is gated behind Maven profiles in `cui-http-benchmarking/pom.xml`
+(`skip.benchmark=true` by default). Use the canonical build executor (see the project
+`CLAUDE.md`) rather than a hand-written `java -jar` command:
 
 [source,bash]
 ----
-# Build benchmarks
-mvn clean package
-
-# Run all benchmarks
-java -jar target/benchmarks.jar
-
-# Run specific benchmark group
-java -jar target/benchmarks.jar -rf json -rff results.json PerformanceValidationBenchmark.benchmarkValidPaths
-
-# Run with custom parameters
-java -jar target/benchmarks.jar -wi 5 -i 10 -f 2 -t 4
+# Quick benchmark run (shortened iterations), benchmarking module only.
+# The `benchmark` profile enables execution; `quick` shortens warmup/measurement iterations.
+python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
+    --command-args "verify -Pbenchmark,quick -pl cui-http-benchmarking -am"
 ----
 
-===== Maven Integration
-
-[source,bash]
-----
-# Run via Maven exec plugin
-mvn exec:java -Dexec.mainClass="org.openjdk.jmh.Main" -Dexec.args="PerformanceValidationBenchmark"
-
-# With custom JVM options
-mvn exec:java -Dexec.mainClass="org.openjdk.jmh.Main" -Dexec.args="-wi 3 -i 5 -f 1 PerformanceValidationBenchmark"
-----
+Results are archived and published by the `.github/workflows/benchmark.yml` workflow.
 
 ===== Performance Criteria
 
-* **Target**: <1ms average time for 95% of validations
-* **Throughput**: >1000 validations/second per thread
-* **Memory**: No memory leaks, stable heap usage
-* **Warmup**: 3 iterations × 2 seconds
-* **Measurement**: 5 iterations × 3 seconds
-* **Fork**: 1 JVM fork with 2GB heap
-
-===== CI/CD Integration
-
-Add to GitHub Actions or Jenkins:
-
-[source,yaml]
-----
-- name: Run Performance Benchmarks
-  run: |
-    mvn clean package
-    java -jar target/benchmarks.jar -rf json -rff benchmark-results.json
-    # Parse results and fail if performance regression detected
-    python scripts/check-performance-regression.py benchmark-results.json
-----
+* **Target**: <1ms average time for typical validations
+* **Throughput**: high per-thread validation rate
+* **Memory**: no memory leaks, stable heap usage
 
 == Test Coverage Requirements
 
@@ -714,13 +499,11 @@ class ValidationTypeTest {
 
 [source,java]
 ----
-package de.cuioss.http.security.attacks;
+package de.cuioss.http.security.tests;
 
 import org.junit.jupiter.params.ParameterizedTest;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
-import de.cuioss.test.generator.junit.TypeGeneratorSource;
-import de.cuioss.test.generator.junit.CompositeTypeGeneratorSource;
-import de.cuioss.tools.logging.CuiLogger;
+import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**

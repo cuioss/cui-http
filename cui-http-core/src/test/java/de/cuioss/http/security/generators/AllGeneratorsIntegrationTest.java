@@ -31,9 +31,14 @@ import de.cuioss.test.generator.TypedGenerator;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -207,39 +212,64 @@ class AllGeneratorsIntegrationTest {
     }
 
     @Test
-    @SuppressWarnings("java:S1612")
-    void shouldHandleConcurrentGeneration() {
-        // Test thread safety of generators
-        List<Thread> threads = List.of(
-                new Thread(() -> {
-                    for (int i = 0; i < 100; i++) {
-                        pathTraversalGenerator.next();
-                        encodingGenerator.next();
-                        unicodeGenerator.next();
+    void shouldHandleConcurrentGeneration() throws Exception {
+        // Test thread safety of generators: run three workers concurrently, then inspect their
+        // outputs. Using Callable + Future means any exception thrown inside a worker (e.g. a
+        // ConcurrentModificationException or NPE from a data race in a non-thread-safe generator)
+        // is re-thrown by Future.get() instead of being silently swallowed by the thread.
+        final int iterations = 100;
+        List<Callable<List<Object>>> tasks = List.of(
+                () -> {
+                    List<Object> out = new ArrayList<>();
+                    for (int i = 0; i < iterations; i++) {
+                        out.add(pathTraversalGenerator.next());
+                        out.add(encodingGenerator.next());
+                        out.add(unicodeGenerator.next());
                     }
-                }),
-                new Thread(() -> {
-                    for (int i = 0; i < 100; i++) {
-                        boundaryGenerator.next();
-                        validUrlGenerator.next();
-                        invalidUrlGenerator.next();
+                    return out;
+                },
+                () -> {
+                    List<Object> out = new ArrayList<>();
+                    for (int i = 0; i < iterations; i++) {
+                        out.add(boundaryGenerator.next());
+                        out.add(validUrlGenerator.next());
+                        out.add(invalidUrlGenerator.next());
                     }
-                }),
-                new Thread(() -> {
-                    for (int i = 0; i < 100; i++) {
-                        validParameterGenerator.next();
-                        attackParameterGenerator.next();
-                        validCookieGenerator.next();
-                        attackCookieGenerator.next();
+                    return out;
+                },
+                () -> {
+                    List<Object> out = new ArrayList<>();
+                    for (int i = 0; i < iterations; i++) {
+                        out.add(validParameterGenerator.next());
+                        out.add(attackParameterGenerator.next());
+                        out.add(validCookieGenerator.next());
+                        out.add(attackCookieGenerator.next());
                     }
-                })
+                    return out;
+                }
         );
 
-        // Start all threads
-        threads.forEach(Thread::start);
+        ExecutorService executor = Executors.newFixedThreadPool(tasks.size());
+        try {
+            List<Future<List<Object>>> futures = executor.invokeAll(tasks);
 
-        // Wait for completion
-        threads.forEach(thread -> assertDoesNotThrow(() -> thread.join()));
+            int totalOutputs = 0;
+            for (Future<List<Object>> future : futures) {
+                // get() surfaces any exception thrown by the worker, failing the test on races.
+                List<Object> results = future.get();
+                for (Object value : results) {
+                    assertNotNull(value, "Concurrent generation must not produce null output");
+                }
+                totalOutputs += results.size();
+            }
+
+            // 3 + 3 + 4 generators invoked per iteration; assert the exact count so that a
+            // dropped or duplicated write under contention is detected, not just tolerated.
+            assertEquals(iterations * (3 + 3 + 4), totalOutputs,
+                    "All concurrent generations should complete and be collected");
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     @Test

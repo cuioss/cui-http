@@ -15,9 +15,6 @@
  */
 package de.cuioss.http.client.handler;
 
-import de.cuioss.http.client.HttpLogMessages;
-import de.cuioss.test.juli.LogAsserts;
-import de.cuioss.test.juli.TestLogLevel;
 import de.cuioss.test.juli.junit5.EnableTestLogger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -41,7 +38,7 @@ class SecureSSLContextProviderTest {
         assertEquals("TLSv1.2", SecureSSLContextProvider.TLS_V1_2);
         assertEquals("TLSv1.3", SecureSSLContextProvider.TLS_V1_3);
         assertEquals("TLS", SecureSSLContextProvider.TLS);
-        assertEquals("TLSv1.0", SecureSSLContextProvider.TLS_V1_0);
+        assertEquals("TLSv1", SecureSSLContextProvider.TLS_V1_0);
         assertEquals("TLSv1.1", SecureSSLContextProvider.TLS_V1_1);
         assertEquals("SSLv3", SecureSSLContextProvider.SSL_V3);
         assertEquals(SecureSSLContextProvider.TLS_V1_2, SecureSSLContextProvider.DEFAULT_TLS_VERSION);
@@ -196,29 +193,21 @@ class SecureSSLContextProviderTest {
     }
 
     @Test
-    @DisplayName("Should replace insecure SSL context and log warning")
-    void shouldReplaceInsecureSSLContextAndLogWarning() throws Exception {
-        // Given: An insecure SSL context is provided to a stricter provider.
-        // To simulate this, we'll create a TLSv1.2 context and test it against a provider that requires TLSv1.3.
+    @DisplayName("Should return caller-provided SSL context unchanged, preserving its trust material")
+    void shouldReturnCallerProvidedContextUnchanged() throws Exception {
+        // Given: a caller-provided TLS 1.2 context and a stricter (TLS 1.3 minimum) provider
         SecureSSLContextProvider provider = new SecureSSLContextProvider();
-
-        // Create a context with TLS 1.2 first
         SSLContext baseContext = provider.createSecureSSLContext();
-
-        // Now test with a provider configured with TLS 1.3 minimum (making TLS 1.2 insecure for this test)
         SecureSSLContextProvider strictProvider = new SecureSSLContextProvider(SecureSSLContextProvider.TLS_V1_3);
 
-        // When: Attempting to use the "insecure" TLS 1.2 context with strict provider
+        // When: resolving the caller-provided context with the strict provider
         SSLContext result = strictProvider.getOrCreateSecureSSLContext(baseContext);
 
-        // Then: Should return a secure context
-        assertNotNull(result, "Result should not be null");
-        assertEquals(SecureSSLContextProvider.TLS_V1_3, result.getProtocol(),
-                "Should replace insecure context with secure TLS 1.3");
-
-        // And: Should log a warning about the insecure protocol
-        LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN,
-                HttpLogMessages.WARN.SSL_INSECURE_PROTOCOL.resolveIdentifierString());
+        // Then: the same context is returned unchanged - the provider must never silently swap out a
+        // caller-supplied context (which could carry TrustManager/KeyManager mTLS material). The TLS
+        // floor is enforced separately by HttpHandler via SSLParameters pinning.
+        assertSame(baseContext, result,
+                "Caller-provided context must be returned unchanged to preserve its trust/key material");
     }
 
     @Test
@@ -237,19 +226,20 @@ class SecureSSLContextProviderTest {
     }
 
     @Test
-    @DisplayName("Should create new SSLContext when provided one is insecure")
-    void shouldCreateNewSSLContextWhenProvidedOneIsInsecure() throws Exception {
+    @DisplayName("Should return provided context even when its protocol is below the configured minimum")
+    void shouldReturnProvidedContextEvenWhenProtocolBelowMinimum() throws Exception {
         // Given: A SecureSSLContextProvider instance with TLS 1.3 as minimum and a TLS 1.2 context
         SecureSSLContextProvider secureSSLContextProvider = new SecureSSLContextProvider(SecureSSLContextProvider.TLS_V1_3);
-        SSLContext insecureContext = SSLContext.getInstance(SecureSSLContextProvider.TLS_V1_2);
-        insecureContext.init(null, null, null);
+        SSLContext providedContext = SSLContext.getInstance(SecureSSLContextProvider.TLS_V1_2);
+        providedContext.init(null, null, null);
 
-        // When: Validating the insecure context
-        SSLContext result = secureSSLContextProvider.getOrCreateSecureSSLContext(insecureContext);
+        // When: resolving the provided context
+        SSLContext result = secureSSLContextProvider.getOrCreateSecureSSLContext(providedContext);
 
-        // Then: A new context should be created
-        assertNotSame(insecureContext, result, "Should create a new context when the provided one is insecure");
-        assertEquals(SecureSSLContextProvider.TLS_V1_3, result.getProtocol(), "New context should use TLS 1.3");
+        // Then: the provider must not swap out the caller-supplied context based on its protocol
+        // string; the wire-level TLS floor is enforced by HttpHandler via SSLParameters pinning.
+        assertSame(providedContext, result,
+                "Provider must return the caller-supplied context unchanged regardless of its protocol string");
     }
 
     @Test

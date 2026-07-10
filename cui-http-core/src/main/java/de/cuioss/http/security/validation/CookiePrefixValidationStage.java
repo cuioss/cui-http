@@ -196,10 +196,13 @@ public record CookiePrefixValidationStage(SecurityConfiguration config) implemen
     @SuppressWarnings({"java:S4449", "DataFlowIssue"}) // hasName() guarantees non-null after check
     public void validateCookie(Cookie cookie) throws UrlSecurityException {
         if (!cookie.hasName()) {
+            // cookie.name() is null (or empty) here, so substitute an empty-string placeholder:
+            // originalInput is @NonNull under @NullMarked and must never receive null.
+            String safeName = cookie.name() == null ? "" : cookie.name();
             throw UrlSecurityException.builder()
                     .failureType(UrlSecurityFailureType.INVALID_INPUT)
                     .validationType(ValidationType.COOKIE_NAME)
-                    .originalInput(cookie.name())
+                    .originalInput(safeName)
                     .detail("Cookie must have a name")
                     .build();
         }

@@ -18,7 +18,6 @@ package de.cuioss.http.security.exceptions;
 import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.core.ValidationType;
 import lombok.Builder;
-import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import org.jspecify.annotations.Nullable;
 
@@ -68,7 +67,11 @@ import java.util.regex.Pattern;
  *
  * @since 1.0
  */
-@EqualsAndHashCode(callSuper = true)
+// No equals/hashCode is generated: a previous @EqualsAndHashCode(callSuper = true) was
+// misleading because Throwable does not override equals/hashCode, so callSuper resolved to
+// reference identity and the field-based comparison never took effect. This exception
+// therefore uses the inherited identity semantics (as instances are transient and compared
+// by reference), which is the same behavior the annotation actually produced.
 public class UrlSecurityException extends RuntimeException {
 
     /**

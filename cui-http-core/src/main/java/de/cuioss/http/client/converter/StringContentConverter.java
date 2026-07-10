@@ -17,6 +17,7 @@ package de.cuioss.http.client.converter;
 
 import de.cuioss.http.client.ContentType;
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 import java.net.http.HttpResponse;
 import java.nio.charset.Charset;
@@ -66,7 +67,7 @@ public abstract class StringContentConverter<T> implements HttpResponseConverter
     }
 
     @Override
-    public Optional<T> convert(Object rawContent) {
+    public Optional<T> convert(@Nullable Object rawContent) {
         // Cast to String since our BodyHandler produces String content
         return convertString((String) rawContent);
     }
@@ -75,10 +76,10 @@ public abstract class StringContentConverter<T> implements HttpResponseConverter
      * Converts String content to the target type.
      * This method is called by the public convert method after casting.
      *
-     * @param rawContent the raw String content from HTTP response
+     * @param rawContent the raw String content from HTTP response, may be {@code null}
      * @return Optional containing converted content, or empty if conversion fails
      */
-    protected abstract Optional<T> convertString(String rawContent);
+    protected abstract Optional<T> convertString(@Nullable String rawContent);
 
     /**
      * Identity converter for String content (no conversion needed).
@@ -91,7 +92,7 @@ public abstract class StringContentConverter<T> implements HttpResponseConverter
     public static StringContentConverter<String> identity() {
         return new StringContentConverter<String>() {
             @Override
-            protected Optional<String> convertString(String rawContent) {
+            protected Optional<String> convertString(@Nullable String rawContent) {
                 return Optional.ofNullable(rawContent);
             }
 

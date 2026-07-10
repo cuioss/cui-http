@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 /**
  * Exception handling for HTTP security validation failures.
  *
@@ -45,7 +44,7 @@
  *     UrlSecurityFailureType failureType = e.getFailureType();
  *     ValidationType validationType = e.getValidationType();
  *     String originalInput = e.getOriginalInput();
- *     Optional&lt;String&gt; sanitized = e.getSanitizedInputOptional();
+ *     Optional&lt;String&gt; sanitized = e.getSanitizedInput();
  *
  *     // Log security event
  *     log.warn("Security violation: {} in {} for input: {}",

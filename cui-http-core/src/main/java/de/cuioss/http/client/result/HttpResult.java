@@ -15,7 +15,6 @@
  */
 package de.cuioss.http.client.result;
 
-import lombok.Builder;
 import org.jspecify.annotations.Nullable;
 
 import java.util.Optional;
@@ -376,7 +375,6 @@ public sealed interface HttpResult<T>
      * @param httpStatus optional HTTP status code
      * @param <T> content type
      */
-    @Builder
     record Failure<T>(
     String errorMessage,
     @Nullable

@@ -23,7 +23,10 @@ Validation framework for HTTP components (paths, parameters, headers, bodies) wi
 
 === Core Interface
 
-`HttpSecurityValidator`: Functional interface following "String in, String out, throws on violation" pattern. See `de.cuioss.http.security.core.HttpSecurityValidator`.
+`HttpSecurityValidator`: Functional interface following the "`Optional<String> validate(String)`,
+throws on violation" pattern — it returns the (possibly sanitized) value wrapped in an `Optional`
+and throws `UrlSecurityException` on a security violation. See
+`de.cuioss.http.security.core.HttpSecurityValidator`.
 
 == Validation Pipelines
 
@@ -93,7 +96,12 @@ URLPathValidationPipeline pipeline = new URLPathValidationPipeline(
 // Validate input
 try {
     String validated = pipeline.validate("/api/users/123")
-        .orElseThrow(() -> new UrlSecurityException("Validation returned empty"));
+        .orElseThrow(() -> UrlSecurityException.builder()
+            .failureType(UrlSecurityFailureType.INVALID_INPUT)
+            .validationType(ValidationType.URL_PATH)
+            .originalInput("/api/users/123")
+            .detail("Validation returned empty")
+            .build());
     // Use validated path
 } catch (UrlSecurityException e) {
     log.warn("Security violation: {}", e.getFailureType());
@@ -108,7 +116,12 @@ SecurityEventCounter counter = new SecurityEventCounter();
 HttpSecurityValidator validator = PipelineFactory.createPipeline(
     ValidationType.URL_PATH, config, counter);
 String validated = validator.validate(userInput)
-    .orElseThrow(() -> new UrlSecurityException("Validation returned empty"));
+    .orElseThrow(() -> UrlSecurityException.builder()
+        .failureType(UrlSecurityFailureType.INVALID_INPUT)
+        .validationType(ValidationType.URL_PATH)
+        .originalInput(userInput)
+        .detail("Validation returned empty")
+        .build());
 ----
 
 

@@ -31,20 +31,25 @@ These requirements are derived from:
 * Reference: xref:specification/specification.adoc#_core_components[Core Components]
 
 [#HTTP-2]
-=== HTTP-2: Zero External Dependencies
+=== HTTP-2: Minimal Runtime Dependencies
 
-* The system must not require any external runtime dependencies
-* All functionality must be self-contained within the library
-* Development-only dependencies (e.g., Lombok) are permitted
+* The system keeps runtime dependencies to a minimum
+* The security-validation core requires only two runtime modules (see `module-info.java`):
+  ** `org.jspecify` — nullness annotations
+  ** `de.cuioss.java.tools` (cui-java-tools) — core utilities and logging
+* Lombok is a compile-time-only dependency (`requires static lombok`) and is not needed at runtime
+* No third-party HTTP, JSON, or servlet libraries are required
 * The system must be compatible with Jakarta EE environments
 
 [#HTTP-3]
 === HTTP-3: Fail-Fast Security Model
 
 * The system must immediately reject invalid input upon detection
-* Security violations must throw runtime exceptions
+* Security violations must throw runtime exceptions (`UrlSecurityException`)
 * Validation must not continue after a security violation is detected
-* All security failures must be logged appropriately
+* Security failures are tallied by `SecurityEventCounter`. The validation core does not
+  emit log statements itself; logging is performed by the caller at the trust boundary
+  where the exception is caught (see HTTP-17)
 * Reference: xref:specification/specification.adoc#_core_components[Core Components]
 
 == Validation Pipeline Requirements
@@ -79,8 +84,8 @@ These requirements are derived from:
 * The system must normalize input before pattern matching
 * Normalization must include:
   ** URL decoding
-  ** Path canonicalization
-  ** Unicode normalization (NFC)
+  ** Path canonicalization (RFC 3986 dot-segment resolution, in `NormalizationStage`)
+  ** Unicode canonicalization (NFKC for URL paths, NFC for parameter values), performed in `DecodingStage`
   ** Removal of redundant path separators
 
 * The system must detect when normalization changes input significantly
@@ -104,10 +109,12 @@ These requirements are derived from:
 [#HTTP-8]
 === HTTP-8: Root Directory Escape Prevention
 
-* The system must prevent paths that escape the application root
-* Must detect attempts to access parent directories beyond the root
+* The system must prevent path *strings* that escape the application root
+* Must detect attempts to access parent directories beyond the root (via dot-segment resolution)
 * Must handle both absolute and relative path validation
-* Must maintain security even with symbolic links present
+* NOTE: Filesystem-level concerns (symbolic links, TOCTOU) are *out of scope* for a string
+  validator and are the application/filesystem layer's responsibility — see
+  xref:security-requirements.adoc#SEC-5[SEC-5]
 * Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
 [#HTTP-9]
@@ -154,8 +161,8 @@ These requirements are derived from:
   ** Right-to-left override characters
   ** Zero-width characters
 
-* Must normalize Unicode to NFC form
-* Must detect when normalization changes the input
+* Must canonicalize Unicode using NFKC for URL paths and NFC for parameter values (performed in `DecodingStage`)
+* Must detect when a fold introduces a structurally significant separator character
 * Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
 == Configuration Requirements
@@ -165,7 +172,6 @@ These requirements are derived from:
 
 * The system must support configuration of validation parameters:
   ** Maximum length limits
-  ** Maximum directory depth
   ** Allowed character sets
   ** Encoding strictness levels
 
@@ -182,6 +188,9 @@ These requirements are derived from:
   ** `PARAMETER_VALUE`: Parameter value validation rules (URL decoding support)
   ** `HEADER_NAME`: Header name validation rules (RFC 7230 token rules)
   ** `HEADER_VALUE`: Header value validation rules (broader character set)
+  ** `COOKIE_NAME`: Cookie name validation rules
+  ** `COOKIE_VALUE`: Cookie value validation rules
+  ** `BODY`: Request/response body content rules
 
 * Configurations must be independently configurable
 * Must support configuration inheritance for common settings
@@ -207,24 +216,26 @@ These requirements are derived from:
 === HTTP-16: Security Event Tracking
 
 * The system must track security events through `SecurityEventCounter`
-* Must count events by:
-  ** Failure type
-  ** Validation type
-  ** Time window
-
-* Must support metrics extraction for monitoring
+* Events are counted by failure type (`UrlSecurityFailureType`)
+* NOTE: Counting by validation type and by time window is *not implemented*.
+  `SecurityEventCounter` keys its atomic counters solely by `UrlSecurityFailureType`;
+  it carries no `ValidationType` dimension and no time-window buckets.
+* Must support metrics extraction for monitoring (per-failure-type counts)
 * Must be thread-safe
 * Reference: xref:specification/specification.adoc#_security_event_tracking[Security Event Tracking]
 
 == Integration Requirements
 
 [#HTTP-17]
-=== HTTP-17: Logging Integration
+=== HTTP-17: Logging and Monitoring Integration
 
-* The system must integrate with standard logging frameworks
-* Must use CuiLogger for internal logging
-* Must support different log levels for different event types
-* Must not log sensitive data in clear text
+* The security-validation core does *not* emit log statements itself. Detected violations are
+  surfaced as `UrlSecurityException` and tallied by `SecurityEventCounter`.
+* NOTE: In-package logging via `CuiLogger` is *not currently implemented* anywhere in
+  `de.cuioss.http.security`. Applications are expected to log security events at the trust
+  boundary (where the exception is caught), where request context is available and sensitive
+  data can be redacted.
+* `SecurityEventCounter` exposes per-failure-type counts for metrics/monitoring integration.
 * Reference: xref:specification/specification.adoc#_security_event_tracking[Security Event Tracking]
 
 == Performance Requirements
@@ -292,7 +303,7 @@ The following classes implement the functional requirements:
 | Requirement ID | Description | Specification Reference
 
 | HTTP-1 | Multi-Component Validation | xref:specification/specification.adoc#_validation_types[§Validation Types]
-| HTTP-2 | Zero Dependencies | xref:specification/specification.adoc#_executive_summary[§Executive Summary]
+| HTTP-2 | Minimal Runtime Dependencies | xref:specification/specification.adoc#_executive_summary[§Executive Summary]
 | HTTP-3 | Fail-Fast Model | xref:specification/specification.adoc#_functionalinterface[§Functional Interface]
 | HTTP-4 | Sequential Pipeline | xref:specification/specification.adoc#_sequential_execution_model[§Execution Model]
 | HTTP-5 | Stage Architecture | xref:specification/specification.adoc#_validation_stages[§Validation Stages]
@@ -307,7 +318,7 @@ The following classes implement the functional requirements:
 | HTTP-14 | Type Configuration | xref:specification/specification.adoc#_validation_type_configurations[§Type Config]
 | HTTP-15 | Security Exceptions | xref:specification/specification.adoc#_urlsecurityexception[§Exceptions]
 | HTTP-16 | Event Tracking | xref:specification/specification.adoc#_event_counter_pattern[§Event Counter]
-| HTTP-17 | Logging Integration | xref:specification/specification.adoc#_securityeventcounter[§Logging]
+| HTTP-17 | Logging and Monitoring Integration | xref:specification/specification.adoc#_securityeventcounter[§Logging]
 | HTTP-18 | Efficient Processing | xref:specification/testing.adoc#_performance_benchmarking[§Performance]
 | HTTP-19 | Resource Constraints | xref:specification/specification.adoc#_lengthvalidationstage[§Constraints]
 |===

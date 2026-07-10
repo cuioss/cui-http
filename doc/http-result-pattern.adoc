@@ -70,7 +70,7 @@ public sealed interface HttpResult<T>
 
 [source,java]
 ----
-HttpResult<ConfigData> result = handler.load();
+HttpResult<ConfigData> result = adapter.getBlocking();
 
 // Check success
 if (result.isSuccess()) {
@@ -82,10 +82,10 @@ if (result.isSuccess()) {
 
     // Access metadata
     result.getETag().ifPresent(etag ->
-        logger.debug("Content ETag: {}", etag));
+        logger.debug("Content ETag: %s", etag));
 
     result.getHttpStatus().ifPresent(status ->
-        logger.debug("HTTP Status: {}", status));
+        logger.debug("HTTP Status: %s", status));
 }
 
 // Handle errors
@@ -109,7 +109,7 @@ if (!result.isSuccess()) {
 
 [source,java]
 ----
-HttpResult<ConfigData> result = handler.load();
+HttpResult<ConfigData> result = adapter.getBlocking();
 
 return switch (result) {
     case HttpResult.Success<ConfigData>(var config, var etag, var status) -> {
@@ -137,7 +137,7 @@ return switch (result) {
 
 [source,java]
 ----
-HttpResult<String> result = handler.load();
+HttpResult<String> result = adapter.getBlocking();
 
 result.getErrorCategory().ifPresent(category -> {
     switch (category) {
@@ -245,7 +245,7 @@ interface HttpResult<T> {
     boolean isRetryable();
 
     // Content access
-    Optional<T> getContent();           // Always present for Success, optional for Failure
+    Optional<T> getContent();           // Present for Success with content; empty for Void/status-only Success or for Failure without fallback
     Optional<String> getETag();         // HTTP ETag header
     Optional<Integer> getHttpStatus();  // HTTP status code
 
@@ -264,7 +264,7 @@ interface HttpResult<T> {
 [source,java]
 ----
 // Transform content while preserving metadata
-HttpResult<String> jsonResult = handler.load();
+HttpResult<String> jsonResult = adapter.getBlocking();
 
 HttpResult<Config> configResult = jsonResult.map(json -> {
     return parseConfig(json);
@@ -284,10 +284,10 @@ public class GenericHttpLoader<T> {
 
     public CompletableFuture<Boolean> loadData() {
         return CompletableFuture.supplyAsync(() -> {
-            HttpResult<T> result = resilientHandler.load();
+            HttpResult<T> result = resilientAdapter.getBlocking();
 
             return switch (result) {
-                case HttpResult.Success<T>(var data, _, var status) -> {
+                case HttpResult.Success<T>(var data, var etag, var status) -> {
                     updateCache(data);
                     logger.info("Loaded data successfully");
 
@@ -335,7 +335,7 @@ public class CachedHttpResolver<T> {
 
     private Optional<T> ensureLoaded() {
         if (cachedResult == null) {
-            cachedResult = httpHandler.load();
+            cachedResult = httpAdapter.getBlocking();
         }
 
         // Return content if successful, empty otherwise

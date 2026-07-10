@@ -21,12 +21,8 @@
     </modules>
     <scm>
         <url>https://github.com/cuioss/cui-http/</url>
-        <connection>
-            scm:git:https://github.com/cuioss/cui-http/.git
-        </connection>
-        <developerConnection>
-            scm:git:https://github.com/cuioss/cui-http/
-        </developerConnection>
+        <connection>scm:git:https://github.com/cuioss/cui-http.git</connection>
+        <developerConnection>scm:git:https://github.com/cuioss/cui-http.git</developerConnection>
         <tag>HEAD</tag>
     </scm>
     <issueManagement>
