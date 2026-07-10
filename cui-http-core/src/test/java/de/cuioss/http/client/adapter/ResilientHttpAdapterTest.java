@@ -20,9 +20,11 @@ import de.cuioss.http.client.result.HttpErrorCategory;
 import de.cuioss.http.client.result.HttpResult;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -479,25 +481,105 @@ class ResilientHttpAdapterTest {
     }
 
     /**
-     * Mock adapter for testing.
+     * Test that an exceptionally-completed future whose cause is transient (IOException ->
+     * NETWORK_ERROR) is retried, then succeeds.
+     */
+    @Test
+    void retryOnExceptionallyCompletedNetworkFailure() {
+        AtomicInteger attemptCount = new AtomicInteger(0);
+
+        // First attempt completes exceptionally with an IOException; second attempt succeeds.
+        HttpAdapter<String> mockAdapter = MockAdapter.exceptional(attemptCount, 1,
+                new IOException("connection reset"),
+                HttpResult.success("Recovered", null, 200));
+
+        RetryConfig config = RetryConfig.builder()
+                .maxAttempts(3)
+                .initialDelay(Duration.ofMillis(10))
+                .build();
+
+        HttpAdapter<String> resilient = ResilientHttpAdapter.wrap(mockAdapter, config);
+
+        HttpResult<String> result = resilient.getBlocking();
+
+        assertTrue(result.isSuccess());
+        assertEquals("Recovered", result.getContent().orElse(null));
+        assertEquals(2, attemptCount.get());
+    }
+
+    /**
+     * Test that an exceptionally-completed future whose cause is a non-retryable programming error
+     * (IllegalArgumentException -> CONFIGURATION_ERROR) is not retried and is re-propagated rather
+     * than swallowed into a null result.
+     */
+    @Test
+    void noRetryOnExceptionallyCompletedNonRetryableFailure() {
+        AtomicInteger attemptCount = new AtomicInteger(0);
+
+        // Always completes exceptionally with a non-retryable cause.
+        HttpAdapter<String> mockAdapter = MockAdapter.exceptional(attemptCount, 5,
+                new IllegalArgumentException("bad request construction"),
+                HttpResult.success("Should not reach", null, 200));
+
+        RetryConfig config = RetryConfig.builder()
+                .maxAttempts(3)
+                .initialDelay(Duration.ofMillis(10))
+                .build();
+
+        HttpAdapter<String> resilient = ResilientHttpAdapter.wrap(mockAdapter, config);
+
+        CompletionException thrown = assertThrows(CompletionException.class, resilient::getBlocking);
+
+        // The original cause is preserved (re-propagated, not swallowed into a null outcome).
+        Throwable cause = thrown;
+        while (cause.getCause() != null && !(cause instanceof IllegalArgumentException)) {
+            cause = cause.getCause();
+        }
+        assertInstanceOf(IllegalArgumentException.class, cause);
+        // Non-retryable: exactly one attempt, no retries.
+        assertEquals(1, attemptCount.get());
+    }
+
+    /**
+     * Mock adapter for testing. Supports normal completion (failureResult/successResult) and, via
+     * the {@code exceptionalCause} constructor, exceptionally-completed futures.
      */
     private static class MockAdapter<T> implements HttpAdapter<T> {
         private final AtomicInteger attemptCount;
         private final int failuresBeforeSuccess;
         private final HttpResult<T> failureResult;
         private final HttpResult<T> successResult;
+        private final Throwable exceptionalCause;
 
         MockAdapter(AtomicInteger attemptCount, int failuresBeforeSuccess,
                 HttpResult<T> failureResult, HttpResult<T> successResult) {
+            this(attemptCount, failuresBeforeSuccess, failureResult, successResult, null);
+        }
+
+        private MockAdapter(AtomicInteger attemptCount, int failuresBeforeSuccess,
+                HttpResult<T> failureResult, HttpResult<T> successResult, Throwable exceptionalCause) {
             this.attemptCount = attemptCount;
             this.failuresBeforeSuccess = failuresBeforeSuccess;
             this.failureResult = failureResult;
             this.successResult = successResult;
+            this.exceptionalCause = exceptionalCause;
+        }
+
+        /**
+         * Creates a mock whose first {@code failuresBeforeSuccess} attempts complete exceptionally
+         * with {@code cause}, then succeed with {@code successResult}.
+         */
+        static <T> MockAdapter<T> exceptional(AtomicInteger attemptCount, int failuresBeforeSuccess,
+                Throwable cause, HttpResult<T> successResult) {
+            return new MockAdapter<>(attemptCount, failuresBeforeSuccess, null, successResult, cause);
         }
 
         private CompletableFuture<HttpResult<T>> executeRequest() {
             int attempt = attemptCount.incrementAndGet();
             if (attempt <= failuresBeforeSuccess) {
+                if (exceptionalCause != null) {
+                    return CompletableFuture.failedFuture(exceptionalCause);
+                }
                 return CompletableFuture.completedFuture(failureResult);
             }
             return CompletableFuture.completedFuture(successResult);

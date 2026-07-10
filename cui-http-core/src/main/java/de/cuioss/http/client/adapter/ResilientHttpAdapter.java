@@ -314,7 +314,10 @@ public class ResilientHttpAdapter<T> implements HttpAdapter<T> {
         if (!retryable) {
             LOGGER.debug("%s request failed with non-retryable error: %s",
                     method.methodName(), result != null ? result.getErrorCategory().orElse(null) : null);
-            return CompletableFuture.completedFuture(result);
+            // finalOutcome re-propagates the throwable for an exceptionally-completed future and
+            // returns the failing result for a normal completion; returning the null result here
+            // would swallow a non-retryable exception into a null outcome.
+            return finalOutcome(result, throwable);
         }
 
         // Idempotency check - skip retry for non-idempotent methods if configured

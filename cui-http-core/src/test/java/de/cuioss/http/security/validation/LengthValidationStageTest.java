@@ -330,6 +330,29 @@ class LengthValidationStageTest {
         assertEquals(reasonableBody, result.get());
     }
 
+    @Test
+    void shouldMeasureBodyLengthInUtf8BytesAcrossAllWidths() {
+        // 'A' = 1 byte, U+00E9 (é) = 2 bytes, U+4E2D (中) = 3 bytes,
+        // U+1F600 (😀, a surrogate pair) = 4 bytes => 10 UTF-8 bytes for 4 code points.
+        String mixed = "Aé中😀";
+
+        // Within a 10-byte limit the body passes (exercises the 1/2/3/4-byte branches).
+        LengthValidationStage passStage = new LengthValidationStage(
+                SecurityConfiguration.builder().maxBodySize(10).build(), ValidationType.BODY);
+        var result = passStage.validate(mixed);
+        assertTrue(result.isPresent());
+        assertEquals(mixed, result.get());
+
+        // The byte count (10) — not the UTF-16 char count (5) — is what is enforced: a 9-byte
+        // limit rejects, and the reported length is the byte count.
+        LengthValidationStage failStage = new LengthValidationStage(
+                SecurityConfiguration.builder().maxBodySize(9).build(), ValidationType.BODY);
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> failStage.validate(mixed));
+        assertEquals(ValidationType.BODY, exception.getValidationType());
+        assertTrue(exception.getDetail().orElse("").contains("10 exceeds maximum 9"));
+    }
+
     // ========== All Validation Types Test ==========
 
     @ParameterizedTest
