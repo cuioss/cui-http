@@ -22,7 +22,6 @@ import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import org.jspecify.annotations.Nullable;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
 /**
@@ -143,10 +142,12 @@ ValidationType validationType) implements HttpSecurityValidator {
 
         // BODY limits (maxBodySize) are expressed in bytes, so the length must be measured in
         // UTF-8 bytes rather than UTF-16 characters; otherwise multi-byte content (e.g. CJK)
-        // would under-report its wire size and slip past the DoS size limit. All other
-        // validation types measure length in characters.
+        // would under-report its wire size and slip past the DoS size limit. The byte length is
+        // computed without allocating a byte array (value.getBytes(...)) so that a large body
+        // cannot force a multi-megabyte allocation inside the very stage meant to cap it. All
+        // other validation types measure length in characters.
         int inputLength = validationType == ValidationType.BODY
-                ? value.getBytes(StandardCharsets.UTF_8).length
+                ? utf8ByteLength(value)
                 : value.length();
 
         // Determine the appropriate limit and failure type based on validation type
@@ -166,6 +167,37 @@ ValidationType validationType) implements HttpSecurityValidator {
 
         // Validation passed - return original value
         return Optional.of(value);
+    }
+
+    /**
+     * Computes the UTF-8 byte length of a string without allocating an intermediate byte array.
+     *
+     * <p>Used for BODY length enforcement: the stage exists to cap body size, so it must not
+     * itself allocate a multi-megabyte {@code byte[]} (via {@code String.getBytes}) to measure a
+     * large body. Well-formed surrogate pairs are counted as a single 4-byte code point.</p>
+     *
+     * @param value the string to measure (never null)
+     * @return the number of bytes the string occupies when encoded as UTF-8
+     */
+    private static int utf8ByteLength(String value) {
+        int count = 0;
+        for (int i = 0, len = value.length(); i < len; i++) {
+            char ch = value.charAt(i);
+            if (ch <= 0x7F) {
+                count += 1;
+            } else if (ch <= 0x7FF) {
+                count += 2;
+            } else if (Character.isHighSurrogate(ch)
+                    && i + 1 < len && Character.isLowSurrogate(value.charAt(i + 1))) {
+                // Well-formed surrogate pair encodes one supplementary code point as 4 bytes.
+                count += 4;
+                i++;
+            } else {
+                // BMP character or an unpaired surrogate (which UTF-8 encoders replace).
+                count += 3;
+            }
+        }
+        return count;
     }
 
     /**

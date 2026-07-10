@@ -17,6 +17,7 @@ package de.cuioss.http.client.adapter;
 
 import de.cuioss.http.client.HttpMethod;
 import de.cuioss.http.client.converter.HttpRequestConverter;
+import de.cuioss.http.client.result.HttpErrorCategory;
 import de.cuioss.http.client.result.HttpResult;
 import de.cuioss.tools.logging.CuiLogger;
 import org.jspecify.annotations.Nullable;
@@ -298,9 +299,15 @@ public class ResilientHttpAdapter<T> implements HttpAdapter<T> {
             return CompletableFuture.completedFuture(result);
         }
 
-        // An exceptionally-completed future is treated as a retryable transient failure; a normal
-        // failure is retryable only when its error category says so.
-        boolean retryable = throwable != null || (result != null && result.isRetryable());
+        // An exceptionally-completed future is retryable only when its root cause classifies as a
+        // transient category. HttpErrorCategory.fromException unwraps CompletionException/
+        // ExecutionException wrappers and maps IOException to a retryable NETWORK_ERROR while
+        // programming/configuration errors (NPE, IllegalArgumentException, ...) map to the
+        // non-retryable CONFIGURATION_ERROR. A normal failure is retryable only when its own
+        // error category says so.
+        boolean retryable = throwable != null
+                ? HttpErrorCategory.fromException(throwable).isRetryable()
+                : (result != null && result.isRetryable());
 
         // Non-retryable failure - return immediately. Checked before the idempotency check (CLI-5)
         // so failures that would never be retried do not emit the non-idempotent-skip warning.
