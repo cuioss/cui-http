@@ -27,6 +27,9 @@ module de.cuioss.http {
     exports de.cuioss.http.client.handler;
     exports de.cuioss.http.client.result;
 
+    // Reverse-proxy / forwarded-header resolution
+    exports de.cuioss.http.forwarded;
+
     // Security validation core
     exports de.cuioss.http.security.core;
     exports de.cuioss.http.security.config;
