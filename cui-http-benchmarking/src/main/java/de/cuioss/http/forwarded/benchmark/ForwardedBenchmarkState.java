@@ -83,16 +83,16 @@ public class ForwardedBenchmarkState {
 
     /** @return the next clean {@code X-Forwarded-*} header accessor, cycling. */
     public Function<String, String> nextCleanXForwarded() {
-        return CLEAN_XFORWARDED.get(cleanIndex.getAndIncrement() % CLEAN_XFORWARDED.size())::get;
+        return CLEAN_XFORWARDED.get((cleanIndex.getAndIncrement() & Integer.MAX_VALUE) % CLEAN_XFORWARDED.size())::get;
     }
 
     /** @return the next RFC 7239 {@code Forwarded} header accessor, cycling. */
     public Function<String, String> nextForwarded() {
-        return FORWARDED_RFC.get(forwardedIndex.getAndIncrement() % FORWARDED_RFC.size())::get;
+        return FORWARDED_RFC.get((forwardedIndex.getAndIncrement() & Integer.MAX_VALUE) % FORWARDED_RFC.size())::get;
     }
 
     /** @return the next injection header accessor, cycling. */
     public Function<String, String> nextAttack() {
-        return ATTACK_XFORWARDED.get(attackIndex.getAndIncrement() % ATTACK_XFORWARDED.size())::get;
+        return ATTACK_XFORWARDED.get((attackIndex.getAndIncrement() & Integer.MAX_VALUE) % ATTACK_XFORWARDED.size())::get;
     }
 }
