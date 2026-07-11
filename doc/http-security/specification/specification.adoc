@@ -26,7 +26,7 @@ The HTTP security validation system must:
 4. *Secure Defaults*: Use configuration based on OWASP and RFC standards
 5. *Thread Safety*: Support concurrent validation operations
 6. *Performance*: Complete validation within 1ms for typical inputs
-7. *Transparency*: Log security events for monitoring and analysis
+7. *Transparency*: Count security events (via `SecurityEventCounter`) for monitoring and analysis; the core does not log itself (logging is a caller responsibility)
 
 === Constraints
 
@@ -46,7 +46,7 @@ The HTTP Security Validation system follows a layered architecture with these ke
 1. **Core Validation Interface**: Defines the contract for all validators
 2. **Validation Pipeline**: Executes validation stages sequentially
 3. **Validation Stages**: Individual validation components (length, character, decoding, normalization, pattern matching)
-4. **Security Event Tracking**: Monitors and logs security violations
+4. **Security Event Tracking**: Counts security violations in memory (no logging in the core)
 
 === Component Structure
 
@@ -54,9 +54,10 @@ The system is organized into the following packages:
 
 * `de.cuioss.http.security.core` - Core interfaces and enumerations
 * `de.cuioss.http.security.config` - Security configuration management
-* `de.cuioss.http.security.monitoring` - Event tracking and logging
+* `de.cuioss.http.security.monitoring` - In-memory event counting
 * `de.cuioss.http.security.validation` - Individual validation stages
 * `de.cuioss.http.security.pipeline` - Validation pipeline implementations
+* `de.cuioss.http.security.data` - HTTP component data models (URLParameter, Cookie, HTTPBody, AttributeParser)
 * `de.cuioss.http.security.exceptions` - Security exception handling
 
 [#_core_components]
@@ -89,6 +90,8 @@ The following classes implement the core security validation components:
 
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/data/URLParameter.java[URLParameter] - URL parameter representation
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie] - Cookie data model
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/data/HTTPBody.java[HTTPBody] - HTTP body content model
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/data/AttributeParser.java[AttributeParser] - Cookie attribute parsing
 
 For implementation details, see the JavaDoc of each class.
 
@@ -162,10 +165,12 @@ The following classes implement the validation stages:
 
 [#_patternmatchingstage]
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Attack pattern detection
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/AllowBlockListStage.java[AllowBlockListStage] - Case-insensitive header-name / content-type allow/block lists
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationConstants.java[CharacterValidationConstants] - RFC-compliant character sets
 
 [#_cookieprefixvalidationstage]
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CookiePrefixValidationStage.java[CookiePrefixValidationStage] - RFC 6265bis cookie prefix validation (standalone; not part of a factory-built pipeline, invoked manually via `validateCookie(Cookie)`)
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/RequestCollectionValidator.java[RequestCollectionValidator] - Request-level collection count limits (parameters/headers/cookies); enforces limits a single-value pipeline cannot
 
 For implementation details, see the JavaDoc of each validation stage class.
 
@@ -188,26 +193,39 @@ For detailed pipeline selection guidelines and architecture standards, see xref:
 The following classes implement the validation pipeline system:
 
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java[URLPathValidationPipeline] - URL path validation
-* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline] - URL parameter validation
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline] - URL parameter *value* validation
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLParameterNameValidationPipeline.java[URLParameterNameValidationPipeline] - URL parameter *name* validation
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] - HTTP header validation
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/ContentTypeValidationPipeline.java[ContentTypeValidationPipeline] - Content-Type allow/block-list validation (a single `AllowBlockListStage`)
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/PipelineFactory.java[PipelineFactory] - Factory for pipeline creation
 
-Each pipeline is optimized for its specific HTTP component validation requirements.
+There are five concrete pipelines (all extending `AbstractValidationPipeline`), each optimized
+for its specific HTTP component. All but `ContentTypeValidationPipeline` run
+`LengthValidationStage` first; `ContentTypeValidationPipeline` is a single `AllowBlockListStage`.
+
+[#_two_pass_pattern_matching]
+NOTE: `URLPathValidationPipeline` runs `PatternMatchingStage` *twice* by design — once before
+decoding/normalization (to catch raw traversal patterns) and again after normalization (to
+catch canonicalization attacks). This intentional two-pass, defense-in-depth arrangement means
+the path pipeline performs six stage invocations, not five.
 
 [#_security_event_tracking]
 == Security Event Tracking
 
 _See Requirement xref:../functional-requirements.adoc#HTTP-16[HTTP-16: Security Event Tracking]_
 
-_See Requirement xref:../security-requirements.adoc#SEC-11[SEC-11: Security Event Logging]_
+_See Requirement xref:../security-requirements.adoc#SEC-11[SEC-11: Security Event Counting]_
 
-=== Status: IMPLEMENTED
+=== Status: PARTIAL — counting only
 
-The following classes implement security event tracking and monitoring:
+`SecurityEventCounter` provides thread-safe, in-memory event *counting* keyed by
+`UrlSecurityFailureType`. It does *not* implement logging, alerting, rate limiting, time-window
+counting, or a persistent/tamper-evident audit trail; those remain caller responsibilities
+(see xref:../functional-requirements.adoc#HTTP-16[HTTP-16], xref:../functional-requirements.adoc#HTTP-17[HTTP-17]).
 
 [#_event_counter_pattern]
 [#_securityeventcounter]
-* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter] - Thread-safe event counting and tracking
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter] - Thread-safe in-memory event counting by failure type
 
 For implementation details, see the JavaDoc of each monitoring class.
 
@@ -258,7 +276,8 @@ The following test suites verify the implementation meets this specification:
 === Performance Requirements
 
 - Individual stage: <0.2ms per stage
-- Complete pipeline: <1ms total for typical inputs (5 stages × 0.2ms)
+- Complete pipeline: <1ms total for typical inputs (the URL path pipeline runs 6 stage
+  invocations — see the two-pass pattern-matching note below)
 - Memory: O(n) where n is input length
 - Thread safety: No synchronization needed (immutable)
 - Benchmark: 95th percentile must meet these requirements
@@ -274,7 +293,7 @@ The security validation system provides type-safe pipeline creation through the 
 Each pipeline is configured with appropriate validation stages:
 
 * **URLPathValidationPipeline**: Optimized for path traversal and encoding attacks
-* **URLParameterValidationPipeline**: Focused on parameter injection and XSS
+* **URLParameterValidationPipeline**: Focused on parameter character/encoding validation (application-layer injection concerns such as XSS are out of scope — see below)
 * **HTTPHeaderValidationPipeline**: Prevents header injection and CRLF attacks
 
 For usage examples, see the JavaDoc of link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/PipelineFactory.java[PipelineFactory].
@@ -285,14 +304,26 @@ For usage examples, see the JavaDoc of link:../../../cui-http-core/src/main/java
 
 - Path traversal: ../, ..\, encoded variants
 - HTTP protocol encoding attacks: Double/triple URL encoding, UTF-8 overlong encoding, mixed case hex encoding
-- Unicode attacks: Normalization, homographs, control characters
-- Injection: XSS, SQL, LDAP, command injection patterns
-- Protocol attacks: Header injection, request smuggling
+- Unicode attacks: Normalization, control characters (NFKC folds compatibility homoglyphs of separators; note NFKC is not confusable/homograph defense)
+- Protocol attacks: Header injection (CRLF), request smuggling patterns
 - DoS: Size limits, algorithmic complexity
+- NOTE: Signature/pattern-based application-layer injection *detection* (XSS, SQL, LDAP, command
+  injection) is *out of scope* and was deliberately removed from `PatternMatchingStage`; these
+  must be handled at the application layer. This is scope of *detection*, not of URL validation:
+  `URLPathValidationPipeline` still validates URLs structurally, and character/encoding validation
+  rejects many script-injection URL forms (e.g. control characters, `<`/`>`, malformed encoding)
+  as a side effect — it simply does not perform XSS signature matching. See
+  xref:compliance-traceability.adoc#_limitations_and_scope[Limitations and Scope].
 
 === Default Security Posture
 
-- All defaults follow maximum security (OWASP/RFC)
-- No lenient modes - security by default
-- Explicit overrides required for less restrictive settings
-- Comprehensive logging and monitoring
+- Three presets ship as the single source of truth (`SecurityDefaults`):
+  `SecurityConfiguration.strict()`, `.defaults()` (balanced), and `.lenient()`
+  (maximum compatibility, for trusted environments only)
+- The out-of-the-box default (`SecurityConfiguration.defaults()`, identical to
+  `builder().build()`) is the *balanced* preset — not the strict/maximum-security preset
+- Relaxing to the lenient preset (e.g. allowing double encoding, control characters, or
+  disabling Unicode normalization) requires an explicit, opt-in configuration choice
+- Security events are counted in-memory (`SecurityEventCounter`); the core performs no
+  logging itself (see xref:../functional-requirements.adoc#HTTP-17[HTTP-17])
+- See xref:../configuration.adoc[Configuration Reference] for the exact per-preset values

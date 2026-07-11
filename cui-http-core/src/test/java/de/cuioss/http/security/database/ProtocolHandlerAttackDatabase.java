@@ -58,52 +58,52 @@ public class ProtocolHandlerAttackDatabase implements AttackDatabase {
     // JS Protocol Injection Attacks
     public static final AttackTestCase JAVASCRIPT_ALERT_BASIC = new AttackTestCase(
             "javascript:alert('XSS')/../../../etc/passwd",
-            UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED,
-            "JS protocol injection using basic test() function to test XSS vulnerability detection. The javascript: URI scheme allows execution of arbitrary JS code, combined with path traversal to demonstrate multi-vector attack capabilities.",
-            "SUSPICIOUS_PATTERN_DETECTED is expected because the javascript: protocol contains script execution code (alert function) designed to execute cross-site scripting attacks in browser contexts."
+            UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
+            "JS protocol injection using basic alert() function to test XSS vulnerability detection. The javascript: URI scheme allows execution of arbitrary JS code, combined with path traversal to demonstrate multi-vector attack capabilities.",
+            "PATH_TRAVERSAL_DETECTED is expected because the payload contains directory traversal sequences (../../../) that the pipeline detects ahead of any protocol/script analysis; traversal detection takes precedence over the javascript: scheme content."
     );
 
     public static final AttackTestCase JAVASCRIPT_ENCODED_EVAL = new AttackTestCase(
             "javascript:eval(String.fromCharCode(97,108,101,114,116,40,39,88,83,83,39,41))/admin",
             UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED,
-            "Advanced JS protocol attack using eval() with String.fromCharCode() encoding to obfuscate XSS payload. This technique bypasses simple string-based XSS filters by encoding the test('XSS') call as character codes (97=a, 108=l, etc.).",
+            "Advanced JS protocol attack using eval() with String.fromCharCode() encoding to obfuscate XSS payload. This technique bypasses simple string-based XSS filters by encoding the alert('XSS') call as character codes (97=a, 108=l, etc.).",
             "SUSPICIOUS_PATTERN_DETECTED is expected because despite character code obfuscation, the javascript: protocol contains eval() function calls designed to execute dynamically constructed malicious scripts."
     );
 
     public static final AttackTestCase JAVASCRIPT_LOCATION_REDIRECT = new AttackTestCase(
             "javascript:window.location='http://evil.com'/../../config",
-            UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED,
+            UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
             "JS protocol attack using window.location manipulation to perform malicious redirects. This exploits client-side navigation controls to redirect users to attacker-controlled domains while maintaining path traversal capabilities for server-side exploitation.",
-            "SUSPICIOUS_PATTERN_DETECTED is expected because the javascript: protocol contains client-side script code (window.location) designed to manipulate browser navigation and perform unauthorized redirects."
+            "PATH_TRAVERSAL_DETECTED is expected because the payload contains directory traversal sequences (../../) that are detected first, ahead of the embedded javascript: navigation code."
     );
 
     public static final AttackTestCase JAVASCRIPT_FETCH_EXFILTRATION = new AttackTestCase(
             "javascript:fetch('/../../etc/passwd').then(r=>r.text()).then(console.log)",
-            UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED,
+            UrlSecurityFailureType.INVALID_CHARACTER,
             "Sophisticated JS protocol attack using fetch() API for data exfiltration. This modern attack technique combines path traversal with JS fetch API to read sensitive files and exfiltrate data through console output or network requests.",
-            "SUSPICIOUS_PATTERN_DETECTED is expected because the javascript: protocol contains complex script execution (fetch API calls) designed to read and exfiltrate sensitive data through client-side JS execution."
+            "INVALID_CHARACTER is expected because the payload contains characters not permitted in a URL path (e.g. the '>' of the arrow function 'r=>'), which the character-validation stage rejects before any script analysis."
     );
 
     // Data URI Exploitation Attacks
     public static final AttackTestCase DATA_URI_HTML_SCRIPT = new AttackTestCase(
             "data:text/html,<script>alert('XSS')</script>/../../../etc/passwd",
-            UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED,
+            UrlSecurityFailureType.INVALID_CHARACTER,
             "Data URI attack embedding HTML with JS in data: scheme. This exploits the data: protocol to inject malicious HTML containing scripts directly into the URL, bypassing traditional XSS filters that don't examine data URI contents.",
-            "SUSPICIOUS_PATTERN_DETECTED is expected because the data: URI contains embedded HTML with script tags designed to execute cross-site scripting attacks through inline content injection."
+            "INVALID_CHARACTER is expected because the embedded HTML angle brackets (< and >) are rejected by the character-validation stage before the data: content is analysed."
     );
 
     public static final AttackTestCase DATA_URI_BASE64_SCRIPT = new AttackTestCase(
             "data:text/html;base64,PHNjcmlwdD5hbGVydCgnWFNTJyk8L3NjcmlwdD4=/../etc/hosts",
-            UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED,
-            "Base64-encoded data URI attack containing XSS payload. The base64 string 'PHNjcmlwdD5hbGVydCgnWFNTJyk8L3NjcmlwdD4=' decodes to '<script>test('XSS')</script>', demonstrating how data URIs can obfuscate malicious content through encoding.",
-            "SUSPICIOUS_PATTERN_DETECTED is expected because despite base64 encoding, the data: URI contains encoded script content designed to execute cross-site scripting when decoded and processed by browsers."
+            UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
+            "Base64-encoded data URI attack containing XSS payload. The base64 string 'PHNjcmlwdD5hbGVydCgnWFNTJyk8L3NjcmlwdD4=' decodes to '<script>alert('XSS')</script>', demonstrating how data URIs can obfuscate malicious content through encoding.",
+            "PATH_TRAVERSAL_DETECTED is expected because the trailing directory traversal sequence (/../) is detected; the base64-encoded data: content itself contains no characters the earlier stages reject."
     );
 
     public static final AttackTestCase DATA_URI_SVG_SCRIPT = new AttackTestCase(
             "data:image/svg+xml,<svg><script>alert('XSS')</script></svg>/../../sensitive",
-            UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED,
+            UrlSecurityFailureType.INVALID_CHARACTER,
             "SVG data URI attack embedding JavaScript within SVG content. This exploits the ability of SVG images to contain executable script content, using the data: scheme to inject malicious SVG documents that execute JavaScript when processed.",
-            "SUSPICIOUS_PATTERN_DETECTED is expected because the SVG data URI contains embedded script elements within the SVG markup, enabling cross-site scripting through image content manipulation."
+            "INVALID_CHARACTER is expected because the embedded SVG/HTML angle brackets (< and >) are rejected by the character-validation stage before the SVG markup is analysed."
     );
 
     // File Protocol Access Attacks
@@ -131,46 +131,46 @@ public class ProtocolHandlerAttackDatabase implements AttackDatabase {
     // Custom Protocol Schemes
     public static final AttackTestCase CUSTOM_PROTOCOL_MALWARE = new AttackTestCase(
             "malware://evil.com/../../admin/config",
-            UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED,
+            UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
             "Custom protocol attack using 'malware:' scheme to test protocol handler validation. Custom protocols can be registered by applications or malware to handle specific URI schemes, potentially bypassing security controls that only validate standard protocols.",
-            "SUSPICIOUS_PATTERN_DETECTED is expected because non-standard protocol schemes like 'malware:' indicate potential custom protocol exploitation attempts that may bypass standard URL validation mechanisms."
+            "PATH_TRAVERSAL_DETECTED is expected because the payload's directory traversal sequences (../../) are detected first, independently of the non-standard 'malware:' scheme."
     );
 
     public static final AttackTestCase CUSTOM_PROTOCOL_EXPLOIT = new AttackTestCase(
             "exploit://attacker.com/../etc/hosts",
-            UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED,
+            UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
             "Exploit-themed custom protocol scheme targeting system hosts file. This tests whether applications properly validate and restrict custom protocol handlers that might be registered to execute malicious actions when invoked.",
-            "SUSPICIOUS_PATTERN_DETECTED is expected because security-themed protocol schemes like 'exploit:' represent suspicious custom protocols that may be used to invoke malicious protocol handlers or bypass security validation."
+            "PATH_TRAVERSAL_DETECTED is expected because the payload's directory traversal sequence (/../) is detected first, independently of the non-standard 'exploit:' scheme."
     );
 
     // Protocol Confusion Attacks
     public static final AttackTestCase PROTOCOL_CONFUSION_HTTP_JS = new AttackTestCase(
             "http://javascript:alert('XSS')@evil.com/../../../etc/passwd",
-            UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED,
+            UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
             "Protocol confusion attack embedding javascript: within HTTP URL authority section. This exploits URL parsing inconsistencies where embedded protocols in the authority section might be processed differently by various parsers, potentially executing the embedded JavaScript.",
-            "SUSPICIOUS_PATTERN_DETECTED is expected because despite the HTTP protocol context, the embedded javascript: scheme contains script execution code that may be processed as executable content by vulnerable parsers."
+            "PATH_TRAVERSAL_DETECTED is expected because the payload's directory traversal sequences (../../../) are detected first, ahead of the embedded javascript: scheme in the authority section."
     );
 
     public static final AttackTestCase PROTOCOL_CONFUSION_HTTPS_DATA = new AttackTestCase(
             "https://data:text/html,<script>@evil.com/../../config",
-            UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED,
+            UrlSecurityFailureType.INVALID_CHARACTER,
             "HTTPS protocol confusion with embedded data: URI in authority section. This tests parser handling when data URIs containing malicious content are embedded within the authority component of HTTPS URLs, potentially causing execution of embedded scripts.",
-            "SUSPICIOUS_PATTERN_DETECTED is expected because the embedded data: URI contains HTML script content that may be processed as executable content despite being within the HTTPS URL authority section."
+            "INVALID_CHARACTER is expected because the embedded HTML angle brackets (< and >) are rejected by the character-validation stage before the embedded data: URI is analysed."
     );
 
     // Malformed Protocol Schemes
     public static final AttackTestCase MALFORMED_HTTP_SPACE = new AttackTestCase(
             "ht tp://evil.com/../../../etc/passwd",
-            UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED,
+            UrlSecurityFailureType.INVALID_CHARACTER,
             "Malformed HTTP protocol with embedded space character. This tests URL parser robustness against malformed protocol schemes that might bypass protocol-based security filters while still being processed by lenient parsers.",
-            "SUSPICIOUS_PATTERN_DETECTED is expected because the malformed protocol scheme 'ht tp:' with embedded space represents invalid URL syntax that may be used to bypass protocol validation mechanisms."
+            "INVALID_CHARACTER is expected because the embedded space character in 'ht tp:' is rejected by the character-validation stage before any protocol analysis."
     );
 
     public static final AttackTestCase MALFORMED_TRIPLE_SLASH = new AttackTestCase(
             "http:///evil.com/../../admin/config",
-            UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED,
+            UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
             "Malformed HTTP protocol with triple slash separator. This tests parser handling of invalid protocol syntax where extra slashes might cause parsing confusion or bypass validation that expects standard double-slash format (://).",
-            "SUSPICIOUS_PATTERN_DETECTED is expected because the malformed protocol syntax 'http:///' with triple slashes violates standard URI syntax and may indicate attempts to exploit URL parser inconsistencies."
+            "PATH_TRAVERSAL_DETECTED is expected because the payload's directory traversal sequences (../../) are detected first, ahead of the malformed triple-slash protocol syntax."
     );
 
     // Protocol with Special Characters
@@ -183,39 +183,39 @@ public class ProtocolHandlerAttackDatabase implements AttackDatabase {
 
     public static final AttackTestCase PROTOCOL_CONTROL_CHAR = new AttackTestCase(
             "http\n://attacker.com/../etc/hosts",
-            UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED,
+            UrlSecurityFailureType.CONTROL_CHARACTERS,
             "HTTP protocol with embedded newline control character. This tests parser handling of control characters within protocol schemes that might cause parsing errors, security bypass, or unexpected behavior in URL processing.",
-            "SUSPICIOUS_PATTERN_DETECTED is expected because control characters (newline) embedded in protocol schemes violate URL syntax standards and may be used to exploit parser vulnerabilities or bypass validation."
+            "CONTROL_CHARACTERS is expected because the embedded newline (\\n) control character is detected and rejected by the character-validation stage before any protocol analysis."
     );
 
     // Double Protocol Schemes
     public static final AttackTestCase DOUBLE_HTTP_PROTOCOL = new AttackTestCase(
             "http://http://evil.com/../../../etc/passwd",
-            UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED,
+            UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
             "Double HTTP protocol scheme attack testing parser confusion with nested protocol specifications. This exploits URL parsing ambiguities where nested protocols might cause parsers to process the URL differently than intended.",
-            "SUSPICIOUS_PATTERN_DETECTED is expected because nested protocol schemes 'http://http://' represent malformed URL syntax that may be used to confuse parsers and bypass protocol-based security validation."
+            "PATH_TRAVERSAL_DETECTED is expected because the payload's directory traversal sequences (../../../) are detected first, ahead of the nested 'http://http://' protocol syntax."
     );
 
     public static final AttackTestCase DOUBLE_JAVASCRIPT_PROTOCOL = new AttackTestCase(
             "javascript://javascript:alert('XSS')/../../sensitive",
-            UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED,
+            UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
             "Nested JavaScript protocol attack with double javascript: specification. This tests whether XSS filters properly handle nested JavaScript protocols that might be processed recursively or bypass single-layer protocol detection.",
-            "SUSPICIOUS_PATTERN_DETECTED is expected because despite nesting, the URL contains JavaScript protocol schemes with script execution code (alert function) designed to execute cross-site scripting attacks."
+            "PATH_TRAVERSAL_DETECTED is expected because the payload's directory traversal sequences (../../) are detected first, ahead of the nested javascript: protocol content."
     );
 
     // Protocol Encoding Attacks
     public static final AttackTestCase URL_ENCODED_HTTP_PROTOCOL = new AttackTestCase(
             "%68%74%74%70://evil.com/../../../etc/passwd",
-            UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED,
+            UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
             "URL-encoded HTTP protocol scheme bypass using percent-encoding. The encoded string '%68%74%74%70' decodes to 'http', potentially bypassing protocol filters that only check for literal protocol strings without decoding.",
-            "SUSPICIOUS_PATTERN_DETECTED is expected because URL-encoded protocol schemes (%68%74%74%70) may indicate attempts to bypass protocol validation through encoding obfuscation techniques."
+            "PATH_TRAVERSAL_DETECTED is expected because after percent-decoding the payload still carries directory traversal sequences (../../../), which are detected ahead of the reconstructed 'http' scheme."
     );
 
     public static final AttackTestCase URL_ENCODED_JAVASCRIPT = new AttackTestCase(
             "%6a%61%76%61%73%63%72%69%70%74:alert('XSS')/../admin",
-            UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED,
+            UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
             "URL-encoded JavaScript protocol attack using percent-encoding to obfuscate the javascript: scheme. This bypasses XSS filters that detect literal 'javascript:' strings but don't properly decode URL-encoded protocol specifications.",
-            "SUSPICIOUS_PATTERN_DETECTED is expected because the URL-encoded protocol (%6a%61%76%61%73%63%72%69%70%74) decodes to 'javascript:' containing script execution code designed to perform cross-site scripting attacks."
+            "PATH_TRAVERSAL_DETECTED is expected because after percent-decoding the payload still carries a directory traversal sequence (/../), which is detected ahead of the reconstructed 'javascript:' scheme."
     );
 
     // Protocol with Authentication Bypass
@@ -228,9 +228,9 @@ public class ProtocolHandlerAttackDatabase implements AttackDatabase {
 
     public static final AttackTestCase MALFORMED_AUTH_ENCODING = new AttackTestCase(
             "http://:%40@evil.com/../../sensitive",
-            UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED,
+            UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
             "Malformed authentication with URL-encoded @ symbol (%40) in userinfo section. This exploits URL parsing edge cases where encoded characters in the authority section might cause parsing confusion or bypass validation.",
-            "SUSPICIOUS_PATTERN_DETECTED is expected because malformed authentication syntax with encoded characters (:%40) represents suspicious URL manipulation that may be used to exploit parser vulnerabilities."
+            "PATH_TRAVERSAL_DETECTED is expected because the payload's directory traversal sequences (../../) are detected first, ahead of the malformed encoded userinfo section."
     );
 
     private static final List<AttackTestCase> ALL_ATTACK_TEST_CASES = List.of(

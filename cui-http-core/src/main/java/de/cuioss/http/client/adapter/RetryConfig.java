@@ -148,7 +148,8 @@ boolean idempotentOnly
      * </ul>
      *
      * @param attemptNumber current attempt number (1-based: 1 = first retry after initial failure)
-     * @return calculated delay with jitter applied, capped at maxDelay
+     * @return calculated delay: the exponential backoff capped at {@code maxDelay}, then
+     *         randomized by {@code ± jitter} (so a capped delay still varies around {@code maxDelay})
      */
     @SuppressWarnings("java:S2245") // Random is fine for jitter - not cryptographic use
     public Duration calculateDelay(int attemptNumber) {
@@ -156,14 +157,18 @@ boolean idempotentOnly
         double exponentialDelay = initialDelay.toMillis()
                 * Math.pow(multiplier, (double) attemptNumber - 1);
 
+        // Cap the base exponential delay at maxDelay BEFORE applying jitter, so that once the
+        // exponential growth reaches the cap the retries still spread out (± jitter around the cap)
+        // instead of all firing in lockstep at exactly maxDelay (the thundering herd jitter prevents).
+        double cappedDelay = Math.min(exponentialDelay, (double) maxDelay.toMillis());
+
         // Apply jitter: delay * (1 ± jitter)
         // Random value between -1.0 and 1.0
         double randomFactor = 2.0 * ThreadLocalRandom.current().nextDouble() - 1.0;
         double jitterMultiplier = 1.0 + (randomFactor * jitter);
-        long delayMs = Math.round(exponentialDelay * jitterMultiplier);
+        long delayMs = Math.round(cappedDelay * jitterMultiplier);
 
-        // Cap at maximum delay
-        return Duration.ofMillis(Math.min(delayMs, maxDelay.toMillis()));
+        return Duration.ofMillis(delayMs);
     }
 
     /**
@@ -239,7 +244,13 @@ boolean idempotentOnly
         /**
          * Sets the maximum delay cap.
          *
-         * @param maxDelay cap on delay regardless of exponential growth (must be positive, non-null)
+         * <p>The cap is applied to the exponential backoff <em>before</em> jitter (see
+         * {@link RetryConfig#calculateDelay(int)}), so that capped retries still spread out instead
+         * of firing in lockstep. Consequently the final returned delay may exceed {@code maxDelay}
+         * by up to the configured {@code jitter} factor; it bounds the exponential growth, not the
+         * post-jitter value.</p>
+         *
+         * @param maxDelay cap on the exponential backoff before jitter (must be positive, non-null)
          * @return this builder for chaining
          * @throws IllegalArgumentException if maxDelay is null, negative, or zero
          */

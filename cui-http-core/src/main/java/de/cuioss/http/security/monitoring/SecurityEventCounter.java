@@ -99,14 +99,23 @@ public class SecurityEventCounter {
      * type has been observed, a new counter will be created and initialized to the delta value.</p>
      *
      * @param failureType The type of security failure to increment. Must not be null.
-     * @param delta The amount to add to the counter. Must be positive.
-     * @return The new count value after incrementing
+     * @param delta The amount to add to the counter. Must be non-negative (&gt;= 0). A delta of
+     *              zero is a true no-op: it leaves the counter unchanged and does <em>not</em>
+     *              materialize an entry for an as-yet-unseen failure type (so it does not affect
+     *              {@link #getCount(UrlSecurityFailureType)} or the counter map).
+     * @return The new count value after incrementing (the current value when {@code delta} is zero)
      * @throws NullPointerException if failureType is null
      * @throws IllegalArgumentException if delta is negative
      */
     public long incrementBy(UrlSecurityFailureType failureType, long delta) {
         if (delta < 0) {
             throw new IllegalArgumentException("delta must be non-negative, got: " + delta);
+        }
+        if (delta == 0) {
+            // True no-op: do not create a zero-valued entry for an unseen failure type, which
+            // would otherwise change the observable counter map for no numeric effect.
+            AtomicLong existing = counters.get(failureType);
+            return existing != null ? existing.get() : 0L;
         }
 
         return counters.computeIfAbsent(failureType, k -> new AtomicLong(0))

@@ -61,8 +61,8 @@
  *         result.getContent().ifPresent(user ->
  *             System.out.println("User: " + user.getName()));
  *
- *         // Check if served from cache
- *         if (result.isNotModified()) {
+ *         // Check if served from cache (304 Not Modified)
+ *         if (result.getHttpStatus().orElse(0) == 304) {
  *             System.out.println("Cached (304 Not Modified)");
  *         }
  *     }
@@ -228,15 +228,18 @@
  * <p>Adapters integrate with existing HTTP security validation pipelines. <b>IMPORTANT:</b> Validation happens
  * BEFORE passing data to the adapter, not inside the adapter itself. This follows the fail-secure principle.
  *
- * <h3>URL Validation (Automatic)</h3>
+ * <h3>URL Handling (No Automatic Security Validation)</h3>
  *
- * <p>URL security validation is performed automatically by {@link de.cuioss.http.client.handler.HttpHandler HttpHandler}
- * during construction. All URLs are validated for directory traversal, CVE exploits, and XSS attacks.
+ * <p>{@link de.cuioss.http.client.handler.HttpHandler HttpHandler} validates only URI <em>syntax</em>,
+ * the scheme (HTTPS is required unless {@code allowInsecureHttp(true)} is set), and timeout values at
+ * build time. It does <strong>not</strong> run the {@code de.cuioss.http.security} pipelines and never
+ * throws {@code UrlSecurityException}. If a URL originates from untrusted input, validate it with the
+ * appropriate {@code de.cuioss.http.security} pipeline <em>before</em> constructing the handler.
  *
  * <pre>{@code
- * // URL validation happens here - throws UrlSecurityException on attack
+ * // Syntax/scheme/timeout checks only - no attack-pattern validation here
  * HttpHandler handler = HttpHandler.builder()
- *     .uri("https://api.example.com/users")  // Validated automatically
+ *     .uri("https://api.example.com/users")
  *     .build();
  * }</pre>
  *
@@ -293,11 +296,13 @@
  * HttpResult<User> result = adapter.post(userConverter, validatedJson.get());
  * }</pre>
  *
- * <h3>Content-Type Validation (Automatic, in Converter)</h3>
+ * <h3>Response Body Handling (in Converter)</h3>
  *
- * <p>Response Content-Type validation happens in the converter's {@code convert()} method. If the server
- * returns unexpected Content-Type or malformed data, the converter returns {@code Optional.empty()},
- * resulting in {@code HttpErrorCategory.INVALID_CONTENT}.
+ * <p>The adapter does <strong>not</strong> inspect or validate the response {@code Content-Type}
+ * header. Response handling happens in the converter's {@code convert()} method: if it cannot parse
+ * the body it returns {@code Optional.empty()}, which the adapter maps to
+ * {@code HttpErrorCategory.INVALID_CONTENT}. Any content-type checking must be implemented inside
+ * {@code convert()}.
  *
  * <pre>{@code
  * public class UserConverter extends StringContentConverter<User> {
@@ -381,7 +386,7 @@
  * <h3>Security Best Practices</h3>
  *
  * <ul>
- *   <li><b>Always use HTTPS:</b> Set {@code sslContextProvider} with {@code trustAllCertificates(false)}</li>
+ *   <li><b>Always use HTTPS:</b> HTTPS is required by default (fail-secure); only set {@code allowInsecureHttp(true)} for trusted, non-production endpoints</li>
  *   <li><b>Validate ALL user input:</b> Headers, body content, URL parameters - never trust user input</li>
  *   <li><b>Configure timeouts:</b> Use {@code connectionTimeoutSeconds} and {@code readTimeoutSeconds} to prevent resource exhaustion</li>
  *   <li><b>Disable ETag caching for sensitive data:</b> Use {@code etagCachingEnabled(false)} for PII, credentials, financial data</li>
@@ -397,7 +402,7 @@
  * <ul>
  *   <li>All request bodies validated with {@code URLParameterValidationPipeline}</li>
  *   <li>All custom headers validated with {@code HTTPHeaderValidationPipeline}</li>
- *   <li>HTTPS enabled with certificate verification (not {@code trustAllCertificates(true)})</li>
+ *   <li>HTTPS enabled with certificate verification (avoid {@code allowInsecureHttp(true)} in production)</li>
  *   <li>Connection and read timeouts configured</li>
  *   <li>Request size limits enforced (e.g., max 10 MB)</li>
  *   <li>ETag caching disabled for sensitive endpoints ({@code etagCachingEnabled(false)})</li>
@@ -412,4 +417,7 @@
  * @see de.cuioss.http.client.adapter.RetryConfig
  * @since 1.0
  */
+@NullMarked
 package de.cuioss.http.client.adapter;
+
+import org.jspecify.annotations.NullMarked;

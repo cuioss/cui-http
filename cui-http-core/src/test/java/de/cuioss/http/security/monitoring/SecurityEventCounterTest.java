@@ -110,6 +110,18 @@ class SecurityEventCounterTest {
     }
 
     @Test
+    @DisplayName("Should treat zero delta on an unseen failure type as a true no-op")
+    void shouldTreatZeroDeltaOnUnseenTypeAsNoOp() {
+        UrlSecurityFailureType unseen = UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED;
+
+        assertEquals(0, counter.incrementBy(unseen, 0));
+        // No entry is materialized: count, distinct-type count, and the snapshot are unaffected.
+        assertEquals(0, counter.getCount(unseen));
+        assertEquals(0, counter.getFailureTypeCount());
+        assertFalse(counter.getAllCounts().containsKey(unseen));
+    }
+
+    @Test
     @DisplayName("Should reject null failure type")
     void shouldRejectNullFailureType() {
         assertThrows(NullPointerException.class, () -> counter.increment(null));

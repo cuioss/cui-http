@@ -7,7 +7,7 @@ This file provides guidance to AI coding agents when working with the CUI-HTTP p
 CUI-HTTP is a security-focused HTTP utilities library providing secure validation pipelines, SSL/TLS context management, and HTTP client handlers. The library emphasizes security validation of HTTP components (paths, parameters, headers, bodies) with comprehensive attack pattern detection.
 
 - **Language**: Java 21 with JPMS module system (`module de.cuioss.http`)
-- **Build System**: Maven 3.9.11 via wrapper (`./mvnw`)
+- **Build System**: Maven — invoked via the canonical build-executor commands documented in `CLAUDE.md` (Build Commands). Never hard-code `./mvnw` or `mvn`.
 - **Testing**: JUnit 5 (no Mockito, PowerMock, or Hamcrest)
 - **Code Quality**: SonarCloud integration with mandatory pre-commit checks
 
@@ -15,60 +15,17 @@ CUI-HTTP is a security-focused HTTP utilities library providing secure validatio
 
 ### Build and Run Commands
 
-```bash
-# Build and install locally
-./mvnw clean install
+Never hard-code build tool commands (`./mvnw`, `mvn`). Invoke all builds via the canonical
+build-executor commands documented in the "Build Commands" section of `CLAUDE.md` (compile,
+quality gate / pre-commit, full verify, coverage, and the module-scoped test and benchmark
+commands).
 
-# Run tests
-./mvnw test
+### Architecture, Pipeline Selection, and Test Organization
 
-# Run specific test
-./mvnw test -Dtest=ClassName#methodName
-
-# MANDATORY: Run pre-commit checks before commits
-./mvnw -Ppre-commit clean verify
-
-# Generate coverage report
-./mvnw -Pcoverage clean verify
-
-# Build without tests
-./mvnw clean install -DskipTests
-```
-
-### Architecture Quick Reference
-
-**Security Validation Pipelines** (`de.cuioss.http.security.pipeline`):
-- `URLPathValidationPipeline`: All URL validation (paths, full URLs, directory traversal, CVE exploits)
-- `HTTPHeaderValidationPipeline`: Header injection attacks
-- `URLParameterValidationPipeline`: Query parameter validation
-
-**Validation Stages** (`de.cuioss.http.security.validation`):
-- `DecodingStage`: URL percent-encoding, UTF-8 overlong detection
-- `NormalizationStage`: Unicode normalization for paths
-- `CharacterValidationStage`: Invalid character detection
-- `LengthValidationStage`: Length limits enforcement
-- `PatternMatchingStage`: Attack pattern detection
-
-**Client Handlers** (`de.cuioss.http.client.handler`):
-- `HttpHandler`: General HTTP request/response handling
-- `SecureSSLContextProvider`: SSL/TLS context management
-- `HttpStatusFamily`: HTTP status code classification
-
-### Pipeline Selection Rules
-
-Use `URLPathValidationPipeline` for:
-- All URL validation (paths and full URLs)
-- Attack patterns with or without protocols
-- Directory traversal testing (`../../../etc/passwd`)
-- CVE exploits for specific servers (Apache, IIS, Nginx)
-- XSS or script injection in URLs
-- Full URL parsing with domain validation
-
-### Test Organization
-
-- **Attack Databases** (`cui-http-core/src/test/java/de/cuioss/http/security/database`): Predefined attack patterns
-- **Generators** (`cui-http-core/src/test/java/de/cuioss/http/security/generators`): Test data generators
-- **Integration Tests** (`cui-http-core/src/test/java/de/cuioss/http/security/tests`): Attack database validation
+The component architecture (security validation pipelines, validation stages, client handlers),
+the pipeline-selection rules, and the test organization are maintained as the single source of
+truth in `CLAUDE.md` (see its "Architecture" and "Testing Architecture" sections). Refer there
+to avoid drift; they are intentionally not duplicated here.
 
 ### Key Dependencies and Modules
 
@@ -82,19 +39,9 @@ Use `URLPathValidationPipeline` for:
 
 ### Test Execution
 
-```bash
-# Run all tests
-./mvnw test
-
-# Run specific test class
-./mvnw test -Dtest=URLPathValidationPipelineTest
-
-# Run specific test method
-./mvnw test -Dtest=ClassName#methodName
-
-# Run tests with coverage
-./mvnw -Pcoverage clean verify
-```
+Run tests via the canonical build-executor commands in the "Build Commands" section of
+`CLAUDE.md` (the module-scoped test command and the coverage command). Never hard-code
+`./mvnw`/`mvn`.
 
 ### Test Requirements
 
@@ -177,10 +124,9 @@ Validators are thread-safe, composable, and fail-secure (throw `UrlSecurityExcep
 
 ### Before Committing
 
-1. **Run pre-commit checks** (MANDATORY):
-   ```bash
-   ./mvnw -Ppre-commit clean verify
-   ```
+1. **Run pre-commit checks** (MANDATORY): run the quality-gate command from the "Build Commands"
+   section of `CLAUDE.md` (the canonical `verify -Ppre-commit` build-executor invocation; never
+   hard-code `./mvnw`/`mvn`).
    - Fix ALL errors and warnings
    - Address code quality, formatting, and linting issues
    - Some recipes may add markers - fix them or suppress with justification
@@ -213,15 +159,6 @@ Validators are thread-safe, composable, and fail-secure (throw `UrlSecurityExcep
 
 ## Test Generators Artifact
 
-The project produces a separate `generators` artifact:
-
-```xml
-<dependency>
-    <groupId>de.cuioss</groupId>
-    <artifactId>cui-http</artifactId>
-    <classifier>generators</classifier>
-    <scope>test</scope>
-</dependency>
-```
-
-This artifact contains security testing utilities for reuse in other projects.
+The project produces a separate `generators` artifact containing security testing utilities for
+reuse in other projects. See the "Test Generators" section of `CLAUDE.md` for the Maven
+coordinates.

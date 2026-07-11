@@ -118,6 +118,8 @@ String validated = pipeline.validate("/api/users/123").orElseThrow();
 
 == Build Commands
 
+The following standard Maven commands are provided for human contributors:
+
 [source,bash]
 ----
 ./mvnw clean install          # Build and install
@@ -125,6 +127,9 @@ String validated = pipeline.validate("/api/users/123").orElseThrow();
 ./mvnw -Ppre-commit clean verify  # Pre-commit checks (MANDATORY)
 ./mvnw -Pcoverage clean verify    # Coverage report
 ----
+
+NOTE: AI coding agents must not hard-code `./mvnw`/`mvn`; they invoke builds via the canonical
+build-executor commands documented in the "Build Commands" section of `CLAUDE.md`.
 
 == Documentation
 

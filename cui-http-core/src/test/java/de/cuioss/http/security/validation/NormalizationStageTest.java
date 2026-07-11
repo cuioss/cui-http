@@ -281,15 +281,35 @@ class NormalizationStageTest {
     }
 
     /**
-     * Test that validation type is correctly preserved in exceptions.
+     * Test that validation type is correctly preserved in exceptions for path types.
      */
     @Test
     void validate_preservesValidationType() {
-        NormalizationStage parameterStage = new NormalizationStage(config, ValidationType.PARAMETER_NAME);
+        NormalizationStage pathStage = new NormalizationStage(config, ValidationType.URL_PATH);
 
         UrlSecurityException exception = assertThrows(UrlSecurityException.class,
-                () -> parameterStage.validate("../escape"));
-        assertEquals(ValidationType.PARAMETER_NAME, exception.getValidationType());
+                () -> pathStage.validate("../escape"));
+        assertEquals(ValidationType.URL_PATH, exception.getValidationType());
+    }
+
+    /**
+     * Non-path validation types must pass through unchanged: RFC 3986 dot-segment resolution
+     * and traversal detection apply only to path components (see SEC-1). A parameter/header value
+     * such as {@code a/b/../c} is opaque application data and must not be rewritten or rejected
+     * here; downstream pattern matching handles traversal-style patterns in those contexts.
+     */
+    @Test
+    void validate_nonPathType_passesThroughUnchanged() {
+        for (ValidationType type : ValidationType.values()) {
+            if (type.isPath()) {
+                continue;
+            }
+            NormalizationStage nonPathStage = new NormalizationStage(config, type);
+            assertEquals(Optional.of("a/b/../c"), nonPathStage.validate("a/b/../c"),
+                    "Non-path type " + type + " must pass input through unchanged");
+            assertEquals(Optional.of("../escape"), nonPathStage.validate("../escape"),
+                    "Non-path type " + type + " must not reject traversal-style input");
+        }
     }
 
     /**

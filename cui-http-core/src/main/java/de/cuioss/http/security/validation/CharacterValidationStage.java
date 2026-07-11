@@ -181,11 +181,14 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
                 continue;
             }
 
-            // Check if character is allowed based on configuration and character sets
-            if (!isCharacterAllowed(ch)) {
-                handleInvalidCharacter(value, ch, i);
+            // Classify by full Unicode code point (not char) so supplementary-plane
+            // characters - in particular combining marks - are evaluated against their
+            // real code point rather than an individual surrogate half.
+            int codePoint = value.codePointAt(i);
+            if (!isCharacterAllowed(codePoint)) {
+                handleInvalidCharacter(value, codePoint, i);
             }
-            i++;
+            i += Character.charCount(codePoint);
         }
     }
 
@@ -213,13 +216,19 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
      * @param position The position of the invalid character
      * @throws UrlSecurityException for the invalid character
      */
-    private void handleInvalidCharacter(String value, char ch, int position) throws UrlSecurityException {
+    private void handleInvalidCharacter(String value, int ch, int position) throws UrlSecurityException {
         UrlSecurityFailureType failureType = getFailureTypeForCharacter(ch);
+        // Do not render control characters (CR/LF, NUL, ...) verbatim: the detail is included in
+        // UrlSecurityException.getMessage(), which callers log, so a raw CR/LF would allow log
+        // forging/injection. Non-printable code points are shown as their escaped U+XXXX form.
+        String display = Character.isISOControl(ch)
+                ? "U+%04X".formatted(ch)
+                : new String(Character.toChars(ch));
         throw UrlSecurityException.builder()
                 .failureType(failureType)
                 .validationType(validationType)
                 .originalInput(value)
-                .detail("Invalid character '" + ch + "' (0x" + Integer.toHexString(ch).toUpperCase() + ") at position " + position)
+                .detail("Invalid character '" + display + "' (0x" + Integer.toHexString(ch).toUpperCase() + ") at position " + position)
                 .build();
     }
 
@@ -286,7 +295,7 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
     // guards (null byte, control chars incl. the unconditional CR/LF header rejection, extended
     // ASCII, Unicode) are each simple and clearer inline than split across helpers.
     @SuppressWarnings("java:S3776")
-    private boolean isCharacterAllowed(char ch) {
+    private boolean isCharacterAllowed(int ch) {
         // Null byte (0) - should be allowed if configured (already checked earlier but may reach here)
         if (ch == 0) {
             return allowNullBytes;
@@ -343,7 +352,7 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
     /**
      * Determines the appropriate failure type for a rejected character.
      */
-    private UrlSecurityFailureType getFailureTypeForCharacter(char ch) {
+    private UrlSecurityFailureType getFailureTypeForCharacter(int ch) {
         // Null byte (0)
         if (ch == 0) {
             return UrlSecurityFailureType.NULL_BYTE_INJECTION;

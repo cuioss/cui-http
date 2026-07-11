@@ -39,6 +39,20 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  * permits. Values that fail sanitization or are not trusted are dropped (and logged) rather than
  * honored — {@code resolve} never throws.</p>
  *
+ * <h3 id="security-precondition">Security precondition — trusted network placement (MANDATORY)</h3>
+ * <p><strong>{@code resolve(...)} trusts HTTP headers, not the socket.</strong> The resolver
+ * receives only a header accessor; the actual TCP peer (the socket remote address) is never passed
+ * in and cannot be inspected. Consequently the {@code X-Forwarded-For} / {@code Forwarded} walk
+ * cannot verify that the request actually arrived <em>through</em> a trusted proxy — it can only
+ * match the addresses <em>inside the headers</em> against the configured {@code trustedProxies}.</p>
+ * <p>The deployment therefore <strong>MUST</strong> guarantee that only trusted proxies can connect
+ * to this server directly. If an attacker can reach the server without traversing a trusted proxy,
+ * they can forge the chain (e.g. a single untrusted entry {@code X-Forwarded-For: 6.6.6.6}) and have
+ * it returned verbatim as the client IP. Enforce this with network controls — bind the listener to a
+ * private interface, restrict it with firewall / security-group rules, or place it behind a service
+ * mesh — so that the socket peer is always a trusted proxy. The resolver cannot make this guarantee
+ * for you, and (by design) does not accept the peer address as a parameter.</p>
+ *
  * <h3>Precedence</h3>
  * <ul>
  *   <li>scheme: {@code X-Forwarded-Proto} → {@code X-ProxyScheme} → RFC 7239 {@code proto}</li>
@@ -48,6 +62,13 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  *       ({@code Forwarded} has no prefix directive)</li>
  *   <li>client-IP: {@code X-Forwarded-For} chain → RFC 7239 {@code for} chain</li>
  * </ul>
+ *
+ * <p><strong>Present-but-invalid = drop (no fall-through).</strong> Precedence selects the first
+ * <em>present</em>, non-blank source for a field; that value is then validated. If it fails its
+ * field guard it is <em>dropped</em> — lower-precedence sources are <em>not</em> consulted as a
+ * fallback. In particular a present-but-invalid {@code X-Forwarded-Port} / {@code X-ProxyPort}
+ * (non-numeric or outside {@code 1..65535}) yields no port; the host {@code :port} fallback is used
+ * only when no explicit port header is present at all.</p>
  *
  * <h3>Usage Example</h3>
  * <pre>{@code
@@ -148,6 +169,13 @@ public final class ForwardedHeaderResolver {
     /**
      * Splits a {@code host[:port]} token (bracketed IPv6 aware) and validates the host contains no
      * path/backslash/whitespace. Returns {@link HostPort#EMPTY} for a malformed host.
+     *
+     * <p>The {@code host:port} split here intentionally diverges from
+     * {@link IpAddresses#parseChainEntry(String)}: this method reconstructs the <em>host string</em>
+     * and therefore <em>retains</em> the IPv6 brackets (a host is later composed back into a URL),
+     * whereas {@code parseChainEntry} strips them to obtain a bare literal for {@code InetAddress}
+     * matching. The divergence is deliberate — keep both bracket policies in sync when either
+     * changes.</p>
      */
     private static HostPort parseHostPort(String value) {
         String host;

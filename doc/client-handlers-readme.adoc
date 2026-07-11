@@ -116,6 +116,7 @@ Error categorization for HTTP operations.
 * `SERVER_ERROR` - 5xx responses
 * `CLIENT_ERROR` - 4xx responses
 * `INVALID_CONTENT` - Content conversion failures
+* `CONFIGURATION_ERROR` - Setup/config issues (invalid URL, SSL, request-build failures)
 * Retry eligibility determination
 
 === Logging
@@ -180,20 +181,24 @@ adapter.get(Map.of("Accept", "application/json"))
             result.getContent().ifPresent(content -> {
                 processContent(content);
                 // ETag available for cache optimization
-        result.getETag().ifPresent(etag -> logger.debug("Cached with ETag: {}", etag));
+                result.getETag().ifPresent(etag -> logger.debug("Cached with ETag: %s", etag));
+            });
+            // A subsequent get() call may return 304 Not Modified with cached content
+        } else {
+            // Handle error with detailed information
+            result.getErrorMessage().ifPresent(msg -> logger.error("Load failed: %s", msg));
+            result.getErrorCategory().ifPresent(category -> {
+                // isRetryable() reports eligibility only. When using ResilientHttpAdapter the
+                // configured attempts are already exhausted by the time this result is returned;
+                // this callback just logs the outcome, it does not schedule a further retry.
+                if (category.isRetryable()) {
+                    logger.info("Retryable error category (%s) after configured attempts", category);
+                } else {
+                    logger.error("Non-retryable error (%s), giving up", category);
+                }
+            });
+        }
     });
-    // Next load() call may return 304 Not Modified with cached content
-} else {
-    // Handle error with detailed information
-    result.getErrorMessage().ifPresent(msg -> logger.error("Load failed: {}", msg));
-    HttpErrorCategory category = result.getErrorCategory();
-
-    if (result.isRetryable()) {
-        logger.info("Retryable error ({}), will retry", category);
-    } else {
-        logger.error("Non-retryable error ({}), giving up", category);
-    }
-}
 ----
 
 === Custom Response Converter
@@ -257,7 +262,7 @@ RetryConfig custom = RetryConfig.builder()
     .multiplier(1.5)
     .maxDelay(Duration.ofSeconds(10))
     .jitter(0.2)  // 20% jitter
-    .idempotentOnly(true)  // Only retry GET, PUT, DELETE
+    .idempotentOnly(true)  // Only retry idempotent methods: GET, HEAD, OPTIONS, PUT, DELETE
     .build();
 
 // Wrap any adapter with retry

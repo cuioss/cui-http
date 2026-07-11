@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 /**
  * Data models and records for HTTP components.
  *
@@ -34,35 +33,30 @@
  *   <li><strong>Immutability</strong> - All data models are immutable after construction</li>
  *   <li><strong>Value Semantics</strong> - Records provide automatic equals, hashCode, and toString</li>
  *   <li><strong>Thread Safety</strong> - Safe for concurrent access without synchronization</li>
- *   <li><strong>Validation Support</strong> - Built-in methods for security-related checks</li>
+ *   <li><strong>Convenience Predicates</strong> - Built-in methods for content classification
+ *       (e.g. {@code hasName()}, {@code hasValue()}, {@code isFlag()}, {@code isJson()})</li>
  * </ul>
  *
  * <h3>Usage Examples</h3>
  * <pre><code>
- * // URL Parameter
+ * // URL Parameter (name, value)
  * URLParameter param = new URLParameter("search", "user input");
- * if (param.isSensitive()) {
- *     // Handle sensitive parameter specially
+ * if (param.isFlag()) {
+ *     // Handle valueless flag parameter (e.g. "?debug")
  * }
  *
- * // Cookie
- * Map&lt;String, String&gt; attributes = Map.of("HttpOnly", "true", "Secure", "true");
- * Cookie cookie = new Cookie("sessionId", "abc123", attributes);
- * if (cookie.isSecuritySensitive()) {
- *     // Apply additional security checks
+ * // Cookie (name, value, attributes) - attributes are a single attribute string
+ * Cookie cookie = new Cookie("sessionId", "abc123", "HttpOnly; Secure");
+ * if (cookie.isSecure()) {
+ *     // Cookie carries the Secure attribute
  * }
  *
- * // HTTP Body
- * HTTPBody body = new HTTPBody("application/json", jsonBytes);
- * int contentLength = body.length();
+ * // HTTP Body - use the content-type factory methods (content, contentType, encoding)
+ * HTTPBody body = HTTPBody.json(jsonContent);
+ * if (body.isJson()) {
+ *     // Content is application/json
+ * }
  * </code></pre>
- *
- * <h3>Sensitive Data Detection</h3>
- * <p>Data models include built-in methods to identify potentially sensitive information:</p>
- * <ul>
- *   <li>{@code URLParameter.isSensitive()} - Detects parameters with sensitive names</li>
- *   <li>{@code Cookie.isSecuritySensitive()} - Identifies security-related cookies</li>
- * </ul>
  *
  * <h3>Package Nullability</h3>
  * <p>This package follows strict nullability conventions using JSpecify annotations:</p>

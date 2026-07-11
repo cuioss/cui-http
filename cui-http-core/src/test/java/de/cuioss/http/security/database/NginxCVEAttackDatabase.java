@@ -48,21 +48,21 @@ public class NginxCVEAttackDatabase implements AttackDatabase {
             "/test.php /../../etc/passwd",
             UrlSecurityFailureType.INVALID_CHARACTER,
             "CVE-2013-4547: Nginx space in URI vulnerability exploiting improper URI parsing when spaces are embedded within the request path. This affects nginx versions prior to 1.5.7 and 1.4.4, where the space character causes URI parsing confusion, allowing directory traversal to access the system password file.",
-            "PATH_TRAVERSAL_DETECTED is expected because despite the space-based URI confusion, the attack uses standard directory traversal sequences (../../) to access files outside the web root directory structure."
+            "INVALID_CHARACTER is expected because the embedded space that triggers the nginx URI-parsing confusion is itself a disallowed character for a URL path and is rejected at character validation, before the traversal sequences (../../) can be classified as path traversal."
     );
 
     public static final AttackTestCase CVE_2013_4547_SPACE_URI_SHADOW = new AttackTestCase(
             "/admin.php /../../etc/shadow",
             UrlSecurityFailureType.INVALID_CHARACTER,
             "CVE-2013-4547: Space in URI attack targeting the shadow password file through administrative PHP endpoint. This demonstrates how the nginx URI parsing vulnerability can be combined with administrative paths to access highly sensitive authentication data.",
-            "PATH_TRAVERSAL_DETECTED is expected because the core vulnerability mechanism uses directory traversal (../../) to escape the web root and access unauthorized system files containing password hashes."
+            "INVALID_CHARACTER is expected because the embedded space (the core nginx parser-confusion trigger) is a disallowed URL-path character rejected at character validation, before the directory traversal (../../) toward the shadow file can be classified as path traversal."
     );
 
     public static final AttackTestCase CVE_2013_4547_SPACE_URI_WINDOWS = new AttackTestCase(
             "/config.php /../../windows/win.ini",
             UrlSecurityFailureType.INVALID_CHARACTER,
             "CVE-2013-4547: Cross-platform nginx space URI vulnerability targeting Windows systems. This shows how the same nginx parsing flaw can be exploited on Windows installations to access system configuration files through path traversal.",
-            "PATH_TRAVERSAL_DETECTED is expected because the attack employs standard directory traversal techniques to access Windows system files, with the space character serving as the nginx parser confusion trigger."
+            "INVALID_CHARACTER is expected because the space character that serves as the nginx parser-confusion trigger is a disallowed URL-path character rejected at character validation, before the directory traversal toward Windows system files can be classified as path traversal."
     );
 
     // CVE-2017-7529: nginx range filter integer overflow
@@ -70,14 +70,14 @@ public class NginxCVEAttackDatabase implements AttackDatabase {
             "/large.file/../../../etc/passwd HTTP/1.1\\r\\nRange: bytes=0-999999999",
             UrlSecurityFailureType.INVALID_CHARACTER,
             "CVE-2017-7529: Nginx range filter integer overflow vulnerability using massive byte range values to trigger integer overflow conditions in nginx 1.3.9-1.13.0. The oversized range (999999999) can cause memory corruption while the path traversal attempts unauthorized file access.",
-            "PROTOCOL_VIOLATION is expected because the massive Range header value (bytes=0-999999999) violates reasonable HTTP range specifications and indicates potential integer overflow exploitation attempts."
+            "INVALID_CHARACTER is expected because the payload embeds a space and literal control-character sequences (the HTTP/1.1 line and Range header) that are disallowed in a URL path and are rejected at character validation, regardless of the integer-overflow intent of the massive Range value."
     );
 
     public static final AttackTestCase CVE_2017_7529_RANGE_SHADOW = new AttackTestCase(
             "/video.mp4/../../../etc/shadow HTTP/1.1\\r\\nRange: bytes=1-888888888",
             UrlSecurityFailureType.INVALID_CHARACTER,
             "CVE-2017-7529: Range filter overflow targeting shadow file through media endpoint. This combines the integer overflow trigger with path traversal to access password hashes, demonstrating multi-vector attack exploitation of the nginx vulnerability.",
-            "PROTOCOL_VIOLATION is expected due to the oversized Range header (bytes=1-888888888) designed to trigger integer overflow conditions in nginx's range filter processing mechanism."
+            "INVALID_CHARACTER is expected because the payload embeds a space and literal control-character sequences (the HTTP/1.1 line and oversized Range header) that are disallowed in a URL path and are rejected at character validation, regardless of the range-filter integer-overflow intent."
     );
 
     // CVE-2019-20372: nginx HTTP/2 request smuggling
@@ -85,14 +85,14 @@ public class NginxCVEAttackDatabase implements AttackDatabase {
             "/api/v1/../../../etc/passwd HTTP/2.0",
             UrlSecurityFailureType.INVALID_CHARACTER,
             "CVE-2019-20372: Nginx HTTP/2 request smuggling vulnerability allowing path traversal through protocol version exploitation. This affects nginx 1.17.7 and earlier with HTTP/2 enabled, where protocol handling inconsistencies can be exploited for directory traversal attacks.",
-            "PROTOCOL_VIOLATION is expected because the HTTP/2.0 protocol version specification in combination with path traversal represents protocol-level exploitation that violates standard HTTP request formatting."
+            "INVALID_CHARACTER is expected because the embedded space before the HTTP/2.0 protocol token is a disallowed URL-path character rejected at character validation, before the path traversal can be classified as such."
     );
 
     public static final AttackTestCase CVE_2019_20372_H2_API_SHADOW = new AttackTestCase(
             "/api/user/../../../etc/shadow HTTP/2.0",
             UrlSecurityFailureType.INVALID_CHARACTER,
             "CVE-2019-20372: HTTP/2 request smuggling through API endpoint targeting sensitive authentication files. This demonstrates how the nginx HTTP/2 vulnerability can be exploited through REST API paths to access system password databases.",
-            "PROTOCOL_VIOLATION is expected because the HTTP/2.0 protocol specification combined with API path traversal indicates HTTP/2 request smuggling attempts for unauthorized file access."
+            "INVALID_CHARACTER is expected because the embedded space before the HTTP/2.0 protocol token is a disallowed URL-path character rejected at character validation, before the API path traversal can be classified as such."
     );
 
     // CVE-2021-23017: nginx resolver off-by-one buffer overflow

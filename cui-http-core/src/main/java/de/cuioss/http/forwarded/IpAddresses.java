@@ -61,6 +61,12 @@ final class IpAddresses {
      * {@code [2001:db8::1]:443}, and bare {@code 2001:db8::1}. RFC 7239 {@code unknown} and
      * obfuscated ({@code _hidden}) node identifiers yield {@code null}.</p>
      *
+     * <p>The {@code host:port} split here intentionally diverges from
+     * {@code ForwardedHeaderResolver.parseHostPort}: this method <em>strips</em> the IPv6 brackets
+     * to obtain a bare literal for {@link InetAddress} matching, whereas {@code parseHostPort}
+     * <em>retains</em> them because it reconstructs a host string. The divergence is deliberate —
+     * keep both bracket policies in sync when either changes.</p>
+     *
      * @param entry a single forwarded-chain entry (already trimmed, unquoted)
      * @return the parsed address, or {@code null} when the entry is not a usable IP literal
      */

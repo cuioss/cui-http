@@ -56,12 +56,18 @@ import java.util.regex.Pattern;
  *     .readTimeoutSeconds(10)
  *     .build();
  *
- * // Execute GET request
- * HttpResponse&lt;String&gt; response = handler.executeGetRequest();
+ * // Execute a GET request via the shared client and the pre-configured request builder
+ * HttpClient client = handler.createHttpClient();
+ * HttpResponse&lt;String&gt; response = client.send(
+ *     handler.requestBuilder().GET().build(),
+ *     HttpResponse.BodyHandlers.ofString());
  * if (response.statusCode() == 200) {
  *     String body = response.body();
  *     // Process response
  * }
+ *
+ * // Or, for a lightweight reachability check
+ * HttpStatusFamily status = handler.pingGet();
  *
  * // Custom SSL context
  * SSLContext customSSL = mySecureSSLProvider.getSSLContext();
@@ -122,15 +128,24 @@ public final class HttpHandler {
 
     @Getter
     private final URI uri;
+    // Excluded from equals/hashCode: java.net.URL#equals/hashCode perform blocking DNS
+    // resolution, and the URL is fully derivable from the (included) uri.
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     @Getter
     private final URL url;
+    // Excluded from equals/hashCode: SSLContext has no value semantics (identity equality),
+    // which would make two identically-configured handlers never equal. The TLS floor that
+    // actually matters for configuration identity is captured by secureSSLContextProvider.
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     @Getter
     private final @Nullable SSLContext sslContext;
     // Retained so asBuilder() can preserve a caller-configured TLS floor. For HTTP
-    // handlers this holds the default provider and is never used (no TLS).
-    // Excluded from equals/toString: it is an implementation detail derivable from configuration.
+    // handlers this holds the default provider and is never used (no TLS). It is a value
+    // (record) type, so it participates in equals/hashCode to distinguish handlers that
+    // differ only by their configured TLS floor.
     @ToString.Exclude
-    @EqualsAndHashCode.Exclude
     private final SecureSSLContextProvider secureSSLContextProvider;
     @Getter
     private final int connectionTimeoutSeconds;
@@ -139,15 +154,19 @@ public final class HttpHandler {
     /**
      * Whether this handler was built with the cleartext-HTTP opt-in
      * ({@link HttpHandlerBuilder#allowInsecureHttp(boolean)}). A build-time scheme policy retained
-     * so {@link #asBuilder()} preserves the opt-in; it does not affect the wire behavior of an
-     * already-built handler, so it is excluded from {@code equals}/{@code toString}.
+     * so {@link #asBuilder()} preserves the opt-in. It is part of the handler's configuration
+     * identity ({@code equals}/{@code hashCode}) but excluded from {@code toString}.
      *
      * @return {@code true} if cleartext HTTP was explicitly permitted for this handler
      */
     @ToString.Exclude
-    @EqualsAndHashCode.Exclude
     @Getter
     private final boolean allowInsecureHttp;
+    // Excluded from equals/hashCode/toString: HttpClient has identity equality (two
+    // identically-configured handlers hold distinct client instances) and is derived from
+    // the configuration above.
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     private final HttpClient httpClient;
 
     // Constructor for HTTP URIs (no SSL context needed)
@@ -277,9 +296,13 @@ public final class HttpHandler {
 
     /**
      * Returns the configured {@link HttpClient} for making HTTP requests.
-     * Client is created once during construction and reused for all requests.
+     * <p>
+     * Despite the {@code create} prefix (retained for backward compatibility), this does not create
+     * a new client per call: the client is created once during construction and this method returns
+     * that same shared, thread-safe instance for every call.
+     * </p>
      *
-     * @return configured {@link HttpClient} with SSL context and connection timeout
+     * @return the shared {@link HttpClient} configured with SSL context and connection timeout
      */
     public HttpClient createHttpClient() {
         return httpClient;
@@ -300,6 +323,13 @@ public final class HttpHandler {
 
         /**
          * Sets the URI as a string.
+         * <p>
+         * <strong>Resolution precedence:</strong> the source used at {@link #build()} time is chosen
+         * in the order {@code uri(URI)} &gt; {@code url(URL)} &gt; string form. The string form is a
+         * single slot shared with {@link #url(String)}, so the last of {@code uri(String)} /
+         * {@code url(String)} wins, and a typed {@code uri(URI)} or {@code url(URL)} set on the same
+         * builder takes precedence over it.
+         * </p>
          *
          * @param uriString The string representation of the URI.
          *                  Must not be null or empty.
@@ -333,6 +363,10 @@ public final class HttpHandler {
          * <p>
          * Note: This method is provided for backward compatibility.
          * Consider using {@link #uri(String)} instead.
+         * </p>
+         * <p>
+         * This shares a single string slot with {@link #uri(String)} (last call wins) and has the
+         * lowest resolution precedence; see {@link #uri(String)} for the full ordering.
          * </p>
          *
          * @param urlString The string representation of the URL.

@@ -23,7 +23,12 @@ Validation framework for HTTP components (paths, parameters, headers, bodies) wi
 
 === Core Interface
 
-`HttpSecurityValidator`: Functional interface following "String in, String out, throws on violation" pattern. See `de.cuioss.http.security.core.HttpSecurityValidator`.
+`HttpSecurityValidator`: Functional interface following the "`Optional<String> validate(String)`,
+throws on violation" pattern — it returns the (possibly sanitized) value wrapped in an `Optional`
+and throws `UrlSecurityException` on a security violation. The input is nullable: a `null` input
+returns `Optional.empty()` (no violation), and input that is malformed in a way that prevents
+security analysis (as opposed to a security violation) raises `IllegalArgumentException`. See
+`de.cuioss.http.security.core.HttpSecurityValidator`.
 
 == Validation Pipelines
 
@@ -93,7 +98,12 @@ URLPathValidationPipeline pipeline = new URLPathValidationPipeline(
 // Validate input
 try {
     String validated = pipeline.validate("/api/users/123")
-        .orElseThrow(() -> new UrlSecurityException("Validation returned empty"));
+        .orElseThrow(() -> UrlSecurityException.builder()
+            .failureType(UrlSecurityFailureType.INVALID_INPUT)
+            .validationType(ValidationType.URL_PATH)
+            .originalInput("/api/users/123")
+            .detail("Validation returned empty")
+            .build());
     // Use validated path
 } catch (UrlSecurityException e) {
     log.warn("Security violation: {}", e.getFailureType());
@@ -107,8 +117,18 @@ SecurityConfiguration config = SecurityConfiguration.builder().build();
 SecurityEventCounter counter = new SecurityEventCounter();
 HttpSecurityValidator validator = PipelineFactory.createPipeline(
     ValidationType.URL_PATH, config, counter);
+// validate(null) returns Optional.empty(), so reject null before the orElseThrow fallback -
+// UrlSecurityException.originalInput(...) is non-null and must not receive a null userInput.
+if (userInput == null) {
+    throw new IllegalArgumentException("userInput must not be null");
+}
 String validated = validator.validate(userInput)
-    .orElseThrow(() -> new UrlSecurityException("Validation returned empty"));
+    .orElseThrow(() -> UrlSecurityException.builder()
+        .failureType(UrlSecurityFailureType.INVALID_INPUT)
+        .validationType(ValidationType.URL_PATH)
+        .originalInput(userInput)
+        .detail("Validation returned empty")
+        .build());
 ----
 
 

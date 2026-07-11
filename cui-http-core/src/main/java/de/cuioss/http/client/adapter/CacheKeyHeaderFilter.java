@@ -16,6 +16,7 @@
 package de.cuioss.http.client.adapter;
 
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.function.Predicate;
 
 /**
@@ -136,9 +137,9 @@ public interface CacheKeyHeaderFilter {
         // Use calculated capacity to avoid resizing (load factor 0.75)
         var excluded = new HashSet<String>(Math.max((int) (headerNames.length / 0.75f) + 1, 16));
         for (String name : headerNames) {
-            excluded.add(name.toLowerCase());
+            excluded.add(name.toLowerCase(Locale.ROOT));
         }
-        return header -> !excluded.contains(header.toLowerCase());
+        return header -> !excluded.contains(header.toLowerCase(Locale.ROOT));
     }
 
     /**
@@ -162,9 +163,9 @@ public interface CacheKeyHeaderFilter {
         // Use calculated capacity to avoid resizing (load factor 0.75)
         var included = new HashSet<String>(Math.max((int) (headerNames.length / 0.75f) + 1, 16));
         for (String name : headerNames) {
-            included.add(name.toLowerCase());
+            included.add(name.toLowerCase(Locale.ROOT));
         }
-        return header -> included.contains(header.toLowerCase());
+        return header -> included.contains(header.toLowerCase(Locale.ROOT));
     }
 
     /**
@@ -180,8 +181,8 @@ public interface CacheKeyHeaderFilter {
      * @return Filter that excludes headers starting with prefix
      */
     static CacheKeyHeaderFilter excludingPrefix(String prefix) {
-        String lowerPrefix = prefix.toLowerCase();
-        return header -> !header.toLowerCase().startsWith(lowerPrefix);
+        String lowerPrefix = prefix.toLowerCase(Locale.ROOT);
+        return header -> !header.toLowerCase(Locale.ROOT).startsWith(lowerPrefix);
     }
 
     /**

@@ -358,10 +358,15 @@ public class URLLengthLimitAttackGenerator implements TypedGenerator<String> {
     }
 
     /**
-     * Creates hash-based selection for deterministic but varied attack patterns.
+     * Selects a random index in {@code [0, bound)} using the cui-test-generator
+     * infrastructure, making selection seed-reproducible (governed by the framework
+     * seed) instead of deriving randomness from {@code System.nanoTime()}.
+     *
+     * @param bound exclusive upper bound (number of choices), must be positive
+     * @return a pseudo-random index in {@code [0, bound)}
      */
     private int hashBasedSelection(int bound) {
-        return Math.abs((int) (this.hashCode() + System.nanoTime())) % bound;
+        return Generators.integers(0, bound - 1).next();
     }
 
     /**

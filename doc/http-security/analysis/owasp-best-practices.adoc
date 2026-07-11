@@ -69,11 +69,10 @@ Implemented in: link:../../../cui-http-core/src/main/java/de/cuioss/http/securit
 === Path Canonicalization and Validation
 
 ==== Normalization Implementation
-Implemented in: link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage]
+Path canonicalization is split across two stages:
 
-* Path normalization and canonicalization
-* Unicode normalization (NFC, NFD, NFKC, NFKD)
-* Platform-specific path separator handling
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage] performs Unicode canonicalization — *NFKC* for URL paths and *NFC* for parameter values (normalize-and-continue). It does *not* use NFD or NFKD.
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage] performs RFC 3986 Section 5.2.4 dot-segment resolution (`.`/`..`); it contains no `java.text.Normalizer` usage.
 
 === Encoding and Decoding Handling
 
@@ -101,7 +100,7 @@ Implemented in: link:../../../cui-http-core/src/main/java/de/cuioss/http/securit
 
 |Null Bytes
 |`file.pdf%00.jpg`
-|`file.pdf` (bypasses extension check)
+|rejected (the null byte causes `DecodingStage` to throw; input is never stripped or repaired)
 
 |===
 
@@ -110,7 +109,7 @@ Implemented in: link:../../../cui-http-core/src/main/java/de/cuioss/http/securit
 
 * URL decoding with double-encoding detection
 * UTF-8 overlong encoding prevention
-* Null byte removal
+* Null byte rejection (the stage *throws* on null bytes; it never strips or "repairs" input — consistent with the no-repair rule in SEC-6)
 * Multiple encoding scheme handling
 
 == OWASP Testing Methodology
@@ -205,11 +204,12 @@ Implemented in: link:../../../cui-http-core/src/main/java/de/cuioss/http/securit
 * Metrics collection for security monitoring
 
 === Logging Implementation
-Implemented in: link:../../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]
 
-* Security event counting and tracking
-* Failure type categorization
-* Attack pattern monitoring
+NOTE: The `de.cuioss.http.security` core does *not* implement logging. There is no `CuiLogger`
+usage anywhere in the package. Detected violations are surfaced as `UrlSecurityException` and
+counted in memory by link:../../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]
+(counting only — no log emission). Applications should log security events at the trust
+boundary where the exception is caught.
 
 
 == Key Implementation Points

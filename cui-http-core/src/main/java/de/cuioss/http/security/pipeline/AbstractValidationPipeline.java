@@ -40,6 +40,17 @@ import java.util.Optional;
  *   <li><strong>Exception Enhancement</strong> - Exceptions are re-thrown with correct validation type</li>
  * </ul>
  *
+ * <h3>Stage Contract (fail-secure)</h3>
+ * <p>The pipeline treats an empty {@link java.util.Optional} returned by a stage as a
+ * short-circuit <em>acceptance</em> of the input: iteration stops and the pipeline returns
+ * {@code Optional.empty()} without running the remaining stages. This is only safe because
+ * every stage returns empty <strong>exclusively for a {@code null} input</strong> (a
+ * {@code null} value cannot carry an attack). To preserve the fail-secure guarantee, any
+ * custom stage <strong>must never return an empty {@code Optional} for a non-null input</strong>:
+ * doing so would silently pass validation for that value rather than rejecting it. A stage
+ * that wishes to accept a non-null value must return {@code Optional.of(value)}; a stage that
+ * wishes to reject it must throw {@link UrlSecurityException}.</p>
+ *
  * @since 1.0
  */
 @RequiredArgsConstructor

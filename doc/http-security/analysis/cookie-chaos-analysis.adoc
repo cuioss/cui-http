@@ -81,7 +81,7 @@ Result: __Host- cookie with forbidden Domain attribute
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CookiePrefixValidationStage.java[CookiePrefixValidationStage] - RFC 6265bis prefix validation
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.hostPrefix() / securePrefix()] - Factory methods
 
-**Tests:** link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/CookiePrefixValidationStageTest.java[CookiePrefixValidationStageTest] (36 tests), link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest] (50 tests)
+**Tests:** link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/CookiePrefixValidationStageTest.java[CookiePrefixValidationStageTest] (71 tests), link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest] (50 tests)
 
 === 2. Legacy Parsing Exploitation
 
@@ -181,7 +181,7 @@ Result: __Host- cookie with forbidden Domain attribute accepted by server
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CookiePrefixValidationStage.java[CookiePrefixValidationStage] - Validates `__Host-` has no Domain, Path=/, Secure; `__Secure-` has Secure
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.hostPrefix() / securePrefix()] - Factory methods
 
-**Tests:** link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/CookiePrefixValidationStageTest.java[CookiePrefixValidationStageTest] (36 tests), link:../../../cui-http-core/src/test/java/de/cuioss/http/security/data/CookieTest.java[CookieTest] (factory method tests)
+**Tests:** link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/CookiePrefixValidationStageTest.java[CookiePrefixValidationStageTest] (71 tests), link:../../../cui-http-core/src/test/java/de/cuioss/http/security/data/CookieTest.java[CookieTest] (factory method tests)
 
 === 5. Path Attribute Validation
 
@@ -301,8 +301,8 @@ The cui-http library now provides comprehensive cookie prefix validation and sec
 
 3. **Cookie Factory Methods:** link:../../../cui-http-core/src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.hostPrefix()] and link:../../../cui-http-core/src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.securePrefix()] - Create RFC-compliant cookies
 
-4. **Test Coverage:** 246 tests total
-   * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/CookiePrefixValidationStageTest.java[CookiePrefixValidationStageTest] (36 tests)
+4. **Test Coverage:** 284+ tests total (71 + 213, plus the `CookieTest` factory-method tests)
+   * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/CookiePrefixValidationStageTest.java[CookiePrefixValidationStageTest] (71 tests)
    * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest] (213 tests)
    * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/data/CookieTest.java[CookieTest] (factory method tests)
 
@@ -388,9 +388,9 @@ All recommended test cases have been implemented using parameterized tests with 
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CookiePrefixValidationStage.java[CookiePrefixValidationStage] - RFC 6265bis prefix validation
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/data/Cookie.java[Cookie.hostPrefix() / securePrefix()] - Factory methods
 
-**Test Coverage (246 total):**
+**Test Coverage (284+ total):**
 
-* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/CookiePrefixValidationStageTest.java[CookiePrefixValidationStageTest] - 36 prefix validation tests
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/CookiePrefixValidationStageTest.java[CookiePrefixValidationStageTest] - 71 prefix validation tests
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/CookieChaosAttackTest.java[CookieChaosAttackTest] - 213 attack pattern tests
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/data/CookieTest.java[CookieTest] - Factory method validation
 

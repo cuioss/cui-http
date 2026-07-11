@@ -15,6 +15,8 @@
  */
 package de.cuioss.http.client;
 
+import org.jspecify.annotations.Nullable;
+
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
@@ -101,7 +103,7 @@ public enum ContentType {
     IMAGE_SVG("image/svg+xml", StandardCharsets.UTF_8);
 
     private final String mediaType;
-    private final Charset defaultCharset;
+    private final @Nullable Charset defaultCharset;
 
     /**
      * Constructs a ContentType with the specified media type and charset.
@@ -109,7 +111,7 @@ public enum ContentType {
      * @param mediaType     the MIME type (e.g., "application/json")
      * @param defaultCharset the default charset, or null for binary types
      */
-    ContentType(String mediaType, Charset defaultCharset) {
+    ContentType(String mediaType, @Nullable Charset defaultCharset) {
         this.mediaType = mediaType;
         this.defaultCharset = defaultCharset;
     }

@@ -20,11 +20,11 @@ import de.cuioss.tools.logging.LogRecordModel;
 import lombok.experimental.UtilityClass;
 
 /**
- * Provides logging messages for the de.cuioss.tools.net.http package.
+ * Provides logging messages for the {@code de.cuioss.http.client} package.
  * All messages follow the format: HTTP-[identifier]: [message]
  * <p>
- * This separate LogMessages class is specific to the HTTP utilities package
- * and complements the main JWTValidationLogMessages for the module.
+ * This LogMessages class is specific to the HTTP client utilities (handler, adapter,
+ * converter, and result packages).
  *
  * @since 1.0
  */
@@ -57,10 +57,10 @@ public final class HttpLogMessages {
                 .template("Interrupted while pinging URI %s: %s")
                 .build();
 
-        public static final LogRecord SSL_INSECURE_PROTOCOL = LogRecordModel.builder()
+        public static final LogRecord REQUEST_SERIALIZATION_FAILED = LogRecordModel.builder()
                 .prefix(PREFIX)
-                .identifier(109)
-                .template("Provided SSL context uses insecure protocol: %s. Creating a secure context instead.")
+                .identifier(108)
+                .template("Failed to serialize request body for %s request: %s")
                 .build();
 
         public static final LogRecord RETRY_SKIPPED_NON_IDEMPOTENT = LogRecordModel.builder()

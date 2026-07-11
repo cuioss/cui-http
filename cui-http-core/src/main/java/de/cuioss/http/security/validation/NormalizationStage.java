@@ -25,13 +25,21 @@ import org.jspecify.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 /**
  * Path normalization validation stage with security checks.
  *
- * <p>This stage performs RFC 3986 Section 5.2.4 path normalization to resolve
+ * <p><strong>Scope:</strong> RFC 3986 dot-segment resolution and traversal detection are
+ * applied only to path validation types ({@link ValidationType#isPath()}, i.e.
+ * {@link ValidationType#URL_PATH}). For every non-path validation type (parameter, header
+ * and cookie values, and body content) the input is passed through unchanged — it is opaque
+ * application data rather than a filesystem path, so resolving {@code ..} segments would
+ * silently rewrite caller data and could consume a traversal pattern before downstream
+ * pattern matching inspects it. Traversal-style patterns in non-path contexts are handled by
+ * {@code PatternMatchingStage}.</p>
+ *
+ * <p>For path types, this stage performs RFC 3986 Section 5.2.4 path normalization to resolve
  * relative path segments (. and ..) while detecting and preventing path traversal
  * attacks. The stage processes paths through multiple security layers:</p>
  *
@@ -216,6 +224,16 @@ ValidationType validationType) implements HttpSecurityValidator {
             return Optional.empty();
         }
         if (value.isEmpty()) {
+            return Optional.of(value);
+        }
+
+        // RFC 3986 "remove dot segments" resolution is only meaningful for path components.
+        // For non-path validation types (parameter/header/cookie values and bodies) a segment
+        // like "a/b/../c" is opaque application data, not a filesystem path: rewriting it to
+        // "a/c" would silently alter caller data and could consume a traversal pattern before
+        // PatternMatchingStage inspects it. Non-path inputs therefore pass through unchanged;
+        // traversal-style patterns in those contexts are detected downstream by PatternMatchingStage.
+        if (!validationType.isPath()) {
             return Optional.of(value);
         }
 
@@ -510,22 +528,5 @@ ValidationType validationType) implements HttpSecurityValidator {
         return STARTS_WITH_DOTDOT_SLASH_PATTERN.matcher(path).matches() ||
                 STARTS_WITH_DOTDOT_BACKSLASH_PATTERN.matcher(path).matches();
     }
-
-    /**
-     * Creates a conditional validator that only processes inputs matching the condition.
-     *
-     * @param condition The condition to test before validation
-     * @return A conditional HttpSecurityValidator that applies normalization conditionally
-     */
-    @Override
-    public HttpSecurityValidator when(Predicate<String> condition) {
-        return input -> {
-            if (input == null || !condition.test(input)) {
-                return Optional.ofNullable(input);
-            }
-            return validate(input);
-        };
-    }
-
 
 }

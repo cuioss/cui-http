@@ -33,6 +33,24 @@ It is *transport-agnostic* (it consumes a `Function<String,String>` header acces
 servlet/Jetty type leaks in) and *secure-by-default* (nothing is honored unless a deployment opts
 in explicitly).
 
+[WARNING]
+.Security precondition — trusted network placement (MANDATORY)
+====
+`resolve(...)` *trusts HTTP headers, not the socket.* The resolver receives only a header accessor;
+the actual TCP peer (the socket remote address) is never passed in and cannot be inspected. The
+`X-Forwarded-For` / `Forwarded` walk therefore cannot verify that a request actually arrived
+*through* a trusted proxy — it can only match the addresses *inside the headers* against the
+configured `trustedProxies`.
+
+The deployment *MUST* guarantee that only trusted proxies can connect to this server directly. If an
+attacker can reach the server without traversing a trusted proxy, they can forge the chain (e.g. a
+single untrusted entry `X-Forwarded-For: 6.6.6.6`) and have it returned verbatim as the client IP.
+Enforce this with network controls — bind the listener to a private interface, restrict it with
+firewall / security-group rules, or place it behind a service mesh — so that the socket peer is
+always a trusted proxy. The resolver cannot make this guarantee for you, and by design does not
+accept the peer address as a parameter.
+====
+
 === The header family
 
 [cols="2,1,3", options="header"]
@@ -111,7 +129,7 @@ un-proxied or fully un-honored request.
 
 === xref:../cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedResolverConfig.java[ForwardedResolverConfig]
 
-Immutable trust-model configuration built through a validating builder. See <<trust-model>>.
+Immutable trust-model configuration built through a validating builder. See xref:#trust-model[Trust model].
 
 === xref:../cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedLogMessages.java[ForwardedLogMessages]
 
@@ -136,7 +154,13 @@ Per field, the first present, non-blank value wins:
 
 Comma-separated list headers (e.g. `X-Forwarded-Proto: https,http`) resolve to their first token.
 
-[[trust-model]]
+*Present-but-invalid = drop (no fall-through).* Precedence selects the first present, non-blank
+source for a field; that value is then validated. If it fails its field guard it is *dropped* —
+lower-precedence sources are *not* consulted as a fallback. In particular a present-but-invalid
+`X-Forwarded-Port` / `X-ProxyPort` (non-numeric or outside `1..65535`) yields no port; the host
+`:port` fallback is used only when *no* explicit port header is present at all.
+
+[#trust-model]
 == Trust model (secure by default)
 
 The resolver honors nothing unless a deployment opts in. This is deliberate: a gateway may listen
@@ -170,10 +194,15 @@ The client IP is resolved by walking the `X-Forwarded-For` (or RFC 7239 `for`) c
 well-formed address is the client. This prevents a spoofed prepended entry from being trusted.
 
 * Each entry is sanitized, then parsed as an IP literal (optional `:port` stripped, bracketed IPv6
-  unwrapped, RFC 7239 `unknown`/obfuscated node identifiers dropped). Parsing is literal-only and
-  never performs DNS resolution.
-* An empty `trustedProxies` set, an all-trusted chain, or an unparseable hop all yield an empty
-  `clientIp` (fail-safe).
+  unwrapped). Parsing is literal-only and never performs DNS resolution.
+* Encountering an entry that is not a usable IP literal — an unparseable hop, or an RFC 7239
+  `unknown` / obfuscated (`_hidden`) node identifier — *aborts the entire resolution*: the walk
+  stops immediately and `clientIp` is empty. Such an entry is *not* skipped-and-continued, because a
+  chain with an unverifiable hop cannot be trusted to identify the client. For example
+  `Forwarded: for=203.0.113.7, for=unknown` yields an empty `clientIp` even though a well-formed
+  address is also present.
+* An empty `trustedProxies` set or an all-trusted chain likewise yields an empty `clientIp`
+  (fail-safe).
 
 [source,text]
 ----

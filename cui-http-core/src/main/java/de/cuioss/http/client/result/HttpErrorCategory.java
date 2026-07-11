@@ -27,7 +27,7 @@ import java.util.concurrent.ExecutionException;
  *
  * <h2>Usage Pattern</h2>
  * <pre>
- * HttpResult&lt;String&gt; result = httpHandler.load();
+ * HttpResult&lt;String&gt; result = httpAdapter.getBlocking();
  * if (!result.isSuccess()) {
  *     result.getErrorCategory().ifPresent(category -> {
  *         if (category.isRetryable()) {
@@ -45,7 +45,7 @@ import java.util.concurrent.ExecutionException;
  */
 public enum HttpErrorCategory {
 
-    // === Network Errors (Retryable) ===
+    // === Network / Server Errors (Retryable) ===
 
     /**
      * Network connectivity problems: timeouts, connection failures, DNS resolution failures.
@@ -59,13 +59,13 @@ public enum HttpErrorCategory {
      */
     SERVER_ERROR,
 
+    // === Client / Content / Configuration Errors (Non-retryable) ===
+
     /**
      * Client-side errors (HTTP 4xx responses).
      * Indicates request problems requiring configuration or input changes.
      */
     CLIENT_ERROR,
-
-    // === Content Errors (Non-retryable) ===
 
     /**
      * Invalid or unparseable response content.

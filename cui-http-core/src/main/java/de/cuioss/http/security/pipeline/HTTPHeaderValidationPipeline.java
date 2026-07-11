@@ -39,7 +39,9 @@ import java.util.Objects;
  * <ol>
  *   <li><strong>Length Validation</strong> - Enforces maximum header length limits</li>
  *   <li><strong>Character Validation</strong> - Validates RFC 7230 header characters</li>
- *   <li><strong>Normalization</strong> - Header normalization and security checks</li>
+ *   <li><strong>Normalization</strong> - Pass-through for header values; RFC 3986 dot-segment
+ *       resolution only applies to path components, so this stage does not rewrite header data
+ *       (traversal-style patterns are caught by Pattern Matching below)</li>
  *   <li><strong>Pattern Matching</strong> - Detects injection attacks and suspicious patterns</li>
  *   <li><strong>Allow/Block List</strong> - (header names only) enforces the configured
  *       {@code allowedHeaderNames}/{@code blockedHeaderNames} lists</li>

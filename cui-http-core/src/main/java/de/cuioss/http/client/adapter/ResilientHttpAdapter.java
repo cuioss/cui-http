@@ -17,6 +17,7 @@ package de.cuioss.http.client.adapter;
 
 import de.cuioss.http.client.HttpMethod;
 import de.cuioss.http.client.converter.HttpRequestConverter;
+import de.cuioss.http.client.result.HttpErrorCategory;
 import de.cuioss.http.client.result.HttpResult;
 import de.cuioss.tools.logging.CuiLogger;
 import org.jspecify.annotations.Nullable;
@@ -240,11 +241,19 @@ public class ResilientHttpAdapter<T> implements HttpAdapter<T> {
      * <h3>Retry Logic</h3>
      * <ul>
      *   <li>Success: Return immediately</li>
+     *   <li>Non-retryable error: Return immediately (CLIENT_ERROR, INVALID_CONTENT, CONFIGURATION_ERROR).
+     *       Checked <em>before</em> the idempotency check so that failures which would never be retried
+     *       for any method do not emit the misleading non-idempotent-skip warning.</li>
      *   <li>Idempotency check: Skip retry for non-idempotent methods if configured</li>
-     *   <li>Non-retryable error: Return immediately (CLIENT_ERROR, INVALID_CONTENT, CONFIGURATION_ERROR)</li>
      *   <li>Max attempts reached: Return failure</li>
      *   <li>Retryable error: Schedule retry after exponential backoff delay</li>
      * </ul>
+     *
+     * <p>Both normally-completed failures (an {@code HttpResult} that is not a success) and
+     * exceptionally-completed futures from the delegate are routed through this retry path. An
+     * exceptionally-completed future is treated as a retryable transient failure (subject to the
+     * idempotency and max-attempts checks); if it is not retried, the original exception is
+     * re-propagated so callers still observe the failure.
      *
      * @param operation Supplier that returns CompletableFuture of the HTTP operation
      * @param method HTTP method for logging and idempotency checking
@@ -258,53 +267,98 @@ public class ResilientHttpAdapter<T> implements HttpAdapter<T> {
 
         LOGGER.debug("Attempt %s/%s for %s request", attempt, config.maxAttempts(), method.methodName());
 
-        // Delegate is already async - no supplyAsync needed!
+        // Delegate is already async - no supplyAsync needed! handle(...) captures both normal
+        // completions and exceptional completions so the latter also go through the retry path.
         return operation.get()
-                .thenCompose(result -> {
-                    // Success - return immediately
-                    if (result.isSuccess()) {
-                        if (attempt > 1) {
-                            LOGGER.debug("%s request succeeded on attempt %s", method.methodName(), attempt);
-                        }
-                        return CompletableFuture.completedFuture(result);
-                    }
+                .handle((result, throwable) -> decideNextStep(operation, method, attempt, result, throwable))
+                .thenCompose(next -> next);
+    }
 
-                    // Idempotency check - skip retry for non-idempotent methods if configured
-                    if (config.idempotentOnly() && !method.isIdempotent()) {
-                        LOGGER.warn(WARN.RETRY_SKIPPED_NON_IDEMPOTENT, method.methodName());
-                        return CompletableFuture.completedFuture(result);
-                    }
+    /**
+     * Decides whether to return the current outcome or schedule a retry.
+     *
+     * @param operation the operation supplier for a possible retry
+     * @param method HTTP method for logging and idempotency checking
+     * @param attempt current attempt number (1-based)
+     * @param result the normal completion result, or {@code null} if the future completed exceptionally
+     * @param throwable the exceptional completion cause, or {@code null} on normal completion
+     * @return a future with the final result, a re-propagated failure, or a scheduled retry
+     */
+    private CompletableFuture<HttpResult<T>> decideNextStep(
+            Supplier<CompletableFuture<HttpResult<T>>> operation,
+            HttpMethod method,
+            int attempt,
+            @Nullable HttpResult<T> result,
+            @Nullable Throwable throwable) {
 
-                    // Non-retryable failure - return immediately
-                    if (!result.isRetryable()) {
-                        LOGGER.debug("%s request failed with non-retryable error: %s",
-                                method.methodName(), result.getErrorCategory().orElse(null));
-                        return CompletableFuture.completedFuture(result);
-                    }
+        // Success - return immediately
+        if (throwable == null && result != null && result.isSuccess()) {
+            if (attempt > 1) {
+                LOGGER.debug("%s request succeeded on attempt %s", method.methodName(), attempt);
+            }
+            return CompletableFuture.completedFuture(result);
+        }
 
-                    // Max attempts reached
-                    if (attempt >= config.maxAttempts()) {
-                        LOGGER.warn(WARN.REQUEST_FAILED_MAX_ATTEMPTS, method.methodName(), config.maxAttempts());
-                        return CompletableFuture.completedFuture(result);
-                    }
+        // An exceptionally-completed future is retryable only when its root cause classifies as a
+        // transient category. HttpErrorCategory.fromException unwraps CompletionException/
+        // ExecutionException wrappers and maps IOException to a retryable NETWORK_ERROR while
+        // programming/configuration errors (NPE, IllegalArgumentException, ...) map to the
+        // non-retryable CONFIGURATION_ERROR. A normal failure is retryable only when its own
+        // error category says so.
+        boolean retryable = throwable != null
+                ? HttpErrorCategory.fromException(throwable).isRetryable()
+                : (result != null && result.isRetryable());
 
-                    // Retryable failure - calculate delay and schedule retry
-                    Duration delay = config.calculateDelay(attempt);
+        // Non-retryable failure - return immediately. Checked before the idempotency check (CLI-5)
+        // so failures that would never be retried do not emit the non-idempotent-skip warning.
+        if (!retryable) {
+            LOGGER.debug("%s request failed with non-retryable error: %s",
+                    method.methodName(), result != null ? result.getErrorCategory().orElse(null) : null);
+            // finalOutcome re-propagates the throwable for an exceptionally-completed future and
+            // returns the failing result for a normal completion; returning the null result here
+            // would swallow a non-retryable exception into a null outcome.
+            return finalOutcome(result, throwable);
+        }
 
-                    LOGGER.warn(WARN.REQUEST_RETRY_AFTER_FAILURE,
-                            method.methodName(), attempt, delay.toMillis());
+        // Idempotency check - skip retry for non-idempotent methods if configured
+        if (config.idempotentOnly() && !method.isIdempotent()) {
+            LOGGER.warn(WARN.RETRY_SKIPPED_NON_IDEMPOTENT, method.methodName());
+            return finalOutcome(result, throwable);
+        }
 
-                    int nextAttempt = attempt + 1;
+        // Max attempts reached
+        if (attempt >= config.maxAttempts()) {
+            LOGGER.warn(WARN.REQUEST_FAILED_MAX_ATTEMPTS, method.methodName(), config.maxAttempts());
+            return finalOutcome(result, throwable);
+        }
 
-                    // Non-blocking delay using delayedExecutor
-                    Executor delayedExecutor = CompletableFuture.delayedExecutor(
-                            delay.toMillis(), TimeUnit.MILLISECONDS
-                    );
+        // Retryable failure - calculate delay and schedule retry
+        Duration delay = config.calculateDelay(attempt);
 
-                    // Schedule next attempt after delay - no nested futures
-                    return CompletableFuture
-                            .supplyAsync(() -> null, delayedExecutor)
-                            .thenCompose(ignored -> executeWithRetry(operation, method, nextAttempt));
-                });
+        LOGGER.warn(WARN.REQUEST_RETRY_AFTER_FAILURE,
+                method.methodName(), attempt, delay.toMillis());
+
+        int nextAttempt = attempt + 1;
+
+        // Non-blocking delay using delayedExecutor
+        Executor delayedExecutor = CompletableFuture.delayedExecutor(
+                delay.toMillis(), TimeUnit.MILLISECONDS
+        );
+
+        // Schedule next attempt after delay - no nested futures
+        return CompletableFuture
+                .supplyAsync(() -> null, delayedExecutor)
+                .thenCompose(ignored -> executeWithRetry(operation, method, nextAttempt));
+    }
+
+    /**
+     * Produces the terminal outcome when no further retry is performed: the failing result for a
+     * normal completion, or a re-propagated exception for an exceptionally-completed future.
+     */
+    private CompletableFuture<HttpResult<T>> finalOutcome(@Nullable HttpResult<T> result, @Nullable Throwable throwable) {
+        if (throwable != null) {
+            return CompletableFuture.failedFuture(throwable);
+        }
+        return CompletableFuture.completedFuture(result);
     }
 }

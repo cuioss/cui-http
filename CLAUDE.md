@@ -27,21 +27,11 @@ Never hard-code build tool commands (`./mvnw`, `mvn`) — invoke builds via the 
 - Full verify: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify"`
 - Coverage: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -Pcoverage"`
 - Tests (cui-http): `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "test -pl cui-http-core -am"` — only on cui-http
-- Benchmark (cui-http-benchmarking): `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -Pquick -pl cui-http-benchmarking -am"` — only on cui-http-benchmarking
+- Benchmark (cui-http-benchmarking): `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -Pbenchmark,quick -pl cui-http-benchmarking -am"` — only on cui-http-benchmarking (the `benchmark` profile flips `skip.benchmark=false`; `quick` only shortens iterations, so it must be combined with `benchmark` to actually run)
 
 Use a 10-minute Bash timeout (600000ms) for build invocations. Analyze each build's TOON result: `status`, `errors[N]{file,line,message,category}`, `log_file`.
 
-## Git Workflow
-
-This repository has branch protection on `main`. Direct pushes to `main` are never allowed. Always use this workflow:
-
-1. Create a feature branch: `git checkout -b <branch-name>`
-2. Commit changes: `git add <files> && git commit -m "<message>"`
-3. Push the branch: `git push -u origin <branch-name>`
-4. Create a PR: `gh pr create --head <branch-name> --base main --title "<title>" --body "<body>"`
-5. Enable auto-merge: `gh pr merge --auto --squash --delete-branch`
-6. Wait for merge (check every ~60s): `while gh pr view --json state -q '.state' | grep -q OPEN; do sleep 60; done`
-7. Return to main: `git checkout main && git pull`
+The authoritative Git workflow is defined in the "Git Workflow" section below.
 
 ## Architecture
 
@@ -53,8 +43,8 @@ This repository has branch protection on `main`. Direct pushes to `main` are nev
    - `URLParameterValidationPipeline`: Query parameter validation
 
 2. **Validation Stages** (`de.cuioss.http.security.validation`)
-   - `DecodingStage`: URL percent-encoding, UTF-8 overlong detection
-   - `NormalizationStage`: Unicode normalization for paths
+   - `DecodingStage`: URL percent-decoding, UTF-8 overlong detection, and Unicode normalization (NFKC for URL paths, NFC for parameter values)
+   - `NormalizationStage`: RFC 3986 dot-segment resolution (path normalization) — not Unicode normalization
    - `CharacterValidationStage`: Invalid character detection
    - `LengthValidationStage`: Length limits enforcement
    - `PatternMatchingStage`: Attack pattern detection

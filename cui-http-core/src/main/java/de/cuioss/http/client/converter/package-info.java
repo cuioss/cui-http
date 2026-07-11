@@ -13,24 +13,30 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 /**
- * HTTP content converters for secure JSON processing.
+ * HTTP request/response content converters.
  * <p>
- * This package contains converters that handle HTTP response content
- * transformation with security-focused JSON parsing capabilities.
+ * This package defines the conversion contracts used by the HTTP adapters to serialize request
+ * bodies and deserialize response bodies, plus a small set of built-in converters. It contains no
+ * JSON library of its own - concrete JSON/XML converters are provided by callers by implementing
+ * the interfaces below.
  * <p>
  * Key components:
  * <ul>
- *   <li>Secure JSON content converters using DSL-JSON</li>
+ *   <li>{@link de.cuioss.http.client.converter.HttpRequestConverter} - serializes a typed object
+ *       into an HTTP request body publisher</li>
+ *   <li>{@link de.cuioss.http.client.converter.HttpResponseConverter} - deserializes a raw HTTP
+ *       response body into a typed object (non-throwing, {@code Optional}-based contract)</li>
+ *   <li>{@link de.cuioss.http.client.converter.StringContentConverter} - abstract base for
+ *       String-based (text/JSON/XML) response converters, with an {@code identity()} factory</li>
+ *   <li>{@link de.cuioss.http.client.converter.VoidResponseConverter} - built-in converter that
+ *       discards the response body for status-code-only operations</li>
  * </ul>
- * <p>
- * The converters use DSL-JSON with configurable security limits to prevent
- * JSON-based attacks such as excessive memory consumption and deeply nested
- * structure attacks, while providing Jakarta JSON API compatibility through
- * bridge adapters.
  *
  * @author Oliver Wolff
  * @since 1.0
  */
+@NullMarked
 package de.cuioss.http.client.converter;
+
+import org.jspecify.annotations.NullMarked;

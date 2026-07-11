@@ -611,4 +611,36 @@ class HttpHandlerTest {
             assertTrue(cloned.isAllowInsecureHttp(), "asBuilder() must carry the allowInsecureHttp flag");
         }
     }
+
+    @Nested
+    @DisplayName("equals/hashCode")
+    class EqualsHashCode {
+
+        @Test
+        @DisplayName("Identically-configured handlers are equal without DNS-dependent fields")
+        void identicalConfigurationsAreEqual() {
+            HttpHandler first = HttpHandler.builder().uri(VALID_URL).build();
+            HttpHandler second = HttpHandler.builder().uri(VALID_URL).build();
+
+            // Despite holding distinct HttpClient/SSLContext instances, identically-configured
+            // handlers must be equal (CLI-1) and hashCode must not depend on the blocking
+            // URL#hashCode / identity fields.
+            assertEquals(first, second, "Identically-configured handlers must be equal");
+            assertEquals(first.hashCode(), second.hashCode(), "Equal handlers must share a hashCode");
+        }
+
+        @Test
+        @DisplayName("Different configuration makes handlers unequal")
+        void differentConfigurationsAreNotEqual() {
+            HttpHandler base = HttpHandler.builder().uri(VALID_URL).build();
+            HttpHandler differentUri = HttpHandler.builder().uri("https://other.example.com").build();
+            HttpHandler differentTimeout = HttpHandler.builder()
+                    .uri(VALID_URL)
+                    .readTimeoutSeconds(CUSTOM_READ_TIMEOUT)
+                    .build();
+
+            assertNotEquals(base, differentUri, "Different URI must not be equal");
+            assertNotEquals(base, differentTimeout, "Different timeout must not be equal");
+        }
+    }
 }

@@ -23,7 +23,7 @@
  * <ul>
  *   <li><b>{@link de.cuioss.http.client.ContentType ContentType}</b> - Type-safe MIME types with charset support</li>
  *   <li><b>{@link de.cuioss.http.client.HttpMethod HttpMethod}</b> - HTTP methods with safe/idempotent classification</li>
- *   <li><b>{@link de.cuioss.http.client.handler.HttpHandler HttpHandler}</b> - Secure HTTP request builder with validation</li>
+ *   <li><b>{@link de.cuioss.http.client.handler.HttpHandler HttpHandler}</b> - HTTP client wrapper with a builder API, HTTPS-by-default scheme policy, and a pinned TLS floor</li>
  * </ul>
  *
  * <h2>ContentType Enum</h2>
@@ -74,18 +74,18 @@
  *
  * <h2>HttpHandler</h2>
  *
- * <p>Secure HTTP request builder with built-in security validation:
+ * <p>HTTP client wrapper with a builder API. It validates URI syntax, enforces an HTTPS-by-default
+ * scheme policy, and pins a TLS floor; it does not run the {@code de.cuioss.http.security} pipelines:
  *
  * <pre>{@code
- * // URL security validation is automatic
  * HttpHandler handler = HttpHandler.builder()
  *     .uri("https://api.example.com/users")
  *     .connectionTimeoutSeconds(5)
  *     .readTimeoutSeconds(10)
- *     .sslContextProvider(SecureSSLContextProvider.builder().build())
+ *     .tlsVersions(new SecureSSLContextProvider())  // optional: configure the TLS floor
  *     .build();
  *
- * // Build requests with validated URL
+ * // Build requests against the configured URI
  * HttpRequest request = handler.requestBuilder()
  *     .GET()
  *     .header("Authorization", "Bearer token")
@@ -232,8 +232,8 @@
  *     });
  *
  * // Pattern 2: Combine multiple requests
- * CompletableFuture<User> user1 = adapter.get();
- * CompletableFuture<User> user2 = adapter.get();
+ * CompletableFuture<HttpResult<User>> user1 = adapter.get();
+ * CompletableFuture<HttpResult<User>> user2 = adapter.get();
  *
  * CompletableFuture.allOf(user1, user2)
  *     .thenRun(() -> System.out.println("Both loaded"))
@@ -324,4 +324,7 @@
  * @see de.cuioss.http.client.result
  * @since 1.0
  */
+@NullMarked
 package de.cuioss.http.client;
+
+import org.jspecify.annotations.NullMarked;

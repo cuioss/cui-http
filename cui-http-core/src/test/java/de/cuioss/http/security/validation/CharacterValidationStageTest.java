@@ -139,6 +139,21 @@ class CharacterValidationStageTest {
     }
 
     @Test
+    void shouldEscapeControlCharactersInDetailMessage() {
+        // A raw CR reaching handleInvalidCharacter must be rendered as its escaped U+XXXX form,
+        // never verbatim, so it cannot forge or inject log lines through the exception message.
+        CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.URL_PATH);
+
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> stage.validate("/api\rvalue"));
+
+        assertTrue(exception.getDetail().isPresent());
+        String detail = exception.getDetail().get();
+        assertTrue(detail.contains("U+000D"), "control char must be hex-escaped: " + detail);
+        assertFalse(detail.contains("\r"), "raw CR must not appear in the detail message");
+    }
+
+    @Test
     void shouldRejectInvalidEncodingFormat() {
         CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.URL_PATH);
 

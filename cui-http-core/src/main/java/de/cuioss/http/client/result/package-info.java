@@ -113,4 +113,7 @@
  * @see de.cuioss.http.client.result.HttpErrorCategory
  * @since 1.0
  */
+@NullMarked
 package de.cuioss.http.client.result;
+
+import org.jspecify.annotations.NullMarked;

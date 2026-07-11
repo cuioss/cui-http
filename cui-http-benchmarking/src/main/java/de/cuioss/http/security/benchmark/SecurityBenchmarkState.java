@@ -31,8 +31,6 @@ import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 
-import java.util.concurrent.atomic.AtomicInteger;
-
 /**
  * Shared JMH state for all security benchmark classes.
  * Creates pipelines and validation stages once per trial, cycling through
@@ -107,10 +105,13 @@ public class SecurityBenchmarkState {
             "application/x-www-form-urlencoded"
     };
 
-    private final AtomicInteger urlIndex = new AtomicInteger(0);
-    private final AtomicInteger attackIndex = new AtomicInteger(0);
-    private final AtomicInteger paramIndex = new AtomicInteger(0);
-    private final AtomicInteger headerIndex = new AtomicInteger(0);
+    // Plain int counters: @State(Scope.Thread) allocates one instance per benchmark thread,
+    // so no cross-thread synchronization is required. The & Integer.MAX_VALUE guard keeps the
+    // modulo index non-negative after the counter overflows past Integer.MAX_VALUE.
+    private int urlIndex;
+    private int attackIndex;
+    private int paramIndex;
+    private int headerIndex;
 
     @Setup(Level.Trial)
     public void setup() {
@@ -134,21 +135,21 @@ public class SecurityBenchmarkState {
 
     /** Returns the next clean URL, cycling through the array. */
     public String nextCleanUrl() {
-        return CLEAN_URLS[urlIndex.getAndIncrement() % CLEAN_URLS.length];
+        return CLEAN_URLS[(urlIndex++ & Integer.MAX_VALUE) % CLEAN_URLS.length];
     }
 
     /** Returns the next attack URL, cycling through the array. */
     public String nextAttackUrl() {
-        return ATTACK_URLS[attackIndex.getAndIncrement() % ATTACK_URLS.length];
+        return ATTACK_URLS[(attackIndex++ & Integer.MAX_VALUE) % ATTACK_URLS.length];
     }
 
     /** Returns the next clean parameter, cycling through the array. */
     public String nextCleanParam() {
-        return CLEAN_PARAMS[paramIndex.getAndIncrement() % CLEAN_PARAMS.length];
+        return CLEAN_PARAMS[(paramIndex++ & Integer.MAX_VALUE) % CLEAN_PARAMS.length];
     }
 
     /** Returns the next clean header value, cycling through the array. */
     public String nextCleanHeader() {
-        return CLEAN_HEADERS[headerIndex.getAndIncrement() % CLEAN_HEADERS.length];
+        return CLEAN_HEADERS[(headerIndex++ & Integer.MAX_VALUE) % CLEAN_HEADERS.length];
     }
 }

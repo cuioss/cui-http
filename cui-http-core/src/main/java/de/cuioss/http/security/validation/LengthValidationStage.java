@@ -23,7 +23,6 @@ import de.cuioss.http.security.exceptions.UrlSecurityException;
 import org.jspecify.annotations.Nullable;
 
 import java.util.Optional;
-import java.util.function.Predicate;
 
 /**
  * Length validation stage with configurable limits for HTTP components.
@@ -120,7 +119,9 @@ ValidationType validationType) implements HttpSecurityValidator {
      * <p>Processing logic:</p>
      * <ol>
      *   <li>Input validation - handles null/empty inputs</li>
-     *   <li>Length calculation - gets input length in characters or bytes</li>
+     *   <li>Length calculation - for {@link ValidationType#BODY} the length is measured in
+     *       UTF-8 <em>bytes</em> (matching the byte-based {@code maxBodySize} limit); for every
+     *       other type the length is the UTF-16 <em>character</em> count</li>
      *   <li>Limit lookup - determines appropriate limit based on validation type</li>
      *   <li>Comparison - checks if input exceeds configured limit</li>
      * </ol>
@@ -139,8 +140,15 @@ ValidationType validationType) implements HttpSecurityValidator {
             return Optional.empty();
         }
 
-        // Get input length in characters
-        int inputLength = value.length();
+        // BODY limits (maxBodySize) are expressed in bytes, so the length must be measured in
+        // UTF-8 bytes rather than UTF-16 characters; otherwise multi-byte content (e.g. CJK)
+        // would under-report its wire size and slip past the DoS size limit. The byte length is
+        // computed without allocating a byte array (value.getBytes(...)) so that a large body
+        // cannot force a multi-megabyte allocation inside the very stage meant to cap it. All
+        // other validation types measure length in characters.
+        long inputLength = validationType == ValidationType.BODY
+                ? utf8ByteLength(value)
+                : value.length();
 
         // Determine the appropriate limit and failure type based on validation type
         int limit = getMaxLength();
@@ -159,6 +167,41 @@ ValidationType validationType) implements HttpSecurityValidator {
 
         // Validation passed - return original value
         return Optional.of(value);
+    }
+
+    /**
+     * Computes the UTF-8 byte length of a string without allocating an intermediate byte array.
+     *
+     * <p>Used for BODY length enforcement: the stage exists to cap body size, so it must not
+     * itself allocate a multi-megabyte {@code byte[]} (via {@code String.getBytes}) to measure a
+     * large body. Well-formed surrogate pairs are counted as a single 4-byte code point.</p>
+     *
+     * <p>The accumulator is a {@code long} so the count cannot overflow {@code int} and wrap
+     * negative for very large bodies (~700M+ three-byte characters) - a negative length would
+     * otherwise compare as {@code < limit} and bypass the DoS size cap this stage enforces.</p>
+     *
+     * @param value the string to measure (never null)
+     * @return the number of bytes the string occupies when encoded as UTF-8
+     */
+    private static long utf8ByteLength(String value) {
+        long count = 0;
+        for (int i = 0, len = value.length(); i < len; i++) {
+            char ch = value.charAt(i);
+            if (ch <= 0x7F) {
+                count += 1;
+            } else if (ch <= 0x7FF) {
+                count += 2;
+            } else if (Character.isHighSurrogate(ch)
+                    && i + 1 < len && Character.isLowSurrogate(value.charAt(i + 1))) {
+                // Well-formed surrogate pair encodes one supplementary code point as 4 bytes.
+                count += 4;
+                i++;
+            } else {
+                // BMP character or an unpaired surrogate (which UTF-8 encoders replace).
+                count += 3;
+            }
+        }
+        return count;
     }
 
     /**
@@ -209,22 +252,5 @@ ValidationType validationType) implements HttpSecurityValidator {
             case BODY -> "Request body";
         };
     }
-
-    /**
-     * Creates a conditional validator that only processes inputs matching the condition.
-     *
-     * @param condition The condition to test before validation
-     * @return A conditional HttpSecurityValidator that applies length validation conditionally
-     */
-    @Override
-    public HttpSecurityValidator when(Predicate<String> condition) {
-        return input -> {
-            if (input != null && condition.test(input)) {
-                return validate(input);
-            }
-            return Optional.ofNullable(input);
-        };
-    }
-
 
 }
