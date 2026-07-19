@@ -96,10 +96,14 @@ benchmarks) are all dynamic endpoints — there is **no** per-release badge to h
 git add .github/project.yml
 git commit -m "chore(release): prepare release <version>"
 git push -u origin chore/release_<version>
+gh label create skip-bot-review --repo cuioss/cui-http --description "Skip automated bot review" --color ededed 2>/dev/null || true
 gh pr create --repo cuioss/cui-http --base main \
   --title "chore(release): prepare release <version>" \
+  --label "skip-bot-review" \
   --body "Bump current-version to <version>, next-version to <next>-SNAPSHOT. Triggers the automated Release workflow on merge."
 ```
+
+The mechanical release PR carries the `skip-bot-review` label to skip automated bot review.
 
 Use the project commit convention: `Co-Authored-By: Claude <noreply@anthropic.com>` (no
 model name / no "Generated with Claude Code" footer).
