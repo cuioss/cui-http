@@ -1,0 +1,157 @@
+= HTTP Client Review
+:toc: left
+:toclevels: 3
+:sectnums:
+:source-highlighter: highlight.js
+
+xref:README.adoc[← Back to index]
+
+Scope: `de.cuioss.http.client` and its `handler`, `adapter`, `converter`, and `result` subpackages.
+
+All file paths are relative to `cui-http-core/src/main/java/de/cuioss/http/client/`. Line numbers are as of commit `7ae6499`.
+
+== HIGH severity
+
+[#CL-1]
+=== CL-1 (HIGH): 304 short-circuit is not gated on GET — any method can return a prior GET's cached body as success
+
+*File:* `adapter/ETagAwareHttpAdapter.java:805-814`.
+
+The cache key is method-agnostic (`generateCacheKey`, lines 653–675, includes only URI + headers), and `prepareCacheContext` (lines 877–894) does `cache.get(cacheKey)` for every method. When a response carries status 304 and a cached entry exists, the adapter returns that entry as success regardless of method:
+
+[source,java]
+----
+if (statusCode == 304 && cachedEntry != null) {
+    ...
+    if (method == HttpMethod.GET) {   // only the timestamp refresh is gated
+        putInCache(...);
+    }
+    return HttpResult.<T>success(cachedEntry.content(), cachedEntry.etag(), 304);
+}
+----
+
+So a POST/PUT/DELETE/PATCH/HEAD/OPTIONS response with status 304 — from a misbehaving or malicious server, or because a caller supplied an `If-None-Match` header — returns a prior GET's cached content as `HttpResult.success(...)`. A DELETE would appear to have succeeded and hand back a stale body.
+
+Notably, the adapter's own *fallback* path already guards against exactly this and gates on GET (lines 853–856: "gating on the method prevents a non-GET failure from surfacing a prior GET's body/ETag through a method-agnostic cache key"). The 304 success path is missing the same guard. Fix: gate the 304 short-circuit on `method == GET` (and otherwise surface the 304 as an error for non-GET methods).
+
+== MEDIUM severity
+
+[#CL-2]
+=== CL-2 (MEDIUM): Builder reuse silently ignores a new string URI after the first `build()`
+
+*File:* `handler/HttpHandler.java:538-541,563`. `resolveUri()` mutates the builder field (`uri = URI.create(urlToUse);`), so after one `build()`, a subsequent `uri("https://other")` / `url("...")` *string* call on the same builder is ignored and the second handler points at the first URI. No documentation warns against builder reuse.
+
+[#CL-3]
+=== CL-3 (MEDIUM): `host:port` strings are misparsed as having a scheme
+
+*File:* `handler/HttpHandler.java:124,555-563`. `URL_SCHEME_PATTERN` is `^[a-zA-Z][a-zA-Z0-9+.-]*:.*`, so `uri("localhost:8080/api")` parses `localhost` as a scheme; `https://` is not prepended and `build()` fails with "Unsupported URI scheme 'localhost'". The class doc (line 91) says "Schemeless string URLs default to HTTPS", which is untrue for the common `host:port` form. This fails secure (it errors), but it is a correctness/doc gap.
+
+[#CL-4]
+=== CL-4 (MEDIUM): Javadoc claims redirects are followed; they are not
+
+*File:* `handler/HttpStatusFamily.java:232-235` and `adapter/package-info.java`. `toErrorCategory()` Javadoc says "Most HTTP redirects (301, 302, 307, etc.) are handled automatically by Java's HttpClient", but `HttpHandler` builds both clients without `followRedirects(...)` (lines 185–187 and 206–210), and the JDK default is `Redirect.NEVER`. Every 3xx therefore surfaces to the adapter and is classified as non-retryable `INVALID_CONTENT`. Fix the Javadoc, or set an explicit redirect policy.
+
+[#CL-5]
+=== CL-5 (MEDIUM): `StringContentConverter` ignores the response's declared charset
+
+*File:* `converter/StringContentConverter.java:65-67`. `HttpResponse.BodyHandlers.ofString(charset)` always decodes with the constructor charset (UTF-8 by default), so a response with `Content-Type: text/html; charset=ISO-8859-1` is mis-decoded. The no-arg `BodyHandlers.ofString()` would honor the header's charset. Nothing documents that server-declared charsets are ignored.
+
+[#CL-6]
+=== CL-6 (MEDIUM): Empty-body 2xx responses with a typed converter are reported as failure
+
+*File:* `adapter/ETagAwareHttpAdapter.java:826-834`. For an adapter with a typed response converter (e.g. JSON), a DELETE/PUT that returns 204 No Content yields `Optional.empty()` from the converter and is mapped to `INVALID_CONTENT` failure even though the operation succeeded:
+
+[source,java]
+----
+if (content.isEmpty() && HttpStatusFamily.isSuccess(statusCode) && !responseConverter.emptyContentIsValid())
+----
+
+There is no exemption for status codes defined to carry no body (204/205, or an empty 200). The only escape is `VoidResponseConverter` or overriding `emptyContentIsValid()`, forcing a `Void`-typed adapter for mixed APIs. Fix: exempt no-body status codes.
+
+[#CL-7]
+=== CL-7 (MEDIUM): `RetryConfig`'s public canonical constructor bypasses all validation
+
+*File:* `adapter/RetryConfig.java:95-104`. The record has no compact constructor, so `new RetryConfig(0, Duration.ofMillis(-5), 0.1, Duration.ZERO, 5.0, true)` is constructible despite the record Javadoc's stated contracts (`maxAttempts >= 1`, positive delays, jitter 0.0–1.0). A negative `initialDelay` yields negative computed delays → `delayedExecutor` fires immediately → hot retry loop; a jitter factor above 1.0 can produce negative delays even from positive inputs. All validation lives only in the Builder setters (lines 205–279). Fix: add a compact constructor that enforces the invariants.
+
+[#CL-8]
+=== CL-8 (MEDIUM): `SecureSSLContextProvider` class-level Javadoc overstates what the class alone enforces
+
+*File:* `handler/SecureSSLContextProvider.java:31-43` vs `238-246`. The class doc says it "enforces secure TLS versions" and "prevents the use of insecure, deprecated protocols", but `getOrCreateSecureSSLContext` returns any caller-supplied context unchanged (including a TLS 1.0 or trust-all context) — the floor is only real when the context is consumed through `HttpHandler`'s `SSLParameters` pinning. A standalone user of this `public` class gets no enforcement. The method-level docs are accurate; the class-level summary is not.
+
+== LOW severity
+
+[#CL-9]
+=== CL-9 (LOW): `SSLHandshakeException` is retried as a transient network error
+
+*File:* `result/HttpErrorCategory.java:123-130`. `HttpTimeoutException`/`HttpConnectTimeoutException` are `IOException` subclasses and are correctly classified as retryable `NETWORK_ERROR`. But `SSLHandshakeException` is *also* an `IOException`, so a certificate-validation failure is classified retryable `NETWORK_ERROR` and retried up to 5 times by `ResilientHttpAdapter`, despite the enum's own doc listing "SSL configuration issues" under non-retryable `CONFIGURATION_ERROR` (lines 78–79). This wastes minutes and masks a configuration error. Fix: classify `SSLHandshakeException` (and related non-transient TLS exceptions) as `CONFIGURATION_ERROR`.
+
+[#CL-10]
+=== CL-10 (LOW): Dead, mildly contradictory public TLS-inspection API
+
+*File:* `handler/SecureSSLContextProvider.java:104,134-150`. `isSecureTlsVersion` and `FORBIDDEN_TLS_VERSIONS` have no main-code caller. `isSecureTlsVersion("TLS")` returns `true` when the minimum is `TLSv1.3`, yet a generic-TLS context can negotiate 1.2 — the advisory answer conflicts with the 1.3-only floor `getEnabledProtocols()` would pin.
+
+[#CL-11]
+=== CL-11 (LOW): No deterministic resource release for `HttpClient`
+
+*File:* `handler/HttpHandler.java:170,185-187,206-210`. Each handler eagerly constructs an `HttpClient` (even when only `requestBuilder()` is used); neither `HttpHandler` nor `ETagAwareHttpAdapter` exposes a close/shutdown although `HttpClient` is `AutoCloseable` on current JDKs, so selector threads live until GC. The `@SuppressWarnings("try")` comments assert "doesn't need to be closed", which is a policy choice worth documenting on `createHttpClient()`.
+
+[#CL-12]
+=== CL-12 (LOW): Blocking convenience methods are not interrupt-responsive; cancellation does not propagate
+
+*Files:* `adapter/HttpAdapter.java:380-524`; `adapter/ResilientHttpAdapter.java:344-351`. `join()` ignores interrupts until completion, so `getBlocking()` over a default `ResilientHttpAdapter` (5 attempts, delays up to 60s + jitter) can pin a thread for minutes uninterruptibly. Cancelling the returned `CompletableFuture` does not cancel the in-flight delegate call or the scheduled retry chain — retries keep firing on the common pool. Also undocumented: blocking methods throw unchecked `CompletionException` when a delegate completes exceptionally.
+
+[#CL-13]
+=== CL-13 (LOW): Conversion-failure result discards HTTP status and ETag
+
+*File:* `adapter/ETagAwareHttpAdapter.java:829-833`. `HttpResult.failure("Failed to convert response body", null, INVALID_CONTENT)` carries no `httpStatus` although `statusCode` was in hand; callers cannot distinguish "200 but unparseable" from other invalid-content cases. `failureWithFallback(..., statusCode)` would preserve it.
+
+[#CL-14]
+=== CL-14 (LOW): Cache not invalidated on ETag-less 200; benign stale-overwrite race on 304
+
+*File:* `adapter/ETagAwareHttpAdapter.java:838-842,810-812`. (a) A 200 with fresh content but no ETag leaves the old entry in place (line 838 requires `etag != null`), so later failures serve outdated fallback and a stale `If-None-Match` keeps being sent. (b) The 304 timestamp refresh can overwrite a concurrently-stored newer entry (last-writer-wins) — a benign but real race the "Fully thread-safe" doc does not mention.
+
+[#CL-15]
+=== CL-15 (LOW): Exception-type and comment mismatches in `HttpHandler`
+
+*File:* `handler/HttpHandler.java:479,503-508`. `build()` documents only `@throws IllegalArgumentException`, but URI→URL conversion failures throw `IllegalStateException` (line 507). `pingHead()`/`pingGet()` docs (lines 248, 259) say "returns the HTTP status code" but return an `HttpStatusFamily`. The internal comment at line 500 ("URI.toURL() is deprecated") is wrong — the URL *constructors* are deprecated; `toURL()` is the recommended path. The stale example at line 73 calls `mySecureSSLProvider.getSSLContext()`, a method that does not exist (it is `createSecureSSLContext()`).
+
+[#CL-16]
+=== CL-16 (LOW): Non-compiling usage example in `monitoring/package-info` (cross-package)
+
+`security/monitoring/package-info.java:42` shows `String validated = validator.validate(input);`, but `validate` returns `Optional<String>`. Tracked in full under xref:security-validation-review.adoc#SV-15[SV-15]; noted here because it also surfaced during client review.
+
+== INFO / observations
+
+[#CL-17]
+=== CL-17 (INFO): Content-type and converter quirks
+
+* `VoidResponseConverter.contentType()` returns `APPLICATION_JSON`, so status-only DELETE/HEAD send `Accept: application/json` — documented as deliberate (lines 153–166).
+* `ContentType.MULTIPART_FORM_DATA.toHeaderValue()` returns `multipart/form-data` with no boundary parameter, unusable as an actual request Content-Type; `application/json; charset=UTF-8` includes a charset parameter that RFC 8259 does not define (harmless, widely tolerated).
+
+[#CL-18]
+=== CL-18 (INFO): Overlapping responsibilities and duplication
+
+* Two health-check paths — `HttpHandler.pingGet()/pingHead()` vs `ETagAwareHttpAdapter.statusCodeOnly(handler).head()` — with no guidance on which to prefer.
+* `ETagAwareHttpAdapter` is the only concrete adapter and doubles as the "plain" adapter when `etagCachingEnabled(false)`, though its name suggests caching is intrinsic.
+* It re-implements ~15 interface default overloads verbatim (lines 264–381).
+* `createHttpClient()` does not create (documented, lines 297–306).
+
+[#CL-19]
+=== CL-19 (INFO): Cache allocation and eviction cost
+
+`prepareCacheContext` builds the cache-key string on every request, including non-GET and caching-disabled adapters (lines 887–891); `checkAndEvict` does a full O(n log n) sort of the cache on each over-limit put (lines 744–773). Acceptable at the default limit of 1000; worth noting for large caches.
+
+[#CL-20]
+=== CL-20 (INFO): `HttpResult` API completeness
+
+`HttpResult` has `map` but no `flatMap`/`mapError`. `map` semantics are consistent (Failure maps the fallback; Success skips the mapper on null content), and the docs never claim monad laws, so there is no defect. `Success.map` re-wraps with the same etag/status even though the mapped value may no longer correspond to the ETagged representation — acceptable but undocumented.
+
+== Verified correct / done well
+
+* *TLS floor genuinely enforced on the wire.* Both HTTPS constructor paths pin `SSLParameters.setProtocols(...)` from `SecureSSLContextProvider.getEnabledProtocols()` (lines 204–209), so TLS < 1.2 cannot be negotiated through `HttpHandler` regardless of the supplied context. Hostname verification is never disabled anywhere; no custom trust-all `X509TrustManager` exists in the client package (grep-verified).
+* *Fail-secure scheme policy.* `http://` is rejected unless the caller opts in with `allowInsecureHttp(true)` (with a WARN log); non-http(s) schemes are always rejected.
+* *Correct interrupt handling* in `HttpHandler.pingWithMethod` (re-interrupts, lines 290–293).
+* *Cache-key delimiter escaping* prevents key forgery via header values (lines 682–693); `If-None-Match` uses `setHeader` (replace) so caller values cannot conflict.
+* *Sound retry design*: non-blocking `delayedExecutor`, no stack growth, `CompletionException`/`ExecutionException` unwrapping with a cycle guard, jitter applied after capping so capped retries still spread.
+* *`HttpStatusFamily`* handles out-of-range codes correctly (`UNKNOWN` for < 100 or > 599) and `toErrorCategory()` fails fast on SUCCESS.
+* *No secrets in logs*: only URIs, ETags (at debug), method names, and exception messages are logged; caller header values are never logged (verified across all `HttpLogMessages` usages).

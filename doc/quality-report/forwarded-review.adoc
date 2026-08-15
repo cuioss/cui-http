@@ -1,0 +1,149 @@
+= Forwarded-Header Resolution Review
+:toc: left
+:toclevels: 3
+:sectnums:
+:source-highlighter: highlight.js
+
+xref:README.adoc[← Back to index]
+
+Scope: `de.cuioss.http.forwarded` (all classes) and `doc/forwarded-header-resolution.adoc`.
+
+All code paths are relative to `cui-http-core/src/main/java/de/cuioss/http/forwarded/`. Runtime behaviors below were verified on the repository's JDK (OpenJDK 21.0.10).
+
+[NOTE]
+====
+This package handles `X-Forwarded-For` / RFC 7239 `Forwarded` resolution — a classic source of client-IP spoofing. The chain-walk *algorithm* is correct and fails closed. The three HIGH findings are all about the *integration surface* — how a caller wires headers into the resolver and how non-IP fields (scheme/host/port) are selected — where realistic proxy deployments can re-open spoofing paths the algorithm itself closes. The library documents a "must sit behind a trusted proxy" precondition, but these findings show that precondition is *necessary but not sufficient*: it holds even for requests that legitimately traversed the trusted proxy.
+====
+
+== HIGH severity
+
+[#FW-1]
+=== FW-1 (HIGH): Multi-valued `X-Forwarded-For` is invisible to the accessor abstraction
+
+*File:* `ForwardedHeaderResolver.java:117-118,286`; doc line 98.
+
+The resolver takes a `Function<String,String>` header lookup and the Javadoc/adoc recommend `request::getHeader`. In the Servlet API, `getHeader(name)` returns only the *first* instance of a repeated header. Proxies that append `X-Forwarded-For` as a *separate header line* (e.g. HAProxy `option forwardfor`) therefore leave the attacker's pre-sent header as the only one the resolver sees:
+
+[source,java]
+----
+String xff = lookup.apply(X_FORWARDED_FOR);   // single-valued — sees only the first header instance
+----
+
+The walk then operates on a 100%-attacker-controlled chain and returns the rightmost attacker-chosen untrusted IP. The documented network precondition does not mitigate this: the request *did* traverse the trusted proxy. Nothing anywhere warns callers that they must join *all* header instances (`String.join(",", Collections.list(request.getHeaders(name)))`). Fix: document the multi-header requirement prominently, or change the accessor to expose all values per name.
+
+[#FW-2]
+=== FW-2 (HIGH): `X-Forwarded-For` unconditionally shadows RFC 7239 `Forwarded`
+
+*File:* `ForwardedHeaderResolver.java:285-297`.
+
+[source,java]
+----
+String xff = lookup.apply(X_FORWARDED_FOR);
+if (isPresent(xff)) { ... chain = List.of(sanitized.get().split(",")); }
+else if (!forwarded.forValues().isEmpty()) { chain = forwarded.forValues(); }
+----
+
+If a trusted proxy manages only the `Forwarded:` header (RFC-7239-native setups exist) but passes a client-sent `X-Forwarded-For: 6.6.6.6` through untouched, the resolver takes the XFF branch, finds `6.6.6.6` untrusted, and returns it as the client IP — spoofed *through* a trusted proxy, satisfying the documented precondition. Neither the Javadoc nor the adoc states the real deployment requirement: trusted proxies must strip-or-append *every* header family the resolver honors, not just the one they emit. Fix: document this requirement, and consider making the header family configurable rather than XFF-always-wins.
+
+[#FW-3]
+=== FW-3 (HIGH): Scheme/host/port use leftmost-token selection — the attacker-controlled end under append-style proxies
+
+*Files:* `ForwardedHeaderResolver.java:146-149` (scheme), `162` (host), `368-371` (`firstToken`); `RfcForwardedParser.java:85-86` (first `proto`/`host` wins); doc line 155.
+
+For the client IP the resolver correctly trusts the *appended* (right) end of the chain. But for scheme, host, and port it takes the *leftmost* token, with no chain or trust semantics at all. Proxies such as Apache `mod_proxy` *append* to inbound `X-Forwarded-Host`/`X-Forwarded-Proto`, so a client-sent `X-Forwarded-Host: evil.com` arrives as `evil.com, real.host` and `firstToken` selects `evil.com`. Under `trustAll` this enables:
+
+* *Host-header poisoning* — `evil.com` flows into password-reset links / absolute-URL generation.
+* *Scheme downgrade* — `X-Forwarded-Proto: http, https` resolves to `http`.
+
+The RFC 7239 path has the same bias: the accumulator keeps the *first* `proto`/`host` (`proto = proto == null ? value : proto`). The doc says only "use `trustAll` when the application sits fully behind a trusted proxy" — but sitting behind an *appending* proxy is exactly the vulnerable configuration, and nothing says proxies must overwrite/strip these headers. Fix: select the rightmost (proxy-appended) token for scheme/host/port under append semantics, or document that these fields require overwrite-style proxies.
+
+== MEDIUM severity
+
+[#FW-4]
+=== FW-4 (MEDIUM): Malformed `Forwarded` elements are silently dropped, weakening the "unverifiable chain aborts" guarantee
+
+*File:* `RfcForwardedParser.java:74-83`; contradicts doc lines 197–203 and the `walkChain` Javadoc (`ForwardedHeaderResolver.java:301-305`).
+
+[source,java]
+----
+int eq = pair.indexOf('=');
+if (eq <= 0) { return; }            // silently discarded
+...
+if (value.isEmpty()) { return; }    // silently discarded
+----
+
+An element with no `=` (`Forwarded: for=6.6.6.6, garbage`) or an empty value never becomes a chain entry, so the walk proceeds over the surviving entries. The equivalent garbage in `X-Forwarded-For` (`6.6.6.6, garbage`) *aborts* resolution (`walkChain:314` returns `Optional.empty()`). This inconsistent strictness between the two paths is a parser-differential and contradicts the doc's claim that an unverifiable hop yields no client IP. Fix: make the RFC 7239 path abort on malformed elements too.
+
+[#FW-5]
+=== FW-5 (MEDIUM): `ResolvedForwarding` has no canonical-constructor validation
+
+*File:* `ResolvedForwarding.java:60-66` (no compact constructor), `145-150` (`quoteIfNeeded` escapes only `\` and `"`), `90-100` (`toXForwardedHeaders` emits values verbatim).
+
+The record is public and directly constructible (the benchmark does so at `ForwardedBenchmarkState.java:92`). `new ResolvedForwarding(Optional.of("https"), Optional.of("evil\r\nX: 1"), …)` serializes CR/LF unescaped through both serializers — header injection if an integrator populates it from unsanitized data and emits the result. The record Javadoc asserts invariants ("scheme is `http` or `https`", "port in 1..65535", "contextPath has exactly one leading slash") that the type does not enforce; null components NPE only lazily at use time. Fix: add a compact constructor that validates and rejects control characters.
+
+[#FW-6]
+=== FW-6 (MEDIUM): Doc drift — "first token" claim is false for the context path
+
+*Files:* `doc/forwarded-header-resolution.adoc:155` vs `ForwardedHeaderResolver.resolveContextPath:242-275`.
+
+The doc says "Comma-separated list headers … resolve to their first token", but `firstToken` is applied to scheme (147), host (162), and port (226) — never to the context path. An append-style `X-Forwarded-Prefix: /app, /other` normalizes to the single bogus prefix `"/app, /other"` (comma and space are legal header-value characters and `ContextPaths.normalize` does not reject them), honored verbatim under `trustAll`. Fix: apply first-token extraction to the prefix, or correct the doc.
+
+== LOW severity
+
+[#FW-7]
+=== FW-7 (LOW): Trailing garbage after a bracketed IPv6 literal is silently ignored
+
+*Files:* `IpAddresses.java:79-84`; `ForwardedHeaderResolver.java:183-192`. `[::1]garbage` is accepted as `::1` (the remainder after `]` is never inspected) rather than aborting, contradicting the otherwise strict-abort philosophy.
+
+[#FW-8]
+=== FW-8 (LOW): IPv4 octets with leading zeros are parsed as decimal
+
+*File:* `IpAddresses.java:30` (`\d{1,3}` permits `010`). Verified: `InetAddress.getByName("010.0.0.1")` → `10.0.0.1` on JDK 21. So `010.0.0.5` is treated as `10.0.0.5` (potentially trusted under `10.0.0.0/8`) while `inet_aton`-based stacks (nginx, curl) read it as octal `8.0.0.5` — an ambiguous-literal differential the regex could cheaply reject (`0\d` octets).
+
+[#FW-9]
+=== FW-9 (LOW): Host guard admits `@`, `?`, `#`, and unbracketed multi-colon values
+
+*File:* `ForwardedHeaderResolver.java:193-213`. `containsHostSeparator` rejects only `/`, `\`, and whitespace, so under `trustAll` a passed-through `X-Forwarded-Host: trusted.com@evil.com` is honored and composes to `https://trusted.com@evil.com/…` (the browser navigates to `evil.com`); a bare `2001:db8::1` or arbitrary `a:b:c` is kept whole as the host. This matches the adoc (no drift), but the guard is weaker than the field's use in URL composition implies.
+
+[#FW-10]
+=== FW-10 (LOW): `parsePort` accepts a signed literal
+
+*File:* `ForwardedHeaderResolver.java:231-238`. `Integer.parseInt("+443")` succeeds, so `X-Forwarded-Port: +443` resolves to 443 — harmless but not RFC-conformant digit-only parsing.
+
+[#FW-11]
+=== FW-11 (LOW): Sanitization-rejection warnings misattribute the header name
+
+*File:* `ForwardedHeaderResolver.java:146,162,225,262`. `sanitize(X_FORWARDED_PROTO, raw)` etc. are called with the fixed family name even when the value came from `X-ProxyScheme`, `X-ProxyHost`, `X-ProxyPort`, `X-ProxyContextPath`, or a `Forwarded` directive, so an operator debugging an HTTP-122 rejection is pointed at a header that may not be present.
+
+[#FW-12]
+=== FW-12 (LOW): `toForwardedHeader()` silently loses a port that has no host
+
+*File:* `ResolvedForwarding.java:120`. With `host` empty and `port` present, the port is dropped from the serialization; only the contextPath asymmetry is documented.
+
+[#FW-13]
+=== FW-13 (LOW): IPv4-mapped CIDR specs are rejected at config time with a misleading message
+
+*File:* `CidrRange.java:53-67`. `trustedProxies(Set.of("::ffff:10.0.0.0/104"))` — valid IPv6 CIDR notation — fails because Java collapses the base to a 4-byte `Inet4Address` (verified), making `maxBits = 32` and throwing "CIDR prefix out of range [0..32]" for what the operator wrote as an IPv6 range. Fail-fast (safe) but confusing; worth documenting that v4-mapped ranges must be written in dotted-quad form.
+
+== INFO / observations
+
+* *FW-14* — IPv6 zone IDs (`fe80::1%eth0`) are unparseable (`IpAddresses.java:31` excludes `%`) and therefore abort the whole client-IP resolution — fail-closed but undocumented; a link-local hop from a trusted proxy silently kills resolution with only an HTTP-123 warn.
+* *FW-15* — Doc line 196 "Each entry is sanitized, then parsed" is inaccurate: the *whole* header value is sanitized once, then entries are split and parsed without per-entry sanitization (same outcome, wrong description).
+* *FW-16* — `package-info.java:50-52` says untrusted values are "ignored (never trusted), only logged", but untrusted scheme/host/port are ignored *without* logging (the `!config.trustAll()` early-returns precede sanitization/logging); the adoc (line 110) is more accurate.
+* *FW-17* — Doc line 111 / resolver line 40 "`resolve` never throws" is a simplification: it throws NPE for a null `headerLookup`, and any `RuntimeException` from the caller-supplied lookup or a non-`UrlSecurityException` from the pipeline propagates.
+* *FW-18* — `ForwardedResolverConfig.allowedContextPaths()`/`trustedProxies()` re-copy into a new `LinkedHashSet` on every call although the fields are already unmodifiable — needless per-call allocation on a potentially hot path.
+* *FW-19* — A broad trusted range (`0.0.0.0/0`) makes every hop "trusted", so the walk exhausts the chain and returns empty (fail-closed, counter-intuitive). Conversely, any non-proxy machine inside a configured trusted range can spoof the client IP by prepending entries; the doc never warns that trusted ranges must contain *only* proxies.
+* *FW-20* — Blank entries in `trustedProxies` (`Set.of(" ")`) are skipped silently, yielding an empty (fail-closed) trust set with no operator feedback.
+* *FW-21* — Benchmarks in `forwarded/benchmark/`: no correctness defects; `Map::get` accessors are consistent with the single-valued lookup contract (see FW-1), the overflow-safe cycling index is correct, and the attack set genuinely exercises rejection paths. (But see xref:build-and-benchmarking-review.adoc#BB-1[BB-1] — the attack benchmark measures logging, not resolver work.)
+
+== Verified correct / done well
+
+* *Right-to-left chain walk is correct* (`walkChain:306-322`): iterates from the direct peer inward, skips trusted hops, returns the first untrusted parseable hop; the doc's worked examples all match.
+* *Fail-closed on unverifiable chains*: an unparseable hop, `unknown`, or `_obfuscated` entry aborts resolution entirely rather than skip-and-continue; an all-trusted chain returns empty; empty `trustedProxies` short-circuits to empty; commas-only / blank headers yield empty.
+* *No DNS resolution*: `IpAddresses.parse` regex-guards to numeric literals before `InetAddress.getByName`, so hostnames can never be resolved into trusted addresses.
+* *IPv4-mapped IPv6 handled correctly*: `::ffff:10.0.0.5` collapses to `Inet4Address 10.0.0.5`, so a v4 CIDR matches the v6-mapped form — the classic `::ffff:` trust-bypass does not exist here.
+* *`CidrRange` bit arithmetic is correct*: `/0`, `/8`, `/32`, `/128` all handled; `contains` never indexes out of bounds; mask precedence is correct; family mismatch (4 vs 16 bytes) returns false; prefix range and non-numeric prefixes are validated at config time.
+* *The socket-peer limitation is documented loudly* (resolver Javadoc and adoc WARNING) — an unusually honest precondition.
+* *Log-forging protection*: `sanitizeForLog` strips ISO control characters and truncates at 200 before interpolation.
+* *`RfcForwardedParser.splitTopLevel`* correctly ignores separators inside quoted strings and honors backslash escapes only inside quotes; unbalanced quotes degrade to an unparseable value → abort.
+* Log IDs HTTP-120..123, the precedence table (including the "present-but-invalid = drop, no fall-through" rule), and the four walk examples in the adoc all match the code exactly; thread-safety claims hold (all state final/immutable).

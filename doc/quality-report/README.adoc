@@ -1,0 +1,131 @@
+= CUI-HTTP Quality Report
+:toc: left
+:toclevels: 2
+:sectnums:
+:source-highlighter: highlight.js
+
+== Purpose and Scope
+
+This report documents a full review of the `cui-http` repository — all main-source code, the complete test suite, the build/CI configuration, and all documentation (Javadoc and AsciiDoc) — as of commit `7ae6499` (2026-08-15).
+
+The review examined:
+
+* *Correctness* — logic bugs, edge-case handling, RFC conformance
+* *Hidden traps* — places where the code offers a false feeling of security
+* *Security posture* — whether the claimed fail-closed guarantees are fully implemented
+* *Test quality* — whether tests are real content tests (not "just coverage"), whether generators are used correctly, and whether positive and negative cases are both covered
+* *Documentation* — structure, accuracy against the current code, completeness, ambiguity, and duplication
+
+=== Methodology
+
+The review was performed in two phases:
+
+1. *Parallel deep review.* Seven independent review passes, each with a focused scope (validation stages, pipelines/configuration, HTTP client, forwarded-header resolution, test suite, documentation, build/benchmarking). Every main-source file was read completely; runtime behavior claims (e.g. JDK `InetAddress` parsing) were verified on the repository's JDK (OpenJDK 21).
+2. *Adversarial verification.* A separate, clean-context review pass re-verified the compiled findings end-to-end against the code before this report was finalized. Findings that did not survive verification were removed or downgraded; the verification outcome is noted per finding where it changed anything.
+
+=== Severity scale
+
+[cols="1,4"]
+|===
+|Severity |Meaning
+
+|HIGH |Real defect with security or correctness impact in realistic deployments; should be fixed
+|MEDIUM |Defect or contract violation with practical impact; fix recommended
+|LOW |Minor defect, inconsistency, or documented-behavior gap
+|INFO |Observation, hardening opportunity, or design note; no action required
+|===
+
+== Report Index
+
+[cols="2,3,1,1,1,1"]
+|===
+|Report |Scope |High |Medium |Low |Info
+
+|xref:security-validation-review.adoc[Security Validation Review]
+|`security.validation`, `security.pipeline`, `security.config`, `security.data`, `security.core`, `security.monitoring`, `security.exceptions`
+|2 |9 |13 |9
+
+|xref:http-client-review.adoc[HTTP Client Review]
+|`client`, `client.handler`, `client.adapter`, `client.converter`, `client.result`
+|1 |7 |8 |7
+
+|xref:forwarded-review.adoc[Forwarded-Header Review]
+|`forwarded` package and `doc/forwarded-header-resolution.adoc`
+|3 |3 |7 |8
+
+|xref:test-quality-review.adoc[Test Quality Review]
+|Complete test suite: stage/pipeline tests, attack databases, generators
+|1 |3 |6 |4
+
+|xref:documentation-review.adoc[Documentation Review]
+|All 22 AsciiDoc files, `CLAUDE.md`, `agents.md`, Javadoc drift
+|0 |9 |8 |3
+
+|xref:build-and-benchmarking-review.adoc[Build & Benchmarking Review]
+|Both `pom.xml` trees, GitHub workflows, JMH benchmarks, log-message audit
+|1 |0 |4 |5
+|===
+
+Counts above exclude findings that appear in more than one report (each shared finding is counted once, in its primary report, and cross-referenced from the other).
+
+== Executive Summary
+
+=== Overall assessment
+
+The library is in *substantially better shape than a typical codebase of this size*. The core security design is careful and mostly honest: the default validation pipelines genuinely block path traversal, null bytes, control characters, overlong UTF-8, and double encoding; ordering rationale (length before decode, pattern matching both before decode and after normalization for paths) is sound and deliberately documented; thread-safety claims hold throughout; the forwarded-header resolver fails closed on every unverifiable chain; and the TLS 1.2+ floor is genuinely enforced on the wire through `HttpHandler`. The documentation suite is unusually disciplined about scoping its claims, and numeric traceability claims (test counts, line references) check out almost everywhere.
+
+The findings cluster around four themes:
+
+=== Theme 1: The gap between advertised and actual validation surface
+
+Several components *advertise more validation than they perform*, which is exactly the "false feeling of security" failure mode:
+
+* The header-name pipeline accepts names containing spaces, colons, and quotes because `HEADER_NAME` is mapped to the header-*value* character set, despite Javadoc promising RFC 7230 token validation (xref:security-validation-review.adoc#SV-1[SV-1]).
+* `PatternMatchingStage` is wired into the header pipelines but is a complete no-op for header types (xref:security-validation-review.adoc#SV-2[SV-2]).
+* Decoded output is not re-validated against the character allow-list, so percent-encoding smuggles characters (`%3C` → `<`, `%1B` → ESC) past the RFC character rules that the un-encoded form would violate (xref:security-validation-review.adoc#SV-3[SV-3], xref:security-validation-review.adoc#SV-5[SV-5]).
+* `ContentTypeValidationPipeline` under the default configuration validates nothing at all, and an empty string bypasses even a configured allow-list (xref:security-validation-review.adoc#SV-6[SV-6]).
+* The `strict()` preset — the one preset that enables suspicious-pattern detection — simultaneously enables case-sensitive matching, making its all-lowercase pattern set trivially bypassable via `/ETC/passwd` (xref:security-validation-review.adoc#SV-4[SV-4]).
+
+=== Theme 2: Trust-model gaps in header-based client identification
+
+The forwarded-header resolver's chain-walk core is correct and fail-closed, but its *integration surface* re-opens spoofing paths the algorithm itself closes:
+
+* The recommended `request::getHeader` accessor sees only the first `X-Forwarded-For` header instance, so a proxy that appends XFF as a separate header line leaves the resolver operating on a 100% attacker-controlled chain (xref:forwarded-review.adoc#FW-1[FW-1]).
+* `X-Forwarded-For` unconditionally shadows RFC 7239 `Forwarded`, so deployments whose proxies manage only `Forwarded` will honor an attacker-supplied XFF verbatim (xref:forwarded-review.adoc#FW-2[FW-2]).
+* For scheme/host/port the resolver takes the *leftmost* token — the attacker-controlled end of an append-style header list — enabling host poisoning and scheme downgrade under `trustAll` behind appending proxies such as Apache `mod_proxy` (xref:forwarded-review.adoc#FW-3[FW-3]).
+
+=== Theme 3: Client-side edge cases
+
+The client stack is solid on TLS but has one significant cache-correctness hole: a 304 response to *any* HTTP method returns a previous GET's cached body as success, so a misbehaving or malicious server can make a DELETE appear to have succeeded (xref:http-client-review.adoc#CL-1[CL-1]). Retrying `SSLHandshakeException` as a transient network error, the unvalidated public `RetryConfig` constructor, and charset handling in `StringContentConverter` round out the picture.
+
+=== Theme 4: Test and documentation drift
+
+The test suite's stage- and pipeline-level tests are exemplary (specific failure-type assertions, boundary coverage, dedicated false-positive databases). The weak spots are concentrated: 15 of 20 generator contract tests assert nothing beyond non-null output (xref:test-quality-review.adoc#TQ-1[TQ-1]), and several `ModSecurityCRSAttackDatabase` entries are mislabeled or duplicated so that advertised rule categories are never actually exercised (xref:test-quality-review.adoc#TQ-2[TQ-2]). Documentation is accurate where it matters most (configuration values, log messages, stage orderings all match code exactly) but inventory-style listings have drifted, two documents are orphaned, and a handful of residual overclaims ("✓ Complete" compliance matrix, "configurable pattern database") contradict the suite's own carefully-scoped statements.
+
+=== What is done well
+
+Reviewers independently verified (not just absence of findings — positively confirmed):
+
+* Fail-secure core loop in `AbstractValidationPipeline`: exceptions carry the stage's failure type, original input, and cause; the event counter is incremented on every rejection.
+* Correct surrogate-pair/code-point iteration everywhere characters are classified; UTF-8 byte counting uses a `long` accumulator with no allocation.
+* Locale-safe case folding (`Locale.ROOT`) throughout — no Turkish-i bypass.
+* No ReDoS-prone regex constructs found in any validation pattern.
+* CR/LF rejected unconditionally for header and cookie types regardless of `allowControlCharacters`, and re-checked after decoding.
+* The forwarded resolver performs no DNS resolution, handles IPv4-mapped IPv6 correctly (no `::ffff:` trust bypass), and aborts resolution on any unparseable or obfuscated hop.
+* `CidrRange` bit arithmetic is correct for all prefix edge cases (/0, /32, /128, family mismatch).
+* TLS floor pinned via `SSLParameters` on both HTTPS construction paths; hostname verification is never disabled; no trust-all fallback exists anywhere.
+* Log-forging protection (control-character stripping + truncation) before interpolating attacker-controlled values into log messages.
+* `doc/LogMessages.adoc` and `doc/http-security/configuration.adoc` match the code exactly, value for value.
+* All cross-references in the 22-file AsciiDoc tree resolve; requirement-ID anchor arithmetic is correct.
+
+== Top Priorities
+
+If only a handful of items are addressed, these have the highest value:
+
+1. *Gate the 304 cache short-circuit on GET* in `ETagAwareHttpAdapter` (xref:http-client-review.adoc#CL-1[CL-1]).
+2. *Give `HEADER_NAME` a real RFC 7230 token character set* (xref:security-validation-review.adoc#SV-1[SV-1]).
+3. *Document (or close) the multi-header and header-family trust gaps* in the forwarded resolver (xref:forwarded-review.adoc#FW-1[FW-1], xref:forwarded-review.adoc#FW-2[FW-2], xref:forwarded-review.adoc#FW-3[FW-3]).
+4. *Re-validate decoded output against the character allow-list*, or explicitly document that character rules apply to the encoded form only (xref:security-validation-review.adoc#SV-3[SV-3]).
+5. *Fix the `strict()` preset* so enabling suspicious-pattern detection does not simultaneously weaken it (xref:security-validation-review.adoc#SV-4[SV-4]).
+6. *Add semantic assertions to the 15 no-op generator contract tests* and fix the mislabeled ModSecurity CRS database entries (xref:test-quality-review.adoc#TQ-1[TQ-1], xref:test-quality-review.adoc#TQ-2[TQ-2]).
+7. *Correct the compliance matrix and the other residual documentation overclaims* (xref:documentation-review.adoc#DOC-1[DOC-1]).

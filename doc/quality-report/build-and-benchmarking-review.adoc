@@ -1,0 +1,62 @@
+= Build & Benchmarking Review
+:toc: left
+:toclevels: 3
+:sectnums:
+:source-highlighter: highlight.js
+
+xref:README.adoc[← Back to index]
+
+Scope: both `pom.xml` trees, the GitHub workflows (`.github/workflows/`), the JMH benchmarks in `cui-http-benchmarking/`, the JPMS setup, the log-message audit across `HttpLogMessages`/`ForwardedLogMessages`, and the release skill.
+
+== HIGH severity
+
+[#BB-1]
+=== BB-1 (HIGH): The forwarded attack-throughput benchmark measures console logging, not resolver work
+
+*Files:* `cui-http-benchmarking/src/main/java/de/cuioss/http/forwarded/benchmark/ForwardedResolverBenchmark.java:50-53`; state in `ForwardedBenchmarkState.java:63-66`; logging config in `cui-http-benchmarking/src/main/resources/benchmark-logging.properties:2-5`.
+
+Every invocation of `resolveAttackThroughput` deterministically emits at least one JUL WARN record to a `ConsoleHandler`, so the measured hot path is synchronized console I/O plus `SimpleFormatter` formatting — *not* header sanitization. Over five 4-second throughput iterations this also floods CI output. Each cycled attack set hits a `LOGGER.warn` on every `resolve()`:
+
+* Set 1: `X-Forwarded-Host: evil.com\r\nInjected: 1` — CR/LF is outside `RFC7230_HEADER_CHARS`, so `sanitize()` logs `FORWARDED_VALUE_SANITIZATION_REJECTED` (`ForwardedHeaderResolver.java:348`); its `//attacker.com` prefix additionally logs `CONTEXT_PATH_PROTOCOL_RELATIVE_REJECTED` (line 259).
+* Set 2: prefix `/app\..\..` (backslash) logs at line 259; XFF `not-an-ip, 10.0.0.5` trusts `10.0.0.5`, then `not-an-ip` is unparseable → `CLIENT_IP_ENTRY_UNPARSEABLE` warn (line 314).
+
+`benchmark-logging.properties` sets `.level = WARNING` with a `ConsoleHandler` at `WARNING`, so these WARNs are emitted, formatted, and written every operation. *Fix:* raise `de.cuioss.http.forwarded.level = SEVERE` (or `OFF`) in `benchmark-logging.properties`, or use attack inputs that fail without logging. (The security-pipeline benchmarks do *not* have this problem — the `security` main packages contain no logging calls.)
+
+== LOW severity
+
+[#BB-2]
+=== BB-2 (LOW): `benchmark-pages.py` "results not found" guard can be defeated by the history-merge step
+
+*File:* `cui-http-benchmarking/scripts/benchmark-pages.py:109-116` vs guard at `130-132`. If `--micro-results` (the gh-pages-ready tree) does not exist but previous pages history does, step 1's `_copy_json_files` creates `results_dir/history` (`dst_dir.mkdir(parents=True, …)`, line 45), so the later `if not results_dir.is_dir()` check passes and a history-only tree is deployed; combined with the workflow's `rm -rf "$TARGET_DIR"` (`benchmark.yml:113`) this would wipe the live dashboard. Low likelihood (a failing Maven step aborts the workflow first), but the guard is ineffective as written. *Fix:* move the merge after the existence check.
+
+[#BB-3]
+=== BB-3 (LOW): `benchmark.yml` job is over-privileged
+
+*File:* `.github/workflows/benchmark.yml:28-29`. The job requests `contents: write`, but no step writes to this repo with the default `GITHUB_TOKEN` — the checkout uses `persist-credentials: false` (line 50) and the pages deploy uses a GitHub App token (line 108) against a different repo. `contents: read` would suffice, and the file's own header (lines 11–13) declares least-privilege intent. *Fix:* downgrade to `contents: read`.
+
+[#BB-4]
+=== BB-4 (LOW): Cross-repo race on the `cuioss.github.io` push
+
+*File:* `.github/workflows/benchmark.yml:16-19,110-121`. The `concurrency` group serializes only this repo's benchmark runs; any other cuioss repo deploying to `cuioss.github.io` simultaneously will race the plain `git push` (no fetch/rebase/retry, as the comment admits), causing an occasional failed deploy. *Fix:* add fetch-rebase-retry around the push.
+
+[#BB-5]
+=== BB-5 (LOW): Non-compiling usage examples in package-info files
+
+`security/monitoring/package-info.java:42`, `security/exceptions/package-info.java:40`, and `security/validation/package-info.java:50` show `String validated = validator.validate(input);`, but `HttpSecurityValidator.validate` returns `Optional<String>`. Tracked centrally under xref:security-validation-review.adoc#SV-15[SV-15].
+
+== INFO / observations
+
+* *BB-6* — `cui-http-core/pom.xml:36-39` declares `junit-jupiter-api` without an explicit `<scope>test</scope>`. Verified safe: `cui-java-bom-1.5.4` manages it at test scope, so it does not leak into published compile deps. But it is the only dependency relying on managed scope while all sibling test deps declare it explicitly — an explicit scope would remove the trap.
+* *BB-7* — The `quick` profile (`cui-http-benchmarking/pom.xml:185-186`) *increases* per-iteration times (`jmh.time=5s`, `warmupTime=2s`) versus the defaults (`4s`/`1s`) while reducing iteration counts (2/1 vs 5/3). Net per-benchmark time still drops, and CLAUDE.md documents the iterations-only behavior, but the longer times under a profile named `quick` are surprising.
+* *BB-8* — `cui-http-benchmarking` will be published to Maven Central on release: the publishing chain publishes every reactor module and the benchmarking pom sets `sonar.skip` but no publish skip, so the JMH jar (which depends on `de.cuioss.sheriff.oauth:benchmarking-common:0.8.0`) ships to Central alongside `cui-http`. Confirm this is intended; if not, add a publish/deploy skip.
+* *BB-9* — The release skill (`.claude/skills/release/SKILL.md:49-51`) asserts a two-segment `X.Y` version line, but `.github/project.yml` has `current-version: 2.1.0` (three-segment). The default rule still yields a sane `2.2` and the skill's "ask if inconsistent" escape hatch covers it — cosmetic tension only. Everything else the skill references (the `release.yml` trigger, `reusable-maven-release.yml`, `pages.deploy-at-release`, the Java 21+25 matrix, the `maven.yml` branch-prefix list) checks out.
+* *BB-10* — Leftover template comments in `.github/workflows/maven.yml:1-2` and `release.yml:1-2` ("Example: Copy this to your repo…") are stale boilerplate in a live repo.
+
+== Verified correct / done well
+
+* *Benchmark methodology (apart from BB-1) is sound*: every `@Benchmark` returns its computed value (implicit Blackhole — no dead-code-elimination risk); state creation is `@Setup(Level.Trial)`, so setup is not measured; inputs cycle via mutable per-thread indices with a correct `& Integer.MAX_VALUE` overflow guard; `Scope.Thread` justifies the unsynchronized counters. Runner names match real benchmark methods; the `jmh.include` regex matches both benchmark packages; all state-referenced core APIs exist.
+* *Log messages are fully consistent*: `HttpLogMessages` (WARN 106–108, 110–115; ERROR 200–201) and `ForwardedLogMessages` (WARN 120–123) have unique IDs under the shared `HTTP` prefix, correct CUI level ranges (WARN 1xx, ERROR 2xx), all 15 constants used in main code (grep-verified per constant), no used-but-undefined records, and argument counts that match the templates at every call site. `doc/LogMessages.adoc` matches the code exactly.
+* *The generators classifier artifact* (`cui-http-core/pom.xml:72-95`) packages `generators/**` + `database/**` from the test output as documented; the `*Test.class` exclude covers all present test classes; the packaged classes reference nothing outside the packaged packages plus the main jar — the artifact is not broken for consumers.
+* *Build / JPMS consistency*: the `module-info.java` requires (`static lombok`, `org.jspecify`, `de.cuioss.java.tools`, `java.net.http`) match the pom's compile deps exactly; exported packages match the source tree 1:1; the root pom's `surefire useModulePath=false` backs the "tests on classpath" claim; versions `2.2-SNAPSHOT` are consistent across all three poms.
+* *A Glob sweep* confirmed no main-source Java file exists outside `client/**`, `forwarded/**`, `security/**`, and `module-info.java` — nothing unreviewed.
+* *`benchmark.yml` paths* (the Python script, the sparse-checkout path, the `--micro-results`/`--previous-pages-dir` arguments, the history output dir) all line up with what the script expects; the Python script has no JSON-parse or division-by-zero exposure.

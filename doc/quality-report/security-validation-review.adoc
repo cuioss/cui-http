@@ -1,0 +1,257 @@
+= Security Validation Review
+:toc: left
+:toclevels: 3
+:sectnums:
+:source-highlighter: highlight.js
+
+xref:README.adoc[← Back to index]
+
+Scope: `de.cuioss.http.security.validation` (all stages), `.pipeline`, `.config`, `.data`, `.core`, `.monitoring`, `.exceptions`.
+
+All file paths are relative to `cui-http-core/src/main/java/`. Line numbers are as of commit `7ae6499`.
+
+== Confirmed pipeline stage orders
+
+Verified against the pipeline constructors (these are the reference for several findings):
+
+[cols="1,4"]
+|===
+|Pipeline |Stage order
+
+|URL_PATH |Length → Character → *Pattern* → Decode → Normalization → *Pattern* (pattern runs twice)
+|PARAMETER_NAME / PARAMETER_VALUE |Length → Character → Decode → Normalization → Pattern (pattern only after decode)
+|HEADER_NAME / HEADER_VALUE |Length → Character → Normalization (no-op) → Pattern (no-op) [+ AllowBlockList for names]
+|CONTENT_TYPE |AllowBlockList only
+|===
+
+Default config: `allowDoubleEncoding=false`, `normalizeUnicode=true`, `caseSensitiveComparison=false`, `failOnSuspiciousPatterns=false`. Lenient preset: `allowDoubleEncoding=true`, `normalizeUnicode=false`.
+
+== HIGH severity
+
+[#SV-1]
+=== SV-1 (HIGH): Header-name pipeline does not enforce RFC 7230 token characters
+
+*Files:* `security/pipeline/HTTPHeaderValidationPipeline.java` (Javadoc lines 41, 60–63); `security/pipeline/PipelineFactory.java:155-162`; root cause `security/validation/CharacterValidationConstants.java:237`.
+
+`createHeaderNamePipeline` promises it "validates HTTP header names according to RFC 7230" and rejects "Invalid header name characters". But the character stage maps `HEADER_NAME` to the header-*value* character set:
+
+[source,java]
+----
+case HEADER_NAME, HEADER_VALUE -> RFC7230_HEADER_CHARS;
+// RFC7230_HEADER_CHARS = { for (int i = 32; i <= 126; i++) headerChars.set(i); }  (+ tab)
+----
+
+That set includes space, `:`, `"`, `,`, `;`, `(`, `)` — all illegal in an RFC 7230 header-name *token*. Consequently a "name" such as `X Evil: Injected` passes the entire pipeline: `PatternMatchingStage` is a no-op for header types (see SV-2), `NormalizationStage` is a pass-through, the default allow/block lists are empty, and only CR/LF/control characters are rejected.
+
+*Impact:* Callers relying on this pipeline to sanitize header names before composing a response can pass a value that embeds a colon and further tokens. Fix by giving `HEADER_NAME` a genuine `tchar` set (RFC 7230 §3.2.6).
+
+[#SV-2]
+=== SV-2 (HIGH): PatternMatchingStage is a no-op for header types but is advertised as active
+
+*Files:* `security/pipeline/HTTPHeaderValidationPipeline.java:45,63` (Javadoc) and stage wiring at line 126; behavior in `security/validation/PatternMatchingStage.java:214-236`.
+
+Every check in `PatternMatchingStage.validate` is gated on `URL_PATH`, `PARAMETER_VALUE`, or `PARAMETER_NAME`. For header types the method falls straight through to `return Optional.of(value)`. Yet the header pipeline Javadoc lists this stage as "Pattern Matching — Detects injection attacks and suspicious patterns" and "Pattern Detection — Identifies malicious header values". The stage occupies a slot and does nothing; the only real CR/LF protection for headers comes from `CharacterValidationStage`.
+
+The same wired-no-op observation applies to `NormalizationStage` for all non-path types (`NormalizationStage.java:236-238`), and this finding was independently reported by two reviewers. Fix by either removing the stage from the header pipeline or implementing header-relevant pattern checks; at minimum, correct the Javadoc so it does not over-promise detection.
+
+== MEDIUM severity
+
+[#SV-3]
+=== SV-3 (MEDIUM): Decoded output is not re-validated against the character allow-list
+
+*Files:* `security/validation/CharacterValidationStage.java:126-140` (runs *before* `DecodingStage` in every pipeline); `security/validation/DecodingStage.java:311-360`.
+
+`CharacterValidationStage` enforces the RFC 3986 / RFC 7230 allowed-character `BitSet`, but it runs on the still-encoded input. No pipeline re-runs it after decoding. `DecodingStage.validateDecodedCharacters` re-checks only null bytes, combining marks, CR/LF (context-dependent), and — for parameter names — delimiters, *not* the full allow-list.
+
+Consequence for `URL_PATH`: `/%3Cscript%3E` passes character validation as valid percent-encoding, passes pattern matching, decodes to `/<script>`, and `<`/`>` (not in `RFC3986_PATH_CHARS`, `CharacterValidationConstants.java:154-161`) are never re-checked. The decoded string is returned to the caller. Likewise `%20`→space and `%7B`→`{`. The class Javadoc claims it "Enforces RFC 3986 (URI) and RFC 7230 (HTTP) character rules" (`CharacterValidationStage.java:40`) — true only for the encoded form. The `DecodingStage` comment at lines 196–201 explicitly acknowledges "encoding becomes a bypass for the character rules" but closes the gap only for that subset.
+
+*Note:* Whether this is a defect or an accepted design boundary depends on the project's stated stance that XSS is an application-layer concern. The finding is that the *contract* ("enforces RFC character rules") is broader than the *implementation*. Fix by re-running character validation on the decoded output, or by narrowing the Javadoc to state that character enforcement applies to the encoded form only.
+
+[#SV-4]
+=== SV-4 (MEDIUM): The `strict()` preset silently weakens pattern detection
+
+*Files:* `security/config/SecurityDefaults.java:324`; effect in `security/validation/PatternMatchingStage.java:212,252-253,300-301`.
+
+STRICT is the only preset that enables `failOnSuspiciousPatterns`, but it simultaneously sets `caseSensitiveComparison=true`:
+
+[source,java]
+----
+true, true, // case-sensitive comparison, fail on suspicious patterns
+----
+
+`PatternMatchingStage` then does `String testValue = config.caseSensitiveComparison() ? value : value.toLowerCase(Locale.ROOT)` and tests `testValue.contains(pattern)` against the all-lowercase `SUSPICIOUS_PATH_PATTERNS` (`/etc/`, `web.xml`, `javascript:`, `file:`, …). So `/ETC/passwd`, `JavaScript:`, and `WEB.XML` all bypass detection. The strict preset therefore detects *strictly less* than `builder().caseSensitiveComparison(false).failOnSuspiciousPatterns(true)`. Nothing in `strict()`'s Javadoc warns of this. Fix: make STRICT use case-insensitive comparison, or store the suspicious-pattern set in a form that matches case-insensitively regardless of the flag.
+
+[#SV-5]
+=== SV-5 (MEDIUM): Percent-encoded control characters bypass `allowControlCharacters=false`
+
+*Files:* `security/pipeline/URLPathValidationPipeline.java:93-100`; `security/validation/DecodingStage.java:311-360`.
+
+A closely related instance of SV-3, specific to control characters. Input `/a%1B%08b` passes the full URL_PATH pipeline and the returned "validated" string contains raw ESC (``) and backspace (``), despite the default `allowControlCharacters=false`. `CharacterValidationStage` runs pre-decode and accepts `%1B` as valid percent-encoding; `validateDecodedCharacters` re-checks the decoded output only for null bytes, combining marks, and CR/LF — decoded ``, ``, `` sail through, and no later stage inspects characters. Fix as for SV-3.
+
+[#SV-6]
+=== SV-6 (MEDIUM): ContentTypeValidationPipeline validates nothing by default, and empty string bypasses a configured allow-list
+
+*Files:* `security/pipeline/ContentTypeValidationPipeline.java:61-64`; `security/validation/AllowBlockListStage.java:135-137`.
+
+`createStages` is `List.of(AllowBlockListStage.forContentTypes(config))` — a single stage, no Length/Character/Pattern stages. Two consequences:
+
+* *(a)* Under the default configuration (empty allow/block lists), the pipeline validates nothing: `validate("evil\r\nSet-Cookie: x=1")` succeeds, even though the pipeline reports `ValidationType.HEADER_VALUE` and its sibling HEADER_VALUE pipeline enforces length and character rules.
+* *(b)* Even with a non-empty `allowedContentTypes`, an empty string passes because `AllowBlockListStage` short-circuits `if (value.isEmpty()) return Optional.of(value);` (line 135) *before* the allow-list check at line 150 — a fail-open for the empty value that also skips the block-list.
+
+The class Javadoc discloses the list-only behavior, but the name plus `HEADER_VALUE` invites treating it as a full header-value validator, and the empty-string bypass is disclosed nowhere. The empty-string bypass (b) was independently reported against `AllowBlockListStage` directly. Fix: document the list-only scope prominently, and treat empty as "not in a non-empty allow-list" rather than auto-accept.
+
+[#SV-7]
+=== SV-7 (MEDIUM): `failOnSuspiciousPatterns(false)` is documented as "log only" but nothing is logged
+
+*Files:* `security/config/SecurityConfigurationBuilder.java:354` (`@param fail … false to log only`); `security/validation/PatternMatchingStage.java:311,338`.
+
+The builder documents `false` as "log only", but `checkSuspiciousPathPatterns` / `checkSuspiciousParameterNames` contain only the comment `// If not configured to fail, continue validation but could log here`. There is no logger in the class, and the `SecurityEventCounter` is not incremented (it counts only thrown exceptions, via `AbstractValidationPipeline`). With the default `false`, suspicious matches are entirely invisible. The `PatternMatchingStage` Javadoc at line 108 also references a nonexistent `logSecurityViolations` config option. Fix: either implement logging/counting for the non-failing case or correct the documentation to say matches are silently allowed.
+
+[#SV-8]
+=== SV-8 (LOW): AttributeParser returns quoted values with quotes intact
+
+*Files:* `security/data/AttributeParser.java:120-125`; consumer `security/data/HTTPBody.java:213-218`.
+
+For an RFC 7231-legal quoted parameter such as `text/html; charset="UTF-8"`, `extractAttributeValue` returns `Optional.of("\"UTF-8\"")` — `value.trim()` never strips the surrounding quotes. `HTTPBody.getCharset()` therefore returns the charset name *with quotes*, and any caller that feeds it to `Charset.forName(...)` would get an `IllegalCharsetNameException`.
+
+[NOTE]
+====
+Downgraded from MEDIUM to LOW during verification. The quote-retention itself is confirmed, but the originally-claimed throwing consumer does not exist in the library: `HTTPBody.getCharset()` merely returns the `Optional<String>`, and a grep of the main sources finds no `Charset.forName` call. The impact is therefore latent — it only bites an *external* caller that resolves the returned name to a `Charset`.
+====
+
+The implementation note disclaims only semicolons *inside* quotes, not quote stripping. Fix: strip a single pair of surrounding double quotes (and unescape `\"`) when extracting a quoted attribute value.
+
+[#SV-9]
+=== SV-9 (MEDIUM): `SecurityEventCounter` count-accessor Javadoc is false after `reset()`
+
+*Files:* `security/monitoring/SecurityEventCounter.java:145-157,182-184,215-232`.
+
+`getAllCounts()` Javadoc says "Only failure types with non-zero counts are included", but the implementation streams all map entries with no `> 0` filter, and `reset()` keeps entries at value 0 (`counters.values().forEach(c -> c.set(0))`). So after a reset, zero-count entries are returned. `getFailureTypeCount()` ("at least one event recorded") has the same post-reset inaccuracy. Related doc nits: `reset()` claims "atomically resets all counters" while resetting each independently (concurrent increments can interleave), and the class doc claims "All operations complete in constant time" while `getAllCounts`/`getTotalCount` are O(n). This finding was reported by two reviewers. Fix the Javadoc to match behavior (or add the `> 0` filter if the documented contract is the intended one).
+
+== LOW severity
+
+[#SV-10]
+=== SV-10 (LOW): `containsDirectoryTraversalIntent` encoded-dot checks are case-incomplete
+
+`security/validation/NormalizationStage.java:451`: `input.contains("..%") || input.contains("%2e%2e") || input.contains("%2E%2E")` misses mixed-case `%2E%2e` / `%2e%2E`. Because `NormalizationStage` runs *after* `DecodingStage`, these `%`-based checks only see undecoded input in the lenient (`allowDoubleEncoding=true`) case; the mixed-case forms are subsequently caught by the case-insensitive `ENCODED_TRAVERSAL_PATTERN` in the second `PatternMatchingStage` pass, so net risk is low — but the check as written is weaker than it appears.
+
+[#SV-11]
+=== SV-11 (LOW): The lenient preset disables two distinct defenses via one switch
+
+`security/config/SecurityDefaults.java:346-356`: lenient sets `allowDoubleEncoding=true` (skips the double-encoding gate, `DecodingStage.java:163`) and `normalizeUnicode=false` (skips the entire Unicode-normalization/structural-separator homoglyph check, `DecodingStage.java:213` — e.g. a percent-encoded fullwidth solidus `U+FF0F` is neither folded to `/` nor rejected). Both are documented "trusted environments only", but a single preset turns off two separate protections; worth an explicit callout since presets are the common entry point.
+
+[#SV-12]
+=== SV-12 (LOW): `AllowBlockListStage` empty-string early return bypasses the allow-list
+
+`security/validation/AllowBlockListStage.java:135-137`. See SV-6(b) — reported here as the root cause: when a non-empty allow-list is configured, `""` is accepted and the block-list is skipped, inconsistent with the "non-empty allow-list rejects any value not in it" contract at lines 42–44.
+
+[#SV-13]
+=== SV-13 (LOW): `LengthValidationStage` BODY limit silently capped at `Integer.MAX_VALUE`
+
+`security/validation/LengthValidationStage.java:221`: `(int) Math.min(config.maxBodySize(), Integer.MAX_VALUE)`. `maxBodySize` is a `long`; a configured limit above 2^31−1 silently drops to ~2.1 GB. This is fail-closed (over-rejection), so not a security hole, but it silently diverges from the configured value.
+
+[#SV-14]
+=== SV-14 (LOW): Pipeline `equals`/`hashCode` ignore configuration
+
+`URLPathValidationPipeline.java:70`, `URLParameterValidationPipeline.java:72`, `URLParameterNameValidationPipeline.java:51`, `ContentTypeValidationPipeline.java:42` all use `@EqualsAndHashCode(callSuper=false, of={})`; `HTTPHeaderValidationPipeline.java:86` compares only `validationType`. A `strict()`-configured pipeline therefore equals a `lenient()`-configured one of the same class — misleading value semantics for map keys or deduplication.
+
+[#SV-15]
+=== SV-15 (LOW): Non-compiling and stale Javadoc examples across pipelines and data types
+
+`validate` returns `Optional<String>`, but usage examples assign it to `String`: `URLPathValidationPipeline.java:58`, `URLParameterValidationPipeline.java:60`, `HTTPHeaderValidationPipeline.java:74`, `pipeline/package-info.java:51-52`, `monitoring/package-info.java:42`, `exceptions/package-info.java:40`, `validation/package-info.java:50`. A stale two-argument form `validator.validate(x, ValidationType.Y)` (no such overload) appears in `data/URLParameter.java:45-46`, `data/Cookie.java:64-65`, `data/HTTPBody.java:72`, and `core/ValidationType.java:33-39`. This finding was reported by three reviewers.
+
+[#SV-16]
+=== SV-16 (LOW): URLPathValidationPipeline Javadoc stage sequence contradicts the code
+
+`security/pipeline/URLPathValidationPipeline.java:33-40` vs `93-100`: the Javadoc lists 5 stages with Decoding before Pattern Matching; the code builds 6 stages with `PatternMatchingStage` *before* `DecodingStage` and again after `NormalizationStage` (the code comment reads `// CRITICAL: PatternMatchingStage must run BEFORE normalization`). The documented order is exactly what the code comment calls wrong.
+
+[#SV-17]
+=== SV-17 (LOW): PipelineFactory Javadoc and error messages omit supported types
+
+`security/pipeline/PipelineFactory.java:222-228` ("Supported Validation Types" omits `PARAMETER_NAME`, which line 249 supports); lines 252–255 (COOKIE error text omits `PARAMETER_NAME`); class-level lines 41–46 omit the parameter-name and content-type pipelines.
+
+[#SV-18]
+=== SV-18 (LOW): `pipeline/package-info.java` omits two pipelines and overstates URL coverage
+
+`security/pipeline/package-info.java:23-29,34`: `URLParameterNameValidationPipeline` and `ContentTypeValidationPipeline` are missing from "Available Pipelines". "Full URLs like `http://example.com/path`" is only partly true — a full URL with a query (`http://example.com/p?a=b`) is rejected because `?`/`#` are not in `RFC3986_PATH_CHARS`, and no domain validation exists anywhere in the pipeline.
+
+[#SV-19]
+=== SV-19 (LOW): `URLParameterNameValidationPipeline` Javadoc describes a pass-through stage as active
+
+`security/pipeline/URLParameterNameValidationPipeline.java:45` claims "Normalization — Normalization and security checks", but `NormalizationStage` is a documented pass-through for non-path types (`NormalizationStage.java:236-238`). Sibling pipelines document the pass-through honestly. Its suspicious-name detection (line 46) only fires when `failOnSuspiciousPatterns=true` (non-default), which is not stated.
+
+[#SV-20]
+=== SV-20 (LOW): `Cookie.hostPrefix`/`securePrefix` throw undocumented `UrlSecurityException`
+
+`security/data/Cookie.java:147-151,190-194`: `COOKIE_NAME_VALIDATOR.validate(suffix)` throws (unchecked) `UrlSecurityException` for any suffix outside the RFC 3986 unreserved set; neither method's Javadoc has an `@throws`.
+
+[#SV-21]
+=== SV-21 (LOW): `HTTPBody` Javadoc directs users to a removed validation path
+
+`security/data/HTTPBody.java:71-72,84-87` says "Security validation should be applied … for `ValidationType#BODY`", but `PipelineFactory.createPipeline(BODY, …)` throws `IllegalArgumentException("BODY validation pipeline has been removed…")` (`PipelineFactory.java:250-251`). No BODY validator is obtainable from the factory.
+
+[#SV-22]
+=== SV-22 (LOW): Missing Javadoc on public API members
+
+CLAUDE.md mandates Javadoc on all public APIs. Missing on: `HTTPBody.java:103-141` (`of`, `text`, `json`, `html`, `form`, `hasContent`, `hasContentType`, `hasEncoding`, `isCompressed`, `isJson`); `URLParameter.java:151-157` (`withName`, `withValue`); `Cookie.java:330-336` (`nameOrDefault`, `valueOrDefault`).
+
+== INFO / observations
+
+[#SV-23]
+=== SV-23 (INFO): `config/package-info.java` example calls nonexistent methods and overclaims defaults
+
+`security/config/package-info.java:45-51,60-63`: the example chains `.securityLevel(SecurityLevel.STRICT)`, `.pathTraversalDetectionEnabled(true)`, `.doubleEncodingDetectionEnabled(true)` — none exist (there is no `SecurityLevel` type). "All security features enabled by default / Maximum security level as the default" contradicts the real defaults (`failOnSuspiciousPatterns=false`, `allowExtendedAscii=true`, empty allow/block lists). Similarly, `SecurityDefaults.java:60-68` shows an example using the `private` `UrlSecurityException` constructor (cannot compile) and labels the count constants "advisory" while lines 46–50 correctly state they are enforced by `RequestCollectionValidator`.
+
+[#SV-24]
+=== SV-24 (INFO): `URLDecoder.decode` applies form semantics to URL paths
+
+`security/validation/DecodingStage.java:185` uses `URLDecoder.decode(value, UTF_8)`, which converts `+` → space. For `URL_PATH`, `+` is a literal path sub-delimiter per RFC 3986, so `/a+b` is silently rewritten to `/a b` — a space that is not a legal path character and is never re-validated (see SV-3), producing the asymmetry `+`→space while `%2B`→`+`. Reported by two reviewers. Consider `URLDecoder` only for parameter values, and a path-appropriate percent-decoder for paths.
+
+[#SV-25]
+=== SV-25 (INFO): Combinator utilities are intentional fail-open building blocks
+
+`security/core/HttpSecurityValidator.java:178-189` (`when(...)` returns input unvalidated when the predicate is false) and `identity()` (lines 198–200, pure pass-through) are legitimate composition utilities, but misuse (e.g. `identity()` in a pipeline slot) silently disables validation with no signal.
+
+[#SV-26]
+=== SV-26 (INFO): Decoded CR/LF is intentionally allowed for PARAMETER_VALUE and BODY
+
+`security/validation/DecodingStage.java:376-382` (`decodedLineBreakForbidden`) returns `false` for `PARAMETER_VALUE` and `BODY`, so a percent-encoded `%0D%0A` in a parameter value survives decoding (character validation ran before decode and never saw it). Documented as "legitimate form data"; correct for form bodies, but response-splitting safety then depends entirely on the application not reflecting parameter values into headers. Worth an explicit threat-model note.
+
+[#SV-27]
+=== SV-27 (INFO): Traversal detection is duplicated across three sites with divergent failure types
+
+Path traversal is detected in `NormalizationStage.containsDirectoryTraversalIntent` (pre), `NormalizationStage.containsInternalPathTraversal` + `escapesRoot` (post), and `PatternMatchingStage.checkPathTraversalPatterns` (+ `SecurityDefaults.PATH_TRAVERSAL_PATTERNS`). Good for defense-in-depth, but the same input can throw different `failureType`s/`detail`s depending on which stage fires first, making behavior hard to reason about and test exhaustively.
+
+[#SV-28]
+=== SV-28 (INFO): `NormalizationStage` standalone Javadoc example is inaccurate
+
+`security/validation/NormalizationStage.java:80-85` documents that `validate("/api/../../etc/passwd")` throws `DIRECTORY_ESCAPE_ATTEMPT`. It does not: for an absolute path, `..` at the root is silently clamped (RFC-correct), so the input normalizes to `/etc/passwd` and is returned with no exception. In the real URL_PATH pipeline the input is caught earlier by `PatternMatchingStage` (with a *different* failure type than documented); anyone using `NormalizationStage` standalone — which the Javadoc invites — gets silent pass-through. Fix the example.
+
+[#SV-29]
+=== SV-29 (INFO): Minor data-type and module observations
+
+* `AttributeParser.java:99` `toLowerCase()` (default locale) is redundant — the comparison at line 118 is `equalsIgnoreCase`; drop it to remove the locale smell.
+* `Cookie.getAttributeNames()` (line 325) returns a malformed `=value` token whole as an "attribute name"; duplicate attributes resolve to the first match, undocumented.
+* `@ToString(callSuper=true)` on all pipelines calls `Object.toString()`, producing `URLPathValidationPipeline(super=…@1a2b3c)` noise.
+* `module-info.java:19` `requires org.jspecify;` is not `transitive`, although JSpecify annotations appear in exported API signatures.
+* The five pipeline classes repeat identical `createStages` + `Objects.requireNonNull` + `VALIDATION_TYPE` boilerplate (~60 duplicated lines) that a shared constructor could remove.
+
+== Verified correct / done well
+
+The following were positively confirmed by reading the code, not merely un-flagged:
+
+* *Fail-secure core loop* (`AbstractValidationPipeline.validate`, lines 77–111): `null` → `Optional.empty()`; the exception path increments the counter with the *stage's* failure type and rethrows with the pipeline's `ValidationType`, preserving original input and cause. The empty-Optional acceptance hazard for custom stages is explicitly documented.
+* *Ordering rationale is sound*: length before decoding (raw wire-size DoS cap), traversal pattern matching both pre-decode and post-normalization for paths, Unicode normalization inside `DecodingStage` after percent-decoding with a per-character count-based "introduced structural separator" check so pre-existing separators do not mask introduced ones.
+* *Surrogate-pair correctness*: `DecodingStage` and `CharacterValidationStage` iterate by code point (`codePointAt`/`charCount`); `LengthValidationStage.utf8ByteLength` handles paired (4-byte) and unpaired (3-byte) surrogates correctly, with a `long` accumulator that cannot wrap.
+* *Combining-mark detection* uses the Unicode general category (Mn/Mc/Me), applied both pre- and post-decode — better than a fixed range.
+* *Percent-encoding validation* correctly rejects incomplete escapes (`%`, `%2`) and non-hex digits, and catches encoded `%00`.
+* *CR/LF response-splitting* is rejected unconditionally for header/cookie types regardless of `allowControlCharacters`, and re-checked post-decode.
+* *No ReDoS* constructs found; all case folding uses `Locale.ROOT` (Turkish-i safe).
+* *Thread-safety claims hold*: all stages are records or final classes with final fields; `CharacterValidationConstants` exposes `IntPredicate`s bound to never-published `BitSet`s; `SecurityConfiguration` defensively copies its sets; `SecurityEventCounter` uses `computeIfAbsent` + `AtomicLong` (race-free increments) and avoids materializing entries on `incrementBy(…, 0)`.
+* *Config presets delegate to a single source of truth* (`SecurityDefaults`), `DEFAULT_CONFIGURATION == builder().build()` holds by construction, and every config knob traced has a real enforcement site — the "Honest Surface" claim in `SecurityConfiguration`'s Javadoc checks out (with the header/content-type caveats above).
+* *`AllowBlockListStage.forContentTypes`* strips `; charset=…` before comparison, preventing parameter-suffix bypass; block-before-allow precedence matches the docs.
+* *`Cookie.isSecure()`/`isHttpOnly()`* use token-exact matching (no substring false positives), and `AttributeParser` strictly rejects whitespace-padded keys per RFC 6265.
+
+== Net assessment
+
+No CRITICAL or exploitable fail-open exists *within the default full pipeline* — traversal, null bytes, control characters, overlong UTF-8, and double encoding are all blocked, and pattern matching runs both before decode and after normalization for paths. The most material issues are the *contract-vs-implementation gaps* (SV-1, SV-2, SV-3, SV-6) where a component advertises more validation than it performs, and the *strict-preset weakening* (SV-4). The remainder are documentation accuracy, preset transparency, and defense-in-depth completeness.
