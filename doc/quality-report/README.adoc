@@ -21,7 +21,7 @@ The review examined:
 The review was performed in two phases:
 
 1. *Parallel deep review.* Seven independent review passes, each with a focused scope (validation stages, pipelines/configuration, HTTP client, forwarded-header resolution, test suite, documentation, build/benchmarking). Every main-source file was read completely; runtime behavior claims (e.g. JDK `InetAddress` parsing) were verified on the repository's JDK (OpenJDK 21).
-2. *Adversarial verification.* A separate, clean-context review pass re-verified the compiled findings end-to-end against the code before this report was finalized. Findings that did not survive verification were removed or downgraded; the verification outcome is noted per finding where it changed anything.
+2. *Adversarial verification.* Three separate, clean-context verifier passes (with no access to the original review) independently re-traced the load-bearing HIGH and MEDIUM findings end-to-end against the code, instructed to *refute* each claim. Of 32 findings put to verification, 30 were confirmed exactly as written and 2 were downgraded rather than removed: SV-8 (the quoted-charset issue has no throwing consumer inside the library) and CL-8 (a Javadoc-precision issue, since TLS enforcement is correctly delegated to `HttpHandler`). Several HIGH/MEDIUM findings carry a verification NOTE recording the precondition under which they bite (e.g. CL-1 requires a non-conformant server; FW-5 requires bypassing the resolver). No finding was refuted outright.
 
 === Severity scale
 
@@ -43,11 +43,11 @@ The review was performed in two phases:
 
 |xref:security-validation-review.adoc[Security Validation Review]
 |`security.validation`, `security.pipeline`, `security.config`, `security.data`, `security.core`, `security.monitoring`, `security.exceptions`
-|2 |9 |13 |9
+|2 |8 |14 |9
 
 |xref:http-client-review.adoc[HTTP Client Review]
 |`client`, `client.handler`, `client.adapter`, `client.converter`, `client.result`
-|1 |7 |8 |7
+|1 |6 |9 |7
 
 |xref:forwarded-review.adoc[Forwarded-Header Review]
 |`forwarded` package and `doc/forwarded-header-resolution.adoc`

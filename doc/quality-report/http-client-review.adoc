@@ -32,7 +32,12 @@ if (statusCode == 304 && cachedEntry != null) {
 
 So a POST/PUT/DELETE/PATCH/HEAD/OPTIONS response with status 304 — from a misbehaving or malicious server, or because a caller supplied an `If-None-Match` header — returns a prior GET's cached content as `HttpResult.success(...)`. A DELETE would appear to have succeeded and hand back a stale body.
 
-Notably, the adapter's own *fallback* path already guards against exactly this and gates on GET (lines 853–856: "gating on the method prevents a non-GET failure from surfacing a prior GET's body/ETag through a method-agnostic cache key"). The 304 success path is missing the same guard. Fix: gate the 304 short-circuit on `method == GET` (and otherwise surface the 304 as an error for non-GET methods).
+Notably, the adapter's own *fallback* path already guards against exactly this and gates on GET (line 856: `boolean canUseCachedFallback = method == HttpMethod.GET && cachedEntry != null;`). The 304 success path is missing the same guard. Fix: gate the 304 short-circuit on `method == GET` (and otherwise surface the 304 as an error for non-GET methods).
+
+[NOTE]
+====
+Trigger conditions (from verification): the adapter itself only sends `If-None-Match` for GET (line 544), so reaching this branch for a non-GET method requires a server that returns 304 *unsolicited* — a protocol violation (RFC 7232 restricts 304 to conditional GET/HEAD) or a deliberately hostile server. The rating stays HIGH because the outcome (a state-changing request reported as success with a stale body) is severe and the guard is trivially missing, but it is not reachable against a conformant server.
+====
 
 == MEDIUM severity
 
@@ -68,15 +73,25 @@ if (content.isEmpty() && HttpStatusFamily.isSuccess(statusCode) && !responseConv
 
 There is no exemption for status codes defined to carry no body (204/205, or an empty 200). The only escape is `VoidResponseConverter` or overriding `emptyContentIsValid()`, forcing a `Void`-typed adapter for mixed APIs. Fix: exempt no-body status codes.
 
+[NOTE]
+====
+Whether this actually trips depends on the converter: an identity `String` converter returns `Optional.of("")` for an empty body (present, so no failure), whereas a JSON/typed converter returns `Optional.empty()` and hits the failure path. The missing status-code exemption in the code path is confirmed; the practical impact is limited to typed converters.
+====
+
 [#CL-7]
 === CL-7 (MEDIUM): `RetryConfig`'s public canonical constructor bypasses all validation
 
 *File:* `adapter/RetryConfig.java:95-104`. The record has no compact constructor, so `new RetryConfig(0, Duration.ofMillis(-5), 0.1, Duration.ZERO, 5.0, true)` is constructible despite the record Javadoc's stated contracts (`maxAttempts >= 1`, positive delays, jitter 0.0–1.0). A negative `initialDelay` yields negative computed delays → `delayedExecutor` fires immediately → hot retry loop; a jitter factor above 1.0 can produce negative delays even from positive inputs. All validation lives only in the Builder setters (lines 205–279). Fix: add a compact constructor that enforces the invariants.
 
 [#CL-8]
-=== CL-8 (MEDIUM): `SecureSSLContextProvider` class-level Javadoc overstates what the class alone enforces
+=== CL-8 (LOW): `SecureSSLContextProvider` class-level Javadoc overstates what the class alone enforces
 
 *File:* `handler/SecureSSLContextProvider.java:31-43` vs `238-246`. The class doc says it "enforces secure TLS versions" and "prevents the use of insecure, deprecated protocols", but `getOrCreateSecureSSLContext` returns any caller-supplied context unchanged (including a TLS 1.0 or trust-all context) — the floor is only real when the context is consumed through `HttpHandler`'s `SSLParameters` pinning. A standalone user of this `public` class gets no enforcement. The method-level docs are accurate; the class-level summary is not.
+
+[NOTE]
+====
+Downgraded from MEDIUM to LOW during verification: this is a Javadoc-precision issue, not a security hole. The method-level Javadoc correctly documents that the floor is enforced downstream in `HttpHandler`, and the actual enforcement (CL's positive finding below) is genuine. Only the class-level summary reads as if the class enforces the floor by itself.
+====
 
 == LOW severity
 

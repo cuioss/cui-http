@@ -40,7 +40,7 @@ A `PathTraversalGenerator` test that never asserts the output contains `../`, an
 
 *File:* `database/ModSecurityCRSAttackDatabase.java`.
 
-* `CRS_920100_CRLF_INJECTION` (lines 104–108) — the payload is `/page%00attack`, a *null byte*, not CRLF; it duplicates `CRS_920100_NULL_BYTE` (lines 97–101). There is *no* CRLF-injection test in this database despite the name.
+* `CRS_920100_CRLF_INJECTION` (lines 104–108) — the payload is `/page%00attack`, a *null byte* (failure type `NULL_BYTE_INJECTION`), not CRLF; it *semantically* duplicates `CRS_920100_NULL_BYTE` (lines 97–101, payload `/index.php%00.bak`) — same attack class and failure type, different literal string. There is *no* CRLF-injection test in this database despite the name.
 * `CRS_932100_PATH_SEMICOLON` (lines 184–188) — named "semicolon"/"Command Injection", but the payload `/../cgi-bin/../../etc/passwd` contains neither a semicolon nor command injection; it is plain traversal.
 * `CRS_921110_CHUNKED_SMUGGLING` (144), `CRS_921150_HEADER_INJECTION` (152), `CRS_920240_SMUGGLING_PREFIX` (128), `CRS_931100_PROTOCOL_HANDLER` (160) all reduce to a bare `%00` null byte or a plain `../` traversal — the smuggling / header-injection / RFI / protocol behaviors named in the constants and the class-level "CRS Rule Categories Covered" list are not distinguished from generic null-byte/traversal detection.
 
@@ -49,7 +49,7 @@ A `PathTraversalGenerator` test that never asserts the output contains `../`, an
 [#TQ-3]
 === TQ-3 (MEDIUM): A timing-based assertion is flaky
 
-*File:* `database/EdgeCaseValidURLsDatabaseTest.java:122-136`. `shouldProcessEdgeCasesEfficiently` asserts `elapsedMs < 100` for a single validation. First-call class-loading, JIT, or a GC pause on a loaded CI runner can exceed 100 ms for the first parameterized case, producing intermittent failures unrelated to correctness. *Fix:* remove the wall-clock upper bound (assert behavior, not latency), or make it a non-failing benchmark.
+*File:* `tests/EdgeCaseValidURLsDatabaseTest.java:122-136` (assertion at lines 133–135). `shouldProcessEdgeCasesEfficiently` asserts `elapsedMs < 100` for a single validation. First-call class-loading, JIT, or a GC pause on a loaded CI runner can exceed 100 ms for the first parameterized case, producing intermittent failures unrelated to correctness. *Fix:* remove the wall-clock upper bound (assert behavior, not latency), or make it a non-failing benchmark.
 
 [#TQ-4]
 === TQ-4 (MEDIUM): `AllGeneratorsIntegrationTest.shouldHaveAllGeneratorsImplemented` can never fail

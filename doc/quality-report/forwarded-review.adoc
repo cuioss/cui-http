@@ -81,6 +81,11 @@ An element with no `=` (`Forwarded: for=6.6.6.6, garbage`) or an empty value nev
 
 The record is public and directly constructible (the benchmark does so at `ForwardedBenchmarkState.java:92`). `new ResolvedForwarding(Optional.of("https"), Optional.of("evil\r\nX: 1"), …)` serializes CR/LF unescaped through both serializers — header injection if an integrator populates it from unsanitized data and emits the result. The record Javadoc asserts invariants ("scheme is `http` or `https`", "port in 1..65535", "contextPath has exactly one leading slash") that the type does not enforce; null components NPE only lazily at use time. Fix: add a compact constructor that validates and rejects control characters.
 
+[NOTE]
+====
+Precondition (from verification): the values produced by the resolver itself are already sanitized, so this requires an integrator to construct the record *directly* from unsanitized data, bypassing the resolver. Contrived, but valid because the record is public API with Javadoc-asserted invariants it does not enforce.
+====
+
 [#FW-6]
 === FW-6 (MEDIUM): Doc drift — "first token" claim is false for the context path
 
