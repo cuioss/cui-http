@@ -20,7 +20,7 @@ The review examined:
 
 The review was performed in two phases:
 
-1. *Parallel deep review.* Seven independent review passes, each with a focused scope (validation stages, pipelines/configuration, HTTP client, forwarded-header resolution, test suite, documentation, build/benchmarking). Every main-source file was read completely; runtime behavior claims (e.g. JDK `InetAddress` parsing) were verified on the repository's JDK (OpenJDK 21).
+1. *Parallel deep review.* Seven independent review passes, each with a focused scope (validation stages, pipelines/configuration, HTTP client, forwarded-header resolution, test suite, documentation, build/benchmarking), plus a dedicated eighth pass reading all 34 test-data *generator implementations* for output correctness and usefulness (not just whether tests exercise them). Every main-source file was read completely; runtime behavior claims (e.g. JDK `InetAddress` parsing) were verified on the repository's JDK (OpenJDK 21).
 2. *Adversarial verification.* Three separate, clean-context verifier passes (with no access to the original review) independently re-traced the load-bearing HIGH and MEDIUM findings end-to-end against the code, instructed to *refute* each claim. Of 32 findings put to verification, 30 were confirmed exactly as written and 2 were downgraded rather than removed: SV-8 (the quoted-charset issue has no throwing consumer inside the library) and CL-8 (a Javadoc-precision issue, since TLS enforcement is correctly delegated to `HttpHandler`). Several HIGH/MEDIUM findings carry a verification NOTE recording the precondition under which they bite (e.g. CL-1 requires a non-conformant server; FW-5 requires bypassing the resolver). No finding was refuted outright.
 
 === Severity scale
@@ -54,8 +54,8 @@ The review was performed in two phases:
 |3 |3 |7 |8
 
 |xref:test-quality-review.adoc[Test Quality Review]
-|Complete test suite: stage/pipeline tests, attack databases, generators
-|1 |3 |6 |4
+|Complete test suite: stage/pipeline tests, attack databases, generator contract tests, and all 34 generator implementations
+|1 |5 |12 |5
 
 |xref:documentation-review.adoc[Documentation Review]
 |All 22 AsciiDoc files, `CLAUDE.md`, `agents.md`, Javadoc drift
@@ -100,7 +100,7 @@ The client stack is solid on TLS but has one significant cache-correctness hole:
 
 === Theme 4: Test and documentation drift
 
-The test suite's stage- and pipeline-level tests are exemplary (specific failure-type assertions, boundary coverage, dedicated false-positive databases). The weak spots are concentrated: 17 of 20 generator contract tests assert nothing beyond non-null output (xref:test-quality-review.adoc#TQ-1[TQ-1]), and several `ModSecurityCRSAttackDatabase` entries are mislabeled or duplicated so that advertised rule categories are never actually exercised (xref:test-quality-review.adoc#TQ-2[TQ-2]). Documentation is accurate where it matters most (configuration values, log messages, stage orderings all match code exactly) but inventory-style listings have drifted, two documents are orphaned, and a handful of residual overclaims ("✓ Complete" compliance matrix, "configurable pattern database") contradict the suite's own carefully-scoped statements.
+The test suite's stage- and pipeline-level tests are exemplary (specific failure-type assertions, boundary coverage, dedicated false-positive databases). The weak spots are concentrated in the generators, on two reinforcing axes: 17 of 20 generator contract tests assert nothing beyond non-null output (xref:test-quality-review.adoc#TQ-1[TQ-1]), *and* a separate pass over all 34 generator *implementations* found that while 21 are fully correct, the rest emit values that do not match the attack or validity they advertise — two of them (`EncodingCombinationGenerator`, `URLLengthLimitAttackGenerator`) never produce their advertised attack at all (xref:test-quality-review.adoc#TQ-15[TQ-15], xref:test-quality-review.adoc#TQ-16[TQ-16]). The no-op contract tests are exactly why those generator bugs went uncaught. Several `ModSecurityCRSAttackDatabase` entries are also mislabeled or duplicated so that advertised rule categories are never actually exercised (xref:test-quality-review.adoc#TQ-2[TQ-2]). Documentation is accurate where it matters most (configuration values, log messages, stage orderings all match code exactly) but inventory-style listings have drifted, two documents are orphaned, and a handful of residual overclaims ("✓ Complete" compliance matrix, "configurable pattern database") contradict the suite's own carefully-scoped statements.
 
 === What is done well
 

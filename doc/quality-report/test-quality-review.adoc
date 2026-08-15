@@ -12,7 +12,7 @@ All file paths are relative to `cui-http-core/src/test/java/de/cuioss/http/secur
 
 [NOTE]
 ====
-Overall the stage- and pipeline-level tests are *genuinely strong*: they assert specific `UrlSecurityFailureType` values, check exact detail messages (including control-character escaping), cover length boundaries at and one-over the limit, and maintain dedicated legitimate-pattern databases that assert *zero* security events (real false-positive prevention). The weaknesses are concentrated in the *generator contract tests* and in *several attack-database entries whose payloads or labels overstate what they verify*.
+Overall the stage- and pipeline-level tests are *genuinely strong*: they assert specific `UrlSecurityFailureType` values, check exact detail messages (including control-character escaping), cover length boundaries at and one-over the limit, and maintain dedicated legitimate-pattern databases that assert *zero* security events (real false-positive prevention). The weaknesses are concentrated in three places: the *generator contract tests* (TQ-1), *several attack-database entries whose payloads or labels overstate what they verify* (TQ-2, TQ-7, TQ-12), and — covered by a dedicated pass in the "Generator implementation correctness" section below — the *generator implementations themselves*, where 21 of 34 are fully correct but the rest emit values that do not match the attack or validity they advertise (TQ-15 through TQ-22). The two weaknesses reinforce each other: the no-op contract tests would not catch the generator bugs.
 ====
 
 == HIGH severity
@@ -96,6 +96,66 @@ All 24 `database/IPv6AttackDatabase.java` entries and all 22 `database/Homograph
 * *TQ-13* — Payload correctness spot-checks *passed*: `CVE_2021_41773` (`.%2e/%2e%2e`), `CVE_2021_42013` (`%%32%65` → `INVALID_ENCODING`), `CVE_2003_0226` (`%c0%af`), `CVE_2006_0026` (`%255c`), OWASP `%252e` double-encode, ModSecurity `%25252e` triple-encode → `DOUBLE_ENCODING`, IDN punycode `xn--` → `PATH_TRAVERSAL_DETECTED`. No incorrectly-encoded payloads were found.
 * *TQ-14* — Every database is wired into an integration test (verified); `LegitimatePatternDatabase` is an abstract base, correctly without a direct test.
 
+== Generator implementation correctness
+
+TQ-1 through TQ-14 concern whether the *tests* exercise the generators. This section covers a separate question — whether each generator's *own implementation* actually emits the attack (or the legitimate value) it advertises. All 34 generator implementation classes (cookie 6, encoding 7, header 5, injection 2, url 11, root 1, client/result 2) were read in full. 21 are fully correct — right output on every branch, good variety, seed-reproducible, correct `getType()` (see the list at the end of this section). The findings below are the exceptions, and they matter precisely because the no-op contract tests (TQ-1) would not catch any of them.
+
+The two MEDIUM and the first LOW were re-verified directly against the source before publication.
+
+[#TQ-15]
+=== TQ-15 (MEDIUM): `EncodingCombinationGenerator` never emits its mixed-case / single-encoded outputs
+
+*File:* `generators/encoding/EncodingCombinationGenerator.java:41-63,113-124`.
+
+`urlEncode` replaces `%` *last* and globally: `input.replace(".", "%2e").replace("/", "%2f").replace("%", "%25")`. So `urlEncode("../")` → `%2e%2e/` → `%2e%2e%2f` → `%252e%252e%252f` — after a single pass no literal `%2e`/`%2f` remains. Because `encodingLevelGen = integers(1, 3)` has a *minimum of 1*, `urlEncode` always runs at least once, so `applyMixedCase` (which searches for exactly `%2e`/`%2f`) can never match: it is a permanent no-op, and `mixedCaseGen` has zero observable effect. Consequences: the generator never produces uppercase-hex output (`%2E`/`%252E`) — the mixed-case bypass technique it is named for is never generated — and it can never produce a single-encoded `%2e%2e%2f` either (level 1 already yields double-encoding). *Verified by tracing the replace chain.* Fix: encode `%` first (or build the encoded form without a global `%` pass), and apply mixed case before the multi-level encoding.
+
+[#TQ-16]
+=== TQ-16 (MEDIUM): `URLLengthLimitAttackGenerator` emits many sub-limit, non-attack values; its Javadoc example would fail
+
+*File:* `generators/url/URLLengthLimitAttackGenerator.java` (e.g. `createFragmentOverflow:181`, `createHostnameOverflow:200`, `createDeepPathNesting:235`, `createRepeatedParameterAttack`/`createLongParameterNames`).
+
+The smallest documented limit is STRICT = 1024, yet many branches return values well under it that are otherwise legitimate URLs: `createFragmentOverflow` case 0 is `pattern + "#" + letterStrings(500,550)` ≈ 505–555 chars (its own comment reads "Fragment within reasonable limits"); `createHostnameOverflow` case 1 ≈ ~140 chars; `createDeepPathNesting` case 0 ≈ 160–240 chars. The class Javadoc usage example shows `assertThrows(UrlSecurityException.class, …)` with *no* filter, which would fail for these under-limit outputs. The in-repo test hides this by early-returning unless the extracted path component exceeds 1024 (`URLLengthLimitAttackTest.isPathBasedLengthAttack:568-601), so no test currently fails — but the generator's published contract is broken for an artifact consumer, and only a filtered subset of its output represents the advertised length attack. *Verified: read the cited branches and confirmed the lengths.* Fix: guarantee every branch exceeds the smallest configured limit, or document that outputs must be filtered/paired with a specific limit.
+
+[#TQ-17]
+=== TQ-17 (LOW): `URLLengthLimitAttackGenerator` uses a seed-invariant call-counter for attack-type selection
+
+*File:* `generators/url/URLLengthLimitAttackGenerator.java:94,375-388`. Attack-type selection uses a mutable increment counter (`currentType = (currentType+1) % maxTypes`) that is independent of the framework seed and not thread-safe, violating the "reproducibility is a function of the seed, not internal state" standard that sibling generators (`ValidURLParameterGenerator:34-35`, `ValidHTTPHeaderValueGenerator:28-29`) explicitly advertise. Deterministic but seed-invariant; a shared instance mutated concurrently races. *Verified against the source.*
+
+[#TQ-18]
+=== TQ-18 (LOW): `PathTraversalGenerator.generateUnicodeTraversal` emits literal escape text, not a decodable traversal
+
+*File:* `generators/encoding/PathTraversalGenerator.java:178-191` (and `generateAdvancedTraversal` case 4). The Java source literal `"\\u002e"` is the six characters `\ u 0 0 2 e`, so the produced string `../` contains *no real dots and no `..`* — a validator scanning for `..`, `%2e`, or an actual dot will not match it. (Contrast the sibling `UnicodeAttackGenerator`, which uses the real escape `"."` = `.`.) *Verified: the source literal is double-backslashed.* Fix: use `"."` if a real dot is intended, or rename the branch to reflect that it emits literal escape text.
+
+[#TQ-19]
+=== TQ-19 (LOW): `UnicodeAttackGenerator` can emit a lone invisible character as an "attack"
+
+*File:* `generators/encoding/UnicodeAttackGenerator.java:37-58`. When `combineGen` is false, cases 3–6 return a single format/control/zero-width character (`U+202E`, `U+200B`, `U+FEFF`, `U+0000`) with no other payload. A validator focused on traversal/pattern detection may not flag a bare zero-width space or BOM, so these are weak "attacks" for the advertised purpose (though `U+0000` is still caught as a null byte).
+
+[#TQ-20]
+=== TQ-20 (LOW): `AttackURLParameterGenerator` emits benign-by-content long values
+
+*File:* `generators/url/AttackURLParameterGenerator.java:179-187`. `generateLongStringAttack` (50–350 alphanumerics) and `generateVeryLongStringAttack` (500–1500) produce plain `[A-Za-z0-9]` values that are not malicious by content — the attack depends entirely on the paired parameter name or on length, so a short-value + weak-name combination may not constitute a genuine attack.
+
+[#TQ-21]
+=== TQ-21 (LOW): `UnicodeNormalizationAttackGenerator` has two mislabeled / pass-through branches
+
+*File:* `generators/encoding/UnicodeNormalizationAttackGenerator.java`. `createMixedScriptAttack:290-320` substitutes letters only, so pure-traversal base patterns (`../`, `..\`, which contain no letters) pass through unchanged — returning a plain `../..` labelled as a mixed-script normalization attack. `createComposedNormalizationAttack:180` maps `.` → `Ḁ` (Ḁ), a lookalike that does not NFC-normalize back to `.`, so it is not a true normalization attack.
+
+[#TQ-22]
+=== TQ-22 (LOW): Whitespace cookie generators include a non-prefixed cookie name
+
+*File:* `generators/cookie/CookieNameUnicodeWhitespaceGenerator.java:94` (`getCookiePrefix` case 2 `"session_id"`) and `CookieNameAsciiWhitespaceGenerator.java:85`. These outputs carry no `__Host-`/`__Secure-` prefix, so they do not exercise the prefix-bypass scenario the Javadoc claims (they remain valid whitespace-injection inputs, so the impact is limited).
+
+[#TQ-23]
+=== TQ-23 (INFO): Minor generator observations
+
+* `client/result/HttpResultSuccessGenerator`/`HttpResultFailureGenerator` do not override `getType()` (rely on the interface default) and are used via direct `new … .next()` in `HttpResultTest:38-39` despite Javadoc claiming `@TypeGeneratorSource` usage; output is correct and seed-controlled.
+* `NullByteURLGenerator` (15 `fixedValues`) and `NullByteInjectionParameterGenerator` (14 `fixedValues`) are fixed lists rather than algorithmic fuzzers (documented, intentional); both always contain a null byte.
+* `ValidCookieGenerator.generateExpires:338` emits `"Thu, 01 Jan 1970"` (comma + spaces) into an attribute string — low false-positive risk.
+* `BoundaryFuzzingGenerator` is range-based (lengths 1000–10000, nesting 50–200), so there is no exact off-by-one boundary to verify (none is claimed).
+
+*Fully correct generators (21):* `PathTraversalURLGenerator`, `DoubleEncodingAttackGenerator`, `PathTraversalParameterGenerator`, `BoundaryFuzzingGenerator`, `UnicodeControlCharacterAttackGenerator`, `InvalidURLGenerator`, `NullByteURLGenerator`, `NullByteInjectionParameterGenerator`, `ValidURLGenerator`, `ValidURLPathGenerator`, `ValidURLParameterGenerator`, `ValidURLParameterStringGenerator`, `ValidHTTPHeaderNameGenerator`, `ValidHTTPHeaderValueGenerator`, `InvalidHTTPHeaderNameGenerator`, `HTTPHeaderInjectionGenerator`, `HttpHeaderInjectionAttackGenerator`, `HttpRequestSmugglingAttackGenerator`, `ProtocolHandlerAttackGenerator`, `AttackCookieGenerator`, plus the cookie name generators `CookieNameLegacyParsingGenerator`/`CookieNameZeroWidthGenerator` and `SupportedValidationTypeGenerator`.
+
 == Verified correct / done well
 
 * *No dead generators* — every generator class is referenced by at least one test.
@@ -108,7 +168,8 @@ All 24 `database/IPv6AttackDatabase.java` entries and all 22 `database/Homograph
 
 == Highest-value fixes
 
-1. Add semantic assertions to the 15 no-op generator contract tests (TQ-1).
-2. Fix the mislabeled/duplicate `ModSecurityCRSAttackDatabase` entries (TQ-2).
-3. Replace the `< 100 ms` wall-clock assertion in `EdgeCaseValidURLsDatabaseTest` (TQ-3).
-4. Refresh `doc/test-framework-structure.adoc` to match the current suite (TQ-9).
+1. Add semantic assertions to the 17 no-op generator contract tests (TQ-1) — this is also what would catch the generator-implementation bugs below.
+2. Fix the two generator implementations that never emit their advertised attack: `EncodingCombinationGenerator` (dead mixed-case/single-encoding, TQ-15) and `URLLengthLimitAttackGenerator` (sub-limit non-attack outputs, TQ-16).
+3. Fix the mislabeled/duplicate `ModSecurityCRSAttackDatabase` entries (TQ-2).
+4. Replace the `< 100 ms` wall-clock assertion in `EdgeCaseValidURLsDatabaseTest` (TQ-3).
+5. Refresh `doc/test-framework-structure.adoc` to match the current suite (TQ-9).
