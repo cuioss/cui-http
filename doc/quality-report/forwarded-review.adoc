@@ -12,7 +12,7 @@ All code paths are relative to `cui-http-core/src/main/java/de/cuioss/http/forwa
 
 [NOTE]
 ====
-This package handles `X-Forwarded-For` / RFC 7239 `Forwarded` resolution — a classic source of client-IP spoofing. The chain-walk *algorithm* is correct and fails closed. The three HIGH findings are all about the *integration surface* — how a caller wires headers into the resolver and how non-IP fields (scheme/host/port) are selected — where realistic proxy deployments can re-open spoofing paths the algorithm itself closes. The library documents a "must sit behind a trusted proxy" precondition, but these findings show that precondition is *necessary but not sufficient*: it holds even for requests that legitimately traversed the trusted proxy.
+This package handles `X-Forwarded-For` / RFC 7239 `Forwarded` resolution — a classic source of client-IP spoofing. The `X-Forwarded-For` chain-walk *algorithm* is correct and fails closed: any hop that reaches `walkChain` and is unparseable aborts resolution. The three HIGH findings are all about the *integration surface* — how a caller wires headers into the resolver and how non-IP fields (scheme/host/port) are selected — where realistic proxy deployments can re-open spoofing paths the algorithm itself closes. The library documents a "must sit behind a trusted proxy" precondition, but these findings show that precondition is *necessary but not sufficient*: it holds even for requests that legitimately traversed the trusted proxy. Note the fail-closed guarantee is specific to the XFF walk; as FW-4 details, the RFC 7239 `Forwarded` parser instead *drops* malformed elements before they reach the walk, so that path is less strict.
 ====
 
 == HIGH severity

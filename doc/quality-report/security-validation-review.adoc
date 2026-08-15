@@ -59,7 +59,7 @@ The same wired-no-op observation applies to `NormalizationStage` for all non-pat
 [#SV-3]
 === SV-3 (MEDIUM): Decoded output is not re-validated against the character allow-list
 
-*Files:* `security/validation/CharacterValidationStage.java:126-140` (runs *before* `DecodingStage` in every pipeline); `security/validation/DecodingStage.java:311-360`.
+*Files:* `security/validation/CharacterValidationStage.java:126-140` (runs *before* `DecodingStage` in every pipeline that contains both stages — i.e. the URL-path and parameter pipelines; the header pipelines have no `DecodingStage`, and the content-type pipeline has neither); `security/validation/DecodingStage.java:311-360`.
 
 `CharacterValidationStage` enforces the RFC 3986 / RFC 7230 allowed-character `BitSet`, but it runs on the still-encoded input. No pipeline re-runs it after decoding. `DecodingStage.validateDecodedCharacters` re-checks only null bytes, combining marks, CR/LF (context-dependent), and — for parameter names — delimiters, *not* the full allow-list.
 
@@ -86,7 +86,7 @@ true, true, // case-sensitive comparison, fail on suspicious patterns
 
 *Files:* `security/pipeline/URLPathValidationPipeline.java:93-100`; `security/validation/DecodingStage.java:311-360`.
 
-A closely related instance of SV-3, specific to control characters. Input `/a%1B%08b` passes the full URL_PATH pipeline and the returned "validated" string contains raw ESC (``) and backspace (``), despite the default `allowControlCharacters=false`. `CharacterValidationStage` runs pre-decode and accepts `%1B` as valid percent-encoding; `validateDecodedCharacters` re-checks the decoded output only for null bytes, combining marks, and CR/LF — decoded ``, ``, `` sail through, and no later stage inspects characters. Fix as for SV-3.
+A closely related instance of SV-3, specific to control characters. Input `/a%1B%08b` passes the full URL_PATH pipeline and the returned "validated" string contains raw ESC (`U+001B`) and backspace (`U+0008`), despite the default `allowControlCharacters=false`. `CharacterValidationStage` runs pre-decode and accepts `%1B` as valid percent-encoding; `validateDecodedCharacters` re-checks the decoded output only for null bytes, combining marks, and CR/LF — decoded `U+001B`, `U+0008`, `U+007F` sail through, and no later stage inspects characters. Fix as for SV-3.
 
 [#SV-6]
 === SV-6 (MEDIUM): ContentTypeValidationPipeline validates nothing by default, and empty string bypasses a configured allow-list
@@ -254,4 +254,4 @@ The following were positively confirmed by reading the code, not merely un-flagg
 
 == Net assessment
 
-No CRITICAL or exploitable fail-open exists *within the default full pipeline* — traversal, null bytes, control characters, overlong UTF-8, and double encoding are all blocked, and pattern matching runs both before decode and after normalization for paths. The most material issues are the *contract-vs-implementation gaps* (SV-1, SV-2, SV-3, SV-6) where a component advertises more validation than it performs, and the *strict-preset weakening* (SV-4). The remainder are documentation accuracy, preset transparency, and defense-in-depth completeness.
+No CRITICAL fail-open exists in the default full URL-path/parameter pipeline: *raw* traversal, null bytes, control characters, overlong UTF-8, and double encoding are all blocked, and pattern matching runs both before decode and after normalization for paths. The qualifier matters — as SV-3 and SV-5 show, control characters and other disallowed characters that are *percent-encoded* survive decoding because the character allow-list is not re-applied to the decoded output, and (SV-6) the content-type pipeline enforces nothing structural at all. So "blocked" is accurate for the raw/undecoded form and for the pipelines that carry the enforcing stages, not universally. The most material issues are the *contract-vs-implementation gaps* (SV-1, SV-2, SV-3, SV-6) where a component advertises more validation than it performs, and the *strict-preset weakening* (SV-4). The remainder are documentation accuracy, preset transparency, and defense-in-depth completeness.

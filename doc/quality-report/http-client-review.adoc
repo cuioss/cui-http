@@ -8,7 +8,7 @@ xref:README.adoc[← Back to index]
 
 Scope: `de.cuioss.http.client` and its `handler`, `adapter`, `converter`, and `result` subpackages.
 
-All file paths are relative to `cui-http-core/src/main/java/de/cuioss/http/client/`. Line numbers are as of commit `7ae6499`.
+Unless a finding gives a fuller path, file paths are relative to `cui-http-core/src/main/java/de/cuioss/http/client/`; cross-package references (e.g. CL-16) are given repository-relative. Line numbers are as of commit `7ae6499`.
 
 == HIGH severity
 
@@ -36,7 +36,12 @@ Notably, the adapter's own *fallback* path already guards against exactly this a
 
 [NOTE]
 ====
-Trigger conditions (from verification): the adapter itself only sends `If-None-Match` for GET (line 544), so reaching this branch for a non-GET method requires a server that returns 304 *unsolicited* — a protocol violation (RFC 7232 restricts 304 to conditional GET/HEAD) or a deliberately hostile server. The rating stays HIGH because the outcome (a state-changing request reported as success with a stale body) is severe and the guard is trivially missing, but it is not reachable against a conformant server.
+Two distinct cases (refined during verification). The adapter sets `If-None-Match` *itself* only for GET (line 544), but caller-supplied request headers are applied for every method (`headers.forEach(requestBuilder::header)`, line 539). So:
+
+* *HEAD* — a caller that passes its own `If-None-Match` on a HEAD can receive a *conformant* 304 (RFC 7232 permits 304 for conditional GET **and** HEAD). This branch then returns a cached GET *body* — wrong, because a HEAD response carries no body. This case is reachable against a fully conformant server, which is why the finding stays HIGH.
+* *POST/PUT/DELETE/PATCH* — RFC 7232 requires a failed precondition on these methods to return *412 Precondition Failed*, not 304, so a 304 here is a server protocol violation. Reachable only against a non-conformant or hostile server.
+
+The correct fix distinguishes them: return cached content only for GET; return status + ETag (no body) for HEAD; treat 304 as a failure for other methods.
 ====
 
 == MEDIUM severity
@@ -75,7 +80,7 @@ There is no exemption for status codes defined to carry no body (204/205, or an 
 
 [NOTE]
 ====
-Whether this actually trips depends on the converter: an identity `String` converter returns `Optional.of("")` for an empty body (present, so no failure), whereas a JSON/typed converter returns `Optional.empty()` and hits the failure path. The missing status-code exemption in the code path is confirmed; the practical impact is limited to typed converters.
+Scope of the fix: `204` and `205` are protocol-defined no-body statuses and should be exempted unconditionally. An empty `200` is not inherently a no-body status — it should be treated as valid only where the endpoint contract permits an empty body — so a converter-level opt-in (as today's `emptyContentIsValid()` provides) remains the right mechanism for that case. Whether the failure actually trips also depends on the converter: an identity `String` converter returns `Optional.of("")` (present, no failure), whereas a JSON/typed converter returns `Optional.empty()` and hits the failure path, so the practical impact is limited to typed converters.
 ====
 
 [#CL-7]
@@ -133,7 +138,7 @@ Downgraded from MEDIUM to LOW during verification: this is a Javadoc-precision i
 [#CL-16]
 === CL-16 (LOW): Non-compiling usage example in `monitoring/package-info` (cross-package)
 
-`security/monitoring/package-info.java:42` shows `String validated = validator.validate(input);`, but `validate` returns `Optional<String>`. Tracked in full under xref:security-validation-review.adoc#SV-15[SV-15]; noted here because it also surfaced during client review.
+`cui-http-core/src/main/java/de/cuioss/http/security/monitoring/package-info.java:42` shows `String validated = validator.validate(input);`, but `validate` returns `Optional<String>`. Tracked in full under xref:security-validation-review.adoc#SV-15[SV-15]; noted here because it also surfaced during client review.
 
 == INFO / observations
 

@@ -18,16 +18,16 @@ Overall the stage- and pipeline-level tests are *genuinely strong*: they assert 
 == HIGH severity
 
 [#TQ-1]
-=== TQ-1 (HIGH): 15 of 20 generator contract tests assert nothing about the generated value
+=== TQ-1 (HIGH): 17 of 20 generator contract tests assert nothing about the generated value
 
-Each of the following is a single `shouldGenerateValidOutput` that asserts only non-null / non-empty / `length > N`, with *zero* semantic assertions (a grep for `contains`/`matches`/`startsWith`/`validate`/`assertThrows`/`%2`/`../` returns nothing in each):
+The generator-contract population is 20 classes: 19 `*GeneratorTest` classes plus `SupportedValidationTypeGeneratorContractTest`. Of these, 17 do not test generator semantics — the 15 listed below plus the two cookie tests (counted separately in the last paragraph). Each of the following is a single `shouldGenerateValidOutput` that asserts only non-null / non-empty / `length > N`, with *zero* semantic assertions (a grep for `contains`/`matches`/`startsWith`/`validate`/`assertThrows`/`%2`/`../` returns nothing in each):
 
 * `generators/url/`: `ValidURLPathGeneratorTest.java:41-45`, `NullByteURLGeneratorTest.java:41-44`, `PathTraversalURLGeneratorTest.java`, `PathTraversalParameterGeneratorTest.java:41-44`, `ValidURLParameterGeneratorTest.java`, `InvalidURLGeneratorTest.java`
 * `generators/header/`: `HTTPHeaderInjectionGeneratorTest.java:41-44`, `ValidHTTPHeaderNameGeneratorTest.java`, `InvalidHTTPHeaderNameGeneratorTest.java`
 * `generators/encoding/`: `EncodingCombinationGeneratorTest.java`, `UnicodeAttackGeneratorTest.java`, `PathTraversalGeneratorTest.java`, `BoundaryFuzzingGeneratorTest.java`
 * `generators/injection/`: `URLLengthLimitAttackGeneratorTest.java`, `HttpRequestSmugglingAttackGeneratorTest.java`
 
-A `PathTraversalGenerator` test that never asserts the output contains `../`, and a `NullByteURLGenerator` test that never asserts a null byte is present, *cannot fail if the generator silently stops producing attacks* — the exact regression a contract test exists to catch. Only `generators/encoding/DoubleEncodingAttackGeneratorTest.java:38-46` (asserts `%252`/`%%3` present) and `generators/url/ValidURLGeneratorTest.java` (17 content checks) are real content tests. The two cookie generator tests (`generators/cookie/AttackCookieGeneratorTest.java:48-53`, `ValidCookieGeneratorTest.java`) assert only non-null and then exercise the record's auto-generated `equals`/`hashCode` — off-target.
+A `PathTraversalGenerator` test that never asserts the output contains `../`, and a `NullByteURLGenerator` test that never asserts a null byte is present, *cannot fail if the generator silently stops producing attacks* — the exact regression a contract test exists to catch. The two cookie generator tests (`generators/cookie/AttackCookieGeneratorTest.java:48-53`, `ValidCookieGeneratorTest.java`) are the other two of the 17: they assert only non-null and then exercise the `Cookie` record's auto-generated `equals`/`hashCode`, which tests the record, not the generator's semantics. Only 3 of the 20 are real: `generators/encoding/DoubleEncodingAttackGeneratorTest.java:38-46` (asserts `%252`/`%%3` present), `generators/url/ValidURLGeneratorTest.java` (17 content checks), and `SupportedValidationTypeGeneratorContractTest` (below).
 
 *Model to follow:* `generators/SupportedValidationTypeGeneratorContractTest` asserts the exact produced set, the correct `getType()`, and a distribution sanity bound.
 
@@ -64,9 +64,9 @@ A `PathTraversalGenerator` test that never asserts the output contains `../`, an
 Where a typed assertion is feasible and used by sibling tests, these assert only `assertThrows(UrlSecurityException.class, …)`: `pipeline/URLPathValidationPipelineTest.java:106-109,134-137,141-144`; `pipeline/URLParameterValidationPipelineTest.java:152-155,159-162`; `pipeline/HTTPHeaderValidationPipelineTest.java:151-156,160-165`. They are the weaker duplicates of adjacent tests that do assert the specific `UrlSecurityFailureType`.
 
 [#TQ-6]
-=== TQ-6 (LOW): Two of three pipeline valid-input tests assert only presence, not value
+=== TQ-6 (LOW): Two of the three main pipeline test classes assert only presence, not value, on valid input
 
-`pipeline/URLPathValidationPipelineTest.java:81-85` and `pipeline/URLParameterValidationPipelineTest.java:81-85,106-110,209-213` assert only `result.isPresent()` + `assertNotNull(result.get())` — never that the returned value equals the input or an expected normalized form, so a pipeline that mangled a legitimate path would still pass. Contrast `HTTPHeaderValidationPipelineTest.java:114` which correctly does `assertEquals(validHeaderName, result.get())`.
+Counting per pipeline *test class*: in two of the three main pipeline test classes the valid-input assertions check only `result.isPresent()` + `assertNotNull(result.get())` and never that the returned value equals the input or an expected normalized form, so a pipeline that mangled a legitimate path would still pass. The affected methods are `pipeline/URLPathValidationPipelineTest.java:81-85` (one method) and `pipeline/URLParameterValidationPipelineTest.java:81-85,106-110,209-213` (three methods). Contrast `HTTPHeaderValidationPipelineTest.java:114`, the third class, which correctly does `assertEquals(validHeaderName, result.get())`.
 
 [#TQ-7]
 === TQ-7 (LOW): IPv6 and IDN/Homograph databases collapse to a single trivial rejection reason
@@ -92,7 +92,7 @@ All 24 `database/IPv6AttackDatabase.java` entries and all 22 `database/Homograph
 == INFO / observations
 
 * *TQ-11* — Cosmetic `assertDoesNotThrow` wrappers around meaningful `assertEquals` calls (`validation/DecodingStageTest.java:268-273`, `validation/CharacterValidationStageTest.java:212-216,234-238`) add nothing but are harmless.
-* *TQ-12* — CVE databases (Apache/Nginx) largely test the character-validation short-circuit rather than the CVE mechanism: many cases expect `INVALID_CHARACTER` because a space/backslash/CRLF fails first (e.g. `ApacheCVEAttackDatabase` `CVE_2020_1927_MOD_REWRITE:104-109`). This is honestly documented in the rationale strings, but means the named CVE bypass is not the thing under test.
+* *TQ-12* — CVE databases (Apache/Nginx) largely test the character-validation short-circuit rather than the CVE mechanism: many cases are rejected by a disallowed character before the traversal/encoding logic they name is reached, and the entries' own rationale strings say so. For example `ApacheCVEAttackDatabase.CVE_2020_1927_MOD_REWRITE` (lines 104-109) has payload `/index.php?page=..%2f..%2f..%2fetc%2fpasswd` — it carries no space, backslash, or CRLF; it is rejected because the `?` query separator is not a member of `RFC3986_PATH_CHARS` in a `URL_PATH` context, so character validation fails the whole query-bearing URL before traversal is evaluated. (Other entries in these databases *do* short-circuit on space/backslash/CRLF; the point is general, the mechanism varies per payload.) This is honest, but means the named CVE bypass is often not the thing under test.
 * *TQ-13* — Payload correctness spot-checks *passed*: `CVE_2021_41773` (`.%2e/%2e%2e`), `CVE_2021_42013` (`%%32%65` → `INVALID_ENCODING`), `CVE_2003_0226` (`%c0%af`), `CVE_2006_0026` (`%255c`), OWASP `%252e` double-encode, ModSecurity `%25252e` triple-encode → `DOUBLE_ENCODING`, IDN punycode `xn--` → `PATH_TRAVERSAL_DETECTED`. No incorrectly-encoded payloads were found.
 * *TQ-14* — Every database is wired into an integration test (verified); `LegitimatePatternDatabase` is an abstract base, correctly without a direct test.
 

@@ -43,11 +43,11 @@ The review was performed in two phases:
 
 |xref:security-validation-review.adoc[Security Validation Review]
 |`security.validation`, `security.pipeline`, `security.config`, `security.data`, `security.core`, `security.monitoring`, `security.exceptions`
-|2 |8 |14 |9
+|2 |6 |14 |7
 
 |xref:http-client-review.adoc[HTTP Client Review]
 |`client`, `client.handler`, `client.adapter`, `client.converter`, `client.result`
-|1 |6 |9 |7
+|1 |6 |9 |4
 
 |xref:forwarded-review.adoc[Forwarded-Header Review]
 |`forwarded` package and `doc/forwarded-header-resolution.adoc`
@@ -59,14 +59,14 @@ The review was performed in two phases:
 
 |xref:documentation-review.adoc[Documentation Review]
 |All 22 AsciiDoc files, `CLAUDE.md`, `agents.md`, Javadoc drift
-|0 |9 |8 |3
+|0 |9 |5 |3
 
 |xref:build-and-benchmarking-review.adoc[Build & Benchmarking Review]
 |Both `pom.xml` trees, GitHub workflows, JMH benchmarks, log-message audit
 |1 |0 |4 |5
 |===
 
-Counts above exclude findings that appear in more than one report (each shared finding is counted once, in its primary report, and cross-referenced from the other).
+Counts above are maintained by hand from the per-report finding headings, which are the authoritative source (each `=== ID (SEVERITY)` heading is the definition; the severity in the heading wins over this table if they ever diverge). Shared findings are counted once, in their primary report, and cross-referenced from the other.
 
 == Executive Summary
 
@@ -100,7 +100,7 @@ The client stack is solid on TLS but has one significant cache-correctness hole:
 
 === Theme 4: Test and documentation drift
 
-The test suite's stage- and pipeline-level tests are exemplary (specific failure-type assertions, boundary coverage, dedicated false-positive databases). The weak spots are concentrated: 15 of 20 generator contract tests assert nothing beyond non-null output (xref:test-quality-review.adoc#TQ-1[TQ-1]), and several `ModSecurityCRSAttackDatabase` entries are mislabeled or duplicated so that advertised rule categories are never actually exercised (xref:test-quality-review.adoc#TQ-2[TQ-2]). Documentation is accurate where it matters most (configuration values, log messages, stage orderings all match code exactly) but inventory-style listings have drifted, two documents are orphaned, and a handful of residual overclaims ("✓ Complete" compliance matrix, "configurable pattern database") contradict the suite's own carefully-scoped statements.
+The test suite's stage- and pipeline-level tests are exemplary (specific failure-type assertions, boundary coverage, dedicated false-positive databases). The weak spots are concentrated: 17 of 20 generator contract tests assert nothing beyond non-null output (xref:test-quality-review.adoc#TQ-1[TQ-1]), and several `ModSecurityCRSAttackDatabase` entries are mislabeled or duplicated so that advertised rule categories are never actually exercised (xref:test-quality-review.adoc#TQ-2[TQ-2]). Documentation is accurate where it matters most (configuration values, log messages, stage orderings all match code exactly) but inventory-style listings have drifted, two documents are orphaned, and a handful of residual overclaims ("✓ Complete" compliance matrix, "configurable pattern database") contradict the suite's own carefully-scoped statements.
 
 === What is done well
 
@@ -120,12 +120,12 @@ Reviewers independently verified (not just absence of findings — positively co
 
 == Top Priorities
 
-If only a handful of items are addressed, these have the highest value:
+If only a handful of items are addressed, these have the highest value. This report is a diagnosis, not a remediation — none of the security findings below are closed by anything in this PR, and for the active security items (FW-2, FW-3, SV-3) prose is not a substitute for enforcement: each needs either a code/config change or an explicit, narrowed public security guarantee in the library's own Javadoc/AsciiDoc (not merely a note in this report).
 
-1. *Gate the 304 cache short-circuit on GET* in `ETagAwareHttpAdapter` (xref:http-client-review.adoc#CL-1[CL-1]).
-2. *Give `HEADER_NAME` a real RFC 7230 token character set* (xref:security-validation-review.adoc#SV-1[SV-1]).
-3. *Document (or close) the multi-header and header-family trust gaps* in the forwarded resolver (xref:forwarded-review.adoc#FW-1[FW-1], xref:forwarded-review.adoc#FW-2[FW-2], xref:forwarded-review.adoc#FW-3[FW-3]).
-4. *Re-validate decoded output against the character allow-list*, or explicitly document that character rules apply to the encoded form only (xref:security-validation-review.adoc#SV-3[SV-3]).
-5. *Fix the `strict()` preset* so enabling suspicious-pattern detection does not simultaneously weaken it (xref:security-validation-review.adoc#SV-4[SV-4]).
-6. *Add semantic assertions to the 15 no-op generator contract tests* and fix the mislabeled ModSecurity CRS database entries (xref:test-quality-review.adoc#TQ-1[TQ-1], xref:test-quality-review.adoc#TQ-2[TQ-2]).
-7. *Correct the compliance matrix and the other residual documentation overclaims* (xref:documentation-review.adoc#DOC-1[DOC-1]).
+1. *Gate the 304 cache short-circuit on GET* in `ETagAwareHttpAdapter`; return a no-body result for HEAD and treat 304 as a failure for other methods (xref:http-client-review.adoc#CL-1[CL-1]). *(code fix)*
+2. *Give `HEADER_NAME` a real RFC 7230 token character set* (xref:security-validation-review.adoc#SV-1[SV-1]). *(code fix)*
+3. *Close, or narrow the library's stated guarantee for, the multi-header and header-family trust gaps* in the forwarded resolver — changing the accessor contract / header-family precedence / token selection in code, or amending the resolver's own Javadoc and `forwarded-header-resolution.adoc` to state the exact proxy preconditions (xref:forwarded-review.adoc#FW-1[FW-1], xref:forwarded-review.adoc#FW-2[FW-2], xref:forwarded-review.adoc#FW-3[FW-3]). *(code fix or narrowed guarantee — not report prose)*
+4. *Re-validate decoded output against the character allow-list* in code, or narrow `CharacterValidationStage`'s own Javadoc to state that character rules apply to the encoded form only (xref:security-validation-review.adoc#SV-3[SV-3]). *(code fix or narrowed guarantee)*
+5. *Fix the `strict()` preset* so enabling suspicious-pattern detection does not simultaneously weaken it (xref:security-validation-review.adoc#SV-4[SV-4]). *(code fix)*
+6. *Add semantic assertions to the 17 no-op generator contract tests* and fix the mislabeled ModSecurity CRS database entries (xref:test-quality-review.adoc#TQ-1[TQ-1], xref:test-quality-review.adoc#TQ-2[TQ-2]). *(test fix)*
+7. *Correct the compliance matrix and the other residual documentation overclaims* (xref:documentation-review.adoc#DOC-1[DOC-1]). *(doc fix)*

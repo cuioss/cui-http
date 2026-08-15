@@ -120,4 +120,4 @@ The narrative test listings have drifted behind test additions:
 
 == Overall assessment
 
-The doc tree is well-organized (component readmes in `doc/`, a layered spec suite under `doc/http-security/`) and materially more accurate than typical. Fixing the roughly six MEDIUM items — the compliance-matrix overclaim, the two `owasp-best-practices` overclaims, the inert forwarded knobs, the phantom log levels, the SEC-3 reference, the stale inventories, and the two navigation gaps — would bring the documentation to a very high standard.
+The doc tree is well-organized (component readmes in `doc/`, a layered spec suite under `doc/http-security/`) and materially more accurate than typical. Fixing the nine MEDIUM items (DOC-1 through DOC-6 and DOC-8 through DOC-10) — the compliance-matrix overclaim, the two `owasp-best-practices` overclaims, the inert forwarded knobs, the phantom log levels, the SEC-3 reference, the stale inventories, the unimplemented-body status note, and the two navigation gaps — would bring the documentation to a very high standard.
