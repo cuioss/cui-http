@@ -80,7 +80,7 @@ public interface LegitimatePatternDatabase {
             implements org.junit.jupiter.params.provider.ArgumentsProvider {
 
         @Override
-        @SuppressWarnings({"unchecked", "deprecation"})
+        @SuppressWarnings("unchecked")
         public Stream<? extends Arguments> provideArguments(ExtensionContext context) throws Exception {
             // Get the concrete ArgumentsProvider class
             Class<?> providerClass = this.getClass();

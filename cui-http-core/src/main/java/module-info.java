@@ -17,8 +17,9 @@ module de.cuioss.http {
 
     requires static lombok;
     requires org.jspecify;
-    requires de.cuioss.java.tools;
-    requires java.net.http;
+    // transitive: LogRecord and java.net.http types appear in exported public API signatures
+    requires transitive de.cuioss.java.tools;
+    requires transitive java.net.http;
 
     // Client HTTP utilities
     exports de.cuioss.http.client;

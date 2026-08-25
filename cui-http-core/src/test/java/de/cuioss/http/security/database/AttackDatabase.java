@@ -157,7 +157,7 @@ public interface AttackDatabase {
             implements org.junit.jupiter.params.provider.ArgumentsProvider {
 
         @Override
-        @SuppressWarnings({"unchecked", "deprecation"})
+        @SuppressWarnings("unchecked")
         public Stream<? extends Arguments> provideArguments(
                 ExtensionContext context) throws Exception {
 

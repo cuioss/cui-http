@@ -10,6 +10,9 @@
     <artifactId>cui-http-parent</artifactId>
     <version>2.2-SNAPSHOT</version>
     <packaging>pom</packaging>
+    <!-- Must be declared: <inceptionYear> is inherited, and the license plugin binds the
+         copyright ${year} to it. Without this, cui-http would report cui-parent-pom's 2022. -->
+    <inceptionYear>2025</inceptionYear>
     <name>CUI HTTP Parent</name>
     <description>Parent module for CUI HTTP utilities library providing secure validation pipelines,
         SSL/TLS context management, and HTTP client handlers.
