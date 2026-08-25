@@ -59,7 +59,8 @@
       "per_envelope_budget_tokens": "400K",
       "verification_steps": {
         "default:verify:quality-gate": {},
-        "default:verify:module-tests": {}
+        "default:verify:module-tests": {},
+        "default:verify:coverage": {}
       },
       "effort": {
         "default": "level-4",
@@ -70,34 +71,58 @@
       "max_iterations": 3,
       "finalize_without_asking": true,
       "loop_back_without_asking": false,
-      "qgate": "auto",
       "checks_wait_timeout_seconds": 600,
       "steps": {
         "default:finalize-step-sync-baseline": {
-          "auto_rebase_threshold": "no_overlap_only"
+          "auto_rebase_threshold": "no_overlap_only",
+          "lane": "minimal"
         },
-        "default:pre-push-quality-gate": {},
+        "default:pre-push-quality-gate": {
+          "lane": "minimal"
+        },
+        "default:pre-submission-self-review": {
+          "lane": "off"
+        },
         "default:finalize-step-simplify": {
-          "simplify": "auto"
+          "lane": "standard"
         },
-        "default:push": {},
-        "default:create-pr": {},
-        "default:ci-verify": {},
-        "default:automated-review": {
+        "default:finalize-step-security-audit": {
+          "lane": "off"
+        },
+        "default:architecture-refresh": {
+          "lane": "off"
+        },
+        "plan-marshall:automatic-review": {
           "review_bot_buffer_seconds": 180,
           "re_review_on_loopback": false,
           "re_review_on_branch_cleanup": true,
           "re_review_await_timeout_seconds": 600,
           "re_review_on_timeout": "ask",
           "review_rate_window_await": false,
-          "review_rate_window_timeout_seconds": 3600
+          "review_rate_window_timeout_seconds": 3600,
+          "required_bots": "",
+          "optional_bots": "",
+          "review_completion_poll_timeout_seconds": 600,
+          "lane": "ask"
+        },
+        "default:push": {
+          "lane": "minimal"
+        },
+        "default:create-pr": {
+          "lane": "minimal"
+        },
+        "default:ci-verify": {
+          "lane": "minimal"
         },
         "default:sonar-roundtrip": {
           "touched_file_cleanup": "new_code_only",
           "do_transition": false,
-          "ce_wait_timeout_seconds": 600
+          "ce_wait_timeout_seconds": 600,
+          "lane": "ask"
         },
-        "default:lessons-capture": {},
+        "default:adr-propose": {
+          "lane": "off"
+        },
         "default:branch-cleanup": {
           "pr_merge_strategy": "squash",
           "final_merge_without_asking": false,
@@ -106,10 +131,29 @@
           "merge_hold_window": "full_window_release_at_waits",
           "merge_hold_budget_seconds": 3600,
           "use_merge_queue": false,
-          "admin_merge_on_stuck_state": false
+          "admin_merge_on_stuck_state": false,
+          "pre_merge_comment_barrier": "fail_into_loopback",
+          "lane": "minimal"
         },
-        "default:record-metrics": {},
-        "default:archive-plan": {}
+        "default:lessons-capture": {
+          "lane": "minimal"
+        },
+        "default:finalize-step-preference-emitter": {
+          "preference_min_recurrence": 2,
+          "lane": "off"
+        },
+        "default:record-metrics": {
+          "lane": "minimal"
+        },
+        "default:finalize-step-print-phase-breakdown": {
+          "lane": "off"
+        },
+        "default:emit-landing": {
+          "lane": "off"
+        },
+        "default:archive-plan": {
+          "lane": "minimal"
+        }
       },
       "effort": {
         "default": "level-3",
@@ -117,6 +161,11 @@
         "post-run-review": "level-4"
       }
     }
+  },
+  "orchestrator": {
+    "auto_emit": false,
+    "effort": {},
+    "parallelization_scope": 1
   },
   "build": {
     "queue": {
@@ -128,6 +177,11 @@
       "java": [
         {
           "glob": "*/src/main/*.java",
+          "role": "production",
+          "build_class": "compile"
+        },
+        {
+          "glob": "*/src/main/resources/*",
           "role": "production",
           "build_class": "compile"
         },
@@ -150,7 +204,10 @@
       "feature/",
       "fix/",
       "chore/"
-    ]
+    ],
+    "pr_strategy": "compact",
+    "pr_compact_max_changed_files": 150,
+    "merge_queue_managed_externally": false
   },
   "providers": [
     {
@@ -208,9 +265,13 @@
       "logs_days": 1,
       "archived_plans_days": 5,
       "lessons_superseded_days": 0,
-      "temp_on_maintenance": true
+      "temp_on_maintenance": true,
+      "no_plan_body_days": 7,
+      "build_results_days": 5,
+      "plugin_cache_keep_versions": 5,
+      "plugin_cache_keep_days": 3
     },
-    "provisioned_version": "0.1.1082",
-    "config_seed_fingerprint": "0acf5eb5"
+    "provisioned_version": "0.1.1545",
+    "config_seed_fingerprint": "58fc3cfc"
   }
 }
