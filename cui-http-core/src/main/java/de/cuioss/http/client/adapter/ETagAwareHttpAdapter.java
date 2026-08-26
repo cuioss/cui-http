@@ -793,6 +793,16 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      * ConcurrentModificationException. In-flight requests holding local references
      * are unaffected by eviction.
      * </p>
+     *
+     * <h3>Cost</h3>
+     * <p>
+     * Each over-limit put sorts the whole cache by timestamp, so the eviction pass is
+     * {@code O(n log n)} in the cache size. That cost is amortized across the batch: one pass frees
+     * 10% of {@code maxCacheSize} entries, so it recurs only once per that many over-limit puts. At
+     * the default size of 1000 the pass is measured in microseconds. A very large
+     * {@code maxCacheSize} trades a proportionally more expensive eviction pass for a higher hit
+     * rate — see {@link Builder#maxCacheSize(int)}.
+     * </p>
      */
     private void checkAndEvict() {
         if (cache.size() <= maxCacheSize) {
@@ -928,6 +938,24 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
     }
 
     /**
+     * Reports whether {@code method} can resolve a cache entry.
+     *
+     * <p>GET populates and reads the cache; HEAD reads it so a conditional HEAD answered with
+     * {@code 304} can be resolved against the stored validator (see {@link #handleNotModified}).
+     * No other method touches it.</p>
+     *
+     * <p><strong>Do not narrow this to GET.</strong> Dropping HEAD would leave a conditional HEAD
+     * with no cached entry, silently turning its {@code 304} into a plain failure and deleting the
+     * documented HEAD behaviour.</p>
+     *
+     * @param method the request method
+     * @return true for GET and HEAD, false otherwise
+     */
+    private static boolean canReadCache(HttpMethod method) {
+        return method == HttpMethod.GET || method == HttpMethod.HEAD;
+    }
+
+    /**
      * Reports whether RFC 7231 defines {@code statusCode} as carrying no response body.
      *
      * <p>A converter that maps an empty payload to {@link Optional#empty()} would otherwise turn a
@@ -1019,13 +1047,18 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             );
         }
 
-        // Generate cache key (only meaningful for GET with caching enabled)
+        // Only GET and HEAD can interact with the cache: GET populates and reads it, HEAD reads it
+        // to resolve a 304 revalidation. For any other method - and for an adapter built with
+        // etagCachingEnabled(false), which includes every statusCodeOnly adapter - the key would be
+        // built, sorted and escaped on every request and then never read, so skip the work.
+        if (!etagCachingEnabled || !canReadCache(method)) {
+            return new CacheContext<>("", null);
+        }
+
         String cacheKey = generateCacheKey(httpHandler.getUri(), headers, cacheKeyHeaderFilter);
 
         // Retrieve cache entry BEFORE building request (hold local reference for 304 handling)
-        CacheEntry<T> cachedEntry = etagCachingEnabled ? cache.get(cacheKey) : null;
-
-        return new CacheContext<>(cacheKey, cachedEntry);
+        return new CacheContext<>(cacheKey, cache.get(cacheKey));
     }
 
     /**
@@ -1133,6 +1166,14 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
          *   <li>Small (100-500): Mobile apps, embedded systems, memory-constrained environments</li>
          *   <li>Large (5000+): High-traffic servers with many unique endpoints</li>
          * </ul>
+         *
+         * <h3>Cost Trade-off</h3>
+         * <p>
+         * Eviction sorts the whole cache by timestamp, so each over-limit put that triggers a pass
+         * costs {@code O(n log n)} in this value — amortized across the 10% batch it frees. Raising
+         * {@code maxCacheSize} therefore buys hit rate at the price of a proportionally more
+         * expensive (though proportionally rarer) eviction pass.
+         * </p>
          *
          * @param maxCacheSize Maximum number of cache entries (must be positive)
          * @return this builder
