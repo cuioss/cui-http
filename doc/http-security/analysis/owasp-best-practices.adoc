@@ -240,11 +240,11 @@ boundary where the exception is caught.
 
 ==== URL Query Parameter Validation
 
-Implemented in: link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline]
+Implemented in: link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline] (parameter values) and link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLParameterNameValidationPipeline.java[URLParameterNameValidationPipeline] (parameter names)
 
 * RFC 3986 compliant validation
-* Parameter value validation (link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline])
-* Parameter name validation (link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLParameterNameValidationPipeline.java[URLParameterNameValidationPipeline])
+* Parameter value validation
+* Parameter name validation
 * Length limits enforcement
 * Null byte detection
 
