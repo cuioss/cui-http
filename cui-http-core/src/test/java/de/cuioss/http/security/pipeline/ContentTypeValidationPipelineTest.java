@@ -1,5 +1,5 @@
 /*
- * Copyright © 2025 CUI-OpenSource-Software (info@cuioss.de)
+ * Copyright © 2025-present CUI-OpenSource-Software (info@cuioss.de)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
+import de.cuioss.http.security.validation.AllowBlockListStage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -58,6 +59,18 @@ class ContentTypeValidationPipelineTest {
     void reportsHeaderValueType() {
         assertEquals(ValidationType.HEADER_VALUE,
                 pipeline(SecurityConfiguration.defaults()).getValidationType());
+    }
+
+    @Test
+    @DisplayName("scope: allow/block-list enforcement only - a single AllowBlockListStage")
+    void pipelineScopeIsListEnforcementOnly() {
+        ContentTypeValidationPipeline pipeline = pipeline(SecurityConfiguration.defaults());
+
+        // Pins the documented class-level contract: no length limit, no character validation.
+        var stages = pipeline.getStages();
+        assertEquals(1, stages.size(), "Content-type pipeline must consist of exactly one stage");
+        assertInstanceOf(AllowBlockListStage.class, stages.getFirst());
+        assertEquals(ValidationType.HEADER_VALUE, pipeline.getValidationType());
     }
 
     @Nested
@@ -189,12 +202,23 @@ class ContentTypeValidationPipelineTest {
         }
 
         @Test
-        @DisplayName("empty input is accepted and returned unchanged")
-        void emptyInput() {
+        @DisplayName("empty input is rejected by a non-empty allow-list, like any other value")
+        void emptyInputRejectedByAllowList() {
             SecurityConfiguration config = SecurityConfiguration.builder()
                     .allowedContentTypes(Set.of("application/json"))
                     .build();
             ContentTypeValidationPipeline pipeline = pipeline(config);
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                    () -> pipeline.validate(""));
+            assertEquals(UrlSecurityFailureType.INVALID_INPUT, exception.getFailureType());
+            assertEquals("", exception.getOriginalInput());
+        }
+
+        @Test
+        @DisplayName("empty input is returned unchanged when the allow-list is empty (allow-all)")
+        void emptyInputAllowedWhenNoAllowList() {
+            ContentTypeValidationPipeline pipeline = pipeline(SecurityConfiguration.defaults());
             assertEquals(Optional.of(""), pipeline.validate(""));
         }
     }

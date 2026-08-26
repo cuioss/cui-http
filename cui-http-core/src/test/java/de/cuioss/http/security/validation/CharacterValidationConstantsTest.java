@@ -1,5 +1,5 @@
 /*
- * Copyright © 2025 CUI-OpenSource-Software (info@cuioss.de)
+ * Copyright © 2025-present CUI-OpenSource-Software (info@cuioss.de)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -142,6 +142,47 @@ class CharacterValidationConstantsTest {
     }
 
     @Test
+    @SuppressWarnings("java:S5961") // Exhaustive RFC 7230 tchar (token) character-set membership check
+    void shouldInitializeRFC7230TokenCharacters() {
+        IntPredicate tokenChars = CharacterValidationConstants.RFC7230_TOKEN_CHARS;
+
+        // Should include ALPHA
+        for (char c = 'A'; c <= 'Z'; c++) {
+            assertTrue(tokenChars.test(c), "Uppercase letter " + c + " should be allowed");
+        }
+        for (char c = 'a'; c <= 'z'; c++) {
+            assertTrue(tokenChars.test(c), "Lowercase letter " + c + " should be allowed");
+        }
+
+        // Should include DIGIT
+        for (char c = '0'; c <= '9'; c++) {
+            assertTrue(tokenChars.test(c), "Digit " + c + " should be allowed");
+        }
+
+        // Should include every tchar punctuation member (RFC 7230 section 3.2.6)
+        for (char c : "!#$%&'*+-.^_`|~".toCharArray()) {
+            assertTrue(tokenChars.test(c), "tchar punctuation " + c + " should be allowed");
+        }
+
+        // Should reject delimiters - these are the characters a header NAME must never contain
+        assertFalse(tokenChars.test(' '), "Space must be rejected in a header name");
+        assertFalse(tokenChars.test(':'), "Colon must be rejected in a header name");
+        assertFalse(tokenChars.test(','));
+        assertFalse(tokenChars.test(';'));
+        assertFalse(tokenChars.test('('));
+        assertFalse(tokenChars.test(')'));
+        assertFalse(tokenChars.test('@'));
+        assertFalse(tokenChars.test('/'));
+        assertFalse(tokenChars.test('"'));
+
+        // Should reject control characters and DEL
+        assertFalse(tokenChars.test('\t'));
+        assertFalse(tokenChars.test('\r'));
+        assertFalse(tokenChars.test('\n'));
+        assertFalse(tokenChars.test(127)); // DEL
+    }
+
+    @Test
     void shouldReturnCorrectCharacterSetForValidationType() {
         // The accessor now returns the shared immutable predicate instance (no defensive
         // copy), so identity equality is both correct and the strongest available assertion.
@@ -153,7 +194,7 @@ class CharacterValidationConstantsTest {
         assertSame(CharacterValidationConstants.RFC3986_QUERY_CHARS,
                 CharacterValidationConstants.getCharacterSet(ValidationType.PARAMETER_VALUE));
 
-        assertSame(CharacterValidationConstants.RFC7230_HEADER_CHARS,
+        assertSame(CharacterValidationConstants.RFC7230_TOKEN_CHARS,
                 CharacterValidationConstants.getCharacterSet(ValidationType.HEADER_NAME));
         assertSame(CharacterValidationConstants.RFC7230_HEADER_CHARS,
                 CharacterValidationConstants.getCharacterSet(ValidationType.HEADER_VALUE));

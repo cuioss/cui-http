@@ -1,5 +1,5 @@
 /*
- * Copyright © 2025 CUI-OpenSource-Software (info@cuioss.de)
+ * Copyright © 2025-present CUI-OpenSource-Software (info@cuioss.de)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,7 +46,8 @@ import java.util.function.IntPredicate;
  *   <li><strong>RFC3986_UNRESERVED</strong> - Basic unreserved characters from RFC 3986</li>
  *   <li><strong>RFC3986_PATH_CHARS</strong> - Characters allowed in URL paths</li>
  *   <li><strong>RFC3986_QUERY_CHARS</strong> - Characters allowed in URL query parameters</li>
- *   <li><strong>RFC7230_HEADER_CHARS</strong> - Characters allowed in HTTP headers</li>
+ *   <li><strong>RFC7230_TOKEN_CHARS</strong> - Characters allowed in HTTP header names (tchar)</li>
+ *   <li><strong>RFC7230_HEADER_CHARS</strong> - Characters allowed in HTTP header field values</li>
  *   <li><strong>HTTP_BODY_CHARS</strong> - Characters allowed in HTTP request/response bodies</li>
  * </ul>
  *
@@ -121,8 +122,21 @@ public final class CharacterValidationConstants {
     public static final IntPredicate RFC3986_QUERY_CHARS;
 
     /**
-     * RFC 7230 header field characters (visible ASCII minus delimiters).
-     * <p>Includes space through tilde (32-126) plus tab character.</p>
+     * RFC 7230 token characters ({@code tchar}), the character set of an HTTP header <em>name</em>.
+     * <p>Per RFC 7230 section 3.2.6: ALPHA, DIGIT and the punctuation
+     * {@code ! # $ % &amp; ' * + - . ^ _ ` | ~}. Notably this set excludes space, colon and every
+     * other delimiter, so a header name containing them is rejected.</p>
+     * <p>This is deliberately narrower than {@link #RFC7230_HEADER_CHARS}, which is the broader
+     * header <em>field-value</em> set.</p>
+     * <p>Immutable membership test; the backing {@link BitSet} is private and cannot be mutated.</p>
+     */
+    public static final IntPredicate RFC7230_TOKEN_CHARS;
+
+    /**
+     * RFC 7230 header field-value characters: visible ASCII plus SP and HTAB.
+     * <p>Includes space through tilde (32-126) plus the tab character. Delimiters such as colon,
+     * comma, semicolon and parentheses are all members — for the narrow, delimiter-free header
+     * <em>name</em> set see {@link #RFC7230_TOKEN_CHARS}.</p>
      * <p>Immutable membership test; the backing {@link BitSet} is private and cannot be mutated.</p>
      */
     public static final IntPredicate RFC7230_HEADER_CHARS;
@@ -170,6 +184,17 @@ public final class CharacterValidationConstants {
         "!$'()*+,;".chars().forEach(queryChars::set);
         RFC3986_QUERY_CHARS = queryChars::get;
 
+        // Initialize RFC7230_TOKEN_CHARS (RFC 7230 section 3.2.6 tchar - header NAME characters)
+        BitSet tokenChars = new BitSet(256);
+        // ALPHA
+        for (int i = 'A'; i <= 'Z'; i++) tokenChars.set(i);
+        for (int i = 'a'; i <= 'z'; i++) tokenChars.set(i);
+        // DIGIT
+        for (int i = '0'; i <= '9'; i++) tokenChars.set(i);
+        // tchar punctuation: "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~"
+        "!#$%&'*+-.^_`|~".chars().forEach(tokenChars::set);
+        RFC7230_TOKEN_CHARS = tokenChars::get;
+
         // Initialize RFC7230_HEADER_CHARS
         BitSet headerChars = new BitSet(256);
         // RFC 7230: For header values, allow most visible ASCII plus space and tab
@@ -215,7 +240,8 @@ public final class CharacterValidationConstants {
      * <ul>
      *   <li>{@code URL_PATH} → {@link #RFC3986_PATH_CHARS}</li>
      *   <li>{@code PARAMETER_NAME, PARAMETER_VALUE} → {@link #RFC3986_QUERY_CHARS}</li>
-     *   <li>{@code HEADER_NAME, HEADER_VALUE} → {@link #RFC7230_HEADER_CHARS}</li>
+     *   <li>{@code HEADER_NAME} → {@link #RFC7230_TOKEN_CHARS}</li>
+     *   <li>{@code HEADER_VALUE} → {@link #RFC7230_HEADER_CHARS}</li>
      *   <li>{@code BODY} → {@link #HTTP_BODY_CHARS}</li>
      *   <li>{@code COOKIE_NAME, COOKIE_VALUE} → {@link #RFC3986_UNRESERVED}</li>
      * </ul>
@@ -226,6 +252,7 @@ public final class CharacterValidationConstants {
      * @see ValidationType
      * @see #RFC3986_PATH_CHARS
      * @see #RFC3986_QUERY_CHARS
+     * @see #RFC7230_TOKEN_CHARS
      * @see #RFC7230_HEADER_CHARS
      * @see #HTTP_BODY_CHARS
      * @see #RFC3986_UNRESERVED
@@ -234,7 +261,8 @@ public final class CharacterValidationConstants {
         return switch (type) {
             case URL_PATH -> RFC3986_PATH_CHARS;
             case PARAMETER_NAME, PARAMETER_VALUE -> RFC3986_QUERY_CHARS;
-            case HEADER_NAME, HEADER_VALUE -> RFC7230_HEADER_CHARS;
+            case HEADER_NAME -> RFC7230_TOKEN_CHARS;
+            case HEADER_VALUE -> RFC7230_HEADER_CHARS;
             case BODY -> HTTP_BODY_CHARS;
             case COOKIE_NAME, COOKIE_VALUE -> RFC3986_UNRESERVED;
         };

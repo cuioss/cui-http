@@ -105,5 +105,6 @@
     }
   },
   "skills_by_profile_reasoning": "Java library using Lombok and JSpecify; user-selected optionals java-null-safety, java-lombok, java-maintenance; Quarkus/CDI/Weld optionals excluded (plain Java library, no CDI runtime)",
-  "tips": []
+  "tips": [],
+  "type": "module"
 }

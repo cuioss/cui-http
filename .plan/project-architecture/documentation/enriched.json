@@ -29,8 +29,33 @@
           "skill": "pm-documents:ref-svg-diagrams"
         }
       ]
+    },
+    "implementation": {
+      "defaults": [
+        {
+          "description": "Foundational agent behavior rules (user interaction, tool usage, research, dependency management)",
+          "skill": "plan-marshall:persona-plan-marshall-agent"
+        },
+        {
+          "description": "AsciiDoc formatting, validation, link verification, and template creation",
+          "skill": "pm-documents:ref-asciidoc"
+        },
+        {
+          "description": "Content quality, tone analysis, organization standards, and review orchestration",
+          "skill": "pm-documents:ref-documentation"
+        },
+        {
+          "description": "Narrative styles for technical documentation \u2014 tone, voice, and arc for the engineering-narrative style",
+          "skill": "pm-documents:ref-narrative-styles"
+        },
+        {
+          "description": "SVG diagram authoring standards \u2014 visual language, theme handling, AsciiDoc embedding, per-diagram-type patterns",
+          "skill": "pm-documents:ref-svg-diagrams"
+        }
+      ]
     }
   },
-  "skills_by_profile_reasoning": "documentation: AsciiDoc doc/ tree with http-security specification",
-  "tips": []
+  "skills_by_profile_reasoning": "documentation: AsciiDoc doc/ tree with http-security specification. implementation: mirrors the documentation profile (plus the foundational agent rules) because plan-marshall's active_profiles are implementation/module_testing/quality \u2014 a task that edits doc/ resolves the implementation profile, so leaving that key undeclared forced a persona-augmentation fallback instead of a declared skill set.",
+  "tips": [],
+  "type": "module"
 }

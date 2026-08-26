@@ -1,5 +1,5 @@
 /*
- * Copyright © 2025 CUI-OpenSource-Software (info@cuioss.de)
+ * Copyright © 2025-present CUI-OpenSource-Software (info@cuioss.de)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,8 +42,13 @@ import java.util.Objects;
  *   <li><strong>Character Validation</strong> - Validates RFC 3986 query characters</li>
  *   <li><strong>Decoding</strong> - URL decodes with security checks (name-strict CR/LF and
  *       delimiter rejection on the decoded output)</li>
- *   <li><strong>Normalization</strong> - Normalization and security checks</li>
- *   <li><strong>Pattern Matching</strong> - Detects suspicious parameter names and injection attacks</li>
+ *   <li><strong>Normalization</strong> - Pass-through for {@link ValidationType#PARAMETER_NAME}:
+ *       RFC 3986 dot-segment resolution applies to {@link ValidationType#URL_PATH} only, so this
+ *       stage does not rewrite parameter names. It is retained here solely for stage-order
+ *       symmetry with the parameter-value pipeline; removing it is out of this plan's scope.</li>
+ *   <li><strong>Pattern Matching</strong> - Path-traversal detection is unconditional.
+ *       Suspicious-parameter-name detection fires only when {@code failOnSuspiciousPatterns} is
+ *       enabled, which is <em>not</em> the default.</li>
  * </ol>
  *
  * @since 1.0

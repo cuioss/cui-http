@@ -1,5 +1,5 @@
 /*
- * Copyright © 2025 CUI-OpenSource-Software (info@cuioss.de)
+ * Copyright © 2025-present CUI-OpenSource-Software (info@cuioss.de)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,6 @@ import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.http.security.validation.AllowBlockListStage;
 import de.cuioss.http.security.validation.CharacterValidationStage;
 import de.cuioss.http.security.validation.LengthValidationStage;
-import de.cuioss.http.security.validation.NormalizationStage;
-import de.cuioss.http.security.validation.PatternMatchingStage;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.ToString;
@@ -39,10 +37,6 @@ import java.util.Objects;
  * <ol>
  *   <li><strong>Length Validation</strong> - Enforces maximum header length limits</li>
  *   <li><strong>Character Validation</strong> - Validates RFC 7230 header characters</li>
- *   <li><strong>Normalization</strong> - Pass-through for header values; RFC 3986 dot-segment
- *       resolution only applies to path components, so this stage does not rewrite header data
- *       (traversal-style patterns are caught by Pattern Matching below)</li>
- *   <li><strong>Pattern Matching</strong> - Detects injection attacks and suspicious patterns</li>
  *   <li><strong>Allow/Block List</strong> - (header names only) enforces the configured
  *       {@code allowedHeaderNames}/{@code blockedHeaderNames} lists</li>
  * </ol>
@@ -60,7 +54,8 @@ import java.util.Objects;
  *   <li><strong>Header Injection Prevention</strong> - Detects CRLF injection attempts</li>
  *   <li><strong>RFC 7230 Compliance</strong> - Enforces HTTP header character restrictions</li>
  *   <li><strong>Length Limits</strong> - Prevents header-based DoS attacks</li>
- *   <li><strong>Pattern Detection</strong> - Identifies malicious header values</li>
+ *   <li><strong>Control-Character Rejection</strong> - CR, LF and other control characters are
+ *       rejected by RFC 7230 character validation</li>
  * </ul>
  *
  * <h3>Usage Example</h3>
@@ -118,12 +113,13 @@ public final class HTTPHeaderValidationPipeline extends AbstractValidationPipeli
         Objects.requireNonNull(validationType, "ValidationType must not be null");
 
         // Create validation stages in the correct order for HTTP headers
-        // Note: Headers typically don't need URL decoding, so we skip DecodingStage
+        // Note: Headers typically don't need URL decoding, so we skip DecodingStage.
+        // Normalization and pattern matching are omitted because both are pass-throughs for the
+        // header validation types: dot-segment resolution applies to path components only, and the
+        // pattern databases cover URL_PATH, PARAMETER_NAME and PARAMETER_VALUE only.
         List<HttpSecurityValidator> stages = new ArrayList<>(List.of(
                 new LengthValidationStage(config, validationType),
-                new CharacterValidationStage(config, validationType),
-                new NormalizationStage(config, validationType),
-                new PatternMatchingStage(config, validationType)
+                new CharacterValidationStage(config, validationType)
         ));
         // Header-name allow/block list enforcement (empty lists => no-op, allow-all).
         if (validationType == ValidationType.HEADER_NAME) {

@@ -1,5 +1,5 @@
 /*
- * Copyright © 2025 CUI-OpenSource-Software (info@cuioss.de)
+ * Copyright © 2025-present CUI-OpenSource-Software (info@cuioss.de)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,8 +36,11 @@ import java.util.regex.Pattern;
  * and cookie values, and body content) the input is passed through unchanged — it is opaque
  * application data rather than a filesystem path, so resolving {@code ..} segments would
  * silently rewrite caller data and could consume a traversal pattern before downstream
- * pattern matching inspects it. Traversal-style patterns in non-path contexts are handled by
- * {@code PatternMatchingStage}.</p>
+ * pattern matching inspects it. Traversal-style patterns are handled downstream by
+ * {@code PatternMatchingStage} for the <em>parameter</em> types only
+ * ({@link ValidationType#PARAMETER_NAME}, {@link ValidationType#PARAMETER_VALUE}). That redirect
+ * does not hold for the header types: the header pipeline runs neither this stage nor
+ * {@code PatternMatchingStage}, and relies on RFC 7230 character validation instead.</p>
  *
  * <p>For path types, this stage performs RFC 3986 Section 5.2.4 path normalization to resolve
  * relative path segments (. and ..) while detecting and preventing path traversal
@@ -231,8 +234,10 @@ ValidationType validationType) implements HttpSecurityValidator {
         // For non-path validation types (parameter/header/cookie values and bodies) a segment
         // like "a/b/../c" is opaque application data, not a filesystem path: rewriting it to
         // "a/c" would silently alter caller data and could consume a traversal pattern before
-        // PatternMatchingStage inspects it. Non-path inputs therefore pass through unchanged;
-        // traversal-style patterns in those contexts are detected downstream by PatternMatchingStage.
+        // PatternMatchingStage inspects it. Non-path inputs therefore pass through unchanged.
+        // Traversal-style patterns are detected downstream by PatternMatchingStage for the
+        // parameter types only; the header pipeline runs neither this stage nor
+        // PatternMatchingStage and relies on RFC 7230 character validation instead.
         if (!validationType.isPath()) {
             return Optional.of(value);
         }

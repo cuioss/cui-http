@@ -66,6 +66,10 @@ defense (that is a UTS #39 capability).
 
 Enforced by `PatternMatchingStage`.
 
+`PatternMatchingStage` runs in the URL path and URL parameter (name and value) pipelines only, so
+`caseSensitiveComparison` and `failOnSuspiciousPatterns` have no effect on header or content-type
+validation.
+
 [cols="3,1,1,1", options="header"]
 |===
 | Setting | default | strict | lenient
@@ -111,6 +115,11 @@ Meaningful only for attribute-bearing (Set-Cookie) cookies, not request `Cookie`
 
 Case-insensitive allow/block lists (default empty). Block-list takes precedence; an empty
 allow-list means allow-all. Enforced by `AllowBlockListStage`.
+
+The empty *value* is a separate matter from the empty *list*: an empty value is evaluated against
+the lists like any other value and is not exempt. A non-empty `allowedContentTypes` or
+`allowedHeaderNames` therefore rejects the empty string, and a block-list containing the empty
+string rejects it too.
 
 [cols="3,1,3", options="header"]
 |===

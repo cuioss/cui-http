@@ -6,10 +6,22 @@
     "pm-documents"
   ],
   "modules": {
-    "cui-http": {},
-    "cui-http-benchmarking": {},
-    "cui-http-parent": {},
-    "documentation": {}
+    "cui-http": {
+      "description": "The library core (artifactId cui-http, directory cui-http-core): security validation pipelines for HTTP components (paths, parameters, headers, bodies, cookies) with attack-pattern detection, RFC 7239 forwarded-header resolution, and HTTP client infrastructure (HttpHandler, SSL/TLS context provider, HttpResult error handling, resilient/ETag-aware adapters, content converters).",
+      "generation": {}
+    },
+    "cui-http-benchmarking": {
+      "description": "JMH micro-benchmarks measuring latency and throughput of the security validation pipelines and the forwarded-header resolver; results feed the GitHub Pages benchmark dashboard via benchmark-pages.py.",
+      "generation": {}
+    },
+    "cui-http-parent": {
+      "description": "Maven aggregator and parent POM for the CUI HTTP library. Centralizes dependency management, plugin configuration, and build profiles (pre-commit quality gate, coverage, benchmark) for the core and benchmarking modules.",
+      "generation": {}
+    },
+    "documentation": {
+      "description": "AsciiDoc project documentation under doc/, primarily the HTTP security specification (pipeline architecture standards, attack databases, forwarded/reverse-proxy header resolution guide).",
+      "generation": {}
+    }
   },
   "name": "cui-http"
 }
