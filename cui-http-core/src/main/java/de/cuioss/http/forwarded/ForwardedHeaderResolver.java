@@ -103,7 +103,9 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  * <pre>{@code
  * ForwardedResolverConfig config = ForwardedResolverConfig.builder()
  *     .trustAll(true)
- *     .trustedProxies(Set.of("10.0.0.0/8"))
+ *     // The ingress proxies themselves, never the enclosing network: every address in the range is
+ *     // skipped by the client-IP walk, so a non-proxy host inside it could spoof the client IP.
+ *     .trustedProxies(Set.of("10.0.7.10/32", "10.0.7.11/32"))
  *     .build();
  * ForwardedHeaderResolver resolver =
  *     new ForwardedHeaderResolver(config, new SecurityEventCounter());

@@ -60,8 +60,10 @@
  * <h3>Usage Example</h3>
  * <pre>{@code
  * ForwardedResolverConfig config = ForwardedResolverConfig.builder()
- *     .trustAll(true)                       // deployment sits fully behind a trusted proxy
- *     .trustedProxies(Set.of("10.0.0.0/8")) // for X-Forwarded-For client-IP resolution
+ *     .trustAll(true) // deployment sits fully behind a trusted proxy
+ *     // The ingress proxies themselves, never the enclosing network: every address in the range is
+ *     // skipped by the client-IP walk, so a non-proxy host inside it could spoof the client IP.
+ *     .trustedProxies(Set.of("10.0.7.10/32", "10.0.7.11/32"))
  *     .build();
  * ForwardedHeaderResolver resolver =
  *     new ForwardedHeaderResolver(config, new SecurityEventCounter());

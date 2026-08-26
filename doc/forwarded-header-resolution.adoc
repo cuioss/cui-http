@@ -382,8 +382,8 @@ are quoted only when they are not a valid RFC 7239 token.
 [source,java]
 ----
 ForwardedResolverConfig config = ForwardedResolverConfig.builder()
-    .trustAll(true)                        // honor scheme/host/port + context-path
-    .trustedProxies(Set.of("10.0.0.0/8"))  // for X-Forwarded-For client-IP resolution
+    .trustAll(true)                                          // honor scheme/host/port + context-path
+    .trustedProxies(Set.of("10.0.7.10/32", "10.0.7.11/32"))  // the ingress proxies themselves
     .build();
 
 ForwardedHeaderResolver resolver =
@@ -399,6 +399,10 @@ int    port   = fwd.port().orElse(scheme.equals("https") ? 443 : 80);
 String prefix = fwd.contextPath();          // "" when none
 fwd.clientIp().ifPresent(ip -> log.info("client %s", ip));
 ----
+
+NOTE: `trustedProxies` lists the proxy machines themselves, never the enclosing network — see
+_Composing `trustedProxies`_ above. Widening this to the surrounding `10.0.0.0/8` would let any
+host inside that range spoof the client IP.
 
 === Context-path allowlist only (no trustAll)
 
