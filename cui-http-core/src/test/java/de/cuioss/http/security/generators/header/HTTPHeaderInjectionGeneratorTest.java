@@ -26,7 +26,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 import static de.cuioss.http.security.generators.GeneratorContractAssertions.*;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Contract test for {@link HTTPHeaderInjectionGenerator}.

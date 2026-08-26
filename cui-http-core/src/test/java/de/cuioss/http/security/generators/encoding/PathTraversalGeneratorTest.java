@@ -25,8 +25,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import static de.cuioss.http.security.generators.GeneratorContractAssertions.*;
-import static org.junit.jupiter.api.Assertions.*;
+import static de.cuioss.http.security.generators.GeneratorContractAssertions.TRAVERSAL_MARKERS;
+import static de.cuioss.http.security.generators.GeneratorContractAssertions.assertContainsAny;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Contract test for {@link PathTraversalGenerator}.

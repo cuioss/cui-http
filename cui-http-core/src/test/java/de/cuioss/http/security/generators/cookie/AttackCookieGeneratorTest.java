@@ -227,10 +227,10 @@ class AttackCookieGeneratorTest {
 
     private boolean isMaliciousAttributes(String attributes) {
         return HOSTILE_DOMAINS.stream().anyMatch(attributes::contains)
-                || attributes.equals(TRAVERSAL_PATH_ATTRIBUTE)
+                || TRAVERSAL_PATH_ATTRIBUTE.equals(attributes)
                 || CRLF_MARKERS.stream().anyMatch(attributes::contains)
                 || NULL_BYTE_MARKERS.stream().anyMatch(attributes::contains)
-                || attributes.equals(NEGATIVE_MAX_AGE_ATTRIBUTE)
+                || NEGATIVE_MAX_AGE_ATTRIBUTE.equals(attributes)
                 || MALFORMED_ATTRIBUTES.contains(attributes);
     }
 

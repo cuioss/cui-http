@@ -28,7 +28,8 @@ import java.util.HashSet;
 import java.util.Set;
 
 import static de.cuioss.http.security.generators.GeneratorContractAssertions.*;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Contract test for {@link NullByteURLGenerator}.
