@@ -55,6 +55,13 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li><strong>Fail-closed chain walk</strong> — the all-hops-trusted and unparseable-hop
  *       behaviours still yield no client IP, guarding against a regression that opens the chain walk
  *       while the other gaps are closed.</li>
+ *   <li><strong>Parser strictness cluster</strong> — the tightened parser guards, each driven
+ *       end-to-end through the public resolver so the assertion captures the user-visible
+ *       reject outcome: a malformed RFC 7239 {@code forwarded-pair}, a bracketed chain hop with
+ *       trailing garbage, a leading-zero IPv4 octet, an unbracketed IPv6 host, and a non-digit
+ *       port. The symmetric {@code X-Forwarded-Host: [::1]garbage} guard is driven through the
+ *       same public surface by {@link ForwardedHeaderResolverTest}, so it is not duplicated
+ *       here.</li>
  * </ul>
  *
  * <p>Every attack-shape test carries a matched negative control (a benign, agreeing or single-source
@@ -340,6 +347,107 @@ class ForwardedTrustBoundaryTest {
 
             assertEquals("203.0.113.7", result.clientIp().orElseThrow(),
                     "the chain walk is still open for a genuinely untrusted hop");
+        }
+    }
+
+    @Nested
+    @DisplayName("Parser strictness cluster")
+    class ParserStrictness {
+
+        @Test
+        @DisplayName("a malformed Forwarded directive drops the fields a clean de-facto sibling attests")
+        void malformedForwardedDropsDeFactoFields() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "https",
+                    "X-Forwarded-Host", PROXY_HOST,
+                    "Forwarded", "proto=;host=" + PROXY_HOST)));
+
+            assertAll("the malformed header is present-but-unresolvable for every field it could carry",
+                    () -> assertTrue(result.scheme().isEmpty()),
+                    () -> assertTrue(result.host().isEmpty()));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "malformed forwarded-pair");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, SOURCES_DISAGREE);
+        }
+
+        @Test
+        @DisplayName("positive control: a well-formed Forwarded header agreeing with the de-facto family is honored")
+        void wellFormedForwardedHonored() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "https",
+                    "X-Forwarded-Host", PROXY_HOST,
+                    "Forwarded", "proto=https;host=" + PROXY_HOST)));
+
+            assertAll("a legal header must still reconcile",
+                    () -> assertEquals("https", result.scheme().orElseThrow()),
+                    () -> assertEquals(PROXY_HOST, result.host().orElseThrow()));
+        }
+
+        @Test
+        @DisplayName("a bracketed hop with trailing garbage aborts the chain walk rather than being skipped")
+        void bracketTrailingGarbageAbortsChainWalk() {
+            var result = chainWalkingResolver()
+                    .resolve(headers(Map.of("X-Forwarded-For", "203.0.113.7, [::1]garbage")));
+
+            assertTrue(result.clientIp().isEmpty(),
+                    "203.0.113.7 is untrusted and would resolve if the bad hop were merely skipped");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "unparseable entry");
+        }
+
+        @Test
+        @DisplayName("a leading-zero IPv4 octet in the chain aborts the walk")
+        void leadingZeroOctetAbortsChainWalk() {
+            var result = chainWalkingResolver()
+                    .resolve(headers(Map.of("X-Forwarded-For", "010.0.0.5, 10.0.0.5")));
+
+            assertTrue(result.clientIp().isEmpty(),
+                    "an octal-ambiguous octet is unverifiable, so the chain yields no client");
+        }
+
+        @Test
+        @DisplayName("positive control: the same chain shape resolves with well-formed literals")
+        void wellFormedChainResolves() {
+            var result = chainWalkingResolver()
+                    .resolve(headers(Map.of("X-Forwarded-For", "203.0.113.7, 10.0.0.5")));
+
+            assertEquals("203.0.113.7", result.clientIp().orElseThrow());
+        }
+
+        @Test
+        @DisplayName("an unbracketed IPv6 X-Forwarded-Host yields no host")
+        void unbracketedIpv6HostDropped() {
+            assertTrue(trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Host", "2001:db8::1"))).host().isEmpty(),
+                    "an unbracketed IPv6 literal would compose into a malformed URL authority");
+        }
+
+        @Test
+        @DisplayName("positive control: the bracketed form of the same host is honored")
+        void bracketedIpv6HostHonored() {
+            assertEquals("[2001:db8::1]", trustAllResolver()
+                    .resolve(headers(Map.of("X-Forwarded-Host", "[2001:db8::1]"))).host().orElseThrow());
+        }
+
+        @Test
+        @DisplayName("a non-digit X-Forwarded-Port yields no port and does not fall back to the host port")
+        void nonDigitPortDoesNotFallBack() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", PROXY_HOST + ":8443",
+                    "X-Forwarded-Port", "+443")));
+
+            assertAll("a present-but-invalid port header drops the field outright",
+                    () -> assertTrue(result.port().isEmpty()),
+                    () -> assertEquals(PROXY_HOST, result.host().orElseThrow(),
+                            "only the port is dropped, not the host"));
+        }
+
+        @Test
+        @DisplayName("positive control: a digit-only X-Forwarded-Port overrides the host port")
+        void digitOnlyPortHonored() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", PROXY_HOST + ":8443",
+                    "X-Forwarded-Port", "443")));
+
+            assertEquals(443, result.port().orElseThrow());
         }
     }
 }
