@@ -20,6 +20,7 @@ import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
+import de.cuioss.http.security.validation.AllowBlockListStage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -58,6 +59,18 @@ class ContentTypeValidationPipelineTest {
     void reportsHeaderValueType() {
         assertEquals(ValidationType.HEADER_VALUE,
                 pipeline(SecurityConfiguration.defaults()).getValidationType());
+    }
+
+    @Test
+    @DisplayName("scope: allow/block-list enforcement only - a single AllowBlockListStage")
+    void pipelineScopeIsListEnforcementOnly() {
+        ContentTypeValidationPipeline pipeline = pipeline(SecurityConfiguration.defaults());
+
+        // Pins the documented class-level contract: no length limit, no character validation.
+        var stages = pipeline.getStages();
+        assertEquals(1, stages.size(), "Content-type pipeline must consist of exactly one stage");
+        assertInstanceOf(AllowBlockListStage.class, stages.getFirst());
+        assertEquals(ValidationType.HEADER_VALUE, pipeline.getValidationType());
     }
 
     @Nested
