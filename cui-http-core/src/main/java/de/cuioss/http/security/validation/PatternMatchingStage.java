@@ -43,6 +43,14 @@ import java.util.stream.Collectors;
  *   <li><strong>Parameter Attack Patterns</strong> - Identifies malicious parameter usage</li>
  * </ol>
  *
+ * <h3>Supported Validation Types</h3>
+ * <p>The pattern databases apply to {@link ValidationType#URL_PATH},
+ * {@link ValidationType#PARAMETER_VALUE} and {@link ValidationType#PARAMETER_NAME} only. For every
+ * other validation type - including {@link ValidationType#HEADER_NAME} and
+ * {@link ValidationType#HEADER_VALUE} - this stage is an intentional pass-through: no pattern set
+ * is selected, so the input is returned unchanged. Header components are therefore not covered by
+ * this stage, and the header pipeline does not include it.</p>
+ *
  * <h3>Design Principles</h3>
  * <ul>
  *   <li><strong>Signature-Based Detection</strong> - Uses known attack patterns from OWASP and CVE databases</li>
@@ -186,6 +194,12 @@ ValidationType validationType) implements HttpSecurityValidator {
      *   <li>Pattern matching - tests against known attack signatures</li>
      *   <li>Policy enforcement - applies configured response to pattern matches</li>
      * </ol>
+     *
+     * <p>Pattern selection is driven by the validation type: only {@link ValidationType#URL_PATH},
+     * {@link ValidationType#PARAMETER_VALUE} and {@link ValidationType#PARAMETER_NAME} select a
+     * pattern set. For every other type - including {@link ValidationType#HEADER_NAME} and
+     * {@link ValidationType#HEADER_VALUE} - this method is an intentional pass-through that returns
+     * the input unchanged and never throws.</p>
      *
      * @param value The input string to validate against attack patterns
      * @return The original input wrapped in Optional if validation passes, or Optional.empty() if input was null

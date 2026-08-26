@@ -55,8 +55,8 @@ class HTTPHeaderValidationPipelineTest {
             HTTPHeaderValidationPipeline pipeline = new HTTPHeaderValidationPipeline(config, eventCounter, ValidationType.HEADER_NAME);
 
             assertEquals(ValidationType.HEADER_NAME, pipeline.getValidationType());
-            // 4 common stages + the header-name allow/block-list stage (F-08)
-            assertEquals(5, pipeline.getStages().size());
+            // 2 common stages + the header-name allow/block-list stage (F-08)
+            assertEquals(3, pipeline.getStages().size());
             assertSame(eventCounter, pipeline.getEventCounter());
         }
 
@@ -65,7 +65,7 @@ class HTTPHeaderValidationPipelineTest {
             HTTPHeaderValidationPipeline pipeline = new HTTPHeaderValidationPipeline(config, eventCounter, ValidationType.HEADER_VALUE);
 
             assertEquals(ValidationType.HEADER_VALUE, pipeline.getValidationType());
-            assertEquals(4, pipeline.getStages().size());
+            assertEquals(2, pipeline.getStages().size());
             assertSame(eventCounter, pipeline.getEventCounter());
         }
 
@@ -281,12 +281,22 @@ class HTTPHeaderValidationPipelineTest {
             HTTPHeaderValidationPipeline pipeline = new HTTPHeaderValidationPipeline(config, eventCounter, ValidationType.HEADER_VALUE);
 
             var stages = pipeline.getStages();
-            assertEquals(4, stages.size());
+            assertEquals(2, stages.size());
 
             assertTrue(stages.getFirst().getClass().getSimpleName().contains("Length"));
             assertTrue(stages.get(1).getClass().getSimpleName().contains("Character"));
-            assertTrue(stages.get(2).getClass().getSimpleName().contains("Normalization"));
-            assertTrue(stages.get(3).getClass().getSimpleName().contains("Pattern"));
+        }
+
+        @Test
+        void shouldPreserveStageOrderForHeaderName() {
+            HTTPHeaderValidationPipeline pipeline = new HTTPHeaderValidationPipeline(config, eventCounter, ValidationType.HEADER_NAME);
+
+            var stages = pipeline.getStages();
+            assertEquals(3, stages.size());
+
+            assertTrue(stages.getFirst().getClass().getSimpleName().contains("Length"));
+            assertTrue(stages.get(1).getClass().getSimpleName().contains("Character"));
+            assertTrue(stages.get(2).getClass().getSimpleName().contains("AllowBlockList"));
         }
     }
 
