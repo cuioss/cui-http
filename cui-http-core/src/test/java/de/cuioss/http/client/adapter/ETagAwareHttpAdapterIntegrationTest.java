@@ -184,6 +184,71 @@ class ETagAwareHttpAdapterIntegrationTest {
         };
     }
 
+    @Test
+    @DisplayName("A 204 should succeed even when the converter yields no content")
+    @ModuleDispatcher
+    void noContent204WithTypedConverterShouldSucceed(URIBuilder uriBuilder) {
+        dispatcher.withNoContent();
+        HttpAdapter<String> adapter = typedAdapter(uriBuilder);
+
+        HttpResult<String> result = adapter.deleteBlocking();
+
+        assertAll("DELETE answered with 204",
+                () -> assertTrue(result.isSuccess(), "204 carries no body by definition, so emptiness is not a conversion failure"),
+                () -> assertEquals(Optional.of(204), result.getHttpStatus()),
+                () -> assertTrue(result.getErrorCategory().isEmpty(), "Success must not carry an error category"));
+    }
+
+    @Test
+    @DisplayName("A 205 should succeed even when the converter yields no content")
+    @ModuleDispatcher
+    void resetContent205WithTypedConverterShouldSucceed(URIBuilder uriBuilder) {
+        dispatcher.withNoContentAndStatus(205);
+        HttpAdapter<String> adapter = typedAdapter(uriBuilder);
+
+        HttpResult<String> result = adapter.put((String) null).join();
+
+        assertAll("PUT answered with 205",
+                () -> assertTrue(result.isSuccess(), "205 carries no body by definition, so emptiness is not a conversion failure"),
+                () -> assertEquals(Optional.of(205), result.getHttpStatus()),
+                () -> assertTrue(result.getErrorCategory().isEmpty(), "Success must not carry an error category"));
+    }
+
+    /**
+     * The non-widening control for the no-body exemption: an empty {@code 200} is not a
+     * protocol-defined no-body response, so it must keep failing unless the converter opts in via
+     * {@code emptyContentIsValid()}. Without this case the exemption could silently widen to the
+     * whole 2xx family and swallow genuine conversion failures.
+     */
+    @Test
+    @DisplayName("An empty 200 should still fail as INVALID_CONTENT")
+    @ModuleDispatcher
+    void empty200WithTypedConverterShouldStillFail(URIBuilder uriBuilder) {
+        dispatcher.withSuccessAndETag("", "\"etag-empty-200\"");
+        HttpAdapter<String> adapter = typedAdapter(uriBuilder);
+
+        HttpResult<String> result = adapter.getBlocking();
+
+        assertAll("GET answered with an empty 200",
+                () -> assertFalse(result.isSuccess(), "200 is not a no-body status - the exemption must not widen to it"),
+                () -> assertEquals(HttpErrorCategory.INVALID_CONTENT, result.getErrorCategory().orElse(null)),
+                () -> assertTrue(result.getContent().isEmpty(), "No content should be fabricated"));
+    }
+
+    /**
+     * Builds an adapter over {@link TypedResponseConverter} — the converter shape that can actually
+     * reach the conversion-failure branch.
+     */
+    private HttpAdapter<String> typedAdapter(URIBuilder uriBuilder) {
+        String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
+
+        return ETagAwareHttpAdapter.<String>builder()
+                .httpHandler(handler)
+                .responseConverter(new TypedResponseConverter())
+                .build();
+    }
+
     /**
      * Test POST request: body sent with Content-Type, response converted, ETag extracted but not cached
      */
@@ -478,6 +543,36 @@ class ETagAwareHttpAdapterIntegrationTest {
         @Override
         public Optional<String> convert(@Nullable Object rawContent) {
             return rawContent == null ? Optional.empty() : Optional.of(rawContent.toString());
+        }
+
+        @Override
+        public HttpResponse.BodyHandler<?> getBodyHandler() {
+            return HttpResponse.BodyHandlers.ofString();
+        }
+
+        @Override
+        public ContentType contentType() {
+            return ContentType.APPLICATION_JSON;
+        }
+    }
+
+    /**
+     * A stand-in for a real typed (JSON/XML) converter: it yields a value only for a payload it can
+     * parse, and {@link Optional#empty()} for anything else — including an empty body.
+     * <p>
+     * {@link StringResponseConverter} maps an empty body to {@code Optional.of("")} and therefore
+     * can never reach the adapter's conversion-failure branch, which is precisely why the
+     * empty-content defects went unnoticed. Cases that need that branch use this converter instead.
+     */
+    private static class TypedResponseConverter implements HttpResponseConverter<String> {
+
+        @Override
+        public Optional<String> convert(@Nullable Object rawContent) {
+            if (rawContent == null) {
+                return Optional.empty();
+            }
+            String raw = rawContent.toString();
+            return raw.startsWith("{") ? Optional.of(raw) : Optional.empty();
         }
 
         @Override
