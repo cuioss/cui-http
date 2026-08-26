@@ -136,9 +136,11 @@ build-executor commands documented in the "Build Commands" section of `CLAUDE.md
 === Component Documentation
 
 * xref:doc/client-handlers-readme.adoc[HTTP Client Handlers]
+* xref:doc/http-result-pattern.adoc[HTTP Result Pattern] — the `HttpResult<T>` sealed interface and its pattern-matching contract
 * xref:doc/forwarded-header-resolution.adoc[Forwarded / Reverse-Proxy Header Resolution]
 * xref:doc/security-readme.adoc[Security Validation Framework]
 * xref:doc/test-generators-readme.adoc[Security Testing Framework]
+* xref:doc/LogMessages.adoc[Log Messages] — the `HTTP-nnn` message catalogue for the client and forwarded-header components
 
 === Specifications
 

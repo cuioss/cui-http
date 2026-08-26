@@ -98,6 +98,9 @@ Built-in content converter for String responses.
 
 === Result Handling
 
+For the design rationale behind the sealed hierarchy, the exhaustive pattern-matching contract,
+and worked consumption examples, see xref:http-result-pattern.adoc[HTTP Result Pattern].
+
 ==== xref:../cui-http-core/src/main/java/de/cuioss/http/client/result/HttpResult.java[HttpResult]
 
 Sealed interface for HTTP operation results with type-safe pattern matching.
@@ -128,6 +131,9 @@ Centralized log messages for HTTP operations.
 * Structured logging with CuiLogger
 * Consistent error codes
 * WARN and ERROR levels only
+
+The full `HTTP-nnn` message catalogue — identifier, component, message template, and the
+conditions under which each is emitted — is documented in xref:LogMessages.adoc[Log Messages].
 
 == Usage Examples
 
