@@ -136,7 +136,7 @@ import static de.cuioss.http.client.HttpLogMessages.WARN;
  *
  * <h2>Thread Safety</h2>
  * <p>
- * Fully thread-safe:
+ * Safe for concurrent use, subject to the one documented benign race below:
  * </p>
  * <ul>
  *   <li>Builder: NOT thread-safe (build once per adapter)</li>
@@ -144,6 +144,21 @@ import static de.cuioss.http.client.HttpLogMessages.WARN;
  *   <li>HttpClient: Created once in constructor, reused for all requests</li>
  *   <li>Cache: ConcurrentHashMap with local reference pattern for 304 handling</li>
  * </ul>
+ *
+ * <p><strong>Benign last-writer-wins race on cache maintenance.</strong> Two cache writes are
+ * check-then-act sequences on the {@code ConcurrentHashMap} rather than atomic compare-and-set
+ * operations: the 304 timestamp refresh (read the entry, then write it back with a new timestamp)
+ * and the eviction of a stale entry after an ETag-less {@code 200} (observe the missing validator,
+ * then remove). Concurrent revalidations of the same key can therefore interleave, and the last
+ * writer wins.</p>
+ *
+ * <p>This is benign, and deliberately not locked. Every writer for a given key stores a
+ * fully-formed immutable {@link CacheEntry}, so no reader can observe a torn or mismatched entry;
+ * concurrent 304 refreshes write the same content and the same ETag, differing only in a timestamp
+ * that feeds the eviction heuristic alone. The observable outcomes are an entry surviving a moment
+ * longer than a competing eviction intended, or an eviction discarding a just-refreshed timestamp
+ * — neither affects correctness, and both resolve on the next request. Adding locking or a
+ * compute-style CAS here would cost contention on the hot path to buy nothing.</p>
  *
  * @param <T> Response body type
  * @since 1.0
@@ -752,6 +767,25 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
     }
 
     /**
+     * Removes the entry stored under {@code key}, if any.
+     *
+     * <p>Guarded by {@code etagCachingEnabled} exactly as {@link #putInCache} is, so a
+     * caching-disabled adapter never touches the map.</p>
+     *
+     * @param key Cache key to drop
+     */
+    private void evictFromCache(String key) {
+        if (!etagCachingEnabled) {
+            return;
+        }
+
+        if (cache.remove(key) != null) {
+            // The key embeds request header values, so it is deliberately not logged.
+            LOGGER.debug("Removed stale cache entry after an ETag-less 200");
+        }
+    }
+
+    /**
      * Evicts oldest 10% of entries when cache size exceeds maxCacheSize.
      *
      * <p>
@@ -856,12 +890,17 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             );
         }
 
-        // Cache successful GET responses with ETag (only when content exists;
-        // no-content converters have nothing to cache)
-        if (method == HttpMethod.GET && statusCode == 200 && etag != null && content.isPresent()) {
-            CacheEntry<T> newEntry = new CacheEntry<>(content.get(), etag, System.currentTimeMillis());
-            putInCache(cacheKey, newEntry);
-            LOGGER.debug("Cached GET response with ETag: %s", etag);
+        // Cache maintenance for a fresh GET 200. With an ETag and content, store (or refresh) the
+        // entry. Without an ETag the server has returned content it no longer identifies by any
+        // validator, so a previously cached entry is provably stale: drop it rather than leave it
+        // to be served later as fallback content or revalidated with a dead If-None-Match.
+        if (method == HttpMethod.GET && statusCode == 200) {
+            if (etag != null && content.isPresent()) {
+                putInCache(cacheKey, new CacheEntry<>(content.get(), etag, System.currentTimeMillis()));
+                LOGGER.debug("Cached GET response with ETag: %s", etag);
+            } else if (etag == null) {
+                evictFromCache(cacheKey);
+            }
         }
 
         // Return success for 2xx status codes

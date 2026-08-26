@@ -255,6 +255,40 @@ class ETagAwareHttpAdapterIntegrationTest {
     }
 
     /**
+     * An ETag-less 200 means the server returned content it no longer identifies by any validator,
+     * so the previously cached entry is provably stale and must go. Two independent observables pin
+     * the same invariant, so the case cannot pass by accident: the later failure carries no
+     * fallback content, and the following request sends no stale {@code If-None-Match}.
+     */
+    @Test
+    @DisplayName("An ETag-less 200 should invalidate the cached entry")
+    @ModuleDispatcher
+    void etagLess200ShouldInvalidateCachedEntry(URIBuilder uriBuilder) {
+        String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
+        HttpAdapter<String> adapter = ETagAwareHttpAdapter.<String>builder()
+                .httpHandler(handler)
+                .responseConverter(new StringResponseConverter())
+                .build();
+
+        dispatcher.withSuccessAndETag(SEED_CONTENT, SEED_ETAG);
+        assertTrue(adapter.getBlocking().isSuccess(), "Seeding GET should succeed and populate the cache");
+
+        dispatcher.withSuccessAndETag("{\"id\":1,\"name\":\"unvalidated\"}", null);
+        assertTrue(adapter.getBlocking().isSuccess(), "The ETag-less GET should still succeed");
+
+        dispatcher.withServerError();
+        HttpResult<String> failure = adapter.getBlocking();
+
+        assertAll("Failure after an ETag-less 200 evicted the entry",
+                () -> assertFalse(failure.isSuccess(), "503 should surface as a failure"),
+                () -> assertTrue(failure.getContent().isEmpty(),
+                        "The evicted entry must not be served as fallback content"),
+                () -> assertTrue(dispatcher.getLastIfNoneMatch().isEmpty(),
+                        "No stale If-None-Match should be sent once the entry is gone"));
+    }
+
+    /**
      * Builds an adapter over {@link TypedResponseConverter} — the converter shape that can actually
      * reach the conversion-failure branch.
      */
