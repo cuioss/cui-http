@@ -81,16 +81,16 @@
           "lane": "minimal"
         },
         "default:pre-submission-self-review": {
-          "lane": "off"
+          "lane": "minimal"
         },
         "default:finalize-step-simplify": {
           "lane": "standard"
         },
         "default:finalize-step-security-audit": {
-          "lane": "off"
+          "lane": "full"
         },
         "default:architecture-refresh": {
-          "lane": "off"
+          "lane": "full"
         },
         "plan-marshall:automatic-review": {
           "review_bot_buffer_seconds": 180,
@@ -100,10 +100,11 @@
           "re_review_on_timeout": "ask",
           "review_rate_window_await": false,
           "review_rate_window_timeout_seconds": 3600,
-          "required_bots": "",
-          "optional_bots": "",
+          "required_bots": "coderabbit,pr-agent",
+          "optional_bots": "sourcery",
           "review_completion_poll_timeout_seconds": 600,
-          "lane": "ask"
+          "lane": "standard",
+          "bot_lists_provenance": "answered"
         },
         "default:push": {
           "lane": "minimal"
@@ -118,7 +119,7 @@
           "touched_file_cleanup": "new_code_only",
           "do_transition": false,
           "ce_wait_timeout_seconds": 600,
-          "lane": "ask"
+          "lane": "standard"
         },
         "default:adr-propose": {
           "lane": "off"
@@ -196,6 +197,13 @@
           "build_class": "verify"
         }
       ]
+    }
+  },
+  "credentials_config": {
+    "workflow-integration-sonar": {
+      "url": "https://sonarcloud.io",
+      "organization": "cuioss",
+      "project_key": "cuioss_cui-http"
     }
   },
   "project": {
