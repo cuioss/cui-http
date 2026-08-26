@@ -843,10 +843,16 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
                 && !isNoBodyStatus(statusCode)
                 && !responseConverter.emptyContentIsValid()) {
             LOGGER.warn(WARN.RESPONSE_CONVERSION_FAILED, statusCode);
-            return HttpResult.<T>failure(
-                    "Failed to convert response body",
+            // Carry the status and the response ETag: both are in hand here, and discarding them
+            // leaves the caller unable to tell "200 but unparseable" from any other invalid-content
+            // case. fallbackContent stays null - a conversion failure implies no cached content.
+            return HttpResult.<T>failureWithFallback(
+                    "Failed to convert response body (HTTP %d)".formatted(statusCode),
                     null,
-                    HttpErrorCategory.INVALID_CONTENT
+                    null,
+                    HttpErrorCategory.INVALID_CONTENT,
+                    etag,
+                    statusCode
             );
         }
 
