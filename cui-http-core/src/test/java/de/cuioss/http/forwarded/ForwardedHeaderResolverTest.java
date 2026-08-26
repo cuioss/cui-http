@@ -283,6 +283,53 @@ class ForwardedHeaderResolverTest {
         }
 
         @Test
+        @DisplayName("rejects an unbracketed multi-colon (IPv6) host")
+        void rejectsUnbracketedIpv6Host() {
+            assertTrue(trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Host", "2001:db8::1"))).host().isEmpty(),
+                    "an IPv6 host must be bracketed to be honored, or the composed authority is malformed");
+        }
+
+        @Test
+        @DisplayName("rejects trailing content after a bracketed host")
+        void rejectsBracketTrailingContent() {
+            assertAll("bracket trailing content",
+                    () -> assertTrue(trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Host", "[::1]garbage"))).host().isEmpty()),
+                    () -> assertTrue(trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Host", "[::1]x:8443"))).host().isEmpty()),
+                    () -> assertTrue(trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Host", "[::1]:"))).host().isEmpty()));
+        }
+
+        @Test
+        @DisplayName("rejects a port that is not digit-only")
+        void rejectsNonDigitPort() {
+            assertAll("digit-only port",
+                    () -> assertTrue(trustAllResolver()
+                                    .resolve(headers(Map.of("X-Forwarded-Port", "+443"))).port().isEmpty(),
+                            "Integer.parseInt would otherwise honor the leading plus"),
+                    () -> assertTrue(trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Port", "+0"))).port().isEmpty()),
+                    () -> assertTrue(trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Port", "4 43"))).port().isEmpty()),
+                    () -> assertTrue(trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Port", "-1"))).port().isEmpty()));
+        }
+
+        @Test
+        @DisplayName("still honors the valid host and port forms the guards must not affect")
+        void stillHonorsValidForms() {
+            assertAll("positive controls",
+                    () -> assertEquals("[2001:db8::1]", trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Host", "[2001:db8::1]:8443"))).host().orElseThrow()),
+                    () -> assertEquals("app.example.com", trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Host", "app.example.com:8443"))).host().orElseThrow()),
+                    () -> assertEquals(8443, trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Port", "8443"))).port().orElseThrow()));
+        }
+
+        @Test
         @DisplayName("host and port are not honored without trustAll")
         void notHonoredWithoutTrustAll() {
             var result = resolver(ForwardedResolverConfig.secureDefault())

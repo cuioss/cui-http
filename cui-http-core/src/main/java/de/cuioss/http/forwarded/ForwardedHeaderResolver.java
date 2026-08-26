@@ -86,8 +86,10 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  * <p><strong>Present-but-invalid = drop (no fall-through).</strong> A present, non-blank source is
  * validated; if it fails its field guard it is <em>dropped</em> — lower-precedence sources are
  * <em>not</em> consulted as a fallback. In particular a present-but-invalid
- * {@code X-Forwarded-Port} / {@code X-ProxyPort} (non-numeric or outside {@code 1..65535}) yields no
- * port; the host {@code :port} fallback is used only when no explicit port header is present at all.
+ * {@code X-Forwarded-Port} / {@code X-ProxyPort} (not digit-only, or outside {@code 1..65535})
+ * yields no port; the host {@code :port} fallback is used only when no explicit port header is
+ * present at all. Likewise an IPv6 host value must be supplied <em>bracketed</em>
+ * ({@code [2001:db8::1]}) to be honored — an unbracketed multi-colon value yields no host.
  * A source that is present but resolves to nothing valid also <em>disagrees</em> with a sibling
  * source that resolved successfully, so the conflicting-source rule above drops the field.</p>
  *
@@ -217,12 +219,23 @@ public final class ForwardedHeaderResolver {
      * path/backslash/whitespace/URL-authority-delimiter characters. Returns {@link HostPort#EMPTY}
      * for a malformed host.
      *
+     * <p><strong>An IPv6 host must be bracketed.</strong> An unbracketed value carrying more than
+     * one colon (a bare IPv6 literal such as {@code 2001:db8::1}) is rejected: the host is later
+     * composed back into a URL authority, where an unbracketed IPv6 literal produces a malformed or
+     * attacker-steerable authority. Supply it as {@code [2001:db8::1]} to have it honored.</p>
+     *
+     * <p><strong>Trailing content after {@code ]} is rejected.</strong> The only thing permitted
+     * after the closing bracket is a colon followed by one or more ASCII digits, so
+     * {@code [::1]garbage} and {@code [::1]x:8443} yield {@link HostPort#EMPTY} instead of resolving
+     * to host {@code [::1]}.</p>
+     *
      * <p>The {@code host:port} split here intentionally diverges from
      * {@link IpAddresses#parseChainEntry(String)}: this method reconstructs the <em>host string</em>
      * and therefore <em>retains</em> the IPv6 brackets (a host is later composed back into a URL),
      * whereas {@code parseChainEntry} strips them to obtain a bare literal for {@code InetAddress}
-     * matching. The divergence is deliberate — keep both bracket policies in sync when either
-     * changes.</p>
+     * matching. Only the bracket <em>retention</em> differs — the trailing-content rule above is
+     * identical on both sides. The divergence is deliberate — keep both bracket policies in sync
+     * when either changes.</p>
      */
     private static HostPort parseHostPort(String value) {
         String host;
@@ -232,14 +245,20 @@ public final class ForwardedHeaderResolver {
             if (close < 0) {
                 return HostPort.EMPTY;
             }
-            host = value.substring(0, close + 1);
             String rest = value.substring(close + 1);
-            if (rest.startsWith(":")) {
+            if (!rest.isEmpty()) {
+                if (rest.charAt(0) != ':' || !isAllAsciiDigits(rest.substring(1))) {
+                    return HostPort.EMPTY;
+                }
                 port = parsePort(rest.substring(1));
             }
+            host = value.substring(0, close + 1);
         } else if (value.indexOf(':') == value.lastIndexOf(':') && value.indexOf(':') >= 0) {
             host = value.substring(0, value.indexOf(':'));
             port = parsePort(value.substring(value.indexOf(':') + 1));
+        } else if (value.indexOf(':') >= 0) {
+            // Neither bracketed nor host:port, yet colon-bearing: a bare IPv6 literal.
+            return HostPort.EMPTY;
         } else {
             host = value;
         }
@@ -284,13 +303,40 @@ public final class ForwardedHeaderResolver {
                 .orElse(OptionalInt.empty());
     }
 
+    /**
+     * Parses a digit-only port in {@code 1..65535}. The digit-only precondition is what keeps
+     * {@code Integer.parseInt} from honoring its own lenient forms — a leading {@code +} would
+     * otherwise make {@code +443} resolve to {@code 443}, and an interior space would slip through
+     * a purely exception-based guard.
+     */
     private static OptionalInt parsePort(String value) {
-        try {
-            int port = Integer.parseInt(value.strip());
-            return port >= 1 && port <= MAX_PORT ? OptionalInt.of(port) : OptionalInt.empty();
-        } catch (NumberFormatException e) {
+        String trimmed = value.strip();
+        if (!isAllAsciiDigits(trimmed)) {
             return OptionalInt.empty();
         }
+        try {
+            int port = Integer.parseInt(trimmed);
+            return port >= 1 && port <= MAX_PORT ? OptionalInt.of(port) : OptionalInt.empty();
+        } catch (NumberFormatException e) {
+            // A digit run longer than int can hold.
+            return OptionalInt.empty();
+        }
+    }
+
+    /**
+     * @return {@code true} when {@code value} is non-empty and every character is an ASCII digit
+     */
+    private static boolean isAllAsciiDigits(String value) {
+        if (value.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c < '0' || c > '9') {
+                return false;
+            }
+        }
+        return true;
     }
 
     // --- context path ------------------------------------------------------------------------
