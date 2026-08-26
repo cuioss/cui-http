@@ -1,0 +1,93 @@
+= ADR-0003: Header accessor contract must expose every instance of a repeated header
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: The resolver's header-lookup accessor returns every instance of a repeated header in wire order, joined per RFC 7230, rather than a single first-seen value.
+// tags: security, trust-boundary, forwarded-headers, api-contract
+// affects: cui-http
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+HTTP permits a header field to appear as several separate header lines. RFC 7230
+§3.2.2 makes repeated instances of a list-valued field semantically identical to a
+single comma-joined value, so a receiver that reads only one instance is reading a
+truncated value, not an alternative rendering of the same one.
+
+An accessor typed to return a single string per header name can only ever surface
+one instance — typically the first, because that is what the common container APIs
+return. When a proxy chain appends by adding a *new* header line rather than
+extending the existing one, every hop after the first becomes invisible to such an
+accessor.
+
+The consequence is severe and easy to overlook: the resolver walks a chain it
+believes is complete while seeing only the attacker-controlled portion of it. No
+amount of care in the chain-walking algorithm helps, because the algorithm is
+correct — it is being handed the wrong input. The defect lives in the abstraction
+at the boundary, not in the logic behind it.
+
+== Decision
+
+**The accessor returns every instance.** The header-lookup function a caller
+supplies is typed to return a list of values for a header name — every instance,
+in wire order. The resolver joins them per RFC 7230 §3.2.2 exactly once, at the
+boundary, before any sanitization, injection guard, or token selection runs.
+
+Joining at the boundary is what keeps every downstream rule operating on the
+complete value. It also means the rest of the resolver needs no awareness of
+multi-instance headers at all: the private field resolvers continue to work on a
+single joined string.
+
+No single-value accessor contract is offered alongside it. Offering both would
+reintroduce exactly the ambiguity this decision removes.
+
+== Consequences
+
+=== Positive
+
+* The resolver sees the complete, wire-accurate value regardless of how a proxy
+  chain chose to write it.
+* Every other trust decision — nearest-hop selection, fail-closed reconciliation —
+  operates on the complete value rather than a silently truncated prefix.
+* The multi-instance concern is confined to one adapter at the boundary.
+
+=== Negative
+
+* Every caller must supply an accessor that surfaces all instances. This is a
+  breaking contract change with no deprecation path.
+* A caller migrating by wrapping a single-value lookup in a one-element list
+  compiles cleanly and silently reinstates the original gap.
+
+=== Risks
+
+* The contract is enforceable only by convention plus an executable contract test.
+  Nothing at the type level distinguishes a conforming accessor from one that
+  always returns a single-element list, so the test carries the whole weight: it
+  pins a compliant accessor and a deliberately under-supplying one as a matched
+  positive/negative control pair, and fails if the two produce the same result.
+
+== Alternatives Considered
+
+**Keep the single-value accessor and document that callers must join repeated
+instances themselves.** This would have avoided a breaking change and placed the
+obligation on the caller in prose. Rejected: the accessor's type signature cannot
+express "the caller has already joined this value", so a correctly-joining caller
+and one unknowingly passing only the first instance are indistinguishable — at the
+call site, and inside the resolver. Documentation cannot close a gap the
+abstraction is structurally unable to express, and the failure it leaves behind is
+silent rather than loud.
+
+== References
+
+* xref:0001-Nearest-hop_token_selection_is_authoritative_for_forwarded_header_chains.adoc[ADR-0001: Nearest-hop token selection is authoritative for forwarded header chains]
+* xref:0002-Fail_closed_when_X-Forwarded-For_and_RFC_7239_Forwarded_disagree.adoc[ADR-0002: Fail closed when X-Forwarded-For and RFC 7239 Forwarded disagree]
+* `doc/forwarded-header-resolution.adoc` — the header-accessor contract
+* `de.cuioss.http.forwarded.ForwardedHeaderResolver` — `resolve` parameter contract
+* `de.cuioss.http.forwarded.package-info` — secure-by-default guidance

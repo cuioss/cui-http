@@ -1,0 +1,103 @@
+= ADR-0002: Fail closed when X-Forwarded-For and RFC 7239 Forwarded disagree
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: A field resolves only when X-Forwarded-* and RFC 7239 Forwarded agree, or only one is present; disagreement — including a sanitization-rejected header — resolves empty rather than falling back to either source.
+// tags: security, trust-boundary, forwarded-headers, fail-closed
+// affects: cui-http
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+A resolver deriving request-origin facts from proxy-appended headers may see the
+same fact asserted by two independent header families: the de-facto
+`X-Forwarded-*` headers and the standardized RFC 7239 `Forwarded` header.
+
+Both families are equally writable by any party sitting between the client and the
+first trusted hop. An attacker who can reach the resolver at all can supply either
+or both. When both are present and disagree, the resolver must decide what to
+believe — and any *fixed* precedence answers that question in a way the attacker
+can predict and exploit.
+
+The failure is asymmetric in a way that makes it easy to miss. A deployment whose
+proxies manage only one family looks correct under either precedence rule, because
+the other family is simply absent. The vulnerability appears only when an attacker
+supplies the family the proxies do *not* manage — precisely the case the
+deployment's own configuration gives nobody a reason to test.
+
+== Decision
+
+**When the two families disagree, honour neither.**
+
+For each field independently — scheme, host, and client IP — the resolver derives
+a value from each family that is present. If both are present and the derived
+values differ, the field resolves as absent and the disagreement is logged. A
+request carrying only one family is unaffected, and so is a request whose two
+families agree.
+
+A header that is present but rejected by sanitization counts as *present and
+unresolvable*, not as absent. Collapsing "present but rejected" into "absent"
+would let the surviving family win by default, which is the same fail-open
+behaviour by another route: an attacker who can get one family rejected chooses
+which family is believed.
+
+The three states — absent, present-and-parsed, present-but-unresolvable — are
+therefore genuinely distinct in the implementation. A well-formed header that
+simply lacks a particular directive still falls back to the other family; only an
+unresolvable one forces the disagreement path.
+
+== Consequences
+
+=== Positive
+
+* No fixed precedence exists for an attacker to exploit. Reordering precedence
+  would merely relocate the same vulnerability rather than remove it.
+* Behaviour is unchanged for single-family deployments, which is the majority case.
+* No new configuration surface is introduced; there is nothing to misconfigure.
+
+=== Negative
+
+* A partially-upgraded proxy chain that legitimately emits disagreeing values now
+  resolves the field empty rather than picking one. The resolver cannot distinguish
+  this from an attack, and deliberately does not try.
+
+=== Risks
+
+* Because a sanitization-rejected header counts as disagreement, an operator who
+  leaves one family's value malformed loses the field entirely rather than falling
+  back to the other family — even though only one family was actually broken. This
+  is the intended direction of failure, but it can present as a puzzling empty
+  result rather than an obvious misconfiguration.
+
+== Alternatives Considered
+
+**Reorder precedence so `Forwarded` wins over `X-Forwarded-For`.** This would have
+preferred the standardized header over the de-facto one, which reads as the more
+principled ordering. Rejected: it inverts the exploit rather than removing it. An
+attacker past the trust boundary can supply `Forwarded` content exactly as easily
+as `X-Forwarded-For` content, so a fixed precedence in either direction hands the
+attacker a known-winning header to write.
+
+**Document the existing XFF-first precedence as intentional.** This would have
+declared the current behaviour a deliberate contract and described it in the
+Javadoc and reference documentation. Rejected: disclosing a fixed order does not
+stop its exploitation. A security-relevant precedence rule has to be structurally
+safe, not merely written down.
+
+The unifying reason both fail: they answer "which do we believe?" with a constant,
+and a constant is exactly what an attacker needs to know.
+
+== References
+
+* xref:0001-Nearest-hop_token_selection_is_authoritative_for_forwarded_header_chains.adoc[ADR-0001: Nearest-hop token selection is authoritative for forwarded header chains]
+* xref:0003-Header_accessor_contract_must_expose_every_instance_of_a_repeated_header.adoc[ADR-0003: Header accessor contract must expose every instance of a repeated header]
+* `doc/forwarded-header-resolution.adoc` — header precedence, sanitization
+* `de.cuioss.http.forwarded.ForwardedHeaderResolver` — precedence and present-but-invalid handling
+* `de.cuioss.http.forwarded.ForwardedLogMessages` — the sources-disagree WARN record
