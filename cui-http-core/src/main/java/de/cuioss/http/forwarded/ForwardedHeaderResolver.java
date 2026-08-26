@@ -201,7 +201,8 @@ public final class ForwardedHeaderResolver {
 
     /**
      * Splits a {@code host[:port]} token (bracketed IPv6 aware) and validates the host contains no
-     * path/backslash/whitespace. Returns {@link HostPort#EMPTY} for a malformed host.
+     * path/backslash/whitespace/URL-authority-delimiter characters. Returns {@link HostPort#EMPTY}
+     * for a malformed host.
      *
      * <p>The {@code host:port} split here intentionally diverges from
      * {@link IpAddresses#parseChainEntry(String)}: this method reconstructs the <em>host string</em>
@@ -235,10 +236,19 @@ public final class ForwardedHeaderResolver {
         return new HostPort(Optional.of(host), port);
     }
 
+    /**
+     * Rejects a path separator, backslash, whitespace, or any of the URL-authority delimiter
+     * characters ({@code @ # ?}). The consumer composes {@link ResolvedForwarding#host()} back
+     * into an absolute URL (see the package's serialization/usage examples); an embedded
+     * {@code @} would let a forged host smuggle a userinfo component
+     * ({@code https://real-host@attacker.example/}), which most URL parsers resolve to the
+     * <em>attacker's</em> host rather than the trusted one — the same host-confusion class the
+     * path/backslash checks already guard against, just via a different delimiter.
+     */
     private static boolean containsHostSeparator(String host) {
         for (int i = 0; i < host.length(); i++) {
             char c = host.charAt(i);
-            if (c == '/' || c == '\\' || Character.isWhitespace(c)) {
+            if (c == '/' || c == '\\' || c == '@' || c == '#' || c == '?' || Character.isWhitespace(c)) {
                 return true;
             }
         }

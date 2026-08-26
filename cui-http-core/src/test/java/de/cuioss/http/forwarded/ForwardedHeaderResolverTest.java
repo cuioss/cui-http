@@ -260,6 +260,29 @@ class ForwardedHeaderResolverTest {
         }
 
         @Test
+        @DisplayName("rejects a host carrying an embedded userinfo delimiter")
+        void rejectsHostWithUserinfoDelimiter() {
+            // "real-host@attacker.example" composed into "https://real-host@attacker.example/" is
+            // resolved by most URL parsers as userinfo "real-host" on host "attacker.example" —
+            // the same host-confusion class the path-separator guard already defends against.
+            assertTrue(trustAllResolver()
+                    .resolve(headers(Map.of("X-Forwarded-Host", "real-host@attacker.example")))
+                    .host().isEmpty());
+        }
+
+        @Test
+        @DisplayName("rejects a host carrying an embedded fragment or query delimiter")
+        void rejectsHostWithFragmentOrQueryDelimiter() {
+            assertAll(
+                    () -> assertTrue(trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Host", "evil.com#attacker.example")))
+                            .host().isEmpty()),
+                    () -> assertTrue(trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Host", "evil.com?attacker.example")))
+                            .host().isEmpty()));
+        }
+
+        @Test
         @DisplayName("host and port are not honored without trustAll")
         void notHonoredWithoutTrustAll() {
             var result = resolver(ForwardedResolverConfig.secureDefault())
