@@ -41,6 +41,15 @@ import java.util.Optional;
  * most trustworthy) hop; any earlier occurrence is attacker-supplied when the client sent a
  * {@code Forwarded} header of its own. The {@code for} list is unaffected — it stays in appearance
  * order, because the chain walk consumes it right-to-left itself.</p>
+ *
+ * <p><strong>A malformed pair rejects the whole header.</strong> A {@code forwarded-pair} that is
+ * non-blank yet carries no {@code =}, an empty directive name, or an empty (post-unquoting) value
+ * violates the grammar. Such a pair is not discarded: it marks the result
+ * {@linkplain Parsed#malformed() malformed}, parsing stops immediately, and no directive is reported.
+ * The caller treats the entire {@code Forwarded} value as present-but-unresolvable, matching the
+ * abort severity the {@code X-Forwarded-For} chain walk already applies to the same input class.
+ * The grammar's optional {@code forwarded-pair} is honored: a pair that is blank after stripping
+ * (e.g. a trailing {@code ;}) is legal and is skipped.</p>
  */
 final class RfcForwardedParser {
 
@@ -50,11 +59,20 @@ final class RfcForwardedParser {
     /**
      * The relevant directives pulled from a {@code Forwarded} header value.
      *
+     * <p>When {@code malformed} is {@code true} the header violated the grammar and no directive was
+     * kept: {@code proto} and {@code host} are empty and {@code forValues} is empty. Callers must
+     * treat the whole header as unresolvable rather than reading the (deliberately empty)
+     * directives as "carried nothing".</p>
+     *
      * @param proto     the last {@code proto} directive, if any
      * @param host      the last {@code host} directive, if any
      * @param forValues the ordered {@code for} node identifiers (unquoted), possibly empty
+     * @param malformed whether a non-blank {@code forwarded-pair} violated the grammar
      */
-    record Parsed(Optional<String> proto, Optional<String> host, List<String> forValues) {
+    record Parsed(Optional<String> proto, Optional<String> host, List<String> forValues, boolean malformed) {
+
+        /** The single outcome for a header carrying a grammar-violating pair. */
+        static final Parsed MALFORMED = new Parsed(Optional.empty(), Optional.empty(), List.of(), true);
     }
 
     static Parsed parse(String headerValue) {
@@ -62,29 +80,42 @@ final class RfcForwardedParser {
         for (String element : splitTopLevel(headerValue, ',')) {
             for (String pair : splitTopLevel(element, ';')) {
                 acc.apply(pair);
+                if (acc.malformed) {
+                    return Parsed.MALFORMED;
+                }
             }
         }
-        return new Parsed(Optional.ofNullable(acc.proto), Optional.ofNullable(acc.host), acc.forValues);
+        return new Parsed(Optional.ofNullable(acc.proto), Optional.ofNullable(acc.host), acc.forValues, false);
     }
 
     /**
      * Mutable accumulator that applies one {@code token=value} pair, keeping the last
-     * {@code proto}/{@code host} and appending every {@code for} in appearance order.
+     * {@code proto}/{@code host} and appending every {@code for} in appearance order. A pair that
+     * violates the grammar raises {@link #malformed} instead of being discarded.
      */
     private static final class Accumulator {
 
         private String proto;
         private String host;
+        private boolean malformed;
         private final List<String> forValues = new ArrayList<>();
 
         private void apply(String pair) {
-            int eq = pair.indexOf('=');
-            if (eq <= 0) {
+            String stripped = pair.strip();
+            if (stripped.isEmpty()) {
+                // RFC 7239 §4: forwarded-pair is optional, so a blank pair (e.g. a trailing ';') is legal.
                 return;
             }
-            String name = pair.substring(0, eq).strip().toLowerCase(Locale.ROOT);
-            String value = unquote(pair.substring(eq + 1).strip());
+            // eq == 0 is an empty directive name ("=value"), eq < 0 is a pair without '=' at all.
+            int eq = stripped.indexOf('=');
+            if (eq <= 0) {
+                malformed = true;
+                return;
+            }
+            String name = stripped.substring(0, eq).strip().toLowerCase(Locale.ROOT);
+            String value = unquote(stripped.substring(eq + 1).strip());
             if (value.isEmpty()) {
+                malformed = true;
                 return;
             }
             switch (name) {

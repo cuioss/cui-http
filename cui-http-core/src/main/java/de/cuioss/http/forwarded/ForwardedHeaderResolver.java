@@ -92,7 +92,9 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  * source that resolved successfully, so the conflicting-source rule above drops the field.</p>
  *
  * <p>This applies to the RFC 7239 {@code Forwarded} header as a whole: when its raw value fails
- * sanitization, the header is treated as present-but-unresolvable for <em>every</em> field it could
+ * sanitization, <em>or</em> when it carries a malformed {@code forwarded-pair} (a non-blank pair with
+ * no {@code =}, an empty directive name, or an empty value — a grammatically legal blank pair is
+ * still accepted), the header is treated as present-but-unresolvable for <em>every</em> field it could
  * have carried (scheme, host, client-IP), not as absent. A garbage {@code Forwarded} header therefore
  * disagrees with — and drops — an otherwise clean {@code X-Forwarded-*} value, instead of letting the
  * de-facto family win by default. Only a header that is genuinely absent, or one that sanitizes and
@@ -415,9 +417,18 @@ public final class ForwardedHeaderResolver {
         // Sanitize the Forwarded header value before parsing its directives. A rejected value must
         // NOT collapse into the absent case: the header WAS sent, so it stays present-but-unresolvable
         // and disagrees with any de-facto sibling that resolves (fail closed).
-        return sanitize(FORWARDED, raw)
-                .map(value -> new ForwardedResult(true, false, RfcForwardedParser.parse(value)))
-                .orElse(ForwardedResult.UNRESOLVABLE);
+        Optional<String> sanitized = sanitize(FORWARDED, raw);
+        if (sanitized.isEmpty()) {
+            return ForwardedResult.UNRESOLVABLE;
+        }
+        // A grammar-violating forwarded-pair rejects the whole header with the same severity as a
+        // sanitization failure — the directives it could have carried are all unresolvable.
+        RfcForwardedParser.Parsed parsed = RfcForwardedParser.parse(sanitized.get());
+        if (parsed.malformed()) {
+            LOGGER.warn(ForwardedLogMessages.WARN.FORWARDED_DIRECTIVE_MALFORMED, sanitizeForLog(raw));
+            return ForwardedResult.UNRESOLVABLE;
+        }
+        return new ForwardedResult(true, false, parsed);
     }
 
     /**
@@ -532,23 +543,24 @@ public final class ForwardedHeaderResolver {
      *   <li>{@link #ABSENT} — no {@code Forwarded} header was sent; the RFC source contributes
      *       nothing and the de-facto family is honored on its own.</li>
      *   <li>{@link #UNRESOLVABLE} — the header WAS sent but its raw value failed sanitization
-     *       (CR/LF, control characters, over-length, suspicious pattern). The source counts as
-     *       present for <em>every</em> field, so it disagrees with any de-facto sibling that
-     *       resolves and the field is dropped (fail closed).</li>
+     *       (CR/LF, control characters, over-length, suspicious pattern) or violated the RFC 7239
+     *       grammar with a malformed {@code forwarded-pair}. The source counts as present for
+     *       <em>every</em> field, so it disagrees with any de-facto sibling that resolves and the
+     *       field is dropped (fail closed).</li>
      *   <li>Present and sanitized — the parsed directives decide per field. A well-formed value that
      *       simply carries no {@code proto} (say) leaves that one field's RFC source with nothing to
      *       contribute, which is an ordinary fallback rather than a disagreement.</li>
      * </ol>
      *
      * @param present      whether a non-blank {@code Forwarded} header was sent at all
-     * @param unresolvable whether that header's raw value failed sanitization outright
+     * @param unresolvable whether that header failed sanitization outright or parsed as malformed
      * @param parsed       the directives parsed from the sanitized value; empty unless present and
      *                     sanitized
      */
     private record ForwardedResult(boolean present, boolean unresolvable, RfcForwardedParser.Parsed parsed) {
 
         private static final RfcForwardedParser.Parsed NO_DIRECTIVES =
-                new RfcForwardedParser.Parsed(Optional.empty(), Optional.empty(), List.of());
+                new RfcForwardedParser.Parsed(Optional.empty(), Optional.empty(), List.of(), false);
 
         private static final ForwardedResult ABSENT = new ForwardedResult(false, false, NO_DIRECTIVES);
 
