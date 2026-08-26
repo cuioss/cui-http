@@ -233,8 +233,4 @@ class AttackCookieGeneratorTest {
                 || NEGATIVE_MAX_AGE_ATTRIBUTE.equals(attributes)
                 || MALFORMED_ATTRIBUTES.contains(attributes);
     }
-
-    private String preview(String value) {
-        return value.length() <= 80 ? value : value.substring(0, 80) + "...";
-    }
 }

@@ -111,6 +111,18 @@ public final class GeneratorContractAssertions {
     }
 
     /**
+     * Truncates a generated value for inclusion in a failure message, so an overlong attack
+     * payload does not flood the test report.
+     *
+     * @param value the value to preview, must not be null
+     * @return {@code value} unchanged when its length is at most 80, otherwise its first 80
+     *         characters followed by {@code "..."}
+     */
+    public static String preview(String value) {
+        return value.length() <= 80 ? value : value.substring(0, 80) + "...";
+    }
+
+    /**
      * Asserts that the value contains at least one of the given markers.
      *
      * @param value the generated value under test, must not be null

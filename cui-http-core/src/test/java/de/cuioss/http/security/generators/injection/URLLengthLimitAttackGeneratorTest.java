@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Set;
 
 import static de.cuioss.http.security.generators.GeneratorContractAssertions.assertPipelineRejects;
+import static de.cuioss.http.security.generators.GeneratorContractAssertions.preview;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -185,9 +186,5 @@ class URLLengthLimitAttackGeneratorTest {
                 .maxPathLength(SecurityDefaults.MAX_PATH_LENGTH_STRICT)
                 .build();
         return new URLPathValidationPipeline(config, new SecurityEventCounter());
-    }
-
-    private String preview(String value) {
-        return value.length() <= 80 ? value : value.substring(0, 80) + "...";
     }
 }
