@@ -192,7 +192,6 @@ Implemented in: link:../../../cui-http-core/src/main/java/de/cuioss/http/securit
 * Path traversal pattern detection
 * CVE-based attack patterns
 * OWASP Top 10 attack vectors
-* Configurable pattern database
 
 == Monitoring and Detection
 
@@ -244,20 +243,14 @@ boundary where the exception is caught.
 Implemented in: link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline]
 
 * RFC 3986 compliant validation
-* Parameter name and value validation
+* Parameter value validation (link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline])
+* Parameter name validation (link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLParameterNameValidationPipeline.java[URLParameterNameValidationPipeline])
 * Length limits enforcement
 * Null byte detection
 
 Parameter data structure: link:../../../cui-http-core/src/main/java/de/cuioss/http/security/data/URLParameter.java[URLParameter]
 
-==== HTTP Body Validation
-
-Implemented in: URLPathValidationPipeline and URLParameterValidationPipeline
-
-* Full URL validation with protocols (URLPathValidationPipeline)
-* Protocol pattern detection (URLParameterValidationPipeline)
-* JSON/XML content validation
-* File upload filename validation
+==== HTTP Body Validation (Not Provided)
 
 Note: Body validation pipeline has been eliminated from the architecture. Body content validation should be handled at the application layer.
 
