@@ -801,7 +801,8 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      *   <li>304 Not Modified detection, resolved per method by {@link #handleNotModified}</li>
      *   <li>ETag extraction from response headers</li>
      *   <li>Response body conversion using configured converter</li>
-     *   <li>Conversion failure handling for 2xx responses</li>
+     *   <li>Conversion failure handling for 2xx responses, excluding the no-body statuses
+     *       {@code 204} and {@code 205} (see {@link #isNoBodyStatus})</li>
      *   <li>Successful GET response caching with ETag</li>
      *   <li>Success/failure result creation based on status code</li>
      * </ul>
@@ -834,9 +835,12 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         // Convert response body
         Optional<T> content = responseConverter.convert(response.body());
 
-        // Handle conversion failure. Converters that intentionally produce no content
-        // (e.g. VoidResponseConverter for status-code-only operations) are exempt.
+        // Handle conversion failure. Two exemptions: converters that intentionally produce no
+        // content (e.g. VoidResponseConverter for status-code-only operations), and statuses RFC
+        // 7231 defines as carrying no body at all, where emptiness is the protocol-mandated
+        // outcome rather than a failed conversion.
         if (content.isEmpty() && HttpStatusFamily.isSuccess(statusCode)
+                && !isNoBodyStatus(statusCode)
                 && !responseConverter.emptyContentIsValid()) {
             LOGGER.warn(WARN.RESPONSE_CONVERSION_FAILED, statusCode);
             return HttpResult.<T>failure(
@@ -876,6 +880,25 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
                 canUseCachedFallback ? cachedEntry.etag() : null, // cached GET ETag when available
                 statusCode // include HTTP status code
         );
+    }
+
+    /**
+     * Reports whether RFC 7231 defines {@code statusCode} as carrying no response body.
+     *
+     * <p>A converter that maps an empty payload to {@link Optional#empty()} would otherwise turn a
+     * perfectly valid {@code 204}/{@code 205} into an {@code INVALID_CONTENT} failure. Emptiness is
+     * the protocol-mandated outcome for these two statuses, so they bypass the conversion-failure
+     * guard regardless of the converter in use.</p>
+     *
+     * <p>Deliberately limited to {@code 204} and {@code 205}. An empty {@code 200} is <em>not</em> a
+     * protocol-defined no-body response; whether it is acceptable stays governed by
+     * {@link HttpResponseConverter#emptyContentIsValid()}.</p>
+     *
+     * @param statusCode the response status code
+     * @return true for {@code 204 No Content} and {@code 205 Reset Content}, false otherwise
+     */
+    private static boolean isNoBodyStatus(int statusCode) {
+        return statusCode == 204 || statusCode == 205;
     }
 
     /**
