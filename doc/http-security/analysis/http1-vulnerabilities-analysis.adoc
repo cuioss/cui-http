@@ -327,7 +327,7 @@ The cui-http library provides HTTP **component** validation (headers, paths, par
 
 * **HTTP Component Syntax Validation:** Validating individual headers, paths, parameters for malicious patterns
 * **Injection Attack Detection:** CRLF injection, header injection, control characters
-* **Pattern Matching:** Detecting smuggling-related patterns in component values
+* **Pattern Matching:** Detecting attack patterns in URL path and parameter values. This stage does **not** apply to header components — the header pipeline excludes it (see below).
 * **Test Coverage:** Comprehensive test suite demonstrating attack pattern detection
 
 ==== Infrastructure Scope (Outside Library)
@@ -346,7 +346,7 @@ The cui-http library provides HTTP **component** validation (headers, paths, par
 
 2. **Character Validation:** link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - CRLF, control character detection
 
-3. **Pattern Matching:** link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Attack pattern detection
+3. **Header Name Token Validation:** link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationConstants.java[CharacterValidationConstants] - RFC 7230 §3.2.6 `tchar` token set for `HEADER_NAME`, rejecting the delimiters (space, `:`, `,`, `;`, `"`, parentheses) a smuggled header name would need
 
 4. **Test Coverage:** 553 tests total across the two generator-driven attack-test classes below
    (the `Http1VulnerabilitiesTest` focused regression suite of 11 parameterized methods is separate)
@@ -581,8 +581,15 @@ All request smuggling patterns are tested using parameterized tests with generat
 
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] - Header component validation
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - CRLF and control character detection
-* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Attack pattern detection
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationConstants.java[CharacterValidationConstants] - RFC 7230 `tchar` token set for header names
 * Comprehensive test coverage (553 tests across HttpRequestSmugglingAttackTest and HttpHeaderInjectionAttackTest)
+
+NOTE: `PatternMatchingStage` is deliberately **not** part of the header pipeline. Its pattern
+databases are path- and parameter-semantic, and it was a verified pass-through for `HEADER_NAME`
+and `HEADER_VALUE`; it is therefore excluded from `HTTPHeaderValidationPipeline` rather than wired
+in as a no-op. Header-smuggling defence at this layer comes from the RFC 7230 `tchar` token set
+(header names), `CharacterValidationStage` (CRLF and control characters), and the length and
+allow/block-list stages.
 
 **Infrastructure-Level Protection (Required):**
 
