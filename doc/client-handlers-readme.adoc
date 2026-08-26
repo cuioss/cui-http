@@ -127,7 +127,7 @@ Centralized log messages for HTTP operations.
 
 * Structured logging with CuiLogger
 * Consistent error codes
-* Debug, info, warning, and error levels
+* WARN and ERROR levels only
 
 == Usage Examples
 
