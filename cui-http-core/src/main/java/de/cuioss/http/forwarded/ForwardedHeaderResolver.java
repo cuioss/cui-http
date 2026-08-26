@@ -25,6 +25,7 @@ import org.jspecify.annotations.Nullable;
 import java.net.InetAddress;
 import java.util.*;
 import java.util.function.Function;
+import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 
 import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
@@ -90,6 +91,14 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  * A source that is present but resolves to nothing valid also <em>disagrees</em> with a sibling
  * source that resolved successfully, so the conflicting-source rule above drops the field.</p>
  *
+ * <p>This applies to the RFC 7239 {@code Forwarded} header as a whole: when its raw value fails
+ * sanitization, the header is treated as present-but-unresolvable for <em>every</em> field it could
+ * have carried (scheme, host, client-IP), not as absent. A garbage {@code Forwarded} header therefore
+ * disagrees with — and drops — an otherwise clean {@code X-Forwarded-*} value, instead of letting the
+ * de-facto family win by default. Only a header that is genuinely absent, or one that sanitizes and
+ * parses cleanly while simply carrying no directive for a given field, leaves that field's de-facto
+ * value to stand on its own.</p>
+ *
  * <h3>Usage Example</h3>
  * <pre>{@code
  * ForwardedResolverConfig config = ForwardedResolverConfig.builder()
@@ -146,13 +155,13 @@ public final class ForwardedHeaderResolver {
      */
     public ResolvedForwarding resolve(Function<String, List<String>> headerLookup) {
         Objects.requireNonNull(headerLookup, "headerLookup must not be null");
-        Function<String, String> lookup = joining(headerLookup);
-        RfcForwardedParser.Parsed forwarded = parseForwarded(lookup);
+        UnaryOperator<String> lookup = joining(headerLookup);
+        ForwardedResult forwarded = parseForwarded(lookup);
 
         Optional<String> scheme = resolveScheme(lookup, forwarded);
         HostPort hostPort = resolveHost(lookup, forwarded);
         OptionalInt port = resolvePort(lookup, hostPort.port());
-        String contextPath = resolveContextPath(lookup);
+        String contextPath = resolveContextPath(lookup, forwarded);
         Optional<String> clientIp = resolveClientIp(lookup, forwarded);
 
         return new ResolvedForwarding(scheme, hostPort.host(), port, contextPath, clientIp);
@@ -160,15 +169,15 @@ public final class ForwardedHeaderResolver {
 
     // --- scheme ------------------------------------------------------------------------------
 
-    private Optional<String> resolveScheme(Function<String, String> lookup, RfcForwardedParser.Parsed forwarded) {
+    private Optional<String> resolveScheme(UnaryOperator<String> lookup, ForwardedResult forwarded) {
         if (!config.trustAll()) {
             return Optional.empty();
         }
         String deFacto = firstPresent(lookup, X_FORWARDED_PROTO, X_PROXY_SCHEME);
-        String rfc = forwarded.proto().orElse(null);
+        String rfc = forwarded.parsed().proto().orElse(null);
         return reconcileSources("scheme", X_FORWARDED_PROTO,
                 deFacto != null, deFacto == null ? Optional.empty() : schemeOf(deFacto),
-                rfc != null, rfc == null ? Optional.empty() : schemeOf(rfc));
+                forwarded.contributes(rfc != null), rfc == null ? Optional.empty() : schemeOf(rfc));
     }
 
     private Optional<String> schemeOf(String raw) {
@@ -180,15 +189,15 @@ public final class ForwardedHeaderResolver {
 
     // --- host --------------------------------------------------------------------------------
 
-    private HostPort resolveHost(Function<String, String> lookup, RfcForwardedParser.Parsed forwarded) {
+    private HostPort resolveHost(UnaryOperator<String> lookup, ForwardedResult forwarded) {
         if (!config.trustAll()) {
             return HostPort.EMPTY;
         }
         String deFacto = firstPresent(lookup, X_FORWARDED_HOST, X_PROXY_HOST);
-        String rfc = forwarded.host().orElse(null);
+        String rfc = forwarded.parsed().host().orElse(null);
         return reconcileSources("host", X_FORWARDED_HOST,
                 deFacto != null, deFacto == null ? Optional.empty() : hostPortOf(deFacto),
-                rfc != null, rfc == null ? Optional.empty() : hostPortOf(rfc))
+                forwarded.contributes(rfc != null), rfc == null ? Optional.empty() : hostPortOf(rfc))
                 .orElse(HostPort.EMPTY);
     }
 
@@ -257,7 +266,7 @@ public final class ForwardedHeaderResolver {
 
     // --- port --------------------------------------------------------------------------------
 
-    private OptionalInt resolvePort(Function<String, String> lookup, OptionalInt hostPortFallback) {
+    private OptionalInt resolvePort(UnaryOperator<String> lookup, OptionalInt hostPortFallback) {
         String raw = firstPresent(lookup, X_FORWARDED_PORT, X_PROXY_PORT);
         if (raw == null) {
             return hostPortFallback;
@@ -282,10 +291,10 @@ public final class ForwardedHeaderResolver {
 
     // --- context path ------------------------------------------------------------------------
 
-    private String resolveContextPath(Function<String, String> lookup) {
+    private String resolveContextPath(UnaryOperator<String> lookup, ForwardedResult forwarded) {
         String raw = firstPresent(lookup, X_PROXY_CONTEXT_PATH, X_FORWARDED_PREFIX);
         if (raw == null) {
-            if (isPresent(lookup.apply(FORWARDED))) {
+            if (forwarded.present()) {
                 LOGGER.debug("Forwarded header present but carries no context-path directive");
             }
             return "";
@@ -326,7 +335,7 @@ public final class ForwardedHeaderResolver {
 
     // --- client IP ---------------------------------------------------------------------------
 
-    private Optional<String> resolveClientIp(Function<String, String> lookup, RfcForwardedParser.Parsed forwarded) {
+    private Optional<String> resolveClientIp(UnaryOperator<String> lookup, ForwardedResult forwarded) {
         // Secure-by-default: without trusted proxies the immediate peer cannot be trusted, so the
         // forwarded chain (including the nearest hop) is not honored at all.
         if (config.trustedProxies().isEmpty()) {
@@ -334,12 +343,13 @@ public final class ForwardedHeaderResolver {
         }
         String xff = lookup.apply(X_FORWARDED_FOR);
         boolean xffPresent = isPresent(xff);
-        boolean rfcPresent = !forwarded.forValues().isEmpty();
+        List<String> rfcChain = forwarded.parsed().forValues();
+        boolean rfcPresent = forwarded.contributes(!rfcChain.isEmpty());
 
         Optional<String> fromXff = xffPresent
                 ? sanitize(X_FORWARDED_FOR, xff).map(value -> List.of(value.split(","))).flatMap(this::walkChain)
                 : Optional.empty();
-        Optional<String> fromRfc = rfcPresent ? walkChain(forwarded.forValues()) : Optional.empty();
+        Optional<String> fromRfc = rfcChain.isEmpty() ? Optional.empty() : walkChain(rfcChain);
 
         return reconcileSources("client IP", X_FORWARDED_FOR, xffPresent, fromXff, rfcPresent, fromRfc);
     }
@@ -382,7 +392,7 @@ public final class ForwardedHeaderResolver {
      * @return an accessor yielding the joined value, or {@code null} when the header is absent
      *         (null list, empty list, or a list holding only {@code null}s)
      */
-    private static Function<String, String> joining(Function<String, List<String>> headerLookup) {
+    private static UnaryOperator<String> joining(Function<String, List<String>> headerLookup) {
         return name -> {
             List<String> instances = headerLookup.apply(name);
             if (instances == null || instances.isEmpty()) {
@@ -395,15 +405,17 @@ public final class ForwardedHeaderResolver {
         };
     }
 
-    private RfcForwardedParser.Parsed parseForwarded(Function<String, String> lookup) {
+    private ForwardedResult parseForwarded(UnaryOperator<String> lookup) {
         String raw = lookup.apply(FORWARDED);
         if (!isPresent(raw)) {
-            return new RfcForwardedParser.Parsed(Optional.empty(), Optional.empty(), List.of());
+            return ForwardedResult.ABSENT;
         }
-        // Sanitize the Forwarded header value before parsing its directives.
+        // Sanitize the Forwarded header value before parsing its directives. A rejected value must
+        // NOT collapse into the absent case: the header WAS sent, so it stays present-but-unresolvable
+        // and disagrees with any de-facto sibling that resolves (fail closed).
         return sanitize(FORWARDED, raw)
-                .map(RfcForwardedParser::parse)
-                .orElseGet(() -> new RfcForwardedParser.Parsed(Optional.empty(), Optional.empty(), List.of()));
+                .map(value -> new ForwardedResult(true, false, RfcForwardedParser.parse(value)))
+                .orElse(ForwardedResult.UNRESOLVABLE);
     }
 
     /**
@@ -468,7 +480,7 @@ public final class ForwardedHeaderResolver {
         return resolution.map(value -> sanitizeForLog(String.valueOf(value))).orElse("(nothing valid)");
     }
 
-    private static @Nullable String firstPresent(Function<String, String> lookup, String... headerNames) {
+    private static @Nullable String firstPresent(UnaryOperator<String> lookup, String... headerNames) {
         for (String name : headerNames) {
             String value = lookup.apply(name);
             if (isPresent(value)) {
@@ -504,6 +516,50 @@ public final class ForwardedHeaderResolver {
             builder.append(Character.isISOControl(c) ? '?' : c);
         }
         return builder.toString();
+    }
+
+    /**
+     * Outcome of reading the RFC 7239 {@code Forwarded} header, keeping the header's own presence and
+     * its sanitization verdict distinct from the presence of any individual directive.
+     *
+     * <p>Collapsing the three states into "are the parsed directives empty?" is what lets a
+     * present-but-rejected header masquerade as an absent one, so the reconciliation in
+     * {@link #reconcileSources} would silently honor the de-facto sibling instead of dropping the
+     * field. The three states are:</p>
+     * <ol>
+     *   <li>{@link #ABSENT} — no {@code Forwarded} header was sent; the RFC source contributes
+     *       nothing and the de-facto family is honored on its own.</li>
+     *   <li>{@link #UNRESOLVABLE} — the header WAS sent but its raw value failed sanitization
+     *       (CR/LF, control characters, over-length, suspicious pattern). The source counts as
+     *       present for <em>every</em> field, so it disagrees with any de-facto sibling that
+     *       resolves and the field is dropped (fail closed).</li>
+     *   <li>Present and sanitized — the parsed directives decide per field. A well-formed value that
+     *       simply carries no {@code proto} (say) leaves that one field's RFC source with nothing to
+     *       contribute, which is an ordinary fallback rather than a disagreement.</li>
+     * </ol>
+     *
+     * @param present      whether a non-blank {@code Forwarded} header was sent at all
+     * @param unresolvable whether that header's raw value failed sanitization outright
+     * @param parsed       the directives parsed from the sanitized value; empty unless present and
+     *                     sanitized
+     */
+    private record ForwardedResult(boolean present, boolean unresolvable, RfcForwardedParser.Parsed parsed) {
+
+        private static final RfcForwardedParser.Parsed NO_DIRECTIVES =
+                new RfcForwardedParser.Parsed(Optional.empty(), Optional.empty(), List.of());
+
+        private static final ForwardedResult ABSENT = new ForwardedResult(false, false, NO_DIRECTIVES);
+
+        private static final ForwardedResult UNRESOLVABLE = new ForwardedResult(true, true, NO_DIRECTIVES);
+
+        /**
+         * Whether the RFC 7239 source counts as present for a field whose directive presence is
+         * {@code directivePresent}. An unresolvable header counts as present for every field — that
+         * is precisely what forces the disagreement path instead of a silent fallback.
+         */
+        private boolean contributes(boolean directivePresent) {
+            return unresolvable || directivePresent;
+        }
     }
 
     /**

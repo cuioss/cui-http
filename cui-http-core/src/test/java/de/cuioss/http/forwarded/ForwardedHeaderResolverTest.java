@@ -483,6 +483,110 @@ class ForwardedHeaderResolverTest {
     }
 
     @Nested
+    @DisplayName("Forwarded header presence")
+    class ForwardedPresence {
+
+        /**
+         * A raw {@code Forwarded} value the header-value pipeline rejects outright (CRLF injection).
+         * The header WAS sent, so it must not be mistaken for an absent one.
+         */
+        private static final String REJECTED = "host=attacker.example\r\nInjected: 1";
+
+        private ForwardedHeaderResolver proxyAwareResolver() {
+            return resolver(ForwardedResolverConfig.builder()
+                    .trustAll(true)
+                    .trustedProxies(Set.of("10.0.0.0/8"))
+                    .build());
+        }
+
+        @Test
+        @DisplayName("an absent Forwarded header leaves the de-facto family honored")
+        void absentForwardedHonorsDeFacto() {
+            var result = proxyAwareResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "https",
+                    "X-Forwarded-Host", "app.example.com",
+                    "X-Forwarded-For", "203.0.113.7, 10.0.0.5")));
+
+            assertAll("no RFC source is present, so the de-facto family stands alone",
+                    () -> assertEquals("https", result.scheme().orElseThrow()),
+                    () -> assertEquals("app.example.com", result.host().orElseThrow()),
+                    () -> assertEquals("203.0.113.7", result.clientIp().orElseThrow()));
+        }
+
+        @Test
+        @DisplayName("an agreeing Forwarded header leaves the de-facto family honored")
+        void validForwardedHonorsAgreeingDeFacto() {
+            var result = proxyAwareResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "https",
+                    "X-Forwarded-Host", "app.example.com",
+                    "X-Forwarded-For", "203.0.113.7, 10.0.0.5",
+                    "Forwarded", "proto=https;host=app.example.com;for=203.0.113.7, for=\"10.0.0.5\"")));
+
+            assertAll("both sources resolve and agree",
+                    () -> assertEquals("https", result.scheme().orElseThrow()),
+                    () -> assertEquals("app.example.com", result.host().orElseThrow()),
+                    () -> assertEquals("203.0.113.7", result.clientIp().orElseThrow()));
+        }
+
+        @Test
+        @DisplayName("a sanitization-rejected Forwarded header drops every de-facto field it covers")
+        void rejectedForwardedDropsDeFactoFields() {
+            var result = proxyAwareResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "https",
+                    "X-Forwarded-Host", "app.example.com",
+                    "X-Forwarded-For", "203.0.113.7, 10.0.0.5",
+                    "Forwarded", REJECTED)));
+
+            assertAll("a present-but-unresolvable RFC source disagrees with every resolving sibling",
+                    () -> assertTrue(result.scheme().isEmpty(),
+                            "a rejected Forwarded header must not silently fall back to X-Forwarded-Proto"),
+                    () -> assertTrue(result.host().isEmpty(),
+                            "a rejected Forwarded header must not silently fall back to X-Forwarded-Host"),
+                    () -> assertTrue(result.clientIp().isEmpty(),
+                            "a rejected Forwarded header must not silently fall back to X-Forwarded-For"));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "failed security sanitization");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
+        }
+
+        @Test
+        @DisplayName("a sanitization-rejected Forwarded header is not mistaken for an absent one")
+        void rejectedForwardedIsNotAbsent() {
+            var deFactoOnly = proxyAwareResolver()
+                    .resolve(headers(Map.of("X-Forwarded-Host", "app.example.com")));
+            var withRejected = proxyAwareResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com",
+                    "Forwarded", REJECTED)));
+
+            assertAll("the two cases must not resolve identically",
+                    () -> assertEquals("app.example.com", deFactoOnly.host().orElseThrow()),
+                    () -> assertTrue(withRejected.host().isEmpty()),
+                    () -> assertNotEquals(deFactoOnly, withRejected));
+        }
+
+        @Test
+        @DisplayName("a well-formed Forwarded header lacking a directive keeps that field's de-facto value")
+        void absentDirectiveKeepsDeFactoFallback() {
+            var result = proxyAwareResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "https",
+                    "X-Forwarded-Host", "app.example.com",
+                    "Forwarded", "for=203.0.113.7")));
+
+            assertAll("a parsed header simply carrying no proto/host directive is not a disagreement",
+                    () -> assertEquals("https", result.scheme().orElseThrow()),
+                    () -> assertEquals("app.example.com", result.host().orElseThrow()));
+        }
+
+        @Test
+        @DisplayName("a sanitization-rejected Forwarded header alone yields nothing")
+        void rejectedForwardedAloneYieldsNothing() {
+            var result = proxyAwareResolver().resolve(headers(Map.of("Forwarded", REJECTED)));
+
+            assertEquals(ResolvedForwarding.empty(), result,
+                    "an unresolvable header contributes no value of its own");
+        }
+    }
+
+    @Nested
     @DisplayName("Round trip")
     class RoundTrip {
 
