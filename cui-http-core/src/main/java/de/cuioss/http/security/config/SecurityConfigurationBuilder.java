@@ -340,6 +340,18 @@ public class SecurityConfigurationBuilder {
     /**
      * Sets whether string comparisons should be case-sensitive.
      *
+     * <p><strong>Warning: {@code true} can only weaken attack-pattern matching.</strong> With
+     * {@code false} (the default) both the input and the pattern set are lowercased before
+     * comparison, so case-insensitive matching detects a superset of what case-sensitive matching
+     * detects. Enabling case sensitivity therefore never increases detection. Concretely,
+     * {@link de.cuioss.http.security.config.SecurityDefaults#SUSPICIOUS_PATH_PATTERNS} and
+     * {@link de.cuioss.http.security.config.SecurityDefaults#SUSPICIOUS_PARAMETER_NAMES} are
+     * all-lowercase literals, so under {@code true} they match nothing mixed-case - an input such
+     * as {@code /ETC/passwd} passes. ({@link
+     * de.cuioss.http.security.config.SecurityDefaults#PATH_TRAVERSAL_PATTERNS} is deliberately
+     * mixed-case rather than all-lowercase, but under {@code true} it still matches only the case
+     * permutations it literally enumerates.)</p>
+     *
      * @param caseSensitive true for case-sensitive comparisons
      * @return This builder for method chaining
      */
@@ -351,7 +363,10 @@ public class SecurityConfigurationBuilder {
     /**
      * Sets whether to fail on detection of suspicious patterns.
      *
-     * @param fail true to fail on suspicious patterns, false to log only
+     * <p>With {@code false}, a suspicious-pattern match is allowed through <em>silently</em>:
+     * {@code PatternMatchingStage} does not log, count or otherwise report it.</p>
+     *
+     * @param fail true to reject input on a suspicious-pattern match, false to allow it silently
      * @return This builder for method chaining
      */
     public SecurityConfigurationBuilder failOnSuspiciousPatterns(boolean fail) {

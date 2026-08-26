@@ -111,9 +111,23 @@ import java.util.stream.Collectors;
  *
  * <h3>Configuration Dependencies</h3>
  * <ul>
- *   <li><strong>failOnSuspiciousPatterns</strong> - Controls whether to fail on pattern matches</li>
- *   <li><strong>caseSensitiveComparison</strong> - Affects pattern matching behavior</li>
- *   <li><strong>logSecurityViolations</strong> - Controls violation logging</li>
+ *   <li><strong>failOnSuspiciousPatterns</strong> - Controls whether a suspicious-pattern match
+ *       rejects the input. When {@code false} a match is allowed through <em>silently</em>: this
+ *       stage does not log, count or otherwise report it.</li>
+ *   <li><strong>caseSensitiveComparison</strong> - When {@code false} (the default) both the input
+ *       and the pattern set are lowercased before comparison, so case-insensitive matching detects
+ *       a superset of what case-sensitive matching detects. Enabling it can therefore only
+ *       <em>reduce</em> detection, never increase it. The effect differs per database:
+ *       <ul>
+ *         <li>{@link SecurityDefaults#SUSPICIOUS_PATH_PATTERNS} and
+ *             {@link SecurityDefaults#SUSPICIOUS_PARAMETER_NAMES} are all-lowercase literals, so
+ *             under {@code true} they cannot match a mixed-case input such as {@code /ETC/passwd}
+ *             at all.</li>
+ *         <li>{@link SecurityDefaults#PATH_TRAVERSAL_PATTERNS} is deliberately mixed-case (it
+ *             enumerates encoded spellings such as {@code ..%2F} and {@code %2E%2E/}), so under
+ *             {@code true} it matches only the case permutations it literally enumerates.</li>
+ *       </ul>
+ *   </li>
  * </ul>
  * <p>
  * Implements: Task V3 from HTTP verification specification

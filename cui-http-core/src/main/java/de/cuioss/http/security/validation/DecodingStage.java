@@ -38,7 +38,11 @@ import java.util.regex.Pattern;
  * <ol>
  *   <li><strong>Double Encoding Detection</strong> - Identifies %25XX patterns indicating double encoding</li>
  *   <li><strong>Overlong UTF-8 Detection</strong> - Blocks malformed UTF-8 encoding attacks</li>
- *   <li><strong>URL Decoding</strong> - Performs standard URL percent-decoding</li>
+ *   <li><strong>URL Decoding</strong> - Performs percent-decoding selected by validation type:
+ *       {@code URL_PATH} uses RFC 3986 path semantics, in which {@code +} is an ordinary
+ *       character and is preserved literally; every other type uses form
+ *       ({@code application/x-www-form-urlencoded}) semantics, in which {@code +} decodes
+ *       to a space</li>
  *   <li><strong>Unicode Normalization</strong> - Optionally canonicalizes Unicode (normalize and
  *       continue), rejecting only folds that introduce a structural separator</li>
  * </ol>
@@ -138,7 +142,12 @@ ValidationType validationType) implements HttpSecurityValidator {
      * <ol>
      *   <li>Double encoding detection - fails fast if %25XX patterns found</li>
      *   <li>UTF-8 overlong encoding detection - blocks malformed UTF-8 attack patterns</li>
-     *   <li>URL decoding - converts percent-encoded sequences to characters</li>
+     *   <li>URL decoding - converts percent-encoded sequences to characters, with {@code +}
+     *       preserved literally for {@code URL_PATH} (RFC 3986) and decoded to a space for the
+     *       form-encoded types</li>
+     *   <li>Decoded-character re-validation - rejects null bytes, combining marks, control
+     *       characters and (for parameter names) decoded delimiters that percent-encoding
+     *       hid from the earlier character-validation stage</li>
      *   <li>Unicode normalization - optionally canonicalizes and continues with the canonical form,
      *       rejecting only structural-separator folds</li>
      * </ol>
@@ -149,6 +158,11 @@ ValidationType validationType) implements HttpSecurityValidator {
      *                              <ul>
      *                                <li>DOUBLE_ENCODING - if double encoding patterns are found</li>
      *                                <li>INVALID_ENCODING - if URL decoding fails due to malformed input</li>
+     *                                <li>NULL_BYTE_INJECTION - if the decoded output contains a null byte</li>
+     *                                <li>CONTROL_CHARACTERS - if the decoded output contains a control
+     *                                    character that this validation type forbids</li>
+     *                                <li>INVALID_CHARACTER - if the decoded output contains a combining
+     *                                    mark, or a delimiter inside a parameter name</li>
      *                                <li>UNICODE_NORMALIZATION_CHANGED - if normalization introduces a
      *                                    structurally significant separator character</li>
      *                              </ul>
@@ -179,10 +193,11 @@ ValidationType validationType) implements HttpSecurityValidator {
                     .build();
         }
 
-        // Step 2: URL decode (HTTP protocol-layer appropriate)
+        // Step 2: URL decode (HTTP protocol-layer appropriate), with the decoder selected by
+        // validation type so a path is not silently rewritten by form semantics.
         String decoded;
         try {
-            decoded = URLDecoder.decode(value, StandardCharsets.UTF_8);
+            decoded = decodeForValidationType(value);
         } catch (IllegalArgumentException e) {
             throw UrlSecurityException.builder()
                     .failureType(UrlSecurityFailureType.INVALID_ENCODING)
@@ -225,6 +240,33 @@ ValidationType validationType) implements HttpSecurityValidator {
         }
 
         return Optional.of(decoded);
+    }
+
+    /**
+     * Percent-decodes the input using the semantics that belong to this validation type.
+     *
+     * <p>{@code URL_PATH} is decoded under RFC 3986 path semantics, where {@code +} is an
+     * ordinary path character with no special meaning. {@link URLDecoder} only implements
+     * {@code application/x-www-form-urlencoded} semantics, which map {@code +} to a space, so a
+     * literal {@code +} is escaped to {@code %2B} before delegating — the decoder then returns it
+     * unchanged. An already-encoded {@code %2B} is untouched by the escape and still decodes to
+     * {@code +}, so both spellings converge on the same result. Every other validation type
+     * carries form-encoded data, where mapping {@code +} to a space is the correct reading, and is
+     * delegated directly.</p>
+     *
+     * <p>Delegating in both branches keeps the UTF-8 charset handling and the
+     * {@link IllegalArgumentException}-on-malformed-input behaviour identical, so the
+     * {@code INVALID_ENCODING} error path is unaffected by the choice of semantics.</p>
+     *
+     * @param value the still-encoded input
+     * @return the decoded string
+     * @throws IllegalArgumentException if the input contains a malformed percent-encoded sequence
+     */
+    private String decodeForValidationType(String value) {
+        String toDecode = validationType == ValidationType.URL_PATH
+                ? value.replace("+", "%2B")
+                : value;
+        return URLDecoder.decode(toDecode, StandardCharsets.UTF_8);
     }
 
     /**
@@ -294,11 +336,16 @@ ValidationType validationType) implements HttpSecurityValidator {
      *       mirroring the raw-character rule; decoded combining marks can visually alter adjacent
      *       characters and enable homograph attacks. Classified by Unicode general category
      *       ({@link CharacterValidationConstants#isCombiningMark(int)}), not a fixed range</li>
-     *   <li><strong>Decoded CR/LF</strong> - always rejected for header names/values, cookie
-     *       names/values (they travel inside HTTP headers, so a decoded line break is a
-     *       response-splitting vector) and parameter <em>names</em> (structural). For URL paths,
-     *       rejected unless control characters are explicitly allowed. Parameter <em>values</em>
-     *       are exempt because encoded line breaks are legitimate form data.</li>
+     *   <li><strong>Decoded control characters</strong> (the whole C0/C1 class, i.e. every code
+     *       point in the Unicode {@code Cc} category: {@code U+0000}-{@code U+001F},
+     *       {@code U+007F}-{@code U+009F}) - always rejected for header names/values and cookie
+     *       names/values (they travel inside HTTP headers, so a decoded control character is a
+     *       response-splitting / header-injection vector) and for parameter <em>names</em>
+     *       (structural). For URL paths, rejected unless control characters are explicitly
+     *       allowed. Parameter <em>values</em> and bodies tolerate CR, LF and TAB because those
+     *       are legitimate form data, but reject the remaining control characters unless
+     *       explicitly allowed. The offending code point is reported in escaped {@code U+XXXX}
+     *       form so no raw control character reaches a log.</li>
      *   <li><strong>Decoded parameter-name delimiters</strong> ({@code = &amp; ; space}) - rejected
      *       for parameter <em>names</em> only, since a decoded delimiter would split the name and
      *       enable parameter injection</li>
@@ -329,17 +376,18 @@ ValidationType validationType) implements HttpSecurityValidator {
                         .failureType(UrlSecurityFailureType.INVALID_CHARACTER)
                         .validationType(validationType)
                         .originalInput(originalInput)
-                        .detail("Decoded combining character (U+" + Integer.toHexString(cp).toUpperCase()
-                                + ") at position " + i)
+                        .detail("Decoded combining character (" + escaped(cp) + ") at position " + i)
                         .build();
             }
 
-            if ((cp == '\r' || cp == '\n') && decodedLineBreakForbidden()) {
+            // The null byte has its own dedicated flag (checked above) and is deliberately excluded
+            // here, so allowNullBytes stays the single authority for it.
+            if (cp != '\0' && Character.isISOControl(cp) && decodedControlCharacterForbidden(cp)) {
                 throw UrlSecurityException.builder()
                         .failureType(UrlSecurityFailureType.CONTROL_CHARACTERS)
                         .validationType(validationType)
                         .originalInput(originalInput)
-                        .detail("Decoded line break at position " + i)
+                        .detail("Decoded control character (" + escaped(cp) + ") at position " + i)
                         .build();
             }
 
@@ -368,17 +416,41 @@ ValidationType validationType) implements HttpSecurityValidator {
     }
 
     /**
-     * A decoded CR/LF is forbidden for header/cookie contexts and for parameter <em>names</em>
-     * unconditionally (response splitting / parameter injection), and for URL paths unless
-     * control characters are explicitly allowed. Parameter <em>values</em> and bodies may
-     * legitimately carry decoded line breaks (form data).
+     * Decides whether a decoded control character is forbidden in this validation context.
+     *
+     * <p>Header and cookie names/values all travel inside HTTP headers, and a parameter name is
+     * structural, so any decoded control character in those contexts is a response-splitting or
+     * injection vector and is rejected unconditionally - {@code allowControlCharacters} does not
+     * relax them. URL paths honour {@code allowControlCharacters}. Parameter values and bodies
+     * carry form data, in which CR, LF and TAB are legitimate content; every other control
+     * character is rejected there unless {@code allowControlCharacters} is set.</p>
+     *
+     * @param cp the decoded control code point under test
+     * @return {@code true} if the code point must be rejected for this validation type
      */
-    private boolean decodedLineBreakForbidden() {
+    private boolean decodedControlCharacterForbidden(int cp) {
         return switch (validationType) {
             case HEADER_NAME, HEADER_VALUE, COOKIE_NAME, COOKIE_VALUE, PARAMETER_NAME -> true;
             case URL_PATH -> !config.allowControlCharacters();
-            case PARAMETER_VALUE, BODY -> false;
+            case PARAMETER_VALUE, BODY -> !isFormDataWhitespace(cp) && !config.allowControlCharacters();
         };
+    }
+
+    /**
+     * CR, LF and TAB are legitimate content inside form-encoded parameter values and bodies -
+     * a multi-line textarea submission carries them by design.
+     */
+    private static boolean isFormDataWhitespace(int cp) {
+        return cp == '\r' || cp == '\n' || cp == '\t';
+    }
+
+    /**
+     * Renders a code point in escaped {@code U+XXXX} form. The detail string is included in
+     * {@link UrlSecurityException#getMessage()}, which callers log, so a control character must
+     * never be rendered verbatim - a raw CR/LF would enable log forging.
+     */
+    private static String escaped(int cp) {
+        return "U+%04X".formatted(cp);
     }
 
 }

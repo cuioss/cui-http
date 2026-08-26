@@ -54,7 +54,11 @@ class SecurityConfigurationTest {
         assertFalse(config.allowControlCharacters());
         assertFalse(config.allowExtendedAscii());
         assertTrue(config.normalizeUnicode());
-        assertTrue(config.caseSensitiveComparison());
+        // Case-insensitive on purpose: comparison lowercases both the input and the pattern set,
+        // so it matches a superset of what case-sensitive comparison matches. Case-sensitive
+        // comparison would let a mixed-case input such as /ETC/passwd slip past the all-lowercase
+        // SUSPICIOUS_PATH_PATTERNS set, weakening the strict preset rather than tightening it.
+        assertFalse(config.caseSensitiveComparison());
         assertTrue(config.failOnSuspiciousPatterns());
     }
 
