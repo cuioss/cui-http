@@ -719,6 +719,7 @@ Each compliance claim is supported by:
 - ✅ Unit test(s) with specific test case examples
 - ✅ Line number references for verification
 
+[#_limitations_and_scope]
 == Limitations and Scope
 
 === HTTP/URL Protocol Layer Scope
