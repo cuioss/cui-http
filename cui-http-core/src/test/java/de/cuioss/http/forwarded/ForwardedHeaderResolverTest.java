@@ -33,8 +33,12 @@ import static org.junit.jupiter.api.Assertions.*;
 @SuppressWarnings("java:S5778") // assertThrows lambdas intentionally wrap the whole failing call chain
 class ForwardedHeaderResolverTest {
 
-    private static Function<String, String> headers(Map<String, String> values) {
-        return new HashMap<>(values)::get;
+    private static Function<String, List<String>> headers(Map<String, String> values) {
+        Map<String, String> copy = new HashMap<>(values);
+        return name -> {
+            String value = copy.get(name);
+            return value == null ? null : List.of(value);
+        };
     }
 
     private static ForwardedHeaderResolver resolver(ForwardedResolverConfig config) {

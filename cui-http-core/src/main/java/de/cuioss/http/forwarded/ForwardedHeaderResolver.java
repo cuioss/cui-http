@@ -25,6 +25,7 @@ import org.jspecify.annotations.Nullable;
 import java.net.InetAddress;
 import java.util.*;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
 
@@ -98,7 +99,9 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  * ForwardedHeaderResolver resolver =
  *     new ForwardedHeaderResolver(config, new SecurityEventCounter());
  *
- * ResolvedForwarding forwarding = resolver.resolve(request::getHeader);
+ * // The accessor MUST expose every instance of a repeated header, not just the first:
+ * ResolvedForwarding forwarding =
+ *     resolver.resolve(name -> Collections.list(request.getHeaders(name)));
  * }</pre>
  *
  * <p>Instances are immutable and thread-safe (the underlying pipeline and event counter are
@@ -106,9 +109,6 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  *
  * @since 1.0
  */
-// S4276: Function<String,String> is the intentional transport-agnostic header-accessor abstraction
-// (e.g. request::getHeader) per issue #88 — not a UnaryOperator (which implies operating on a value).
-@SuppressWarnings("java:S4276")
 public final class ForwardedHeaderResolver {
 
     private static final CuiLogger LOGGER = new CuiLogger(ForwardedHeaderResolver.class);
@@ -133,21 +133,27 @@ public final class ForwardedHeaderResolver {
     /**
      * Resolves the forwarded-header family from the supplied header accessor.
      *
-     * @param headerLookup maps a header name to its value (or {@code null} when absent); typically
-     *                     {@code request::getHeader}
+     * @param headerLookup maps a header name to <em>every</em> instance of that header present on
+     *                     the request, in wire order; {@code null} or an empty list means the header
+     *                     is absent. A single-valued accessor such as {@code request::getHeader} is
+     *                     <strong>insufficient</strong> — it exposes only the first instance, hiding
+     *                     the remaining ones, and a proxy appends by adding a repeated header just
+     *                     as legitimately as by extending a comma-separated value. Use
+     *                     {@code name -> Collections.list(request.getHeaders(name))} instead.
      * @return the sanitized, honored result (never {@code null}; {@link ResolvedForwarding#empty()}
      *         when nothing is present or honored)
      * @throws NullPointerException if {@code headerLookup} is {@code null}
      */
-    public ResolvedForwarding resolve(Function<String, String> headerLookup) {
+    public ResolvedForwarding resolve(Function<String, List<String>> headerLookup) {
         Objects.requireNonNull(headerLookup, "headerLookup must not be null");
-        RfcForwardedParser.Parsed forwarded = parseForwarded(headerLookup);
+        Function<String, String> lookup = joining(headerLookup);
+        RfcForwardedParser.Parsed forwarded = parseForwarded(lookup);
 
-        Optional<String> scheme = resolveScheme(headerLookup, forwarded);
-        HostPort hostPort = resolveHost(headerLookup, forwarded);
-        OptionalInt port = resolvePort(headerLookup, hostPort.port());
-        String contextPath = resolveContextPath(headerLookup);
-        Optional<String> clientIp = resolveClientIp(headerLookup, forwarded);
+        Optional<String> scheme = resolveScheme(lookup, forwarded);
+        HostPort hostPort = resolveHost(lookup, forwarded);
+        OptionalInt port = resolvePort(lookup, hostPort.port());
+        String contextPath = resolveContextPath(lookup);
+        Optional<String> clientIp = resolveClientIp(lookup, forwarded);
 
         return new ResolvedForwarding(scheme, hostPort.host(), port, contextPath, clientIp);
     }
@@ -352,6 +358,32 @@ public final class ForwardedHeaderResolver {
     }
 
     // --- shared helpers ----------------------------------------------------------------------
+
+    /**
+     * Adapts a multi-instance header accessor to the single-value view every field resolver below
+     * consumes, by joining the instances with {@code ", "}.
+     *
+     * <p>RFC 7230 §3.2.2 makes this equivalence explicit: a recipient MAY combine multiple instances
+     * of a comma-separated-list header into one value by concatenating them in wire order, separated
+     * by commas, without changing the message semantics. Joining here therefore makes a repeated
+     * header indistinguishable from the equivalent single comma-separated header — which is exactly
+     * what the nearest-hop token selection downstream needs in order to see every appended hop.</p>
+     *
+     * @return an accessor yielding the joined value, or {@code null} when the header is absent
+     *         (null list, empty list, or a list holding only {@code null}s)
+     */
+    private static Function<String, String> joining(Function<String, List<String>> headerLookup) {
+        return name -> {
+            List<String> instances = headerLookup.apply(name);
+            if (instances == null || instances.isEmpty()) {
+                return null;
+            }
+            String joined = instances.stream()
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.joining(", "));
+            return joined.isEmpty() ? null : joined;
+        };
+    }
 
     private RfcForwardedParser.Parsed parseForwarded(Function<String, String> lookup) {
         String raw = lookup.apply(FORWARDED);
