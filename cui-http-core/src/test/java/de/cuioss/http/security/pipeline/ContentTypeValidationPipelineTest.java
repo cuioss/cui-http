@@ -189,12 +189,23 @@ class ContentTypeValidationPipelineTest {
         }
 
         @Test
-        @DisplayName("empty input is accepted and returned unchanged")
-        void emptyInput() {
+        @DisplayName("empty input is rejected by a non-empty allow-list, like any other value")
+        void emptyInputRejectedByAllowList() {
             SecurityConfiguration config = SecurityConfiguration.builder()
                     .allowedContentTypes(Set.of("application/json"))
                     .build();
             ContentTypeValidationPipeline pipeline = pipeline(config);
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                    () -> pipeline.validate(""));
+            assertEquals(UrlSecurityFailureType.INVALID_INPUT, exception.getFailureType());
+            assertEquals("", exception.getOriginalInput());
+        }
+
+        @Test
+        @DisplayName("empty input is returned unchanged when the allow-list is empty (allow-all)")
+        void emptyInputAllowedWhenNoAllowList() {
+            ContentTypeValidationPipeline pipeline = pipeline(SecurityConfiguration.defaults());
             assertEquals(Optional.of(""), pipeline.validate(""));
         }
     }

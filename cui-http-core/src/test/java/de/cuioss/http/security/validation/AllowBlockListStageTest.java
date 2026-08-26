@@ -67,6 +67,24 @@ class AllowBlockListStageTest {
     }
 
     @Test
+    @DisplayName("Non-empty allow-list rejects the empty value")
+    void shouldRejectEmptyValueAgainstAllowList() {
+        var stage = new AllowBlockListStage(Set.of("Accept"), Set.of(), ValidationType.HEADER_NAME);
+        var exception = assertThrows(UrlSecurityException.class, () -> stage.validate(""));
+        assertEquals(UrlSecurityFailureType.INVALID_INPUT, exception.getFailureType());
+        assertTrue(exception.getDetail().orElse("").contains("allow-list"));
+    }
+
+    @Test
+    @DisplayName("Block-listed empty value is rejected")
+    void shouldRejectEmptyValueAgainstBlockList() {
+        var stage = new AllowBlockListStage(Set.of(), Set.of(""), ValidationType.HEADER_NAME);
+        var exception = assertThrows(UrlSecurityException.class, () -> stage.validate(""));
+        assertEquals(UrlSecurityFailureType.INVALID_INPUT, exception.getFailureType());
+        assertTrue(exception.getDetail().orElse("").contains("block-listed"));
+    }
+
+    @Test
     @DisplayName("Block-list takes precedence over allow-list")
     void shouldPreferBlockOverAllow() {
         var stage = new AllowBlockListStage(Set.of("X-Debug"), Set.of("X-Debug"), ValidationType.HEADER_NAME);

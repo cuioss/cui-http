@@ -42,6 +42,9 @@ import java.util.*;
  *   <li><strong>Empty allow-list = allow-all</strong> - an empty allow-list imposes no restriction
  *       (it does <em>not</em> deny-all); a non-empty allow-list rejects any value not in it.</li>
  *   <li><strong>Case-insensitive</strong> - comparison is done on the lowercased value.</li>
+ *   <li><strong>The empty value is not exempt</strong> - an empty value is evaluated against both
+ *       lists like any other value. A configured non-empty allow-list therefore rejects it, and a
+ *       block-list containing the empty string rejects it too.</li>
  * </ul>
  *
  * <p>Use {@link #forHeaderNames(SecurityConfiguration)} for the header-name lists (wired into the
@@ -131,9 +134,6 @@ public final class AllowBlockListStage implements HttpSecurityValidator {
     public Optional<String> validate(@Nullable String value) throws UrlSecurityException {
         if (value == null) {
             return Optional.empty();
-        }
-        if (value.isEmpty()) {
-            return Optional.of(value);
         }
 
         String lower = comparisonKey(value);
