@@ -30,13 +30,20 @@ These requirements are derived from:
 * The system must provide separate validators for each component type
 * Reference: xref:specification/specification.adoc#_core_components[Core Components]
 
+NOTE: *Body validation is not provided.* `PipelineFactory.createPipeline(ValidationType.BODY, ...)`
+throws `IllegalArgumentException` with the message "BODY validation pipeline has been removed.
+HTTP body content validation should be handled at application layer." Request-body parameters are
+therefore an application-layer responsibility, not a capability of this library. See
+xref:#HTTP-14[HTTP-14] for the per-validation-type status.
+
 [#HTTP-2]
 === HTTP-2: Minimal Runtime Dependencies
 
 * The system keeps runtime dependencies to a minimum
-* The security-validation core requires only two runtime modules (see `module-info.java`):
+* The `de.cuioss.http` module declares three non-static `requires` (see `module-info.java`):
   ** `org.jspecify` — nullness annotations
-  ** `de.cuioss.java.tools` (cui-java-tools) — core utilities and logging
+  ** `de.cuioss.java.tools` (cui-java-tools) — core utilities and logging; `requires transitive` because `LogRecord` types appear in exported public API signatures
+  ** `java.net.http` — the JDK HTTP client; `requires transitive` because `java.net.http` types appear in exported public API signatures
 * Lombok is a compile-time-only dependency (`requires static lombok`) and is not needed at runtime
 * No third-party HTTP, JSON, or servlet libraries are required
 * The system must be compatible with Jakarta EE environments
@@ -196,6 +203,14 @@ These requirements are derived from:
 * Configurations must be independently configurable
 * Must support configuration inheritance for common settings
 * Reference: xref:specification/specification.adoc#_configuration_architecture[Configuration Architecture]
+
+NOTE: *Not every validation type above has a factory-built pipeline.*
+`PipelineFactory.createPipeline` throws `IllegalArgumentException` for `COOKIE_NAME` and
+`COOKIE_VALUE` ("Cookie validation pipelines are not yet implemented."), and for `BODY`, which was
+removed (see xref:#HTTP-1[HTTP-1]). Cookie prefix rules are nonetheless enforceable standalone via
+`CookiePrefixValidationStage.validateCookie(Cookie)`, which is invoked directly rather than as part
+of a pipeline. The factory-backed types are `URL_PATH`, `PARAMETER_NAME`, `PARAMETER_VALUE`,
+`HEADER_NAME`, and `HEADER_VALUE`.
 
 == Error Handling Requirements
 
