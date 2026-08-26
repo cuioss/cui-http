@@ -18,25 +18,99 @@ package de.cuioss.http.security.generators.encoding;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import java.util.HashSet;
+import java.util.Set;
+
+import static de.cuioss.http.security.generators.GeneratorContractAssertions.assertContainsAny;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Test for {@link UnicodeAttackGenerator}
+ * Contract test for {@link UnicodeAttackGenerator}.
+ *
+ * <p>The defining property of this generator is that every emitted value carries one of the six
+ * attack code points it documents, optionally suffixed with a traversal to a sensitive path.
+ * The aggregate test asserts that all six code points and both output forms — the bare code
+ * point and the traversal-suffixed composite — are reachable.</p>
+ *
+ * <p>There is deliberately no per-value pipeline round-trip: a bare zero-width or bidi-override
+ * code point is not per se a pipeline rejection, so a uniform "the pipeline rejects it"
+ * assertion would not hold.</p>
+ *
+ * <p>The attack code points are built from numeric code points rather than written as literals,
+ * so that this source file stays plain ASCII and carries no invisible or direction-overriding
+ * character of its own.</p>
  */
 @EnableGeneratorController
+@DisplayName("UnicodeAttackGenerator Contract Tests")
 class UnicodeAttackGeneratorTest {
 
-    @ParameterizedTest
-    @TypeGeneratorSource(value = UnicodeAttackGenerator.class, count = 200)
-    @DisplayName("Generator should produce valid Unicode attack patterns")
-    void shouldGenerateValidOutput(String generatedValue) {
-        assertNotNull(generatedValue, "Generator must not produce null values");
-        assertFalse(generatedValue.isEmpty(), "Generated value should not be empty");
+    private static final int AGGREGATE_DRAWS = 400;
 
-        // Since this is for Unicode attack testing, any non-null, non-empty output serves
-        // the security testing purpose
+    /** Unicode dots and slash, which the generator's escapes decode to. */
+    private static final String DECODED_DOTS_AND_SLASH = fromCodePoints(0x002E, 0x002E, 0x002F);
+    /** One-dot leaders and division slash, the homoglyph lookalike family. */
+    private static final String LOOKALIKE_DOTS_AND_SLASH = fromCodePoints(0x2024, 0x2024, 0x2215);
+    private static final String RIGHT_TO_LEFT_OVERRIDE = fromCodePoints(0x202E);
+    private static final String ZERO_WIDTH_SPACE = fromCodePoints(0x200B);
+    private static final String ZERO_WIDTH_NO_BREAK_SPACE = fromCodePoints(0xFEFF);
+    private static final String NULL_CHARACTER = fromCodePoints(0x0000);
+
+    /** The six attack code points the generator documents. */
+    private static final Set<String> ATTACK_CODE_POINTS = Set.of(
+            DECODED_DOTS_AND_SLASH,
+            LOOKALIKE_DOTS_AND_SLASH,
+            RIGHT_TO_LEFT_OVERRIDE,
+            ZERO_WIDTH_SPACE,
+            ZERO_WIDTH_NO_BREAK_SPACE,
+            NULL_CHARACTER);
+
+    private static final Set<String> PATH_TARGETS =
+            Set.of("etc/passwd", "etc/shadow", "windows/win.ini", "boot.ini");
+
+    @ParameterizedTest
+    @TypeGeneratorSource(value = UnicodeAttackGenerator.class, count = 100)
+    @DisplayName("Every generated value carries one of the six attack code points")
+    void shouldGenerateUnicodeAttack(String generatedValue) {
+        assertContainsAny(generatedValue, ATTACK_CODE_POINTS, "Unicode attack value");
+    }
+
+    @Test
+    @DisplayName("Should reach all six code points bare and at least one composite form")
+    void shouldReachBareAndCompositeForms() {
+        UnicodeAttackGenerator generator = new UnicodeAttackGenerator();
+        Set<String> bareForms = new HashSet<>();
+        Set<String> compositeTargets = new HashSet<>();
+
+        for (int i = 0; i < AGGREGATE_DRAWS; i++) {
+            String value = generator.next();
+            if (ATTACK_CODE_POINTS.contains(value)) {
+                bareForms.add(value);
+            }
+            PATH_TARGETS.stream().filter(value::endsWith).forEach(compositeTargets::add);
+        }
+
+        assertAll("Output forms",
+                () -> assertEquals(ATTACK_CODE_POINTS, bareForms,
+                        "Every attack code point must be reachable in its bare form"),
+                () -> assertFalse(compositeTargets.isEmpty(),
+                        "The traversal-suffixed composite form must be reachable"));
+    }
+
+    @Test
+    @DisplayName("Should return correct type")
+    void shouldReturnCorrectType() {
+        assertEquals(String.class, new UnicodeAttackGenerator().getType(),
+                "Generator should return String.class");
+    }
+
+    private static String fromCodePoints(int... codePoints) {
+        StringBuilder builder = new StringBuilder(codePoints.length);
+        for (int codePoint : codePoints) {
+            builder.appendCodePoint(codePoint);
+        }
+        return builder.toString();
     }
 }
