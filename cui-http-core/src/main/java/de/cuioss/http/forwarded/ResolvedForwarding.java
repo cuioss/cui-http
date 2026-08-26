@@ -37,7 +37,9 @@ import java.util.OptionalInt;
  *
  * <h3>Usage Example</h3>
  * <pre>{@code
- * ResolvedForwarding forwarding = resolver.resolve(request::getHeader);
+ * // The accessor MUST expose every instance of a repeated header, not just the first:
+ * ResolvedForwarding forwarding =
+ *     resolver.resolve(name -> Collections.list(request.getHeaders(name)));
  * String scheme = forwarding.scheme().orElse("http");
  * int port = forwarding.port().orElse(scheme.equals("https") ? 443 : 80);
  * String prefix = forwarding.contextPath(); // "" when none / not honored

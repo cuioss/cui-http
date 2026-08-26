@@ -29,7 +29,7 @@ duplicated concerns of forwarded-header handling into one component:
   backslashes) — reusing the existing xref:security-readme.adoc[security validation pipelines]
   rather than hand-rolling guards.
 
-It is *transport-agnostic* (it consumes a `Function<String,String>` header accessor, so no
+It is *transport-agnostic* (it consumes a `Function<String, List<String>>` header accessor, so no
 servlet/Jetty type leaks in) and *secure-by-default* (nothing is honored unless a deployment opts
 in explicitly).
 
@@ -49,6 +49,13 @@ Enforce this with network controls — bind the listener to a private interface,
 firewall / security-group rules, or place it behind a service mesh — so that the socket peer is
 always a trusted proxy. The resolver cannot make this guarantee for you, and by design does not
 accept the peer address as a parameter.
+
+*The header accessor MUST expose every instance of a repeated header, in wire order.* A proxy
+appends by adding a repeated header line just as legitimately as by extending a comma-separated
+value, so a single-valued accessor built on `request.getHeader(name)` exposes only the *first*
+instance and hides the nearest hop's contribution — leaving the resolver looking at the attacker's
+forged value. Pass `name \-> Collections.list(request.getHeaders(name))`, or the equivalent
+all-instances accessor for your transport.
 ====
 
 === The header family
@@ -92,12 +99,29 @@ and a `SecurityEventCounter`; it internally builds a header-value sanitization p
 
 [source,java]
 ----
-ResolvedForwarding resolve(Function<String, String> headerLookup)
+ResolvedForwarding resolve(Function<String, List<String>> headerLookup)
 ----
 
-The `Function<String,String>` header accessor (typically `request::getHeader`) is the only input,
-so the resolver works with Jetty `Request`, `jakarta.servlet.HttpServletRequest`, or a plain
-`Map::get` in tests — without leaking any transport type.
+The `Function<String, List<String>>` header accessor is the only input, so the resolver works with
+Jetty `Request`, `jakarta.servlet.HttpServletRequest`, or a plain `Map<String, List<String>>` in
+tests — without leaking any transport type. The accessor maps a header name to *every* instance of
+that header present on the request, in wire order; `null` or an empty list means the header is
+absent.
+
+That multi-instance shape is a *security* requirement, not a convenience: the repeated instances are
+joined in wire order before nearest-hop token selection runs, so an accessor that returns only the
+first instance — anything built on `request.getHeader(name)` — hides the appended, proxy-attested
+value and resolves the attacker's forged one instead.
+
+[source,java]
+----
+// Servlet
+resolver.resolve(name -> Collections.list(request.getHeaders(name)));
+
+// Tests
+Map<String, List<String>> headers = Map.of("X-Forwarded-Proto", List.of("https", "http"));
+resolver.resolve(headers::get);
+----
 
 For each field the resolver:
 
@@ -133,9 +157,10 @@ Immutable trust-model configuration built through a validating builder. See xref
 
 === xref:../cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedLogMessages.java[ForwardedLogMessages]
 
-`HTTP-120`..`HTTP-123` WARN records for rejected/malformed values (context-path control
-characters, protocol-relative/backslash prefixes, values that failed sanitization, and
-unparseable client-IP chain entries).
+`HTTP-120`..`HTTP-124` WARN records for rejected/malformed values (context-path control
+characters, protocol-relative/backslash prefixes, values that failed sanitization, unparseable
+client-IP chain entries, and — `HTTP-124` — a field dropped because the de-facto `X-Forwarded-*`
+family and the RFC 7239 `Forwarded` header disagree).
 
 == Header precedence
 
@@ -152,7 +177,46 @@ Per field, the first present, non-blank value wins:
 | clientIp    | `X-Forwarded-For` chain → RFC 7239 `for` chain
 |===
 
-Comma-separated list headers (e.g. `X-Forwarded-Proto: https,http`) resolve to their first token.
+*Repeated header instances are joined in wire order before token selection.* A proxy appends by
+adding a repeated header line just as legitimately as by extending a comma-separated value, and
+RFC 7230 §3.2.2 makes the two forms equivalent. The resolver therefore joins every instance the
+accessor returns with `", "` in wire order, so a repeated header is indistinguishable from the
+equivalent single comma-separated header before any token selection runs.
+
+*Nearest hop wins within a header.* Each proxy in a chain *appends* its own value, so for a
+comma-separated header value the resolver selects the *rightmost* token — the one contributed by the
+closest, most trustworthy proxy. Leading tokens are attacker-supplied whenever the original client
+sent the header itself. The same rule applies across RFC 7239 elements: the *last* `proto` / `host`
+directive wins.
+
+[source,text]
+----
+X-Forwarded-Proto: https, http                    -> scheme = http            (nearest hop appended "http")
+X-Forwarded-Host:  attacker.example, app.internal -> host   = app.internal
+X-Forwarded-Prefix: /app, /other                  -> prefix = /other
+Forwarded: proto=https, proto=http                -> scheme = http            (last directive wins)
+----
+
+For the context-path the token selection must run *before* the injection guards, not after: a guard
+applied to the whole raw string inspects only its leading characters, so `X-Forwarded-Prefix: /app,
+//attacker.com` would pass the whole-string protocol-relative check and the nearest-hop token
+`//attacker.com` would then be honored unguarded. Selecting the last token first means every guard
+runs against the exact value that will be returned.
+
+*Conflicting sources = drop (fail closed).* For scheme, host, and client IP the de-facto
+`X-Forwarded-*` / `X-Proxy*` family and the RFC 7239 `Forwarded` header are resolved
+*independently*. When only one source is present its result is honored. When *both* are present they
+must agree: a proxy that populates both families does not contradict itself, so a disagreement means
+at least one side is forged. The field is then dropped and an `HTTP-124` warning logged, rather than
+letting the higher-precedence family silently win — preferring one source is precisely what an
+attacker exploits by supplying the family the resolver ranks higher.
+
+[source,text]
+----
+X-Forwarded-Proto: https + Forwarded: proto=https -> scheme = https  (sources agree)
+X-Forwarded-Proto: https + Forwarded: proto=http  -> scheme = empty  (sources disagree -> dropped)
+X-Forwarded-Proto: https                          -> scheme = https  (single source, unaffected)
+----
 
 *Present-but-invalid = drop (no fall-through).* Precedence selects the first present, non-blank
 source for a field; that value is then validated. If it fails its field guard it is *dropped* —
@@ -214,6 +278,41 @@ X-Forwarded-For: 10.0.0.1, 10.0.0.5                 -> clientIp = empty         
 (no trustedProxies configured)                       -> clientIp = empty         (nothing honored)
 ----
 
+==== Composing `trustedProxies` — a range must contain only proxies
+
+Membership of a `trustedProxies` range is a statement that the machine *is a proxy whose appended
+chain entry can be believed* — not merely that it is on a network you own. The walk *skips* every
+hop inside a configured range, so a range scoped to the enclosing VPC or office network rather than
+to the proxy tier itself fails in both directions:
+
+Too broad -> no client IP at all::
+A range wide enough to cover the whole network (or `0.0.0.0/0`) makes *every* hop trusted, so the
+walk skips the entire chain, falls off the left end, and returns empty. This fails closed — no
+forged address is ever honored — but it is counter-intuitive to operators debugging a missing
+client IP, who typically widen the range further and make the symptom worse.
+
+Too broad -> client-IP spoofing::
+A non-proxy machine that happens to fall inside a configured range is skipped by the walk exactly as
+a real proxy would be. Anything that machine *prepends* to the chain is then treated as an earlier,
+untrusted hop and returned as the client IP. One compromised or merely untrustworthy host inside the
+range is enough to spoof the client IP for every request it forwards.
+
+[source,text]
+----
+Deployment: ingress proxies at 10.0.7.10 and 10.0.7.11; application servers and a CI runner
+            share the 10.0.0.0/8 network.
+
+trustedProxies = [10.0.0.0/8]                       <1>
+X-Forwarded-For: 6.6.6.6, 10.0.3.99, 10.0.7.10      -> clientIp = 6.6.6.6   (spoofed by 10.0.3.99)
+
+trustedProxies = [10.0.7.10/32, 10.0.7.11/32]       <2>
+X-Forwarded-For: 6.6.6.6, 10.0.3.99, 10.0.7.10      -> clientIp = 10.0.3.99 (the real peer)
+----
+<1> Too broad: the CI runner at `10.0.3.99` is inside the range, so the walk skips it and honors the
+    entry it prepended.
+<2> Correctly scoped to the proxy tier: `10.0.3.99` is untrusted, so the walk stops there and
+    reports the address that actually connected to the proxy.
+
 == Sanitization and injection guards
 
 * Every honored value first passes through the header-value pipeline
@@ -249,8 +348,13 @@ ForwardedResolverConfig config = ForwardedResolverConfig.builder()
 
 The *field-specific* guards, by contrast, are fixed fail-secure invariants and are *not* affected
 by `securityConfig`: the context-path protocol-relative (`//`) and backslash rejection, the
-`http`/`https` scheme whitelist, the `1..65535` port range, and host-separator rejection always
-apply.
+context-path comma/whitespace rejection, the `http`/`https` scheme whitelist, the `1..65535` port
+range, and host-separator rejection always apply.
+
+The context-path comma/whitespace rejection is defence in depth: a well-formed context path
+contains neither, so their presence in a value that reached normalization means a comma-separated
+header value arrived without nearest-hop token selection having been applied — and normalizing such
+a value would honor an attacker-supplied token.
 
 == Serialization
 
@@ -278,14 +382,16 @@ are quoted only when they are not a valid RFC 7239 token.
 [source,java]
 ----
 ForwardedResolverConfig config = ForwardedResolverConfig.builder()
-    .trustAll(true)                        // honor scheme/host/port + context-path
-    .trustedProxies(Set.of("10.0.0.0/8"))  // for X-Forwarded-For client-IP resolution
+    .trustAll(true)                                          // honor scheme/host/port + context-path
+    .trustedProxies(Set.of("10.0.7.10/32", "10.0.7.11/32"))  // the ingress proxies themselves
     .build();
 
 ForwardedHeaderResolver resolver =
     new ForwardedHeaderResolver(config, new SecurityEventCounter());
 
-ResolvedForwarding fwd = resolver.resolve(request::getHeader);
+// The accessor MUST expose every instance of a repeated header, not just the first:
+ResolvedForwarding fwd =
+    resolver.resolve(name -> Collections.list(request.getHeaders(name)));
 
 String scheme = fwd.scheme().orElse("http");
 String host   = fwd.host().orElse(request.getServerName());
@@ -293,6 +399,10 @@ int    port   = fwd.port().orElse(scheme.equals("https") ? 443 : 80);
 String prefix = fwd.contextPath();          // "" when none
 fwd.clientIp().ifPresent(ip -> log.info("client %s", ip));
 ----
+
+NOTE: `trustedProxies` lists the proxy machines themselves, never the enclosing network — see
+_Composing `trustedProxies`_ above. Widening this to the surrounding `10.0.0.0/8` would let any
+host inside that range spoof the client IP.
 
 === Context-path allowlist only (no trustAll)
 
@@ -306,7 +416,9 @@ ForwardedResolverConfig config = ForwardedResolverConfig.builder()
 ForwardedHeaderResolver resolver =
     new ForwardedHeaderResolver(config, new SecurityEventCounter());
 
-String prefix = resolver.resolve(request::getHeader).contextPath();
+String prefix = resolver
+    .resolve(name -> Collections.list(request.getHeaders(name)))
+    .contextPath();
 ----
 
 The allowlist may also be parsed from an operator-supplied comma-separated string:
@@ -324,7 +436,8 @@ ForwardedHeaderResolver resolver = new ForwardedHeaderResolver(
     ForwardedResolverConfig.secureDefault(), new SecurityEventCounter());
 
 // Any forwarded header is ignored; result is ResolvedForwarding.empty()
-ResolvedForwarding fwd = resolver.resolve(request::getHeader);
+ResolvedForwarding fwd =
+    resolver.resolve(name -> Collections.list(request.getHeaders(name)));
 ----
 
 == Thread Safety

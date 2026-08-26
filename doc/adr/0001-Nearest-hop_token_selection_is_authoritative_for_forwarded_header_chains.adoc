@@ -1,0 +1,102 @@
+= ADR-0001: Nearest-hop token selection is authoritative for forwarded header chains
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: The rightmost/nearest-hop token is authoritative for every field a comma-joined forwarding header contributes, uniformly across X-Forwarded-* and RFC 7239 Forwarded.
+// tags: security, trust-boundary, forwarded-headers, http
+// affects: cui-http
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+When a request passes through a chain of reverse proxies, several de-facto and
+standard headers — `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host`,
+`X-Forwarded-Port`, `X-Forwarded-Prefix`, and the RFC 7239 `Forwarded` header —
+carry a comma-separated list of values, one per hop, in append order.
+
+Only proxies inside a configured trusted range are vouched for. Any party in front
+of the first trusted proxy can freely prepend an arbitrary value before that proxy
+appends its own, so the leftmost entry in such a list is the attacker-controlled
+end under append-style proxies.
+
+A component resolving a request-origin fact from such a header must pick exactly
+one hop's value as authoritative. Which end of the list it reads from therefore
+decides whether it reads the attacker's value or the nearest trusted hop's. The
+choice is structural, and it must be made the same way for every field — a
+component that resolves the client IP from one end and the scheme from the other
+is exploitable in the direction it reads carelessly, however defensible each
+individual choice looks in isolation.
+
+== Decision
+
+**The nearest hop wins.** The rightmost — most recently appended — token in a
+comma-joined forwarding-header value is authoritative for every field the resolver
+derives: client IP, scheme, host, port, and context path. The rule applies
+uniformly across both header families, including the RFC 7239 `proto` and `host`
+directive accumulator, which keeps the last occurrence rather than the first.
+
+Token selection runs *before* the injection guards, not after. A guard that
+inspects the whole raw string rather than the selected token can be bypassed by a
+value whose dangerous part is not at the string's start — for example a prefix of
+`/app, //attacker.com`, which does not itself begin with `//` and so survives a
+protocol-relative check applied to the unselected string.
+
+== Consequences
+
+=== Positive
+
+* One uniform trust rule across every field and both header families; there is no
+  field for which a reader must remember a different direction.
+* Internal consistency with the client-IP chain walk, which already proceeds from
+  the nearest hop outward.
+* A value prepended by an attacker ahead of the first trusted proxy can never
+  become authoritative for any field.
+
+=== Negative
+
+* Any caller relying on the previous leftmost-token value is handed a different
+  value. This is a deliberate compatibility break.
+* Deployments using overwrite-style proxies see no change, so the break is
+  invisible to them — which makes it easy to under-estimate when advising others.
+
+=== Risks
+
+* The "rightmost equals nearest hop" invariant depends on list order actually
+  reflecting proxy-chain order. The resolver cannot verify this property; it is a
+  precondition on the deployment, not something the code can enforce.
+
+== Alternatives Considered
+
+**Keep leftmost-token selection and narrow the documented guarantee.** This would
+have left the code unchanged and instead stated in the Javadoc and the reference
+documentation that these fields require overwrite-style proxies. Rejected: it does
+not close the attack. Under an append-style proxy the resolver still silently
+resolves the attacker's value, and a documentation caveat does not stop code from
+doing that. The documented "must sit behind a trusted proxy" precondition is
+already satisfied by the attack — the request really did traverse the trusted
+proxy — so the precondition is necessary but not sufficient.
+
+**Make the selection direction configurable per deployment.** This would have
+added a knob letting each deployment declare its proxy style. Rejected: the
+correct direction is structural rather than a deployment preference, so the knob's
+only effect is to let an operator misconfigure trust onto the attacker-controlled
+end. It also doubles the surface to test and document for a decision that has
+exactly one secure answer.
+
+Both alternatives share a shape: they relocate a security decision from the code
+into either prose or configuration, leaving the insecure behaviour reachable.
+
+== References
+
+* xref:0002-Fail_closed_when_X-Forwarded-For_and_RFC_7239_Forwarded_disagree.adoc[ADR-0002: Fail closed when X-Forwarded-For and RFC 7239 Forwarded disagree]
+* xref:0003-Header_accessor_contract_must_expose_every_instance_of_a_repeated_header.adoc[ADR-0003: Header accessor contract must expose every instance of a repeated header]
+* `doc/forwarded-header-resolution.adoc` — header precedence and token selection
+* `de.cuioss.http.forwarded.ForwardedHeaderResolver` — class Javadoc
+* `de.cuioss.http.forwarded.RfcForwardedParser` — directive accumulator Javadoc

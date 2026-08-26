@@ -46,21 +46,31 @@
  *
  * <h3>Secure by default</h3>
  * <p>The resolver is transport-agnostic (it consumes a {@link java.util.function.Function
- * Function&lt;String,String&gt;} header accessor, so no servlet/Jetty type leaks in) and
- * secure-by-default: with no allowlist and no explicit {@code trustAll} opt-in, client-supplied
- * forwarded values are ignored (never trusted), only logged. See
+ * Function&lt;String,java.util.List&lt;String&gt;&gt;} header accessor, so no servlet/Jetty type
+ * leaks in) and secure-by-default: with no allowlist and no explicit {@code trustAll} opt-in,
+ * client-supplied forwarded values are ignored (never trusted), only logged. See
  * {@link de.cuioss.http.forwarded.ForwardedResolverConfig} for the trust model.</p>
+ * <p>Transport-agnostic does <strong>not</strong> mean obligation-free. The accessor MUST return
+ * <em>every</em> instance of the named header, in wire order — a proxy appends by adding a repeated
+ * header just as legitimately as by extending a comma-separated value, so a single-valued accessor
+ * such as {@code request::getHeader} hides the nearest hop's contribution and leaves the resolver
+ * looking at the attacker's forged first instance. Use
+ * {@code name -> Collections.list(request.getHeaders(name))} or the equivalent for your transport.</p>
  *
  * <h3>Usage Example</h3>
  * <pre>{@code
  * ForwardedResolverConfig config = ForwardedResolverConfig.builder()
- *     .trustAll(true)                       // deployment sits fully behind a trusted proxy
- *     .trustedProxies(Set.of("10.0.0.0/8")) // for X-Forwarded-For client-IP resolution
+ *     .trustAll(true) // deployment sits fully behind a trusted proxy
+ *     // The ingress proxies themselves, never the enclosing network: every address in the range is
+ *     // skipped by the client-IP walk, so a non-proxy host inside it could spoof the client IP.
+ *     .trustedProxies(Set.of("10.0.7.10/32", "10.0.7.11/32"))
  *     .build();
  * ForwardedHeaderResolver resolver =
  *     new ForwardedHeaderResolver(config, new SecurityEventCounter());
  *
- * ResolvedForwarding forwarding = resolver.resolve(request::getHeader);
+ * // The accessor MUST expose every instance of a repeated header, not just the first:
+ * ResolvedForwarding forwarding =
+ *     resolver.resolve(name -> Collections.list(request.getHeaders(name)));
  * String scheme = forwarding.scheme().orElse("http");
  * String prefix = forwarding.contextPath(); // "" when none / not honored
  * }</pre>

@@ -25,6 +25,8 @@ import org.jspecify.annotations.Nullable;
 import java.net.InetAddress;
 import java.util.*;
 import java.util.function.Function;
+import java.util.function.UnaryOperator;
+import java.util.stream.Collectors;
 
 import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
 
@@ -55,31 +57,62 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  *
  * <h3>Precedence</h3>
  * <ul>
- *   <li>scheme: {@code X-Forwarded-Proto} → {@code X-ProxyScheme} → RFC 7239 {@code proto}</li>
- *   <li>host: {@code X-Forwarded-Host} → {@code X-ProxyHost} → RFC 7239 {@code host}</li>
+ *   <li>scheme: {@code X-Forwarded-Proto} → {@code X-ProxyScheme}, reconciled against RFC 7239
+ *       {@code proto}</li>
+ *   <li>host: {@code X-Forwarded-Host} → {@code X-ProxyHost}, reconciled against RFC 7239
+ *       {@code host}</li>
  *   <li>port: {@code X-Forwarded-Port} → {@code X-ProxyPort} → host {@code :port} fallback</li>
  *   <li>context-path: {@code X-ProxyContextPath} → {@code X-Forwarded-Prefix}
  *       ({@code Forwarded} has no prefix directive)</li>
- *   <li>client-IP: {@code X-Forwarded-For} chain → RFC 7239 {@code for} chain</li>
+ *   <li>client-IP: {@code X-Forwarded-For} chain, reconciled against the RFC 7239 {@code for}
+ *       chain</li>
  * </ul>
  *
- * <p><strong>Present-but-invalid = drop (no fall-through).</strong> Precedence selects the first
- * <em>present</em>, non-blank source for a field; that value is then validated. If it fails its
- * field guard it is <em>dropped</em> — lower-precedence sources are <em>not</em> consulted as a
- * fallback. In particular a present-but-invalid {@code X-Forwarded-Port} / {@code X-ProxyPort}
- * (non-numeric or outside {@code 1..65535}) yields no port; the host {@code :port} fallback is used
- * only when no explicit port header is present at all.</p>
+ * <p><strong>Nearest hop wins within a header.</strong> Each proxy in a chain <em>appends</em> its
+ * own value, so for a comma-separated header value the resolver selects the <em>rightmost</em>
+ * token — the one contributed by the closest, most trustworthy proxy. Leading tokens are
+ * attacker-supplied whenever the original client sent the header itself. The same rule applies
+ * across RFC 7239 elements: the <em>last</em> {@code proto} / {@code host} directive wins.</p>
+ *
+ * <p><strong>Conflicting sources = drop (fail closed).</strong> For scheme, host, and client-IP the
+ * de-facto {@code X-Forwarded-*} / {@code X-Proxy*} family and the RFC 7239 {@code Forwarded} header
+ * are resolved <em>independently</em>. When only one source is present its result is honored. When
+ * <em>both</em> are present they must agree: a proxy that populates both families does not
+ * contradict itself, so a disagreement means at least one side is forged. The field is then dropped
+ * and a warning logged, rather than letting the higher-precedence family silently win — preferring
+ * one source is precisely what an attacker exploits by supplying the family the resolver ranks
+ * higher.</p>
+ *
+ * <p><strong>Present-but-invalid = drop (no fall-through).</strong> A present, non-blank source is
+ * validated; if it fails its field guard it is <em>dropped</em> — lower-precedence sources are
+ * <em>not</em> consulted as a fallback. In particular a present-but-invalid
+ * {@code X-Forwarded-Port} / {@code X-ProxyPort} (non-numeric or outside {@code 1..65535}) yields no
+ * port; the host {@code :port} fallback is used only when no explicit port header is present at all.
+ * A source that is present but resolves to nothing valid also <em>disagrees</em> with a sibling
+ * source that resolved successfully, so the conflicting-source rule above drops the field.</p>
+ *
+ * <p>This applies to the RFC 7239 {@code Forwarded} header as a whole: when its raw value fails
+ * sanitization, the header is treated as present-but-unresolvable for <em>every</em> field it could
+ * have carried (scheme, host, client-IP), not as absent. A garbage {@code Forwarded} header therefore
+ * disagrees with — and drops — an otherwise clean {@code X-Forwarded-*} value, instead of letting the
+ * de-facto family win by default. Only a header that is genuinely absent, or one that sanitizes and
+ * parses cleanly while simply carrying no directive for a given field, leaves that field's de-facto
+ * value to stand on its own.</p>
  *
  * <h3>Usage Example</h3>
  * <pre>{@code
  * ForwardedResolverConfig config = ForwardedResolverConfig.builder()
  *     .trustAll(true)
- *     .trustedProxies(Set.of("10.0.0.0/8"))
+ *     // The ingress proxies themselves, never the enclosing network: every address in the range is
+ *     // skipped by the client-IP walk, so a non-proxy host inside it could spoof the client IP.
+ *     .trustedProxies(Set.of("10.0.7.10/32", "10.0.7.11/32"))
  *     .build();
  * ForwardedHeaderResolver resolver =
  *     new ForwardedHeaderResolver(config, new SecurityEventCounter());
  *
- * ResolvedForwarding forwarding = resolver.resolve(request::getHeader);
+ * // The accessor MUST expose every instance of a repeated header, not just the first:
+ * ResolvedForwarding forwarding =
+ *     resolver.resolve(name -> Collections.list(request.getHeaders(name)));
  * }</pre>
  *
  * <p>Instances are immutable and thread-safe (the underlying pipeline and event counter are
@@ -87,9 +120,6 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  *
  * @since 1.0
  */
-// S4276: Function<String,String> is the intentional transport-agnostic header-accessor abstraction
-// (e.g. request::getHeader) per issue #88 — not a UnaryOperator (which implies operating on a value).
-@SuppressWarnings("java:S4276")
 public final class ForwardedHeaderResolver {
 
     private static final CuiLogger LOGGER = new CuiLogger(ForwardedHeaderResolver.class);
@@ -114,61 +144,76 @@ public final class ForwardedHeaderResolver {
     /**
      * Resolves the forwarded-header family from the supplied header accessor.
      *
-     * @param headerLookup maps a header name to its value (or {@code null} when absent); typically
-     *                     {@code request::getHeader}
+     * @param headerLookup maps a header name to <em>every</em> instance of that header present on
+     *                     the request, in wire order; {@code null} or an empty list means the header
+     *                     is absent. A single-valued accessor such as {@code request::getHeader} is
+     *                     <strong>insufficient</strong> — it exposes only the first instance, hiding
+     *                     the remaining ones, and a proxy appends by adding a repeated header just
+     *                     as legitimately as by extending a comma-separated value. Use
+     *                     {@code name -> Collections.list(request.getHeaders(name))} instead.
      * @return the sanitized, honored result (never {@code null}; {@link ResolvedForwarding#empty()}
      *         when nothing is present or honored)
      * @throws NullPointerException if {@code headerLookup} is {@code null}
      */
-    public ResolvedForwarding resolve(Function<String, String> headerLookup) {
+    public ResolvedForwarding resolve(Function<String, List<String>> headerLookup) {
         Objects.requireNonNull(headerLookup, "headerLookup must not be null");
-        RfcForwardedParser.Parsed forwarded = parseForwarded(headerLookup);
+        UnaryOperator<String> lookup = joining(headerLookup);
+        ForwardedResult forwarded = parseForwarded(lookup);
 
-        Optional<String> scheme = resolveScheme(headerLookup, forwarded);
-        HostPort hostPort = resolveHost(headerLookup, forwarded);
-        OptionalInt port = resolvePort(headerLookup, hostPort.port());
-        String contextPath = resolveContextPath(headerLookup);
-        Optional<String> clientIp = resolveClientIp(headerLookup, forwarded);
+        Optional<String> scheme = resolveScheme(lookup, forwarded);
+        HostPort hostPort = resolveHost(lookup, forwarded);
+        OptionalInt port = resolvePort(lookup, hostPort.port());
+        String contextPath = resolveContextPath(lookup, forwarded);
+        Optional<String> clientIp = resolveClientIp(lookup, forwarded);
 
         return new ResolvedForwarding(scheme, hostPort.host(), port, contextPath, clientIp);
     }
 
     // --- scheme ------------------------------------------------------------------------------
 
-    private Optional<String> resolveScheme(Function<String, String> lookup, RfcForwardedParser.Parsed forwarded) {
-        String raw = firstPresent(lookup, X_FORWARDED_PROTO, X_PROXY_SCHEME);
-        if (raw == null) {
-            raw = forwarded.proto().orElse(null);
-        }
-        if (raw == null || !config.trustAll()) {
+    private Optional<String> resolveScheme(UnaryOperator<String> lookup, ForwardedResult forwarded) {
+        if (!config.trustAll()) {
             return Optional.empty();
         }
+        String deFacto = firstPresent(lookup, X_FORWARDED_PROTO, X_PROXY_SCHEME);
+        String rfc = forwarded.parsed().proto().orElse(null);
+        return reconcileSources("scheme", X_FORWARDED_PROTO,
+                deFacto != null, deFacto == null ? Optional.empty() : schemeOf(deFacto),
+                forwarded.contributes(rfc != null), rfc == null ? Optional.empty() : schemeOf(rfc));
+    }
+
+    private Optional<String> schemeOf(String raw) {
         return sanitize(X_FORWARDED_PROTO, raw)
-                .map(ForwardedHeaderResolver::firstToken)
+                .map(ForwardedHeaderResolver::lastToken)
                 .map(value -> value.toLowerCase(Locale.ROOT))
                 .filter(value -> "http".equals(value) || "https".equals(value));
     }
 
     // --- host --------------------------------------------------------------------------------
 
-    private HostPort resolveHost(Function<String, String> lookup, RfcForwardedParser.Parsed forwarded) {
-        String raw = firstPresent(lookup, X_FORWARDED_HOST, X_PROXY_HOST);
-        if (raw == null) {
-            raw = forwarded.host().orElse(null);
-        }
-        if (raw == null || !config.trustAll()) {
+    private HostPort resolveHost(UnaryOperator<String> lookup, ForwardedResult forwarded) {
+        if (!config.trustAll()) {
             return HostPort.EMPTY;
         }
-        Optional<String> sanitized = sanitize(X_FORWARDED_HOST, raw).map(ForwardedHeaderResolver::firstToken);
-        if (sanitized.isEmpty()) {
-            return HostPort.EMPTY;
-        }
-        return parseHostPort(sanitized.get());
+        String deFacto = firstPresent(lookup, X_FORWARDED_HOST, X_PROXY_HOST);
+        String rfc = forwarded.parsed().host().orElse(null);
+        return reconcileSources("host", X_FORWARDED_HOST,
+                deFacto != null, deFacto == null ? Optional.empty() : hostPortOf(deFacto),
+                forwarded.contributes(rfc != null), rfc == null ? Optional.empty() : hostPortOf(rfc))
+                .orElse(HostPort.EMPTY);
+    }
+
+    private Optional<HostPort> hostPortOf(String raw) {
+        return sanitize(X_FORWARDED_HOST, raw)
+                .map(ForwardedHeaderResolver::lastToken)
+                .map(ForwardedHeaderResolver::parseHostPort)
+                .filter(hostPort -> hostPort.host().isPresent());
     }
 
     /**
      * Splits a {@code host[:port]} token (bracketed IPv6 aware) and validates the host contains no
-     * path/backslash/whitespace. Returns {@link HostPort#EMPTY} for a malformed host.
+     * path/backslash/whitespace/URL-authority-delimiter characters. Returns {@link HostPort#EMPTY}
+     * for a malformed host.
      *
      * <p>The {@code host:port} split here intentionally diverges from
      * {@link IpAddresses#parseChainEntry(String)}: this method reconstructs the <em>host string</em>
@@ -202,10 +247,19 @@ public final class ForwardedHeaderResolver {
         return new HostPort(Optional.of(host), port);
     }
 
+    /**
+     * Rejects a path separator, backslash, whitespace, or any of the URL-authority delimiter
+     * characters ({@code @ # ?}). The consumer composes {@link ResolvedForwarding#host()} back
+     * into an absolute URL (see the package's serialization/usage examples); an embedded
+     * {@code @} would let a forged host smuggle a userinfo component
+     * ({@code https://real-host@attacker.example/}), which most URL parsers resolve to the
+     * <em>attacker's</em> host rather than the trusted one — the same host-confusion class the
+     * path/backslash checks already guard against, just via a different delimiter.
+     */
     private static boolean containsHostSeparator(String host) {
         for (int i = 0; i < host.length(); i++) {
             char c = host.charAt(i);
-            if (c == '/' || c == '\\' || Character.isWhitespace(c)) {
+            if (c == '/' || c == '\\' || c == '@' || c == '#' || c == '?' || Character.isWhitespace(c)) {
                 return true;
             }
         }
@@ -214,7 +268,7 @@ public final class ForwardedHeaderResolver {
 
     // --- port --------------------------------------------------------------------------------
 
-    private OptionalInt resolvePort(Function<String, String> lookup, OptionalInt hostPortFallback) {
+    private OptionalInt resolvePort(UnaryOperator<String> lookup, OptionalInt hostPortFallback) {
         String raw = firstPresent(lookup, X_FORWARDED_PORT, X_PROXY_PORT);
         if (raw == null) {
             return hostPortFallback;
@@ -223,7 +277,7 @@ public final class ForwardedHeaderResolver {
             return OptionalInt.empty();
         }
         return sanitize(X_FORWARDED_PORT, raw)
-                .map(ForwardedHeaderResolver::firstToken)
+                .map(ForwardedHeaderResolver::lastToken)
                 .map(ForwardedHeaderResolver::parsePort)
                 .orElse(OptionalInt.empty());
     }
@@ -239,10 +293,10 @@ public final class ForwardedHeaderResolver {
 
     // --- context path ------------------------------------------------------------------------
 
-    private String resolveContextPath(Function<String, String> lookup) {
+    private String resolveContextPath(UnaryOperator<String> lookup, ForwardedResult forwarded) {
         String raw = firstPresent(lookup, X_PROXY_CONTEXT_PATH, X_FORWARDED_PREFIX);
         if (raw == null) {
-            if (isPresent(lookup.apply(FORWARDED))) {
+            if (forwarded.present()) {
                 LOGGER.debug("Forwarded header present but carries no context-path directive");
             }
             return "";
@@ -250,7 +304,14 @@ public final class ForwardedHeaderResolver {
         // Apply the injection guards to the RAW value first: the header-value pipeline collapses a
         // protocol-relative "//host" prefix to "/host", masking the attack, so the guard must run
         // before sanitization can rewrite it.
-        String trimmed = raw.strip();
+        //
+        // Token selection must in turn precede the guards, because a guard applied to the whole raw
+        // string inspects only its leading characters and so misses an attack carried in a later
+        // token: "/app, //attacker.com" does not itself start with "//", so isProtocolRelativeOrBackslash
+        // would pass the whole string through, and the nearest-hop token "//attacker.com" would then
+        // be honored unguarded. Selecting the last token first means every guard below runs against
+        // the exact value that will be returned.
+        String trimmed = lastToken(raw.strip());
         if (ContextPaths.containsControlCharacter(trimmed)) {
             LOGGER.warn(ForwardedLogMessages.WARN.CONTEXT_PATH_CONTROL_CHARACTERS_REJECTED, sanitizeForLog(trimmed));
             return "";
@@ -259,7 +320,7 @@ public final class ForwardedHeaderResolver {
             LOGGER.warn(ForwardedLogMessages.WARN.CONTEXT_PATH_PROTOCOL_RELATIVE_REJECTED, sanitizeForLog(trimmed));
             return "";
         }
-        Optional<String> sanitized = sanitize(X_FORWARDED_PREFIX, raw);
+        Optional<String> sanitized = sanitize(X_FORWARDED_PREFIX, trimmed);
         if (sanitized.isEmpty()) {
             return "";
         }
@@ -276,26 +337,23 @@ public final class ForwardedHeaderResolver {
 
     // --- client IP ---------------------------------------------------------------------------
 
-    private Optional<String> resolveClientIp(Function<String, String> lookup, RfcForwardedParser.Parsed forwarded) {
+    private Optional<String> resolveClientIp(UnaryOperator<String> lookup, ForwardedResult forwarded) {
         // Secure-by-default: without trusted proxies the immediate peer cannot be trusted, so the
         // forwarded chain (including the nearest hop) is not honored at all.
         if (config.trustedProxies().isEmpty()) {
             return Optional.empty();
         }
-        List<String> chain;
         String xff = lookup.apply(X_FORWARDED_FOR);
-        if (isPresent(xff)) {
-            Optional<String> sanitized = sanitize(X_FORWARDED_FOR, xff);
-            if (sanitized.isEmpty()) {
-                return Optional.empty();
-            }
-            chain = List.of(sanitized.get().split(","));
-        } else if (!forwarded.forValues().isEmpty()) {
-            chain = forwarded.forValues();
-        } else {
-            return Optional.empty();
-        }
-        return walkChain(chain);
+        boolean xffPresent = isPresent(xff);
+        List<String> rfcChain = forwarded.parsed().forValues();
+        boolean rfcPresent = forwarded.contributes(!rfcChain.isEmpty());
+
+        Optional<String> fromXff = xffPresent
+                ? sanitize(X_FORWARDED_FOR, xff).map(value -> List.of(value.split(","))).flatMap(this::walkChain)
+                : Optional.empty();
+        Optional<String> fromRfc = rfcChain.isEmpty() ? Optional.empty() : walkChain(rfcChain);
+
+        return reconcileSources("client IP", X_FORWARDED_FOR, xffPresent, fromXff, rfcPresent, fromRfc);
     }
 
     /**
@@ -323,15 +381,43 @@ public final class ForwardedHeaderResolver {
 
     // --- shared helpers ----------------------------------------------------------------------
 
-    private RfcForwardedParser.Parsed parseForwarded(Function<String, String> lookup) {
+    /**
+     * Adapts a multi-instance header accessor to the single-value view every field resolver below
+     * consumes, by joining the instances with {@code ", "}.
+     *
+     * <p>RFC 7230 §3.2.2 makes this equivalence explicit: a recipient MAY combine multiple instances
+     * of a comma-separated-list header into one value by concatenating them in wire order, separated
+     * by commas, without changing the message semantics. Joining here therefore makes a repeated
+     * header indistinguishable from the equivalent single comma-separated header — which is exactly
+     * what the nearest-hop token selection downstream needs in order to see every appended hop.</p>
+     *
+     * @return an accessor yielding the joined value, or {@code null} when the header is absent
+     *         (null list, empty list, or a list holding only {@code null}s)
+     */
+    private static UnaryOperator<String> joining(Function<String, List<String>> headerLookup) {
+        return name -> {
+            List<String> instances = headerLookup.apply(name);
+            if (instances == null || instances.isEmpty()) {
+                return null;
+            }
+            String joined = instances.stream()
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.joining(", "));
+            return joined.isEmpty() ? null : joined;
+        };
+    }
+
+    private ForwardedResult parseForwarded(UnaryOperator<String> lookup) {
         String raw = lookup.apply(FORWARDED);
         if (!isPresent(raw)) {
-            return new RfcForwardedParser.Parsed(Optional.empty(), Optional.empty(), List.of());
+            return ForwardedResult.ABSENT;
         }
-        // Sanitize the Forwarded header value before parsing its directives.
+        // Sanitize the Forwarded header value before parsing its directives. A rejected value must
+        // NOT collapse into the absent case: the header WAS sent, so it stays present-but-unresolvable
+        // and disagrees with any de-facto sibling that resolves (fail closed).
         return sanitize(FORWARDED, raw)
-                .map(RfcForwardedParser::parse)
-                .orElseGet(() -> new RfcForwardedParser.Parsed(Optional.empty(), Optional.empty(), List.of()));
+                .map(value -> new ForwardedResult(true, false, RfcForwardedParser.parse(value)))
+                .orElse(ForwardedResult.UNRESOLVABLE);
     }
 
     /**
@@ -351,7 +437,52 @@ public final class ForwardedHeaderResolver {
         }
     }
 
-    private static @Nullable String firstPresent(Function<String, String> lookup, String... headerNames) {
+    /**
+     * Reconciles a field resolved independently from the de-facto {@code X-Forwarded-*} /
+     * {@code X-Proxy*} family and from the RFC 7239 {@code Forwarded} header.
+     *
+     * <p>When only one source is present, its resolution is returned unchanged. When BOTH are
+     * present the two resolutions must agree: a trustworthy proxy that populates both families does
+     * not contradict itself, so a disagreement means at least one side is forged. The field is then
+     * dropped (fail closed) rather than letting the de-facto header win on precedence — silently
+     * preferring one source is exactly the behaviour an attacker exploits by supplying the family
+     * the resolver happens to rank higher.</p>
+     *
+     * @param field          the field name, for the disagreement log record
+     * @param deFactoHeader  the de-facto header name, for the disagreement log record
+     * @param deFactoPresent whether the de-facto source was present at all (distinct from it being
+     *                       present but unresolvable, which is a real disagreement)
+     * @param fromDeFacto    the de-facto source's independent resolution
+     * @param rfcPresent     whether the RFC 7239 directive was present at all
+     * @param fromRfc        the RFC 7239 source's independent resolution
+     * @return the agreed resolution, or empty when the sources disagree
+     */
+    private <T> Optional<T> reconcileSources(String field, String deFactoHeader,
+            boolean deFactoPresent, Optional<T> fromDeFacto,
+            boolean rfcPresent, Optional<T> fromRfc) {
+        if (!deFactoPresent) {
+            return fromRfc;
+        }
+        if (!rfcPresent) {
+            return fromDeFacto;
+        }
+        if (fromDeFacto.equals(fromRfc)) {
+            return fromDeFacto;
+        }
+        LOGGER.warn(ForwardedLogMessages.WARN.FORWARDED_SOURCES_DISAGREE,
+                field, deFactoHeader, describeForLog(fromDeFacto), describeForLog(fromRfc));
+        return Optional.empty();
+    }
+
+    /**
+     * Renders a resolution for the disagreement log record, routing the value through
+     * {@link #sanitizeForLog(String)} so no untrusted content reaches the log unfiltered.
+     */
+    private static String describeForLog(Optional<?> resolution) {
+        return resolution.map(value -> sanitizeForLog(String.valueOf(value))).orElse("(nothing valid)");
+    }
+
+    private static @Nullable String firstPresent(UnaryOperator<String> lookup, String... headerNames) {
         for (String name : headerNames) {
             String value = lookup.apply(name);
             if (isPresent(value)) {
@@ -365,9 +496,15 @@ public final class ForwardedHeaderResolver {
         return value != null && !value.isBlank();
     }
 
-    private static String firstToken(String value) {
-        int comma = value.indexOf(',');
-        return (comma < 0 ? value : value.substring(0, comma)).strip();
+    /**
+     * Selects the nearest-hop token of a comma-separated header value: the substring after the last
+     * comma. Each proxy in the chain <em>appends</em> its own value, so the rightmost token is the
+     * one contributed by the closest (and therefore most trustworthy) proxy, while any leading
+     * tokens are attacker-supplied when the client sent the header itself.
+     */
+    private static String lastToken(String value) {
+        int comma = value.lastIndexOf(',');
+        return (comma < 0 ? value : value.substring(comma + 1)).strip();
     }
 
     /**
@@ -384,9 +521,62 @@ public final class ForwardedHeaderResolver {
     }
 
     /**
+     * Outcome of reading the RFC 7239 {@code Forwarded} header, keeping the header's own presence and
+     * its sanitization verdict distinct from the presence of any individual directive.
+     *
+     * <p>Collapsing the three states into "are the parsed directives empty?" is what lets a
+     * present-but-rejected header masquerade as an absent one, so the reconciliation in
+     * {@link #reconcileSources} would silently honor the de-facto sibling instead of dropping the
+     * field. The three states are:</p>
+     * <ol>
+     *   <li>{@link #ABSENT} — no {@code Forwarded} header was sent; the RFC source contributes
+     *       nothing and the de-facto family is honored on its own.</li>
+     *   <li>{@link #UNRESOLVABLE} — the header WAS sent but its raw value failed sanitization
+     *       (CR/LF, control characters, over-length, suspicious pattern). The source counts as
+     *       present for <em>every</em> field, so it disagrees with any de-facto sibling that
+     *       resolves and the field is dropped (fail closed).</li>
+     *   <li>Present and sanitized — the parsed directives decide per field. A well-formed value that
+     *       simply carries no {@code proto} (say) leaves that one field's RFC source with nothing to
+     *       contribute, which is an ordinary fallback rather than a disagreement.</li>
+     * </ol>
+     *
+     * @param present      whether a non-blank {@code Forwarded} header was sent at all
+     * @param unresolvable whether that header's raw value failed sanitization outright
+     * @param parsed       the directives parsed from the sanitized value; empty unless present and
+     *                     sanitized
+     */
+    private record ForwardedResult(boolean present, boolean unresolvable, RfcForwardedParser.Parsed parsed) {
+
+        private static final RfcForwardedParser.Parsed NO_DIRECTIVES =
+                new RfcForwardedParser.Parsed(Optional.empty(), Optional.empty(), List.of());
+
+        private static final ForwardedResult ABSENT = new ForwardedResult(false, false, NO_DIRECTIVES);
+
+        private static final ForwardedResult UNRESOLVABLE = new ForwardedResult(true, true, NO_DIRECTIVES);
+
+        /**
+         * Whether the RFC 7239 source counts as present for a field whose directive presence is
+         * {@code directivePresent}. An unresolvable header counts as present for every field — that
+         * is precisely what forces the disagreement path instead of a silent fallback.
+         */
+        private boolean contributes(boolean directivePresent) {
+            return unresolvable || directivePresent;
+        }
+    }
+
+    /**
      * Host token plus an optional port extracted from a {@code host:port} value.
      */
     private record HostPort(Optional<String> host, OptionalInt port) {
         private static final HostPort EMPTY = new HostPort(Optional.empty(), OptionalInt.empty());
+
+        /**
+         * Renders as {@code host[:port]} so a disagreement log line reads as the header value it
+         * came from rather than as the record's default field dump.
+         */
+        @Override
+        public String toString() {
+            return host.orElse("(none)") + (port.isPresent() ? ":" + port.getAsInt() : "");
+        }
     }
 }

@@ -33,8 +33,12 @@ import static org.junit.jupiter.api.Assertions.*;
 @SuppressWarnings("java:S5778") // assertThrows lambdas intentionally wrap the whole failing call chain
 class ForwardedHeaderResolverTest {
 
-    private static Function<String, String> headers(Map<String, String> values) {
-        return new HashMap<>(values)::get;
+    private static Function<String, List<String>> headers(Map<String, String> values) {
+        Map<String, String> copy = new HashMap<>(values);
+        return name -> {
+            String value = copy.get(name);
+            return value == null ? null : List.of(value);
+        };
     }
 
     private static ForwardedHeaderResolver resolver(ForwardedResolverConfig config) {
@@ -110,10 +114,32 @@ class ForwardedHeaderResolverTest {
         }
 
         @Test
-        @DisplayName("takes the first token of a comma-separated list")
-        void firstTokenOfList() {
-            assertEquals("https", trustAllResolver()
-                    .resolve(headers(Map.of("X-Forwarded-Proto", "https, http"))).scheme().orElseThrow());
+        @DisplayName("takes the last token of a comma-separated list")
+        void lastTokenOfList() {
+            assertEquals("http", trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Proto", "https, http"))).scheme().orElseThrow(),
+                    "the nearest hop appends last, so its scheme wins");
+        }
+
+        @Test
+        @DisplayName("honors agreeing X-Forwarded-Proto and RFC 7239 proto")
+        void agreeingSourcesHonored() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "https",
+                    "Forwarded", "proto=https")));
+
+            assertEquals("https", result.scheme().orElseThrow());
+        }
+
+        @Test
+        @DisplayName("drops the scheme and warns when the two sources disagree")
+        void disagreeingSourcesDropped() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "https",
+                    "Forwarded", "proto=http")));
+
+            assertTrue(result.scheme().isEmpty(), "a forged source must not win by precedence");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
         }
 
         @Test
@@ -169,12 +195,50 @@ class ForwardedHeaderResolverTest {
         }
 
         @Test
+        @DisplayName("takes the last token of a comma-separated host list")
+        void lastHostTokenOfList() {
+            assertEquals("app.example.com", trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Host", "attacker.example, app.example.com")))
+                            .host().orElseThrow(),
+                    "the nearest hop appends last, so its host wins");
+        }
+
+        @Test
+        @DisplayName("takes the last token of a comma-separated port list")
+        void lastPortTokenOfList() {
+            assertEquals(9000, trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Port", "8443, 9000"))).port().orElseThrow(),
+                    "the nearest hop appends last, so its port wins");
+        }
+
+        @Test
         @DisplayName("falls back to X-ProxyHost and RFC 7239 host")
         void hostPrecedence() {
             assertEquals("proxy.example.com", trustAllResolver()
                     .resolve(headers(Map.of("X-ProxyHost", "proxy.example.com"))).host().orElseThrow());
             assertEquals("rfc.example.com", trustAllResolver()
                     .resolve(headers(Map.of("Forwarded", "host=rfc.example.com"))).host().orElseThrow());
+        }
+
+        @Test
+        @DisplayName("honors agreeing X-Forwarded-Host and RFC 7239 host")
+        void agreeingHostSourcesHonored() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com",
+                    "Forwarded", "host=app.example.com")));
+
+            assertEquals("app.example.com", result.host().orElseThrow());
+        }
+
+        @Test
+        @DisplayName("drops the host and warns when the two sources disagree")
+        void disagreeingHostSourcesDropped() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com",
+                    "Forwarded", "host=attacker.example")));
+
+            assertTrue(result.host().isEmpty(), "a forged source must not win by precedence");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
         }
 
         @Test
@@ -193,6 +257,29 @@ class ForwardedHeaderResolverTest {
         void rejectsHostWithPath() {
             assertTrue(trustAllResolver()
                     .resolve(headers(Map.of("X-Forwarded-Host", "evil.com/path"))).host().isEmpty());
+        }
+
+        @Test
+        @DisplayName("rejects a host carrying an embedded userinfo delimiter")
+        void rejectsHostWithUserinfoDelimiter() {
+            // "real-host@attacker.example" composed into "https://real-host@attacker.example/" is
+            // resolved by most URL parsers as userinfo "real-host" on host "attacker.example" —
+            // the same host-confusion class the path-separator guard already defends against.
+            assertTrue(trustAllResolver()
+                    .resolve(headers(Map.of("X-Forwarded-Host", "real-host@attacker.example")))
+                    .host().isEmpty());
+        }
+
+        @Test
+        @DisplayName("rejects a host carrying an embedded fragment or query delimiter")
+        void rejectsHostWithFragmentOrQueryDelimiter() {
+            assertAll(
+                    () -> assertTrue(trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Host", "evil.com#attacker.example")))
+                            .host().isEmpty()),
+                    () -> assertTrue(trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Host", "evil.com?attacker.example")))
+                            .host().isEmpty()));
         }
 
         @Test
@@ -337,6 +424,41 @@ class ForwardedHeaderResolverTest {
         }
 
         @Test
+        @DisplayName("honors agreeing X-Forwarded-For and RFC 7239 for chains")
+        void agreeingChainsHonored() {
+            var result = resolver(trustingProxies("10.0.0.0/8")).resolve(headers(Map.of(
+                    "X-Forwarded-For", "203.0.113.7, 10.0.0.5",
+                    "Forwarded", "for=203.0.113.7, for=\"10.0.0.5\"")));
+
+            assertEquals("203.0.113.7", result.clientIp().orElseThrow());
+        }
+
+        @Test
+        @DisplayName("drops the client IP and warns when the two chains disagree")
+        void disagreeingChainsDropped() {
+            var result = resolver(trustingProxies("10.0.0.0/8")).resolve(headers(Map.of(
+                    "X-Forwarded-For", "203.0.113.7, 10.0.0.5",
+                    "Forwarded", "for=198.51.100.9, for=\"10.0.0.5\"")));
+
+            assertTrue(result.clientIp().isEmpty(),
+                    "disagreeing chains mean one is forged, so neither may be honored");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
+        }
+
+        @Test
+        @DisplayName("a single present chain is unaffected by the disagreement rule")
+        void singleSourceChainUnchanged() {
+            var fromXff = resolver(trustingProxies("10.0.0.0/8"))
+                    .resolve(headers(Map.of("X-Forwarded-For", "203.0.113.7, 10.0.0.5")));
+            var fromRfc = resolver(trustingProxies("10.0.0.0/8"))
+                    .resolve(headers(Map.of("Forwarded", "for=203.0.113.7, for=\"10.0.0.5\"")));
+
+            assertAll("single-source chains resolve independently",
+                    () -> assertEquals("203.0.113.7", fromXff.clientIp().orElseThrow()),
+                    () -> assertEquals("203.0.113.7", fromRfc.clientIp().orElseThrow()));
+        }
+
+        @Test
         @DisplayName("is not honored when no trusted proxies are configured")
         void noTrustedProxiesIsEmpty() {
             var result = trustAllResolver()
@@ -357,6 +479,110 @@ class ForwardedHeaderResolverTest {
                     .resolve(headers(Map.of("X-Forwarded-Host", "evil.com\r\nInjected: 1")));
             assertTrue(result.host().isEmpty());
             LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "failed security sanitization");
+        }
+    }
+
+    @Nested
+    @DisplayName("Forwarded header presence")
+    class ForwardedPresence {
+
+        /**
+         * A raw {@code Forwarded} value the header-value pipeline rejects outright (CRLF injection).
+         * The header WAS sent, so it must not be mistaken for an absent one.
+         */
+        private static final String REJECTED = "host=attacker.example\r\nInjected: 1";
+
+        private ForwardedHeaderResolver proxyAwareResolver() {
+            return resolver(ForwardedResolverConfig.builder()
+                    .trustAll(true)
+                    .trustedProxies(Set.of("10.0.0.0/8"))
+                    .build());
+        }
+
+        @Test
+        @DisplayName("an absent Forwarded header leaves the de-facto family honored")
+        void absentForwardedHonorsDeFacto() {
+            var result = proxyAwareResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "https",
+                    "X-Forwarded-Host", "app.example.com",
+                    "X-Forwarded-For", "203.0.113.7, 10.0.0.5")));
+
+            assertAll("no RFC source is present, so the de-facto family stands alone",
+                    () -> assertEquals("https", result.scheme().orElseThrow()),
+                    () -> assertEquals("app.example.com", result.host().orElseThrow()),
+                    () -> assertEquals("203.0.113.7", result.clientIp().orElseThrow()));
+        }
+
+        @Test
+        @DisplayName("an agreeing Forwarded header leaves the de-facto family honored")
+        void validForwardedHonorsAgreeingDeFacto() {
+            var result = proxyAwareResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "https",
+                    "X-Forwarded-Host", "app.example.com",
+                    "X-Forwarded-For", "203.0.113.7, 10.0.0.5",
+                    "Forwarded", "proto=https;host=app.example.com;for=203.0.113.7, for=\"10.0.0.5\"")));
+
+            assertAll("both sources resolve and agree",
+                    () -> assertEquals("https", result.scheme().orElseThrow()),
+                    () -> assertEquals("app.example.com", result.host().orElseThrow()),
+                    () -> assertEquals("203.0.113.7", result.clientIp().orElseThrow()));
+        }
+
+        @Test
+        @DisplayName("a sanitization-rejected Forwarded header drops every de-facto field it covers")
+        void rejectedForwardedDropsDeFactoFields() {
+            var result = proxyAwareResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "https",
+                    "X-Forwarded-Host", "app.example.com",
+                    "X-Forwarded-For", "203.0.113.7, 10.0.0.5",
+                    "Forwarded", REJECTED)));
+
+            assertAll("a present-but-unresolvable RFC source disagrees with every resolving sibling",
+                    () -> assertTrue(result.scheme().isEmpty(),
+                            "a rejected Forwarded header must not silently fall back to X-Forwarded-Proto"),
+                    () -> assertTrue(result.host().isEmpty(),
+                            "a rejected Forwarded header must not silently fall back to X-Forwarded-Host"),
+                    () -> assertTrue(result.clientIp().isEmpty(),
+                            "a rejected Forwarded header must not silently fall back to X-Forwarded-For"));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "failed security sanitization");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
+        }
+
+        @Test
+        @DisplayName("a sanitization-rejected Forwarded header is not mistaken for an absent one")
+        void rejectedForwardedIsNotAbsent() {
+            var deFactoOnly = proxyAwareResolver()
+                    .resolve(headers(Map.of("X-Forwarded-Host", "app.example.com")));
+            var withRejected = proxyAwareResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com",
+                    "Forwarded", REJECTED)));
+
+            assertAll("the two cases must not resolve identically",
+                    () -> assertEquals("app.example.com", deFactoOnly.host().orElseThrow()),
+                    () -> assertTrue(withRejected.host().isEmpty()),
+                    () -> assertNotEquals(deFactoOnly, withRejected));
+        }
+
+        @Test
+        @DisplayName("a well-formed Forwarded header lacking a directive keeps that field's de-facto value")
+        void absentDirectiveKeepsDeFactoFallback() {
+            var result = proxyAwareResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "https",
+                    "X-Forwarded-Host", "app.example.com",
+                    "Forwarded", "for=203.0.113.7")));
+
+            assertAll("a parsed header simply carrying no proto/host directive is not a disagreement",
+                    () -> assertEquals("https", result.scheme().orElseThrow()),
+                    () -> assertEquals("app.example.com", result.host().orElseThrow()));
+        }
+
+        @Test
+        @DisplayName("a sanitization-rejected Forwarded header alone yields nothing")
+        void rejectedForwardedAloneYieldsNothing() {
+            var result = proxyAwareResolver().resolve(headers(Map.of("Forwarded", REJECTED)));
+
+            assertEquals(ResolvedForwarding.empty(), result,
+                    "an unresolvable header contributes no value of its own");
         }
     }
 

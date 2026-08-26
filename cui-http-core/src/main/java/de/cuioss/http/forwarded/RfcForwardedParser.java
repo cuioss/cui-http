@@ -31,10 +31,16 @@ import java.util.Optional;
  * value             = token / quoted-string
  * </pre>
  *
- * <p>Extracts the first {@code proto} and {@code host} directives (case-insensitive names) and the
+ * <p>Extracts the last {@code proto} and {@code host} directives (case-insensitive names) and the
  * ordered list of {@code for} node identifiers across all comma-separated elements. Comma and
  * semicolon separators inside quoted strings are honored. Note: {@code Forwarded} has no
  * prefix/context-path directive, so none is extracted.</p>
+ *
+ * <p><strong>Last directive wins.</strong> Each proxy in the chain appends its own forwarded-element,
+ * so the rightmost {@code proto}/{@code host} is the one contributed by the nearest (and therefore
+ * most trustworthy) hop; any earlier occurrence is attacker-supplied when the client sent a
+ * {@code Forwarded} header of its own. The {@code for} list is unaffected — it stays in appearance
+ * order, because the chain walk consumes it right-to-left itself.</p>
  */
 final class RfcForwardedParser {
 
@@ -44,8 +50,8 @@ final class RfcForwardedParser {
     /**
      * The relevant directives pulled from a {@code Forwarded} header value.
      *
-     * @param proto     the first {@code proto} directive, if any
-     * @param host      the first {@code host} directive, if any
+     * @param proto     the last {@code proto} directive, if any
+     * @param host      the last {@code host} directive, if any
      * @param forValues the ordered {@code for} node identifiers (unquoted), possibly empty
      */
     record Parsed(Optional<String> proto, Optional<String> host, List<String> forValues) {
@@ -62,7 +68,7 @@ final class RfcForwardedParser {
     }
 
     /**
-     * Mutable accumulator that applies one {@code token=value} pair, keeping the first
+     * Mutable accumulator that applies one {@code token=value} pair, keeping the last
      * {@code proto}/{@code host} and appending every {@code for} in appearance order.
      */
     private static final class Accumulator {
@@ -82,8 +88,8 @@ final class RfcForwardedParser {
                 return;
             }
             switch (name) {
-                case "proto" -> proto = proto == null ? value : proto;
-                case "host" -> host = host == null ? value : host;
+                case "proto" -> proto = value;
+                case "host" -> host = value;
                 case "for" -> forValues.add(value);
                 default -> { /* ignore by, ext, and unknown directives */
                 }

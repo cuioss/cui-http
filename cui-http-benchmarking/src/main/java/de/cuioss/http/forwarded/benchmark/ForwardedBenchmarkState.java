@@ -45,34 +45,36 @@ public class ForwardedBenchmarkState {
     public ResolvedForwarding resolved;
 
     // Clean, realistic X-Forwarded-* header sets.
-    private static final List<Map<String, String>> CLEAN_XFORWARDED = List.of(
-            Map.of("X-Forwarded-Proto", "https", "X-Forwarded-Host", "app.example.com:8443",
-                    "X-Forwarded-Prefix", "/ui", "X-Forwarded-For", "203.0.113.7, 10.0.0.5"),
-            Map.of("X-Forwarded-Proto", "https", "X-Forwarded-Host", "api.example.com",
-                    "X-Forwarded-Port", "443", "X-Forwarded-For", "198.51.100.23, 10.1.2.3"),
-            Map.of("X-Forwarded-Proto", "http", "X-Forwarded-Host", "gateway.internal:8080",
-                    "X-Forwarded-Prefix", "/service/v1", "X-Forwarded-For", "192.0.2.44, 10.9.9.9"));
+    private static final List<Map<String, List<String>>> CLEAN_XFORWARDED = List.of(
+            Map.of("X-Forwarded-Proto", List.of("https"), "X-Forwarded-Host", List.of("app.example.com:8443"),
+                    "X-Forwarded-Prefix", List.of("/ui"), "X-Forwarded-For", List.of("203.0.113.7, 10.0.0.5")),
+            Map.of("X-Forwarded-Proto", List.of("https"), "X-Forwarded-Host", List.of("api.example.com"),
+                    "X-Forwarded-Port", List.of("443"), "X-Forwarded-For", List.of("198.51.100.23, 10.1.2.3")),
+            Map.of("X-Forwarded-Proto", List.of("http"), "X-Forwarded-Host", List.of("gateway.internal:8080"),
+                    "X-Forwarded-Prefix", List.of("/service/v1"), "X-Forwarded-For", List.of("192.0.2.44, 10.9.9.9")));
 
     // RFC 7239 Forwarded header sets (exercise the quoted-string parser).
-    private static final List<Map<String, String>> FORWARDED_RFC = List.of(
-            Map.of("Forwarded", "for=203.0.113.7;host=app.example.com;proto=https, for=\"10.0.0.5\""),
-            Map.of("Forwarded", "proto=https;host=\"api.example.com:443\";for=\"[2001:db8::1]\", for=10.1.2.3"),
-            Map.of("Forwarded", "for=192.0.2.44;proto=http;host=gateway.internal:8080, for=10.9.9.9"));
+    private static final List<Map<String, List<String>>> FORWARDED_RFC = List.of(
+            Map.of("Forwarded", List.of("for=203.0.113.7;host=app.example.com;proto=https, for=\"10.0.0.5\"")),
+            Map.of("Forwarded", List.of("proto=https;host=\"api.example.com:443\";for=\"[2001:db8::1]\", for=10.1.2.3")),
+            Map.of("Forwarded", List.of("for=192.0.2.44;proto=http;host=gateway.internal:8080, for=10.9.9.9")));
 
     // Injection / attack header sets (expected to be sanitized away).
-    private static final List<Map<String, String>> ATTACK_XFORWARDED = List.of(
-            Map.of("X-Forwarded-Host", "evil.com\r\nInjected: 1", "X-Forwarded-Prefix", "//attacker.com"),
-            Map.of("X-Forwarded-Prefix", "/app\\..\\..", "X-Forwarded-For", "not-an-ip, 10.0.0.5"),
-            Map.of("X-Forwarded-Proto", "javascript:alert(1)", "X-Forwarded-Host", "evil.com/../../etc"));
+    private static final List<Map<String, List<String>>> ATTACK_XFORWARDED = List.of(
+            Map.of("X-Forwarded-Host", List.of("evil.com\r\nInjected: 1"),
+                    "X-Forwarded-Prefix", List.of("//attacker.com")),
+            Map.of("X-Forwarded-Prefix", List.of("/app\\..\\.."), "X-Forwarded-For", List.of("not-an-ip, 10.0.0.5")),
+            Map.of("X-Forwarded-Proto", List.of("javascript:alert(1)"),
+                    "X-Forwarded-Host", List.of("evil.com/../../etc")));
 
     // Pre-built header accessors, one bound {@code map::get} per header set, so no Function is
     // allocated inside the measured region.
-    private static final List<Function<String, String>> CLEAN_ACCESSORS = toAccessors(CLEAN_XFORWARDED);
-    private static final List<Function<String, String>> FORWARDED_ACCESSORS = toAccessors(FORWARDED_RFC);
-    private static final List<Function<String, String>> ATTACK_ACCESSORS = toAccessors(ATTACK_XFORWARDED);
+    private static final List<Function<String, List<String>>> CLEAN_ACCESSORS = toAccessors(CLEAN_XFORWARDED);
+    private static final List<Function<String, List<String>>> FORWARDED_ACCESSORS = toAccessors(FORWARDED_RFC);
+    private static final List<Function<String, List<String>>> ATTACK_ACCESSORS = toAccessors(ATTACK_XFORWARDED);
 
-    private static List<Function<String, String>> toAccessors(List<Map<String, String>> headerSets) {
-        return headerSets.stream().<Function<String, String>>map(m -> m::get).toList();
+    private static List<Function<String, List<String>>> toAccessors(List<Map<String, List<String>>> headerSets) {
+        return headerSets.stream().<Function<String, List<String>>>map(m -> m::get).toList();
     }
 
     // Plain int counters: @State(Scope.Thread) allocates one instance per benchmark thread,
@@ -94,17 +96,17 @@ public class ForwardedBenchmarkState {
     }
 
     /** @return the next clean {@code X-Forwarded-*} header accessor, cycling. */
-    public Function<String, String> nextCleanXForwarded() {
+    public Function<String, List<String>> nextCleanXForwarded() {
         return CLEAN_ACCESSORS.get((cleanIndex++ & Integer.MAX_VALUE) % CLEAN_ACCESSORS.size());
     }
 
     /** @return the next RFC 7239 {@code Forwarded} header accessor, cycling. */
-    public Function<String, String> nextForwarded() {
+    public Function<String, List<String>> nextForwarded() {
         return FORWARDED_ACCESSORS.get((forwardedIndex++ & Integer.MAX_VALUE) % FORWARDED_ACCESSORS.size());
     }
 
     /** @return the next injection header accessor, cycling. */
-    public Function<String, String> nextAttack() {
+    public Function<String, List<String>> nextAttack() {
         return ATTACK_ACCESSORS.get((attackIndex++ & Integer.MAX_VALUE) % ATTACK_ACCESSORS.size());
     }
 }

@@ -79,7 +79,7 @@ xref:doc/forwarded-header-resolution.adoc[Forwarded Header Resolution]:
 * Resolves `X-Forwarded-*`, RFC 7239 `Forwarded`, and NiFi `X-Proxy*` into one sanitized result
 * Scheme / host / port / context-path / client-IP with configurable per-field precedence
 * Secure-by-default trust model (allowlist, `trustAll`, trusted-proxy CIDR walk)
-* Built-in sanitization via the security pipelines; transport-agnostic `Function<String,String>` accessor
+* Built-in sanitization via the security pipelines; transport-agnostic `Function<String, List<String>>` accessor exposing every instance of a repeated header
 
 === Security Testing
 

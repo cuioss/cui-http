@@ -14,7 +14,7 @@ Module: `de.cuioss.http`
 LogMessages Classes:
 
 - `de.cuioss.http.client.HttpLogMessages` - HTTP client operations (HTTP-106–108, HTTP-110–115, HTTP-200–201)
-- `de.cuioss.http.forwarded.ForwardedLogMessages` - Forwarded / reverse-proxy header resolution (HTTP-120–123)
+- `de.cuioss.http.forwarded.ForwardedLogMessages` - Forwarded / reverse-proxy header resolution (HTTP-120–124)
 
 == HttpLogMessages
 
@@ -114,6 +114,11 @@ LogMessages Classes:
 |Forwarded
 |Ignoring client IP: forwarded chain carries an unparseable entry: %s
 |Logged when the forwarded chain contains an unparseable entry and client IP resolution is aborted. Parameters: sanitized chain entry.
+
+|HTTP-124
+|Forwarded
+|Dropping forwarded %s: sources disagree: %s resolves to %s but Forwarded resolves to %s
+|Logged when the de-facto X-Forwarded-* / X-Proxy* family and the RFC 7239 Forwarded header resolve a field to different values, so the field is dropped rather than letting either source win. Parameters: field name, de-facto header name, de-facto resolution, RFC 7239 resolution.
 |===
 
 == Notes

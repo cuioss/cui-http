@@ -33,8 +33,31 @@ import java.util.*;
  *   <li>{@code allowedContextPaths} — honor these specific normalized context paths even when
  *       {@code trustAll} is {@code false} (mirrors NiFi's {@code nifi.web.proxy.context.path}).</li>
  *   <li>{@code trustedProxies} — CIDR ranges / IP literals defining trusted proxy hops; required
- *       for {@code X-Forwarded-For} client-IP resolution. An empty set honors no client IP.</li>
+ *       for {@code X-Forwarded-For} client-IP resolution. An empty set honors no client IP.
+ *       <strong>A configured range must contain only proxies</strong> — see below.</li>
  * </ul>
+ *
+ * <h3 id="trusted-range-composition">Composition rule — a trusted range must contain only proxies</h3>
+ * <p>The client-IP chain walk consumes the forwarded chain right-to-left and <em>skips</em> every
+ * hop that falls inside a configured {@code trustedProxies} range; the first hop that does not is
+ * returned as the client. Membership of that range is therefore a statement that the machine
+ * <em>is a proxy whose appended chain entry can be believed</em> — not merely that it is on a
+ * network you own. Both directions of getting the range wrong are real:</p>
+ * <ul>
+ *   <li><strong>Too broad → no client IP at all.</strong> A range wide enough to cover the whole
+ *       network (or {@code 0.0.0.0/0}) makes <em>every</em> hop trusted, so the walk skips the
+ *       entire chain, falls off the left end, and returns empty. This fails closed — no forged
+ *       address is ever honored — but it is counter-intuitive to operators debugging a missing
+ *       client IP, who typically widen the range further and make the symptom worse.</li>
+ *   <li><strong>Too broad → client-IP spoofing.</strong> A non-proxy machine that happens to fall
+ *       inside a configured range is skipped by the walk exactly as a real proxy would be. Anything
+ *       that machine <em>prepends</em> to the chain is then treated as an earlier, untrusted hop and
+ *       returned as the client IP. A single compromised or merely untrustworthy host inside the
+ *       range is enough to spoof the client IP for every request it forwards.</li>
+ * </ul>
+ * <p>Scope each range to the proxy tier itself — the individual load-balancer / ingress addresses,
+ * or the smallest subnet that holds nothing else — rather than to the enclosing VPC or office
+ * network.</p>
  *
  * <h3>Usage Example</h3>
  * <pre>{@code
@@ -193,8 +216,19 @@ public final class ForwardedResolverConfig {
         }
 
         /**
+         * Sets the trusted-proxy ranges used by the client-IP chain walk.
+         *
+         * <p>Each range must contain <em>only</em> proxies whose appended chain entry can be
+         * believed — see the class-level
+         * <a href="#trusted-range-composition">composition rule</a>. A range that is too broad
+         * fails in both directions: covering the whole network makes every hop trusted, so the walk
+         * exhausts the chain and yields no client IP at all; and any non-proxy machine inside a
+         * configured range is skipped like a real proxy, so whatever it prepends to the chain is
+         * returned as the client IP.</p>
+         *
          * @param trustedProxies CIDR ranges / IP literals defining trusted proxy hops for
-         *                       client-IP resolution
+         *                       client-IP resolution; scope each to the proxy tier itself, never to
+         *                       the enclosing VPC or office network
          * @return this builder
          * @throws NullPointerException if {@code trustedProxies} is {@code null}
          * @throws IllegalArgumentException if any entry is not a valid IP literal / CIDR
