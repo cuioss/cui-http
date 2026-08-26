@@ -50,14 +50,14 @@ These requirements are derived from:
 
 * The system must detect all known path traversal patterns
 * Must detect patterns from CVE database including:
-  ** link:https://nvd.nist.gov/vuln/detail/CVE-2021-41773[CVE-2021-41773]: Apache httpd path traversal
-  ** link:https://nvd.nist.gov/vuln/detail/CVE-2021-42013[CVE-2021-42013]: Apache httpd double encoding
-  ** link:https://nvd.nist.gov/vuln/detail/CVE-2020-5410[CVE-2020-5410]: Spring Cloud Config traversal
-  ** link:https://nvd.nist.gov/vuln/detail/CVE-2019-0232[CVE-2019-0232]: Apache Tomcat RCE via traversal
+  ** link:https://nvd.nist.gov/vuln/detail/CVE-2021-41773[CVE-2021-41773]: Apache httpd path traversal — encoded in link:../../cui-http-core/src/test/java/de/cuioss/http/security/database/ApacheCVEAttackDatabase.java[ApacheCVEAttackDatabase]
+  ** link:https://nvd.nist.gov/vuln/detail/CVE-2021-42013[CVE-2021-42013]: Apache httpd double encoding — encoded in link:../../cui-http-core/src/test/java/de/cuioss/http/security/database/ApacheCVEAttackDatabase.java[ApacheCVEAttackDatabase]
+  ** link:https://nvd.nist.gov/vuln/detail/CVE-2020-5410[CVE-2020-5410]: Spring Cloud Config traversal — cited as a representative traversal class; not individually encoded in the attack databases
+  ** link:https://nvd.nist.gov/vuln/detail/CVE-2019-0232[CVE-2019-0232]: Apache Tomcat RCE via traversal — cited as a representative traversal class; not individually encoded in the attack databases
 
 * Must detect novel combinations of known techniques
 * Must maintain pattern database for emerging threats
-* Reference: xref:analysis/cve-analysis.adoc[CVE Analysis]
+* Reference: link:../../cui-http-core/src/test/java/de/cuioss/http/security/database/[Attack Databases]. The four CVEs above are *not* covered by xref:analysis/cve-analysis.adoc[CVE Analysis], which analyses a different CVE set.
 
 [#SEC-4]
 === SEC-4: HTTP Protocol Encoding Attack Prevention
@@ -200,12 +200,17 @@ These requirements are derived from:
 
 * The system must handle encoding securely
 * Must:
-  ** Use constant-time comparisons where appropriate
-  ** Prevent timing attacks
   ** Handle encoding errors safely
   ** Validate encoding consistency
 
 * Must not leak information through error messages
+* NOTE: Constant-time comparison is *not implemented*. There is no `MessageDigest.isEqual` or
+  equivalent anywhere in `de.cuioss.http.security`; the validation stages compare with ordinary
+  `String` and `Set` operations whose runtime depends on the input. Timing-side-channel
+  resistance is therefore *not* a property this library provides. The following are
+  consequently *not implemented*:
+  ** Constant-time comparison
+  ** Timing-attack prevention
 * Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
 [#SEC-14]
@@ -336,7 +341,7 @@ The following classes implement the security requirements:
 | SEC-10 | Complexity Protection | xref:specification/testing.adoc#_performance_validation[Performance]
 | SEC-11 | Event Counting (no logging) | xref:specification/specification.adoc#_securityeventcounter[Monitoring]
 | SEC-12 | Per-request Pattern Recognition (no rate-limit/alerting) | xref:specification/specification.adoc#_event_counter_pattern[Detection]
-| SEC-13 | Encoding Security | xref:specification/specification.adoc#_decodingstage[Encoding]
+| SEC-13 | Encoding Security (constant-time comparison NOT IMPLEMENTED) | xref:specification/specification.adoc#_decodingstage[Encoding]
 | SEC-14 | Secure Defaults | xref:specification/specification.adoc#_configuration_architecture[Defaults]
 | SEC-15 | Audit context on exceptions (no tamper-evident trail) | xref:specification/specification.adoc#_securityeventcounter[Audit]
 | SEC-16 | Testing Support | xref:specification/testing.adoc[Testing]
