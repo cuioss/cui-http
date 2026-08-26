@@ -16,6 +16,7 @@
 package de.cuioss.http.client.adapter;
 
 import de.cuioss.http.client.ContentType;
+import de.cuioss.http.client.HttpMethod;
 import de.cuioss.http.client.converter.HttpRequestConverter;
 import de.cuioss.http.client.converter.HttpResponseConverter;
 import de.cuioss.http.client.handler.HttpHandler;
@@ -29,6 +30,8 @@ import de.cuioss.test.mockwebserver.dispatcher.ModuleDispatcherElement;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -55,6 +58,10 @@ import static org.junit.jupiter.api.Assertions.*;
 @EnableMockWebServer(useHttps = false)
 @DisplayName("ETagAwareHttpAdapter Integration Tests")
 class ETagAwareHttpAdapterIntegrationTest {
+
+    private static final String SEED_CONTENT = "{\"id\":1,\"name\":\"seeded\"}";
+    private static final String SEED_ETAG = "\"etag-seed\"";
+    private static final Map<String, String> CONDITIONAL_HEADERS = Map.of("If-None-Match", SEED_ETAG);
 
     private final TestApiDispatcher dispatcher = new TestApiDispatcher();
 
@@ -100,6 +107,81 @@ class ETagAwareHttpAdapterIntegrationTest {
         // Verify If-None-Match header was sent on second request
         assertTrue(dispatcher.getLastIfNoneMatch().isPresent(), "If-None-Match header should be sent");
         assertEquals("\"etag-123\"", dispatcher.getLastIfNoneMatch().orElse(null));
+    }
+
+    @Test
+    @DisplayName("A 304 to HEAD should report status and ETag with no body")
+    @ModuleDispatcher
+    void head304ShouldReportStatusAndETagWithoutBody(URIBuilder uriBuilder) {
+        dispatcher.withSeedThen304(SEED_CONTENT, SEED_ETAG);
+        HttpAdapter<String> adapter = matrixAdapter(uriBuilder);
+        assertTrue(adapter.getBlocking().isSuccess(), "Seeding GET should succeed and populate the cache");
+
+        HttpResult<String> result = adapter.head(CONDITIONAL_HEADERS).join();
+
+        assertAll("HEAD revalidated with 304",
+                () -> assertTrue(result.isSuccess(), "A 304 to HEAD is a valid revalidation"),
+                () -> assertEquals(Optional.of(304), result.getHttpStatus(), "Status should be reported as 304"),
+                () -> assertEquals(SEED_ETAG, result.getETag().orElse(null), "The validator should be reported"),
+                () -> assertTrue(result.getContent().isEmpty(), "A HEAD response carries no body"));
+    }
+
+    /**
+     * A 304 answering an unsafe method is a server protocol violation (RFC 7232 mandates 412), so it
+     * must surface as a failure that leaks neither the cached body nor the cached validator.
+     * <p>
+     * PATCH and OPTIONS belong to this equivalence class and are gated identically in production,
+     * but cannot be exercised here: the MockWebServer fixture cannot serve them yet.
+     */
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = HttpMethod.class, names = {"POST", "PUT", "DELETE"})
+    @DisplayName("A 304 to an unsafe method should fail without leaking cached content or ETag")
+    @ModuleDispatcher
+    void unsafeMethod304ShouldFailWithoutLeakingCachedData(HttpMethod method, URIBuilder uriBuilder) {
+        dispatcher.withSeedThen304(SEED_CONTENT, SEED_ETAG);
+        HttpAdapter<String> adapter = matrixAdapter(uriBuilder);
+        assertTrue(adapter.getBlocking().isSuccess(), "Seeding GET should succeed and populate the cache");
+
+        HttpResult<String> result = revalidateWith(adapter, method);
+
+        assertAll("%s revalidated with 304".formatted(method.methodName()),
+                () -> assertFalse(result.isSuccess(), "A 304 to an unsafe method is a protocol violation"),
+                () -> assertEquals(HttpErrorCategory.INVALID_CONTENT, result.getErrorCategory().orElse(null),
+                        "The violation should be categorised as invalid content"),
+                () -> assertEquals(Optional.of(304), result.getHttpStatus(), "The observed status should be preserved"),
+                () -> assertTrue(result.getContent().isEmpty(), "The cached GET body must not leak"),
+                () -> assertTrue(result.getETag().isEmpty(), "The cached GET validator must not leak"));
+    }
+
+    /**
+     * Builds the adapter used by the 304 matrix. The cache key is URI-only so that the
+     * caller-supplied {@code If-None-Match} on the revalidating request resolves to the very entry
+     * the seeding GET stored — with the default {@code ALL} filter the extra header would produce a
+     * different key and the 304 branch would never be reached.
+     */
+    private HttpAdapter<String> matrixAdapter(URIBuilder uriBuilder) {
+        String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
+
+        return ETagAwareHttpAdapter.<String>builder()
+                .httpHandler(handler)
+                .responseConverter(new StringResponseConverter())
+                .cacheKeyHeaderFilter(CacheKeyHeaderFilter.NONE)
+                .build();
+    }
+
+    /**
+     * Issues a body-less request under {@code method} carrying a caller-supplied
+     * {@code If-None-Match} — the only way a non-GET request can draw a 304 from a conformant server.
+     */
+    private HttpResult<String> revalidateWith(HttpAdapter<String> adapter, HttpMethod method) {
+        return switch (method) {
+            case POST -> adapter.post((String) null, CONDITIONAL_HEADERS).join();
+            case PUT -> adapter.put((String) null, CONDITIONAL_HEADERS).join();
+            case DELETE -> adapter.delete(CONDITIONAL_HEADERS).join();
+            default -> throw new IllegalArgumentException(
+                    "The 304 matrix does not drive " + method.methodName());
+        };
     }
 
     /**

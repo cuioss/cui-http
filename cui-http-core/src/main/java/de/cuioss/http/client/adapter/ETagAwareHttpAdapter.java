@@ -48,17 +48,36 @@ import static de.cuioss.http.client.HttpLogMessages.WARN;
  * <ul>
  *   <li>GET requests with cached responses send If-None-Match header</li>
  *   <li>Server responds with 304 Not Modified if content unchanged</li>
- *   <li>Adapter returns cached content without re-downloading</li>
  *   <li>Only GET responses are cached (POST/PUT/DELETE never cached)</li>
  *   <li>ETags extracted from all responses for optimistic locking patterns</li>
+ * </ul>
+ *
+ * <h3>What a 304 yields, per method</h3>
+ * <p>
+ * RFC 7232 gives {@code 304 Not Modified} a meaning only for a conditional request on a safe
+ * method, so the adapter resolves it differently depending on the method used:
+ * </p>
+ * <ul>
+ *   <li><strong>GET</strong> — success carrying the cached content, the cached ETag and status
+ *       {@code 304}; the cache entry's timestamp is refreshed.</li>
+ *   <li><strong>HEAD</strong> — success carrying status {@code 304} and the ETag but
+ *       <strong>no body</strong>, because a HEAD response has none. Returning a prior GET's cached
+ *       body here would fabricate content the server never sent.</li>
+ *   <li><strong>POST / PUT / DELETE / PATCH / OPTIONS</strong> — an {@code INVALID_CONTENT}
+ *       failure with status {@code 304}, carrying neither content nor ETag. RFC 7232 requires a
+ *       failed precondition on an unsafe method to be answered with {@code 412 Precondition
+ *       Failed}, so a 304 here is a server protocol violation, never a success.</li>
  * </ul>
  *
  * <p><strong>Do not supply your own {@code If-None-Match} header.</strong> The adapter manages
  * conditional GETs itself: when it holds a cached entry for a GET it sets {@code If-None-Match} to
  * the cached ETag, replacing (not appending to) any caller-supplied value. A caller-driven
- * conditional request is therefore only partially honored, and on a caching-disabled adapter a
- * caller-triggered {@code 304} has no cached entry to return and is reported as an
- * {@code INVALID_CONTENT} failure. Let the adapter drive revalidation instead.</p>
+ * conditional request is therefore only partially honored. Because caller headers are applied to
+ * <em>every</em> method, a caller-supplied {@code If-None-Match} is also the only way a non-GET
+ * request can draw a {@code 304} at all — which then resolves per the table above rather than as a
+ * success. On a caching-disabled adapter a caller-triggered {@code 304} has no cached entry to
+ * return and is reported as an {@code INVALID_CONTENT} failure. Let the adapter drive revalidation
+ * instead.</p>
  *
  * <h2>Example: Basic Usage</h2>
  * <pre>{@code
@@ -779,7 +798,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      * This method encapsulates the complete response handling logic including:
      * </p>
      * <ul>
-     *   <li>304 Not Modified detection and cached content return</li>
+     *   <li>304 Not Modified detection, resolved per method by {@link #handleNotModified}</li>
      *   <li>ETag extraction from response headers</li>
      *   <li>Response body conversion using configured converter</li>
      *   <li>Conversion failure handling for 2xx responses</li>
@@ -801,22 +820,16 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
     ) {
         int statusCode = response.statusCode();
 
-        // Handle 304 Not Modified - return cached content
-        if (statusCode == 304 && cachedEntry != null) {
-            LOGGER.debug("304 Not Modified - returning cached content");
-            // Refresh the entry's timestamp on successful revalidation so that hot entries
-            // (revalidated frequently) are not evicted before cold entries under the timestamp-based
-            // eviction heuristic. Only GET responses are cached, so this only applies to GET.
-            if (method == HttpMethod.GET) {
-                putInCache(cacheKey, new CacheEntry<>(cachedEntry.content(), cachedEntry.etag(), System.currentTimeMillis()));
-            }
-            return HttpResult.<T>success(cachedEntry.content(), cachedEntry.etag(), 304);
-        }
-
-        // Extract ETag from response (all methods, not just GET)
+        // Extract ETag from response (all methods, not just GET). Extracted ahead of the 304 branch
+        // so a HEAD revalidation can prefer the validator the 304 itself returned.
         String etag = response.headers()
                 .firstValue("ETag")
                 .orElse(null);
+
+        // Handle 304 Not Modified - the outcome depends on the request method (RFC 7232)
+        if (statusCode == 304 && cachedEntry != null) {
+            return handleNotModified(method, cachedEntry, cacheKey, etag);
+        }
 
         // Convert response body
         Optional<T> content = responseConverter.convert(response.body());
@@ -862,6 +875,60 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
                 errorCategory,
                 canUseCachedFallback ? cachedEntry.etag() : null, // cached GET ETag when available
                 statusCode // include HTTP status code
+        );
+    }
+
+    /**
+     * Produces the result for a {@code 304 Not Modified} response on a request that holds a cached
+     * entry. RFC 7232 gives 304 a meaning only for a conditional request on a safe method, so the
+     * outcome is gated on the method:
+     *
+     * <ul>
+     *   <li><strong>GET</strong> — the cached body <em>is</em> the response body. The entry's
+     *       timestamp is refreshed so a frequently revalidated entry is not evicted ahead of a
+     *       colder one under the timestamp-based eviction heuristic.</li>
+     *   <li><strong>HEAD</strong> — status and validator only. A HEAD response carries no body, so
+     *       surfacing a prior GET's cached body here would fabricate content the server never sent.
+     *       The cache is populated by GET alone, so no timestamp refresh applies.</li>
+     *   <li><strong>Any other method</strong> — a protocol violation. RFC 7232 requires a failed
+     *       precondition on an unsafe method to be answered with {@code 412 Precondition Failed},
+     *       never 304. Reported as an {@link HttpErrorCategory#INVALID_CONTENT} failure carrying
+     *       neither cached content nor a cached validator, so no prior GET's data can leak out
+     *       through the method-agnostic cache key.</li>
+     * </ul>
+     *
+     * @param method HTTP method the request used
+     * @param cachedEntry cached entry held for this request
+     * @param cacheKey cache key the entry is stored under
+     * @param responseEtag ETag the 304 carried, or null when it carried none
+     * @return the method-appropriate result
+     */
+    private HttpResult<T> handleNotModified(
+            HttpMethod method,
+            CacheEntry<T> cachedEntry,
+            String cacheKey,
+            @Nullable String responseEtag
+    ) {
+        if (method == HttpMethod.GET) {
+            LOGGER.debug("304 Not Modified - returning cached content");
+            putInCache(cacheKey, new CacheEntry<>(cachedEntry.content(), cachedEntry.etag(), System.currentTimeMillis()));
+            return HttpResult.<T>success(cachedEntry.content(), cachedEntry.etag(), 304);
+        }
+
+        if (method == HttpMethod.HEAD) {
+            LOGGER.debug("304 Not Modified for HEAD - returning status and ETag without a body");
+            return HttpResult.<T>success(null, responseEtag != null ? responseEtag : cachedEntry.etag(), 304);
+        }
+
+        LOGGER.debug("304 Not Modified is not a valid response to %s - reporting a protocol violation",
+                method.methodName());
+        return HttpResult.<T>failureWithFallback(
+                "HTTP 304 is not a valid response to a %s request (RFC 7232 requires 412)".formatted(method.methodName()),
+                null,
+                null,
+                HttpErrorCategory.INVALID_CONTENT,
+                null,
+                304
         );
     }
 
