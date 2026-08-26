@@ -110,10 +110,11 @@ class ForwardedHeaderResolverTest {
         }
 
         @Test
-        @DisplayName("takes the first token of a comma-separated list")
-        void firstTokenOfList() {
-            assertEquals("https", trustAllResolver()
-                    .resolve(headers(Map.of("X-Forwarded-Proto", "https, http"))).scheme().orElseThrow());
+        @DisplayName("takes the last token of a comma-separated list")
+        void lastTokenOfList() {
+            assertEquals("http", trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Proto", "https, http"))).scheme().orElseThrow(),
+                    "the nearest hop appends last, so its scheme wins");
         }
 
         @Test
@@ -166,6 +167,23 @@ class ForwardedHeaderResolverTest {
                     "X-Forwarded-Host", "app.example.com:8443",
                     "X-Forwarded-Port", "9000")));
             assertEquals(9000, result.port().orElseThrow());
+        }
+
+        @Test
+        @DisplayName("takes the last token of a comma-separated host list")
+        void lastHostTokenOfList() {
+            assertEquals("app.example.com", trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Host", "attacker.example, app.example.com")))
+                            .host().orElseThrow(),
+                    "the nearest hop appends last, so its host wins");
+        }
+
+        @Test
+        @DisplayName("takes the last token of a comma-separated port list")
+        void lastPortTokenOfList() {
+            assertEquals(9000, trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Port", "8443, 9000"))).port().orElseThrow(),
+                    "the nearest hop appends last, so its port wins");
         }
 
         @Test

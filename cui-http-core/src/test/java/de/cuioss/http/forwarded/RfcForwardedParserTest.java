@@ -57,11 +57,20 @@ class RfcForwardedParserTest {
     }
 
     @Test
-    @DisplayName("takes the first proto/host across elements")
-    void firstProtoWins() {
+    @DisplayName("takes the last proto across elements")
+    void lastProtoWins() {
         RfcForwardedParser.Parsed parsed = RfcForwardedParser.parse("proto=https, proto=http");
 
-        assertEquals("https", parsed.proto().orElseThrow());
+        assertEquals("http", parsed.proto().orElseThrow(), "the nearest hop appends last, so its proto wins");
+    }
+
+    @Test
+    @DisplayName("takes the last host across elements")
+    void lastHostWins() {
+        RfcForwardedParser.Parsed parsed = RfcForwardedParser.parse("host=attacker.example, host=app.example.com");
+
+        assertEquals("app.example.com", parsed.host().orElseThrow(),
+                "the nearest hop appends last, so its host wins");
     }
 
     @Test

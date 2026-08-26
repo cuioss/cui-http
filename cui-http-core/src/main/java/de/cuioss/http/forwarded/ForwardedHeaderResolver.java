@@ -144,7 +144,7 @@ public final class ForwardedHeaderResolver {
             return Optional.empty();
         }
         return sanitize(X_FORWARDED_PROTO, raw)
-                .map(ForwardedHeaderResolver::firstToken)
+                .map(ForwardedHeaderResolver::lastToken)
                 .map(value -> value.toLowerCase(Locale.ROOT))
                 .filter(value -> "http".equals(value) || "https".equals(value));
     }
@@ -159,7 +159,7 @@ public final class ForwardedHeaderResolver {
         if (raw == null || !config.trustAll()) {
             return HostPort.EMPTY;
         }
-        Optional<String> sanitized = sanitize(X_FORWARDED_HOST, raw).map(ForwardedHeaderResolver::firstToken);
+        Optional<String> sanitized = sanitize(X_FORWARDED_HOST, raw).map(ForwardedHeaderResolver::lastToken);
         if (sanitized.isEmpty()) {
             return HostPort.EMPTY;
         }
@@ -223,7 +223,7 @@ public final class ForwardedHeaderResolver {
             return OptionalInt.empty();
         }
         return sanitize(X_FORWARDED_PORT, raw)
-                .map(ForwardedHeaderResolver::firstToken)
+                .map(ForwardedHeaderResolver::lastToken)
                 .map(ForwardedHeaderResolver::parsePort)
                 .orElse(OptionalInt.empty());
     }
@@ -250,7 +250,14 @@ public final class ForwardedHeaderResolver {
         // Apply the injection guards to the RAW value first: the header-value pipeline collapses a
         // protocol-relative "//host" prefix to "/host", masking the attack, so the guard must run
         // before sanitization can rewrite it.
-        String trimmed = raw.strip();
+        //
+        // Token selection must in turn precede the guards, because a guard applied to the whole raw
+        // string inspects only its leading characters and so misses an attack carried in a later
+        // token: "/app, //attacker.com" does not itself start with "//", so isProtocolRelativeOrBackslash
+        // would pass the whole string through, and the nearest-hop token "//attacker.com" would then
+        // be honored unguarded. Selecting the last token first means every guard below runs against
+        // the exact value that will be returned.
+        String trimmed = lastToken(raw.strip());
         if (ContextPaths.containsControlCharacter(trimmed)) {
             LOGGER.warn(ForwardedLogMessages.WARN.CONTEXT_PATH_CONTROL_CHARACTERS_REJECTED, sanitizeForLog(trimmed));
             return "";
@@ -259,7 +266,7 @@ public final class ForwardedHeaderResolver {
             LOGGER.warn(ForwardedLogMessages.WARN.CONTEXT_PATH_PROTOCOL_RELATIVE_REJECTED, sanitizeForLog(trimmed));
             return "";
         }
-        Optional<String> sanitized = sanitize(X_FORWARDED_PREFIX, raw);
+        Optional<String> sanitized = sanitize(X_FORWARDED_PREFIX, trimmed);
         if (sanitized.isEmpty()) {
             return "";
         }
@@ -365,9 +372,15 @@ public final class ForwardedHeaderResolver {
         return value != null && !value.isBlank();
     }
 
-    private static String firstToken(String value) {
-        int comma = value.indexOf(',');
-        return (comma < 0 ? value : value.substring(0, comma)).strip();
+    /**
+     * Selects the nearest-hop token of a comma-separated header value: the substring after the last
+     * comma. Each proxy in the chain <em>appends</em> its own value, so the rightmost token is the
+     * one contributed by the closest (and therefore most trustworthy) proxy, while any leading
+     * tokens are attacker-supplied when the client sent the header itself.
+     */
+    private static String lastToken(String value) {
+        int comma = value.lastIndexOf(',');
+        return (comma < 0 ? value : value.substring(comma + 1)).strip();
     }
 
     /**

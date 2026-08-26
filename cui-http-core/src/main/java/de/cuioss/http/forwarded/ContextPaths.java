@@ -22,9 +22,12 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Lifted from the {@code ProxyContextPathResolver} prior art. The rules: exactly one leading
  * slash, no trailing slash, and an empty string when the value is absent, blank, carries control
- * characters (CR/LF or other), is protocol-relative ({@code //host}), or contains a backslash
- * (which some browsers normalize to {@code /}). Callers that need to log a rejection reason use
- * {@link #containsControlCharacter(String)} / {@link #isProtocolRelativeOrBackslash(String)}.</p>
+ * characters (CR/LF or other), is protocol-relative ({@code //host}), contains a backslash
+ * (which some browsers normalize to {@code /}), or contains a comma or any whitespace character
+ * (defence in depth — a well-formed context path has neither, so their presence signals a
+ * comma-separated header value that reached normalization without nearest-hop token selection).
+ * Callers that need to log a rejection reason use {@link #containsControlCharacter(String)} /
+ * {@link #isProtocolRelativeOrBackslash(String)}.</p>
  */
 final class ContextPaths {
 
@@ -43,7 +46,8 @@ final class ContextPaths {
             return "";
         }
         String trimmed = raw.strip();
-        if (trimmed.isEmpty() || containsControlCharacter(trimmed) || isProtocolRelativeOrBackslash(trimmed)) {
+        if (trimmed.isEmpty() || containsControlCharacter(trimmed) || isProtocolRelativeOrBackslash(trimmed)
+                || containsCommaOrWhitespace(trimmed)) {
             return "";
         }
         String withLeadingSlash = trimmed.startsWith("/") ? trimmed : "/" + trimmed;
@@ -68,6 +72,23 @@ final class ContextPaths {
      */
     static boolean isProtocolRelativeOrBackslash(String trimmed) {
         return trimmed.startsWith("//") || trimmed.indexOf('\\') >= 0;
+    }
+
+    /**
+     * Rejects an interior comma or any whitespace character as defence in depth. A well-formed
+     * context path contains neither, so their presence means a comma-separated header value reached
+     * this point without nearest-hop token selection having been applied — the caller's guard order
+     * is wrong, and normalizing such a value would honor an attacker-supplied token. The check runs
+     * against the already-stripped value, so surrounding whitespace is not affected.
+     */
+    static boolean containsCommaOrWhitespace(String trimmed) {
+        for (int i = 0; i < trimmed.length(); i++) {
+            char c = trimmed.charAt(i);
+            if (c == ',' || Character.isWhitespace(c)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String stripTrailingSlashes(String value) {
