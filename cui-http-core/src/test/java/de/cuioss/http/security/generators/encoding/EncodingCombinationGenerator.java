@@ -111,10 +111,13 @@ public class EncodingCombinationGenerator implements TypedGenerator<String> {
     }
 
     private String urlEncode(String input) {
-        // URL encode with %25 for % in multi-level
-        return input.replace(".", "%2e")
-                .replace("/", "%2f")
-                .replace("%", "%25");
+        // The literal percent character must be escaped FIRST. Escaping it last would rewrite
+        // the percent characters that the dot and slash replacements just introduced, so a
+        // single application would already yield %252e%252e%252f and the advertised level-1
+        // output would be unreachable.
+        return input.replace("%", "%25")
+                .replace(".", "%2e")
+                .replace("/", "%2f");
     }
 
     private String applyMixedCase(String input) {
