@@ -235,6 +235,25 @@ class ETagAwareHttpAdapterIntegrationTest {
                 () -> assertTrue(result.getContent().isEmpty(), "No content should be fabricated"));
     }
 
+    @Test
+    @DisplayName("A conversion failure should preserve the HTTP status and the response ETag")
+    @ModuleDispatcher
+    void conversionFailureShouldPreserveStatusAndETag(URIBuilder uriBuilder) {
+        dispatcher.withSuccessAndETag(TypedResponseConverter.UNPARSEABLE_BODY, "\"etag-unparseable\"");
+        HttpAdapter<String> adapter = typedAdapter(uriBuilder);
+
+        HttpResult<String> result = adapter.getBlocking();
+
+        assertAll("200 whose body the converter rejects",
+                () -> assertFalse(result.isSuccess(), "An unparseable body is a conversion failure"),
+                () -> assertEquals(HttpErrorCategory.INVALID_CONTENT, result.getErrorCategory().orElse(null)),
+                () -> assertEquals(Optional.of(200), result.getHttpStatus(),
+                        "The status was in hand and must not be discarded"),
+                () -> assertEquals("\"etag-unparseable\"", result.getETag().orElse(null),
+                        "The response ETag was in hand and must not be discarded"),
+                () -> assertTrue(result.getContent().isEmpty(), "No fallback content should be fabricated"));
+    }
+
     /**
      * Builds an adapter over {@link TypedResponseConverter} — the converter shape that can actually
      * reach the conversion-failure branch.
@@ -565,6 +584,9 @@ class ETagAwareHttpAdapterIntegrationTest {
      * empty-content defects went unnoticed. Cases that need that branch use this converter instead.
      */
     private static class TypedResponseConverter implements HttpResponseConverter<String> {
+
+        /** A non-empty body this converter cannot parse, used to drive the conversion-failure branch. */
+        static final String UNPARSEABLE_BODY = "not-a-json-object";
 
         @Override
         public Optional<String> convert(@Nullable Object rawContent) {
