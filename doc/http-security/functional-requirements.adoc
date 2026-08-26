@@ -138,7 +138,8 @@ These requirements are derived from:
 * Must support different character sets for different validation types:
   ** Path segments: alphanumeric, hyphen, underscore, period
   ** Query parameters: extended ASCII subset
-  ** Headers: visible ASCII characters
+  ** Header names: RFC 7230 token characters (tchar) - ALPHA, DIGIT and the tchar punctuation set; delimiters such as space and colon are rejected
+  ** Header values: visible ASCII (32-126) plus horizontal tab
 
 * Must detect and block control characters
 * Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]

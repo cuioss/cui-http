@@ -161,10 +161,10 @@ The following classes implement the validation stages:
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage] - URL decoding with security checks and Unicode canonicalization (OWASP canonicalize-then-validate: normalize-and-continue, rejecting only folds that introduce a structural separator; NFKC for paths, NFC for parameter values). Legitimate international text passes; NFKC is not confusable/homograph defense.
 
 [#_normalizationstage]
-* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage] - Path normalization per RFC 3986
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage] - Path normalization per RFC 3986; a pass-through for every non-path validation type
 
 [#_patternmatchingstage]
-* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Attack pattern detection
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Attack pattern detection for URL_PATH, PARAMETER_NAME and PARAMETER_VALUE; an intentional pass-through for header and cookie types
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/AllowBlockListStage.java[AllowBlockListStage] - Case-insensitive header-name / content-type allow/block lists
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationConstants.java[CharacterValidationConstants] - RFC-compliant character sets
 
@@ -202,6 +202,14 @@ The following classes implement the validation pipeline system:
 There are five concrete pipelines (all extending `AbstractValidationPipeline`), each optimized
 for its specific HTTP component. All but `ContentTypeValidationPipeline` run
 `LengthValidationStage` first; `ContentTypeValidationPipeline` is a single `AllowBlockListStage`.
+
+`HTTPHeaderValidationPipeline` is composed of `LengthValidationStage` followed by
+`CharacterValidationStage`, plus an `AllowBlockListStage` for `HEADER_NAME` only.
+`NormalizationStage` and `PatternMatchingStage` are deliberately absent: both are no-ops for
+header types — RFC 3986 dot-segment resolution applies to path components only, and the attack
+pattern databases cover `URL_PATH`, `PARAMETER_NAME` and `PARAMETER_VALUE` only — so including
+them would add stage invocations without adding any check. Header components rely on RFC 7230
+character validation instead, which rejects CR/LF unconditionally.
 
 [#_two_pass_pattern_matching]
 NOTE: `URLPathValidationPipeline` runs `PatternMatchingStage` *twice* by design — once before
