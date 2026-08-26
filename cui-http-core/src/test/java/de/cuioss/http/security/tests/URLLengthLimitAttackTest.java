@@ -24,10 +24,13 @@ import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import de.cuioss.test.generator.Generators;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -80,8 +83,45 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("T19: URL Length Limit Attack Tests")
 class URLLengthLimitAttackTest {
 
+    /**
+     * Sample counters for the two guarded parameterized tests. Both tests skip samples whose path
+     * component stays within the configured limit, because {@link URLPathValidationPipeline}
+     * genuinely does not govern hostname- and fragment-family attacks. That guard is only sound
+     * while it still admits samples: if the generator ever stops producing over-limit path
+     * components, the guard would swallow every sample and both tests would pass while asserting
+     * nothing. The {@link #shouldHaveAdmittedPathBasedSamples()} check turns that silent
+     * degradation into a failure.
+     */
+    private static final AtomicInteger REJECT_TEST_SAMPLES = new AtomicInteger();
+    private static final AtomicInteger REJECT_TEST_ADMITTED = new AtomicInteger();
+    private static final AtomicInteger BLOCK_TEST_SAMPLES = new AtomicInteger();
+    private static final AtomicInteger BLOCK_TEST_ADMITTED = new AtomicInteger();
+
     private URLPathValidationPipeline pipeline;
     private SecurityEventCounter eventCounter;
+
+    @AfterAll
+    static void shouldHaveAdmittedPathBasedSamples() {
+        assertAll("Guarded parameterized tests must not degrade into silent no-ops",
+                () -> assertGuardAdmittedSamples("shouldRejectPathBasedURLLengthLimitAttacks",
+                        REJECT_TEST_SAMPLES, REJECT_TEST_ADMITTED),
+                () -> assertGuardAdmittedSamples("shouldBlockBasicPathBasedLengthOverflowAttacks",
+                        BLOCK_TEST_SAMPLES, BLOCK_TEST_ADMITTED));
+    }
+
+    /**
+     * Asserts that a guarded test admitted at least one sample, but only when that test actually
+     * ran. Skipping the assertion for a test with zero samples keeps a single-method IDE run from
+     * failing on the sibling method it never executed.
+     */
+    private static void assertGuardAdmittedSamples(String testName, AtomicInteger samples, AtomicInteger admitted) {
+        if (samples.get() == 0) {
+            return;
+        }
+        assertTrue(admitted.get() > 0,
+                () -> testName + " saw " + samples.get() + " generated samples but its path-based guard "
+                        + "admitted none — the test asserted nothing this run");
+    }
 
     @BeforeEach
     void setUp() {
@@ -114,9 +154,11 @@ class URLLengthLimitAttackTest {
     void shouldRejectPathBasedURLLengthLimitAttacks(String lengthAttackPattern) {
         // Given: A URL length limit attack pattern from the generator
         //  Only test path-based attacks (skip hostname-based attacks for this pipeline)
+        REJECT_TEST_SAMPLES.incrementAndGet();
         if (!isPathBasedLengthAttack(lengthAttackPattern)) {
             return; // Skip hostname-based attacks
         }
+        REJECT_TEST_ADMITTED.incrementAndGet();
 
         long initialEventCount = eventCounter.getTotalCount();
 
@@ -153,9 +195,11 @@ class URLLengthLimitAttackTest {
     @DisplayName("Basic path-based length overflow attacks must be blocked")
     void shouldBlockBasicPathBasedLengthOverflowAttacks(String basicLengthAttack) {
         // Only test path-based attacks (skip hostname-based attacks for this pipeline)
+        BLOCK_TEST_SAMPLES.incrementAndGet();
         if (!isPathBasedLengthAttack(basicLengthAttack)) {
             return; // Skip hostname-based attacks
         }
+        BLOCK_TEST_ADMITTED.incrementAndGet();
 
         long initialEventCount = eventCounter.getTotalCount();
 
