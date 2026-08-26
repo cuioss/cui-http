@@ -29,7 +29,8 @@ import java.util.Set;
 
 /**
  * Test dispatcher for HTTP adapter integration tests.
- * Supports all HTTP methods (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS).
+ * Registers GET, POST, PUT, DELETE and HEAD — the methods
+ * {@link de.cuioss.test.mockwebserver.dispatcher.HttpMethodMapper} exposes.
  * <p>
  * Features:
  * <ul>
@@ -37,6 +38,7 @@ import java.util.Set;
  *   <li>ETag support for caching scenarios</li>
  *   <li>Request tracking (body, headers, call count)</li>
  *   <li>304 Not Modified simulation</li>
+ *   <li>Seed-then-304 mode: {@code 200 + ETag} on the first call, {@code 304} thereafter</li>
  * </ul>
  *
  * @author Oliver Wolff
@@ -99,6 +101,18 @@ public class TestApiDispatcher implements ModuleDispatcherElement {
     @Getter
     @Setter
     private String errorSuccessEtag = null;
+
+    @Getter
+    @Setter
+    private boolean seedThen304Mode = false;
+
+    @Getter
+    @Setter
+    private String seedContent = "";
+
+    @Getter
+    @Setter
+    private String seedEtag = null;
 
     @Override
     public Optional<MockResponse> handleGet(@NonNull RecordedRequest request) {
@@ -175,6 +189,19 @@ public class TestApiDispatcher implements ModuleDispatcherElement {
             }
         }
 
+        // Special mode: first call seeds the cache with 200 + ETag, subsequent calls revalidate with 304
+        if (seedThen304Mode) {
+            Headers.Builder headersBuilder = new Headers.Builder()
+                    .add("Content-Type", "application/json");
+            if (seedEtag != null) {
+                headersBuilder.add("ETag", seedEtag);
+            }
+            if (callCounter == 1) {
+                return Optional.of(new MockResponse(200, headersBuilder.build(), seedContent));
+            }
+            return Optional.of(new MockResponse(304, headersBuilder.build(), ""));
+        }
+
         // Normal mode: use configured status/content
         Headers.Builder headersBuilder = new Headers.Builder()
                 .add("Content-Type", "application/json");
@@ -226,7 +253,18 @@ public class TestApiDispatcher implements ModuleDispatcherElement {
      * Configure for 204 No Content response.
      */
     public TestApiDispatcher withNoContent() {
-        this.statusCode = 204;
+        return withNoContentAndStatus(204);
+    }
+
+    /**
+     * Configure for a body-less response under an explicit status code, so protocol-defined
+     * no-body statuses other than 204 — notably {@code 205 Reset Content} — are expressible.
+     *
+     * @param noBodyStatus the status code to answer with
+     * @return this dispatcher
+     */
+    public TestApiDispatcher withNoContentAndStatus(int noBodyStatus) {
+        this.statusCode = noBodyStatus;
         this.responseContent = "";
         this.etag = null;
         return this;
@@ -261,6 +299,7 @@ public class TestApiDispatcher implements ModuleDispatcherElement {
         this.successEtag = etagValue;
         this.successThenErrorMode = true;
         this.errorThenSuccessMode = false;
+        this.seedThen304Mode = false;
         this.callCounter = 0;
         return this;
     }
@@ -274,6 +313,30 @@ public class TestApiDispatcher implements ModuleDispatcherElement {
         this.errorSuccessEtag = etagValue;
         this.errorThenSuccessMode = true;
         this.successThenErrorMode = false;
+        this.seedThen304Mode = false;
+        this.callCounter = 0;
+        return this;
+    }
+
+    /**
+     * Configure the dispatcher to seed a cache entry on the first call and revalidate on every
+     * call after it: {@code 200} carrying {@code content} and {@code etagValue}, then
+     * {@code 304 Not Modified} carrying the same ETag and no body.
+     * <p>
+     * This lets a single scenario seed the cache with a GET and then issue the revalidating
+     * request under a <em>different</em> HTTP method, which the configure-then-reconfigure
+     * helpers cannot express.
+     *
+     * @param content   the body served on the seeding call
+     * @param etagValue the ETag served on the seeding call and echoed on each 304
+     * @return this dispatcher
+     */
+    public TestApiDispatcher withSeedThen304(String content, String etagValue) {
+        this.seedContent = content;
+        this.seedEtag = etagValue;
+        this.seedThen304Mode = true;
+        this.successThenErrorMode = false;
+        this.errorThenSuccessMode = false;
         this.callCounter = 0;
         return this;
     }
@@ -289,6 +352,7 @@ public class TestApiDispatcher implements ModuleDispatcherElement {
         this.lastContentType = null;
         this.successThenErrorMode = false;
         this.errorThenSuccessMode = false;
+        this.seedThen304Mode = false;
         return this;
     }
 
