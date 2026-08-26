@@ -15,32 +15,114 @@
  */
 package de.cuioss.http.security.generators.url;
 
+import de.cuioss.http.security.config.SecurityConfiguration;
+import de.cuioss.http.security.monitoring.SecurityEventCounter;
+import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 
+import java.util.HashSet;
+import java.util.Set;
+import java.util.regex.Pattern;
+
+import static de.cuioss.http.security.generators.GeneratorContractAssertions.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * QI-5: Basic generator test for ValidURLPathGenerator.
+ * Contract test for {@link ValidURLPathGenerator}.
  *
- * <p>
- * Simple validation to ensure the generator works without exceptions and produces
- * non-null, non-empty output. Following cui-test-generator lightweight testing pattern.
- * </p>
- *
- * @author QI-5 Generator Coverage Initiative
+ * <p>The defining property of this generator is that every emitted value is a legitimate API
+ * path: it is rooted at {@code /}, carries no attack marker, and is accepted by the URL path
+ * validation pipeline. The aggregate test asserts that all seven documented path families are
+ * reachable.</p>
  */
 @EnableGeneratorController
+@DisplayName("ValidURLPathGenerator Contract Tests")
 class ValidURLPathGeneratorTest {
 
+    private static final int AGGREGATE_DRAWS = 400;
+
+    private static final Set<String> SYSTEM_PATHS = Set.of("/health", "/metrics", "/status", "/info");
+    private static final String RESOURCES = "(users|orders|products|customers|documents)";
+    private static final Pattern PLAIN_API =
+            Pattern.compile("^/api/" + RESOURCES + "(/\\d+/(search|profile|login|logout))?$");
+    private static final Pattern VERSIONED_API =
+            Pattern.compile("^/api/v[123]/" + RESOURCES + "(/\\d+)?$");
+    private static final Pattern NESTED_RESOURCE =
+            Pattern.compile("^/api/" + RESOURCES + "/\\d+/(items|orders|profile|notifications)$");
+    private static final Pattern AUTH_PATH =
+            Pattern.compile("^/api/auth/(search|profile|login|logout)$");
+    private static final Pattern ADMIN_PATH =
+            Pattern.compile("^/api/admin/(dashboard|settings|config)$");
+    private static final Pattern REPORTING_PATH =
+            Pattern.compile("^/api/(reports|stats|backup)/(daily|summary|status)$");
+
     @ParameterizedTest
-    @TypeGeneratorSource(value = ValidURLPathGenerator.class, count = 10)
-    @DisplayName("Generator should produce valid non-null URL paths")
-    void shouldGenerateValidOutput(String generatedValue) {
-        assertNotNull(generatedValue, "Generator must not produce null values");
-        assertFalse(generatedValue.isEmpty(), "Generator should produce non-empty URL paths");
-        assertTrue(generatedValue.length() > 1, "URL paths should be meaningful (more than 1 character)");
+    @TypeGeneratorSource(value = ValidURLPathGenerator.class, count = 100)
+    @DisplayName("Every generated path is a legitimate API path the pipeline accepts")
+    void shouldGenerateLegitimateApiPath(String generatedValue) {
+        assertTrue(generatedValue.startsWith("/"),
+                () -> "Valid URL paths are rooted at '/'. Value: <" + generatedValue + ">");
+        assertCarriesNoMarker(generatedValue, TRAVERSAL_MARKERS, "path traversal");
+        assertCarriesNoMarker(generatedValue, NULL_BYTE_MARKERS, "null byte");
+        assertFalse(generatedValue.contains("<script"),
+                () -> "Valid URL paths carry no script tag. Value: <" + generatedValue + ">");
+        assertFalse(generatedValue.contains("javascript:"),
+                () -> "Valid URL paths carry no javascript protocol. Value: <" + generatedValue + ">");
+
+        assertPipelineAccepts(
+                new URLPathValidationPipeline(SecurityConfiguration.defaults(), new SecurityEventCounter()),
+                generatedValue);
+    }
+
+    @Test
+    @DisplayName("Should reach all seven documented path families")
+    void shouldReachAllPathFamilies() {
+        ValidURLPathGenerator generator = new ValidURLPathGenerator();
+        Set<String> families = new HashSet<>();
+
+        for (int i = 0; i < AGGREGATE_DRAWS; i++) {
+            String value = generator.next();
+            if (SYSTEM_PATHS.contains(value)) {
+                families.add("system");
+            }
+            if (VERSIONED_API.matcher(value).matches()) {
+                families.add("versioned");
+            }
+            if (NESTED_RESOURCE.matcher(value).matches()) {
+                families.add("nested");
+            }
+            if (AUTH_PATH.matcher(value).matches()) {
+                families.add("auth");
+            }
+            if (ADMIN_PATH.matcher(value).matches()) {
+                families.add("admin");
+            }
+            if (REPORTING_PATH.matcher(value).matches()) {
+                families.add("reporting");
+            }
+            if (PLAIN_API.matcher(value).matches()) {
+                families.add("api");
+            }
+        }
+
+        assertEquals(Set.of("api", "versioned", "nested", "system", "auth", "admin", "reporting"), families,
+                "Every documented path family must be reachable within " + AGGREGATE_DRAWS + " draws");
+    }
+
+    @Test
+    @DisplayName("Should return correct type")
+    void shouldReturnCorrectType() {
+        assertEquals(String.class, new ValidURLPathGenerator().getType(),
+                "Generator should return String.class");
+    }
+
+    private static void assertCarriesNoMarker(String value, Set<String> markers, String description) {
+        markers.forEach(marker -> assertFalse(value.contains(marker),
+                () -> "Valid URL paths carry no " + description + " marker <" + marker
+                        + ">. Value: <" + value + ">"));
     }
 }

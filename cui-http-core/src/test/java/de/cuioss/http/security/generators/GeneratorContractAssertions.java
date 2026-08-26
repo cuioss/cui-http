@@ -72,6 +72,7 @@ public final class GeneratorContractAssertions {
             "....",
             "%c0%ae",
             "%C0%AE",
+            "..%c0%af",
             "\\u002e",
             "\\ufe0e");
 
