@@ -62,5 +62,11 @@ public final class ForwardedLogMessages {
                 .identifier(123)
                 .template("Ignoring client IP: forwarded chain carries an unparseable entry: %s")
                 .build();
+
+        public static final LogRecord FORWARDED_SOURCES_DISAGREE = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(124)
+                .template("Dropping forwarded %s: sources disagree: %s resolves to %s but Forwarded resolves to %s")
+                .build();
     }
 }

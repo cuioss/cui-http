@@ -118,6 +118,27 @@ class ForwardedHeaderResolverTest {
         }
 
         @Test
+        @DisplayName("honors agreeing X-Forwarded-Proto and RFC 7239 proto")
+        void agreeingSourcesHonored() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "https",
+                    "Forwarded", "proto=https")));
+
+            assertEquals("https", result.scheme().orElseThrow());
+        }
+
+        @Test
+        @DisplayName("drops the scheme and warns when the two sources disagree")
+        void disagreeingSourcesDropped() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "https",
+                    "Forwarded", "proto=http")));
+
+            assertTrue(result.scheme().isEmpty(), "a forged source must not win by precedence");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
+        }
+
+        @Test
         @DisplayName("drops a non-http(s) scheme")
         void dropsUnknownScheme() {
             assertTrue(trustAllResolver()
@@ -193,6 +214,27 @@ class ForwardedHeaderResolverTest {
                     .resolve(headers(Map.of("X-ProxyHost", "proxy.example.com"))).host().orElseThrow());
             assertEquals("rfc.example.com", trustAllResolver()
                     .resolve(headers(Map.of("Forwarded", "host=rfc.example.com"))).host().orElseThrow());
+        }
+
+        @Test
+        @DisplayName("honors agreeing X-Forwarded-Host and RFC 7239 host")
+        void agreeingHostSourcesHonored() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com",
+                    "Forwarded", "host=app.example.com")));
+
+            assertEquals("app.example.com", result.host().orElseThrow());
+        }
+
+        @Test
+        @DisplayName("drops the host and warns when the two sources disagree")
+        void disagreeingHostSourcesDropped() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com",
+                    "Forwarded", "host=attacker.example")));
+
+            assertTrue(result.host().isEmpty(), "a forged source must not win by precedence");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
         }
 
         @Test
@@ -352,6 +394,41 @@ class ForwardedHeaderResolverTest {
             var result = resolver(trustingProxies("10.0.0.0/8"))
                     .resolve(headers(Map.of("X-Forwarded-For", "203.0.113.7:51234, 10.0.0.5")));
             assertEquals("203.0.113.7", result.clientIp().orElseThrow());
+        }
+
+        @Test
+        @DisplayName("honors agreeing X-Forwarded-For and RFC 7239 for chains")
+        void agreeingChainsHonored() {
+            var result = resolver(trustingProxies("10.0.0.0/8")).resolve(headers(Map.of(
+                    "X-Forwarded-For", "203.0.113.7, 10.0.0.5",
+                    "Forwarded", "for=203.0.113.7, for=\"10.0.0.5\"")));
+
+            assertEquals("203.0.113.7", result.clientIp().orElseThrow());
+        }
+
+        @Test
+        @DisplayName("drops the client IP and warns when the two chains disagree")
+        void disagreeingChainsDropped() {
+            var result = resolver(trustingProxies("10.0.0.0/8")).resolve(headers(Map.of(
+                    "X-Forwarded-For", "203.0.113.7, 10.0.0.5",
+                    "Forwarded", "for=198.51.100.9, for=\"10.0.0.5\"")));
+
+            assertTrue(result.clientIp().isEmpty(),
+                    "disagreeing chains mean one is forged, so neither may be honored");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
+        }
+
+        @Test
+        @DisplayName("a single present chain is unaffected by the disagreement rule")
+        void singleSourceChainUnchanged() {
+            var fromXff = resolver(trustingProxies("10.0.0.0/8"))
+                    .resolve(headers(Map.of("X-Forwarded-For", "203.0.113.7, 10.0.0.5")));
+            var fromRfc = resolver(trustingProxies("10.0.0.0/8"))
+                    .resolve(headers(Map.of("Forwarded", "for=203.0.113.7, for=\"10.0.0.5\"")));
+
+            assertAll("single-source chains resolve independently",
+                    () -> assertEquals("203.0.113.7", fromXff.clientIp().orElseThrow()),
+                    () -> assertEquals("203.0.113.7", fromRfc.clientIp().orElseThrow()));
         }
 
         @Test
