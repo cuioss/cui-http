@@ -14,7 +14,7 @@ Module: `de.cuioss.http`
 LogMessages Classes:
 
 - `de.cuioss.http.client.HttpLogMessages` - HTTP client operations (HTTP-106–108, HTTP-110–115, HTTP-200–201)
-- `de.cuioss.http.forwarded.ForwardedLogMessages` - Forwarded / reverse-proxy header resolution (HTTP-120–125)
+- `de.cuioss.http.forwarded.ForwardedLogMessages` - Forwarded / reverse-proxy header resolution (HTTP-120–125) - source: xref:../cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedLogMessages.java[ForwardedLogMessages.java]
 
 == HttpLogMessages
 
@@ -88,6 +88,11 @@ LogMessages Classes:
 |===
 
 == ForwardedLogMessages
+
+The authoritative source for the records below is
+xref:../cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedLogMessages.java[ForwardedLogMessages.java].
+This table is maintained by hand, so it must be updated whenever a record in that class is added,
+removed, renumbered, or reworded.
 
 === WARN Level (100-199)
 
