@@ -55,8 +55,14 @@ class ValidCookieGeneratorTest {
     /** Attributes carrying no value; anything else must be a {@code Name=Value} pair. */
     private static final Set<String> FLAG_ATTRIBUTES = Set.of(SECURE, HTTP_ONLY);
 
+    private static final String DOMAIN_PREFIX = "Domain=";
+    private static final String PATH_PREFIX = "Path=";
+    private static final String SAME_SITE_PREFIX = "SameSite=";
+    private static final String MAX_AGE_PREFIX = "Max-Age=";
+    private static final String EXPIRES_PREFIX = "Expires=";
+
     private static final List<String> VALUED_ATTRIBUTE_PREFIXES = List.of(
-            "Domain=", "Path=", "SameSite=", "Max-Age=", "Expires=");
+            DOMAIN_PREFIX, PATH_PREFIX, SAME_SITE_PREFIX, MAX_AGE_PREFIX, EXPIRES_PREFIX);
 
     /** The generator must emit at least this many distinct names to be worth calling a generator. */
     private static final int MINIMUM_DISTINCT_NAMES = 10;
@@ -138,24 +144,64 @@ class ValidCookieGeneratorTest {
         }
         for (String attribute : splitAttributes(attributes)) {
             assertTrue(isValidAttribute(attribute),
-                    () -> "Attribute <" + attribute + "> is not one of the documented cookie attributes "
+                    () -> "Attribute <" + attribute + "> is not a legitimate cookie attribute: it must be one of "
                             + FLAG_ATTRIBUTES + " / " + VALUED_ATTRIBUTE_PREFIXES
-                            + ". Attributes: <" + attributes + ">");
+                            + ", carry a non-empty value, and — for Path and Max-Age — a value that is itself "
+                            + "legitimate (no traversal segment, no negative age). Attributes: <" + attributes + ">");
         }
     }
 
+    /**
+     * Decides whether the attribute is one a legitimate cookie may carry. Membership in the
+     * documented vocabulary is necessary but not sufficient: {@code Path} and {@code Max-Age} also
+     * have to carry a legitimate <em>value</em>, otherwise this test would accept a hostile
+     * {@code Path=../../../} or {@code Max-Age=-1} and stop being the counterpart of
+     * {@link AttackCookieGeneratorTest}.
+     */
     private boolean isValidAttribute(String attribute) {
         if (FLAG_ATTRIBUTES.contains(attribute)) {
             return true;
         }
-        return VALUED_ATTRIBUTE_PREFIXES.stream()
-                .anyMatch(prefix -> attribute.startsWith(prefix) && attribute.length() > prefix.length());
+        String prefix = VALUED_ATTRIBUTE_PREFIXES.stream()
+                .filter(candidate -> attribute.startsWith(candidate) && attribute.length() > candidate.length())
+                .findFirst()
+                .orElse(null);
+        if (prefix == null) {
+            return false;
+        }
+        String attributeValue = attribute.substring(prefix.length());
+        return switch (prefix) {
+            case PATH_PREFIX -> carriesNoTraversalMarker(attributeValue);
+            case MAX_AGE_PREFIX -> isNonNegativeAge(attributeValue);
+            default -> true;
+        };
     }
 
+    private boolean carriesNoTraversalMarker(String pathValue) {
+        return TRAVERSAL_MARKERS.stream().noneMatch(pathValue::contains);
+    }
+
+    /**
+     * A legitimate {@code Max-Age} is a non-negative number of seconds; a negative value is the
+     * delete-this-cookie instruction and anything unparsable is malformed.
+     */
+    private boolean isNonNegativeAge(String maxAgeValue) {
+        try {
+            return Long.parseLong(maxAgeValue) >= 0;
+        } catch (NumberFormatException unparsable) {
+            return false;
+        }
+    }
+
+    /**
+     * Splits on {@code ;} with a negative limit so trailing empty fields are preserved: a malformed
+     * {@code "Secure;"} must surface as an empty attribute the validation above rejects, not be
+     * silently dropped by {@code split}'s default trailing-empty removal.
+     */
     private List<String> splitAttributes(String attributes) {
         if (attributes.isEmpty()) {
             return List.of();
         }
-        return Arrays.stream(attributes.split(";")).map(String::trim).toList();
+        return Arrays.stream(attributes.split(";", -1)).map(String::trim).toList();
     }
 }
