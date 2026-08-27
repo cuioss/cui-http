@@ -233,7 +233,7 @@ rejected unless it is `:` plus the port, so `[::1]garbage` yields no host.
 *A malformed `Forwarded` value rejects the whole header.* The rule above applies to the RFC 7239
 `Forwarded` header *as a whole*. When its raw value fails sanitization, *or* when it carries a
 malformed `forwarded-pair`, the header is present-but-unresolvable for *every* field it could have
-carried — scheme, host, and client IP alike — and therefore *disagrees* with an otherwise clean
+carried — scheme, host, port, and client IP alike — and therefore *disagrees* with an otherwise clean
 `X-Forwarded-*` sibling, which drops that field rather than letting the de-facto family win by
 default. A pair is malformed when it is non-blank and carries no `=`, an empty directive name, or an
 empty value. Rejection is logged once as an `HTTP-125` warning with a log-sanitized value.
@@ -243,10 +243,11 @@ that is *blank* is grammatically legal: a trailing `;` is still accepted and par
 
 [source,text]
 ----
-Forwarded: proto=;host=app.internal               -> scheme/host/clientIp = empty  (malformed pair -> whole header rejected)
-Forwarded: host                                   -> scheme/host/clientIp = empty  (no "=" -> malformed)
+Forwarded: proto=;host=app.internal               -> every field = empty           (malformed pair -> whole header rejected)
+Forwarded: host                                   -> every field = empty           (no "=" -> malformed)
 Forwarded: for=203.0.113.7;                       -> parses normally               (trailing ";" is a legal blank pair)
 X-Forwarded-Proto: https + Forwarded: proto=;host -> scheme = empty                (clean sibling dropped by disagreement)
+X-Forwarded-Port: 8080 + Forwarded: host=t.ex;bad -> port = empty                  (port is reachable via host=...:port, so it drops too)
 ----
 
 [#trust-model]
