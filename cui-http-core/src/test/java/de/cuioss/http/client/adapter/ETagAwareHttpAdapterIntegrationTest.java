@@ -16,6 +16,7 @@
 package de.cuioss.http.client.adapter;
 
 import de.cuioss.http.client.ContentType;
+import de.cuioss.http.client.HttpMethod;
 import de.cuioss.http.client.converter.HttpRequestConverter;
 import de.cuioss.http.client.converter.HttpResponseConverter;
 import de.cuioss.http.client.handler.HttpHandler;
@@ -29,6 +30,8 @@ import de.cuioss.test.mockwebserver.dispatcher.ModuleDispatcherElement;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -55,6 +58,10 @@ import static org.junit.jupiter.api.Assertions.*;
 @EnableMockWebServer(useHttps = false)
 @DisplayName("ETagAwareHttpAdapter Integration Tests")
 class ETagAwareHttpAdapterIntegrationTest {
+
+    private static final String SEED_CONTENT = "{\"id\":1,\"name\":\"seeded\"}";
+    private static final String SEED_ETAG = "\"etag-seed\"";
+    private static final Map<String, String> CONDITIONAL_HEADERS = Map.of("If-None-Match", SEED_ETAG);
 
     private final TestApiDispatcher dispatcher = new TestApiDispatcher();
 
@@ -100,6 +107,317 @@ class ETagAwareHttpAdapterIntegrationTest {
         // Verify If-None-Match header was sent on second request
         assertTrue(dispatcher.getLastIfNoneMatch().isPresent(), "If-None-Match header should be sent");
         assertEquals("\"etag-123\"", dispatcher.getLastIfNoneMatch().orElse(null));
+    }
+
+    @Test
+    @DisplayName("A 304 to HEAD should report status and ETag with no body")
+    @ModuleDispatcher
+    void head304ShouldReportStatusAndETagWithoutBody(URIBuilder uriBuilder) {
+        dispatcher.withSeedThen304(SEED_CONTENT, SEED_ETAG);
+        HttpAdapter<String> adapter = matrixAdapter(uriBuilder);
+        assertTrue(adapter.getBlocking().isSuccess(), "Seeding GET should succeed and populate the cache");
+
+        HttpResult<String> result = adapter.head(CONDITIONAL_HEADERS).join();
+
+        assertAll("HEAD revalidated with 304",
+                () -> assertTrue(result.isSuccess(), "A 304 to HEAD is a valid revalidation"),
+                () -> assertEquals(Optional.of(304), result.getHttpStatus(), "Status should be reported as 304"),
+                () -> assertEquals(SEED_ETAG, result.getETag().orElse(null), "The validator should be reported"),
+                () -> assertTrue(result.getContent().isEmpty(), "A HEAD response carries no body"));
+    }
+
+    /**
+     * A 304 answering an unsafe method is a server protocol violation (RFC 7232 mandates 412), so it
+     * must surface as a failure that leaks neither the cached body nor the cached validator.
+     * <p>
+     * The message assertion is what makes this test verify the unsafe-method gate rather than a
+     * coincidence. An unsafe method never holds a cache entry, so a 304 that is not resolved by the
+     * dedicated gate falls through to the generic error path — which yields {@code INVALID_CONTENT},
+     * status 304 and no fallback content all by itself, satisfying every other assertion here. Only
+     * the RFC-specific message distinguishes the two paths, so this case fails if the gate is
+     * bypassed.
+     * <p>
+     * PATCH and OPTIONS belong to this equivalence class and are gated identically in production,
+     * but cannot be exercised here: the MockWebServer fixture cannot serve them yet.
+     */
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = HttpMethod.class, names = {"POST", "PUT", "DELETE"})
+    @DisplayName("A 304 to an unsafe method should fail without leaking cached content or ETag")
+    @ModuleDispatcher
+    void unsafeMethod304ShouldFailWithoutLeakingCachedData(HttpMethod method, URIBuilder uriBuilder) {
+        dispatcher.withSeedThen304(SEED_CONTENT, SEED_ETAG);
+        HttpAdapter<String> adapter = matrixAdapter(uriBuilder);
+        assertTrue(adapter.getBlocking().isSuccess(), "Seeding GET should succeed and populate the cache");
+
+        HttpResult<String> result = revalidateWith(adapter, method);
+
+        assertAll("%s revalidated with 304".formatted(method.methodName()),
+                () -> assertFalse(result.isSuccess(), "A 304 to an unsafe method is a protocol violation"),
+                () -> assertEquals(HttpErrorCategory.INVALID_CONTENT, result.getErrorCategory().orElse(null),
+                        "The violation should be categorised as invalid content"),
+                () -> assertEquals(Optional.of(304), result.getHttpStatus(), "The observed status should be preserved"),
+                () -> assertEquals(
+                        "HTTP 304 is not a valid response to a %s request (RFC 7232 requires 412)".formatted(method.methodName()),
+                        result.getErrorMessage().orElse(null),
+                        "The failure must name the RFC 7232 violation - the generic error path would report 'HTTP 304: %s' instead"
+                                .formatted(method.methodName())),
+                () -> assertTrue(result.getContent().isEmpty(), "The cached GET body must not leak"),
+                () -> assertTrue(result.getETag().isEmpty(), "The cached GET validator must not leak"));
+    }
+
+    /**
+     * A 304 on a safe method with no cached entry is equally unresolvable: the adapter only issues a
+     * conditional request when it holds a validator, so an unsolicited 304 has nothing to be resolved
+     * against. It must fail as {@code INVALID_CONTENT} rather than surface as an empty success.
+     */
+    @Test
+    @DisplayName("A 304 with no cached entry should fail rather than yield an empty success")
+    @ModuleDispatcher
+    void unsolicited304WithoutCachedEntryShouldFail(URIBuilder uriBuilder) {
+        dispatcher.with304();
+        HttpAdapter<String> adapter = matrixAdapter(uriBuilder);
+
+        HttpResult<String> result = adapter.getBlocking();
+
+        assertAll("GET answered with an unsolicited 304",
+                () -> assertFalse(result.isSuccess(), "A 304 with nothing to resolve it against is not a success"),
+                () -> assertEquals(HttpErrorCategory.INVALID_CONTENT, result.getErrorCategory().orElse(null),
+                        "The unresolvable 304 should be categorised as invalid content"),
+                () -> assertEquals(Optional.of(304), result.getHttpStatus(), "The observed status should be preserved"),
+                () -> assertEquals(
+                        "HTTP 304 for a GET request with no cached entry to resolve it against (RFC 7232 permits 304 only in response to a conditional request the adapter issued)",
+                        result.getErrorMessage().orElse(null),
+                        "The failure must name why the 304 could not be resolved"),
+                () -> assertTrue(result.getContent().isEmpty(), "No content should be fabricated"),
+                () -> assertTrue(result.getETag().isEmpty(), "No validator should be fabricated"));
+    }
+
+    /**
+     * Builds the adapter used by the 304 matrix. The cache key is URI-only so that the
+     * caller-supplied {@code If-None-Match} on the revalidating request resolves to the very entry
+     * the seeding GET stored — with the default {@code ALL} filter the extra header would produce a
+     * different key and the 304 branch would never be reached.
+     */
+    private HttpAdapter<String> matrixAdapter(URIBuilder uriBuilder) {
+        String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
+
+        return ETagAwareHttpAdapter.<String>builder()
+                .httpHandler(handler)
+                .responseConverter(new StringResponseConverter())
+                .cacheKeyHeaderFilter(CacheKeyHeaderFilter.NONE)
+                .build();
+    }
+
+    /**
+     * Issues a body-less request under {@code method} carrying a caller-supplied
+     * {@code If-None-Match} — the only way a non-GET request can draw a 304 from a conformant server.
+     */
+    private HttpResult<String> revalidateWith(HttpAdapter<String> adapter, HttpMethod method) {
+        return switch (method) {
+            case POST -> adapter.post((String) null, CONDITIONAL_HEADERS).join();
+            case PUT -> adapter.put((String) null, CONDITIONAL_HEADERS).join();
+            case DELETE -> adapter.delete(CONDITIONAL_HEADERS).join();
+            default -> throw new IllegalArgumentException(
+                    "The 304 matrix does not drive " + method.methodName());
+        };
+    }
+
+    @Test
+    @DisplayName("A 204 should succeed even when the converter yields no content")
+    @ModuleDispatcher
+    void noContent204WithTypedConverterShouldSucceed(URIBuilder uriBuilder) {
+        dispatcher.withNoContent();
+        HttpAdapter<String> adapter = typedAdapter(uriBuilder);
+
+        HttpResult<String> result = adapter.deleteBlocking();
+
+        assertAll("DELETE answered with 204",
+                () -> assertTrue(result.isSuccess(), "204 carries no body by definition, so emptiness is not a conversion failure"),
+                () -> assertEquals(Optional.of(204), result.getHttpStatus()),
+                () -> assertTrue(result.getErrorCategory().isEmpty(), "Success must not carry an error category"));
+    }
+
+    @Test
+    @DisplayName("A 205 should succeed even when the converter yields no content")
+    @ModuleDispatcher
+    void resetContent205WithTypedConverterShouldSucceed(URIBuilder uriBuilder) {
+        dispatcher.withNoContentAndStatus(205);
+        HttpAdapter<String> adapter = typedAdapter(uriBuilder);
+
+        HttpResult<String> result = adapter.put((String) null).join();
+
+        assertAll("PUT answered with 205",
+                () -> assertTrue(result.isSuccess(), "205 carries no body by definition, so emptiness is not a conversion failure"),
+                () -> assertEquals(Optional.of(205), result.getHttpStatus()),
+                () -> assertTrue(result.getErrorCategory().isEmpty(), "Success must not carry an error category"));
+    }
+
+    /**
+     * The non-widening control for the no-body exemption: an empty {@code 200} is not a
+     * protocol-defined no-body response, so it must keep failing unless the converter opts in via
+     * {@code emptyContentIsValid()}. Without this case the exemption could silently widen to the
+     * whole 2xx family and swallow genuine conversion failures.
+     */
+    @Test
+    @DisplayName("An empty 200 should still fail as INVALID_CONTENT")
+    @ModuleDispatcher
+    void empty200WithTypedConverterShouldStillFail(URIBuilder uriBuilder) {
+        dispatcher.withSuccessAndETag("", "\"etag-empty-200\"");
+        HttpAdapter<String> adapter = typedAdapter(uriBuilder);
+
+        HttpResult<String> result = adapter.getBlocking();
+
+        assertAll("GET answered with an empty 200",
+                () -> assertFalse(result.isSuccess(), "200 is not a no-body status - the exemption must not widen to it"),
+                () -> assertEquals(HttpErrorCategory.INVALID_CONTENT, result.getErrorCategory().orElse(null)),
+                () -> assertTrue(result.getContent().isEmpty(), "No content should be fabricated"));
+    }
+
+    @Test
+    @DisplayName("A conversion failure should preserve the HTTP status and the response ETag")
+    @ModuleDispatcher
+    void conversionFailureShouldPreserveStatusAndETag(URIBuilder uriBuilder) {
+        dispatcher.withSuccessAndETag(TypedResponseConverter.UNPARSEABLE_BODY, "\"etag-unparseable\"");
+        HttpAdapter<String> adapter = typedAdapter(uriBuilder);
+
+        HttpResult<String> result = adapter.getBlocking();
+
+        assertAll("200 whose body the converter rejects",
+                () -> assertFalse(result.isSuccess(), "An unparseable body is a conversion failure"),
+                () -> assertEquals(HttpErrorCategory.INVALID_CONTENT, result.getErrorCategory().orElse(null)),
+                () -> assertEquals(Optional.of(200), result.getHttpStatus(),
+                        "The status was in hand and must not be discarded"),
+                () -> assertEquals("\"etag-unparseable\"", result.getETag().orElse(null),
+                        "The response ETag was in hand and must not be discarded"),
+                () -> assertTrue(result.getContent().isEmpty(), "No fallback content should be fabricated"));
+    }
+
+    /**
+     * An ETag-less 200 means the server returned content it no longer identifies by any validator,
+     * so the previously cached entry is provably stale and must go. Two independent observables pin
+     * the same invariant, so the case cannot pass by accident: the later failure carries no
+     * fallback content, and the following request sends no stale {@code If-None-Match}.
+     */
+    @Test
+    @DisplayName("An ETag-less 200 should invalidate the cached entry")
+    @ModuleDispatcher
+    void etagLess200ShouldInvalidateCachedEntry(URIBuilder uriBuilder) {
+        String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
+        HttpAdapter<String> adapter = ETagAwareHttpAdapter.<String>builder()
+                .httpHandler(handler)
+                .responseConverter(new StringResponseConverter())
+                .build();
+
+        dispatcher.withSuccessAndETag(SEED_CONTENT, SEED_ETAG);
+        assertTrue(adapter.getBlocking().isSuccess(), "Seeding GET should succeed and populate the cache");
+
+        dispatcher.withSuccessAndETag("{\"id\":1,\"name\":\"unvalidated\"}", null);
+        assertTrue(adapter.getBlocking().isSuccess(), "The ETag-less GET should still succeed");
+
+        dispatcher.withServerError();
+        HttpResult<String> failure = adapter.getBlocking();
+
+        assertAll("Failure after an ETag-less 200 evicted the entry",
+                () -> assertFalse(failure.isSuccess(), "503 should surface as a failure"),
+                () -> assertTrue(failure.getContent().isEmpty(),
+                        "The evicted entry must not be served as fallback content"),
+                () -> assertTrue(dispatcher.getLastIfNoneMatch().isEmpty(),
+                        "No stale If-None-Match should be sent once the entry is gone"));
+    }
+
+    /**
+     * The converter-blind half of the same invalidation invariant. {@link StringResponseConverter}
+     * maps an empty body to {@code Optional.of("")}, so the sibling case above never reaches the
+     * conversion-failure return and cannot observe whether eviction happens before or after it. A
+     * typed converter that rejects the body does return early, so this sequence pins the ordering:
+     * an ETag-less 200 must drop the superseded entry even when its body is unparseable, or the
+     * following 503 serves content the 200 already replaced.
+     */
+    @Test
+    @DisplayName("An ETag-less 200 should invalidate the cached entry even when conversion fails")
+    @ModuleDispatcher
+    void etagLess200WithFailedConversionShouldInvalidateCachedEntry(URIBuilder uriBuilder) {
+        HttpAdapter<String> adapter = typedAdapter(uriBuilder);
+
+        dispatcher.withSuccessAndETag(SEED_CONTENT, SEED_ETAG);
+        assertTrue(adapter.getBlocking().isSuccess(), "Seeding GET should succeed and populate the cache");
+
+        dispatcher.withSuccessAndETag(TypedResponseConverter.UNPARSEABLE_BODY, null);
+        HttpResult<String> unparseable = adapter.getBlocking();
+        assertFalse(unparseable.isSuccess(), "An unparseable body is a conversion failure");
+
+        dispatcher.withServerError();
+        HttpResult<String> failure = adapter.getBlocking();
+
+        assertAll("Failure after an ETag-less, unparseable 200 evicted the entry",
+                () -> assertFalse(failure.isSuccess(), "503 should surface as a failure"),
+                () -> assertTrue(failure.getContent().isEmpty(),
+                        "The evicted entry must not be served as fallback content"),
+                () -> assertTrue(failure.getETag().isEmpty(),
+                        "The evicted entry's validator must not be served either"),
+                () -> assertTrue(dispatcher.getLastIfNoneMatch().isEmpty(),
+                        "No stale If-None-Match should be sent once the entry is gone"));
+    }
+
+    /**
+     * The validator-bearing half of the invalidation invariant, and the case an eviction gated on a
+     * missing ETag misses entirely. A {@code 200} carrying an ETag whose body the converter rejects
+     * yields no content, so no replacement entry can be built from it — yet it is still a fresh
+     * representation that supersedes the cached one. What makes the old entry stale is that the
+     * fresh {@code 200} could not replace it, not the reason it could not, so this sequence must
+     * evict exactly as the ETag-less sibling above does.
+     * <p>
+     * Three independent observables pin it, and all three are wrong when the eviction is skipped:
+     * the later failure carries neither the superseded body nor the superseded validator, and the
+     * request that draws it sends no stale {@code If-None-Match}. The intermediate assertion that
+     * the conversion failure reports the <em>fresh</em> ETag rather than the seeded one keeps the
+     * scenario honest — it confirms the second response really did carry its own validator, so the
+     * case exercises the ETag-bearing branch and not the ETag-less one.
+     */
+    @Test
+    @DisplayName("An ETag-bearing 200 whose body is unparseable should invalidate the cached entry")
+    @ModuleDispatcher
+    void unparseable200WithETagShouldInvalidateCachedEntry(URIBuilder uriBuilder) {
+        HttpAdapter<String> adapter = typedAdapter(uriBuilder);
+
+        dispatcher.withSuccessAndETag(SEED_CONTENT, SEED_ETAG);
+        assertTrue(adapter.getBlocking().isSuccess(), "Seeding GET should succeed and populate the cache");
+
+        dispatcher.withSuccessAndETag(TypedResponseConverter.UNPARSEABLE_BODY, "\"etag-fresh\"");
+        HttpResult<String> unparseable = adapter.getBlocking();
+
+        assertAll("200 carrying an ETag whose body the converter rejects",
+                () -> assertFalse(unparseable.isSuccess(), "An unparseable body is a conversion failure"),
+                () -> assertEquals("\"etag-fresh\"", unparseable.getETag().orElse(null),
+                        "The response's own validator should be reported - proving this is the ETag-bearing branch"));
+
+        dispatcher.withServerError();
+        HttpResult<String> failure = adapter.getBlocking();
+
+        assertAll("Failure after an ETag-bearing, unparseable 200 evicted the entry",
+                () -> assertFalse(failure.isSuccess(), "503 should surface as a failure"),
+                () -> assertTrue(failure.getContent().isEmpty(),
+                        "The superseded entry must not be served as fallback content"),
+                () -> assertTrue(failure.getETag().isEmpty(),
+                        "The superseded entry's validator must not be served either"),
+                () -> assertTrue(dispatcher.getLastIfNoneMatch().isEmpty(),
+                        "No stale If-None-Match should be sent once the entry is gone"));
+    }
+
+    /**
+     * Builds an adapter over {@link TypedResponseConverter} — the converter shape that can actually
+     * reach the conversion-failure branch.
+     */
+    private HttpAdapter<String> typedAdapter(URIBuilder uriBuilder) {
+        String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
+
+        return ETagAwareHttpAdapter.<String>builder()
+                .httpHandler(handler)
+                .responseConverter(new TypedResponseConverter())
+                .build();
     }
 
     /**
@@ -396,6 +714,39 @@ class ETagAwareHttpAdapterIntegrationTest {
         @Override
         public Optional<String> convert(@Nullable Object rawContent) {
             return rawContent == null ? Optional.empty() : Optional.of(rawContent.toString());
+        }
+
+        @Override
+        public HttpResponse.BodyHandler<?> getBodyHandler() {
+            return HttpResponse.BodyHandlers.ofString();
+        }
+
+        @Override
+        public ContentType contentType() {
+            return ContentType.APPLICATION_JSON;
+        }
+    }
+
+    /**
+     * A stand-in for a real typed (JSON/XML) converter: it yields a value only for a payload it can
+     * parse, and {@link Optional#empty()} for anything else — including an empty body.
+     * <p>
+     * {@link StringResponseConverter} maps an empty body to {@code Optional.of("")} and therefore
+     * can never reach the adapter's conversion-failure branch, which is precisely why the
+     * empty-content defects went unnoticed. Cases that need that branch use this converter instead.
+     */
+    private static class TypedResponseConverter implements HttpResponseConverter<String> {
+
+        /** A non-empty body this converter cannot parse, used to drive the conversion-failure branch. */
+        static final String UNPARSEABLE_BODY = "not-a-json-object";
+
+        @Override
+        public Optional<String> convert(@Nullable Object rawContent) {
+            if (rawContent == null) {
+                return Optional.empty();
+            }
+            String raw = rawContent.toString();
+            return raw.startsWith("{") ? Optional.of(raw) : Optional.empty();
         }
 
         @Override

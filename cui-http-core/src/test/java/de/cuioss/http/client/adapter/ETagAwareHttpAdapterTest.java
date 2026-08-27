@@ -29,6 +29,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -611,6 +612,101 @@ class ETagAwareHttpAdapterTest {
         assertInstanceOf(CompletableFuture.class, adapter.delete(), "DELETE should return CompletableFuture");
         assertInstanceOf(CompletableFuture.class, adapter.head(), "HEAD should return CompletableFuture");
         assertInstanceOf(CompletableFuture.class, adapter.options(), "OPTIONS should return CompletableFuture");
+    }
+
+    // === Cache Key Allocation Skip Tests ===
+
+    /**
+     * Positive control for the allocation skip: GET reads and populates the cache, so it must build
+     * a key. Without this the negative cases below would also pass against an adapter that never
+     * generated a key at all.
+     */
+    @Test
+    void getShouldGenerateCacheKey() {
+        var filter = new CountingCacheKeyHeaderFilter();
+        var adapter = cachingAdapterWith(filter);
+
+        adapter.get(Map.of("Accept", "application/json"));
+
+        assertTrue(filter.consultations() > 0, "GET reads the cache and must build a key");
+    }
+
+    /**
+     * HEAD reads the cache to resolve a conditional 304 against the stored validator, so it must
+     * build a key too. This is the guard against narrowing the lookup to GET alone, which would
+     * silently delete the documented HEAD 304 behaviour.
+     */
+    @Test
+    void headShouldGenerateCacheKey() {
+        var filter = new CountingCacheKeyHeaderFilter();
+        var adapter = cachingAdapterWith(filter);
+
+        adapter.head(Map.of("Accept", "application/json"));
+
+        assertTrue(filter.consultations() > 0, "HEAD reads the cache to resolve a 304 and must build a key");
+    }
+
+    @Test
+    void nonCacheableMethodsShouldNotGenerateCacheKey() {
+        var headers = Map.of("Accept", "application/json");
+        var postFilter = new CountingCacheKeyHeaderFilter();
+        var putFilter = new CountingCacheKeyHeaderFilter();
+        var patchFilter = new CountingCacheKeyHeaderFilter();
+        var deleteFilter = new CountingCacheKeyHeaderFilter();
+
+        cachingAdapterWith(postFilter).post((String) null, headers);
+        cachingAdapterWith(putFilter).put((String) null, headers);
+        cachingAdapterWith(patchFilter).patch((String) null, headers);
+        cachingAdapterWith(deleteFilter).delete(headers);
+
+        assertAll("Methods that never touch the cache should not build a key",
+                () -> assertEquals(0, postFilter.consultations(), "POST should not build a cache key"),
+                () -> assertEquals(0, putFilter.consultations(), "PUT should not build a cache key"),
+                () -> assertEquals(0, patchFilter.consultations(), "PATCH should not build a cache key"),
+                () -> assertEquals(0, deleteFilter.consultations(), "DELETE should not build a cache key"));
+    }
+
+    @Test
+    void cachingDisabledAdapterShouldNotGenerateCacheKey() {
+        var filter = new CountingCacheKeyHeaderFilter();
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .cacheKeyHeaderFilter(filter)
+                .etagCachingEnabled(false)
+                .build();
+
+        adapter.get(Map.of("Accept", "application/json"));
+
+        assertEquals(0, filter.consultations(),
+                "A caching-disabled adapter never reads the key, so it should not build one");
+    }
+
+    private ETagAwareHttpAdapter<String> cachingAdapterWith(CacheKeyHeaderFilter filter) {
+        return ETagAwareHttpAdapter.<String>builder()
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .cacheKeyHeaderFilter(filter)
+                .build();
+    }
+
+    /**
+     * Records how often the filter is consulted. Key generation is the only caller, so a
+     * consultation count of zero is the observable for "no cache key was built".
+     */
+    private static final class CountingCacheKeyHeaderFilter implements CacheKeyHeaderFilter {
+
+        private final AtomicInteger consultations = new AtomicInteger();
+
+        @Override
+        public boolean includeInCacheKey(String headerName) {
+            consultations.incrementAndGet();
+            return true;
+        }
+
+        int consultations() {
+            return consultations.get();
+        }
     }
 
     // === Cache Key Injection Prevention Tests ===
