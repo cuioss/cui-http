@@ -132,7 +132,7 @@ public final class GeneratorContractAssertions {
     public static void assertContainsAny(String value, Set<String> markers, String description) {
         boolean found = markers.stream().anyMatch(value::contains);
         assertTrue(found, () -> description + " — value contains none of the expected markers. Value: <"
-                + value + ">, expected any of: " + markers);
+                + preview(value) + ">, expected any of: " + markers);
     }
 
     /**
@@ -143,9 +143,9 @@ public final class GeneratorContractAssertions {
      */
     public static void assertPipelineAccepts(HttpSecurityValidator pipeline, String value) {
         Optional<String> result = assertDoesNotThrow(() -> pipeline.validate(value),
-                () -> "Pipeline must accept the generated value. Value: <" + value + ">");
+                () -> "Pipeline must accept the generated value. Value: <" + preview(value) + ">");
         assertTrue(result.isPresent(),
-                () -> "Pipeline must return a value for the accepted input. Value: <" + value + ">");
+                () -> "Pipeline must return a value for the accepted input. Value: <" + preview(value) + ">");
     }
 
     /**
@@ -158,7 +158,7 @@ public final class GeneratorContractAssertions {
     public static void assertPipelineRejects(HttpSecurityValidator pipeline, String value) {
         UrlSecurityException exception = assertThrows(UrlSecurityException.class,
                 () -> pipeline.validate(value),
-                () -> "Pipeline must reject the generated value. Value: <" + value + ">");
+                () -> "Pipeline must reject the generated value. Value: <" + preview(value) + ">");
         assertEquals(value, exception.getOriginalInput(),
                 "Rejection must report the generated value as its original input");
     }
