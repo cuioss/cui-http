@@ -686,7 +686,9 @@ than counted here.
 
 ==== Test Framework
 
-* 10 attack databases (OWASP Top 10, OWASP ZAP, ModSecurity CRS, Apache/IIS/Nginx CVE, Homograph, IDN, IPv6, ProtocolHandler) and 3 legitimate-pattern databases (edge-case valid URLs, legitimate path patterns, legitimate special characters)
+* Attack databases and legitimate-pattern databases — the test tree is the authoritative
+  inventory; see xref:testing.adoc[Testing Framework] for the package map rather than a count
+  repeated here
 * `TypedGenerator` implementations grouped by input type — see xref:testing.adoc[Testing Framework]
 * Comprehensive attack pattern coverage
 * CVE-based test cases
