@@ -24,8 +24,9 @@ These requirements are derived from:
   ** URL paths (e.g., `/api/users/123`)
   ** Query parameters (e.g., `?search=term&page=1`)
   ** HTTP headers (e.g., `Authorization: Bearer token`)
-  ** Request body parameters (form-data, JSON, XML)
 
+* Request body content (form-data, JSON, XML) is *out of scope*: the system does not
+  validate request bodies, and no body pipeline is provided (see the NOTE below)
 * Each component type must have appropriate validation rules
 * The system must provide separate validators for each component type
 * Reference: xref:specification/specification.adoc#_core_components[Core Components]
@@ -192,7 +193,8 @@ xref:#HTTP-14[HTTP-14] for the per-validation-type status.
 
 * Each validation type must have its own configuration:
   ** `URL_PATH`: Strict path validation rules
-  ** `PARAMETER_NAME`: Parameter name validation rules (RFC 7230 token rules)
+  ** `PARAMETER_NAME`: Parameter name validation rules (RFC 3986 query-component rules, plus
+     rejection of delimiters that appear only after decoding)
   ** `PARAMETER_VALUE`: Parameter value validation rules (URL decoding support)
   ** `HEADER_NAME`: Header name validation rules (RFC 7230 token rules)
   ** `HEADER_VALUE`: Header value validation rules (broader character set)
