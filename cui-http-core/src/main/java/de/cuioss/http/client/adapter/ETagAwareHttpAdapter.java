@@ -503,7 +503,8 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      *   <li>Retrieve cache entry BEFORE building request (local reference held)</li>
      *   <li>Add If-None-Match header if cache entry exists (GET only)</li>
      *   <li>Execute request asynchronously via HttpClient</li>
-     *   <li>Handle 304 using cached entry (structurally guaranteed non-null)</li>
+     *   <li>Route every 304 through {@link #handleNotModified}, which resolves it against the
+     *       cached entry when one is held and reports the RFC 7232 violation when none is</li>
      * </ol>
      *
      * @param method HTTP method (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS)
@@ -871,8 +872,12 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
                 .firstValue("ETag")
                 .orElse(null);
 
-        // Handle 304 Not Modified - the outcome depends on the request method (RFC 7232)
-        if (statusCode == 304 && cachedEntry != null) {
+        // Handle 304 Not Modified - the outcome depends on the request method (RFC 7232). The gate
+        // is the status alone: a cache entry exists only for GET and HEAD (see canReadCache), so
+        // additionally requiring one here would make the unsafe-method branch unreachable and let a
+        // POST/PUT/PATCH/DELETE/OPTIONS 304 fall through to the generic error path below, where the
+        // RFC 7232 violation is never named. handleNotModified resolves the null-entry cases itself.
+        if (statusCode == 304) {
             return handleNotModified(method, cachedEntry, cacheKey, etag);
         }
 
@@ -975,57 +980,79 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
     }
 
     /**
-     * Produces the result for a {@code 304 Not Modified} response on a request that holds a cached
-     * entry. RFC 7232 gives 304 a meaning only for a conditional request on a safe method, so the
-     * outcome is gated on the method:
+     * Produces the result for every {@code 304 Not Modified} response. RFC 7232 gives 304 a meaning
+     * only for a conditional request on a safe method, so the method is examined <em>before</em> the
+     * cache entry:
      *
      * <ul>
+     *   <li><strong>Any method other than GET or HEAD</strong> — a protocol violation, decided first
+     *       and independently of the cache. RFC 7232 requires a failed precondition on an unsafe
+     *       method to be answered with {@code 412 Precondition Failed}, never 304. Reported as an
+     *       {@link HttpErrorCategory#INVALID_CONTENT} failure carrying neither cached content nor a
+     *       cached validator, so no prior GET's data can leak out through the method-agnostic cache
+     *       key. This branch is reachable precisely because it does not require a cache entry:
+     *       {@link #prepareCacheContext} yields a null entry for every unsafe method, so a gate that
+     *       demanded one would be dead code and the violation would never be named.</li>
+     *   <li><strong>GET or HEAD with no cached entry</strong> — an unsolicited 304. The adapter only
+     *       sends {@code If-None-Match} when it holds an entry, so a 304 with nothing to resolve it
+     *       against (a caller-supplied conditional header, or a caching-disabled adapter) is equally
+     *       an {@link HttpErrorCategory#INVALID_CONTENT} failure with no content and no validator.</li>
      *   <li><strong>GET</strong> — the cached body <em>is</em> the response body. The entry's
      *       timestamp is refreshed so a frequently revalidated entry is not evicted ahead of a
      *       colder one under the timestamp-based eviction heuristic.</li>
      *   <li><strong>HEAD</strong> — status and validator only. A HEAD response carries no body, so
      *       surfacing a prior GET's cached body here would fabricate content the server never sent.
      *       The cache is populated by GET alone, so no timestamp refresh applies.</li>
-     *   <li><strong>Any other method</strong> — a protocol violation. RFC 7232 requires a failed
-     *       precondition on an unsafe method to be answered with {@code 412 Precondition Failed},
-     *       never 304. Reported as an {@link HttpErrorCategory#INVALID_CONTENT} failure carrying
-     *       neither cached content nor a cached validator, so no prior GET's data can leak out
-     *       through the method-agnostic cache key.</li>
      * </ul>
      *
      * @param method HTTP method the request used
-     * @param cachedEntry cached entry held for this request
+     * @param cachedEntry cached entry held for this request, or null when none is held
      * @param cacheKey cache key the entry is stored under
      * @param responseEtag ETag the 304 carried, or null when it carried none
      * @return the method-appropriate result
      */
     private HttpResult<T> handleNotModified(
             HttpMethod method,
-            CacheEntry<T> cachedEntry,
+            @Nullable CacheEntry<T> cachedEntry,
             String cacheKey,
             @Nullable String responseEtag
     ) {
+        if (!canReadCache(method)) {
+            LOGGER.debug("304 Not Modified is not a valid response to %s - reporting a protocol violation",
+                    method.methodName());
+            return HttpResult.<T>failureWithFallback(
+                    "HTTP 304 is not a valid response to a %s request (RFC 7232 requires 412)".formatted(method.methodName()),
+                    null,
+                    null,
+                    HttpErrorCategory.INVALID_CONTENT,
+                    null,
+                    304
+            );
+        }
+
+        if (cachedEntry == null) {
+            LOGGER.debug("304 Not Modified for %s with no cached entry - reporting an unsolicited 304",
+                    method.methodName());
+            return HttpResult.<T>failureWithFallback(
+                    "HTTP 304 for a %s request with no cached entry to resolve it against (RFC 7232 permits 304 only in response to a conditional request the adapter issued)"
+                            .formatted(method.methodName()),
+                    null,
+                    null,
+                    HttpErrorCategory.INVALID_CONTENT,
+                    null,
+                    304
+            );
+        }
+
         if (method == HttpMethod.GET) {
             LOGGER.debug("304 Not Modified - returning cached content");
             putInCache(cacheKey, new CacheEntry<>(cachedEntry.content(), cachedEntry.etag(), System.currentTimeMillis()));
             return HttpResult.<T>success(cachedEntry.content(), cachedEntry.etag(), 304);
         }
 
-        if (method == HttpMethod.HEAD) {
-            LOGGER.debug("304 Not Modified for HEAD - returning status and ETag without a body");
-            return HttpResult.<T>success(null, responseEtag != null ? responseEtag : cachedEntry.etag(), 304);
-        }
-
-        LOGGER.debug("304 Not Modified is not a valid response to %s - reporting a protocol violation",
-                method.methodName());
-        return HttpResult.<T>failureWithFallback(
-                "HTTP 304 is not a valid response to a %s request (RFC 7232 requires 412)".formatted(method.methodName()),
-                null,
-                null,
-                HttpErrorCategory.INVALID_CONTENT,
-                null,
-                304
-        );
+        // Only HEAD remains: the unsafe methods returned above and GET was handled just now.
+        LOGGER.debug("304 Not Modified for HEAD - returning status and ETag without a body");
+        return HttpResult.<T>success(null, responseEtag != null ? responseEtag : cachedEntry.etag(), 304);
     }
 
     /**

@@ -130,6 +130,13 @@ class ETagAwareHttpAdapterIntegrationTest {
      * A 304 answering an unsafe method is a server protocol violation (RFC 7232 mandates 412), so it
      * must surface as a failure that leaks neither the cached body nor the cached validator.
      * <p>
+     * The message assertion is what makes this test verify the unsafe-method gate rather than a
+     * coincidence. An unsafe method never holds a cache entry, so a 304 that is not resolved by the
+     * dedicated gate falls through to the generic error path — which yields {@code INVALID_CONTENT},
+     * status 304 and no fallback content all by itself, satisfying every other assertion here. Only
+     * the RFC-specific message distinguishes the two paths, so this case fails if the gate is
+     * bypassed.
+     * <p>
      * PATCH and OPTIONS belong to this equivalence class and are gated identically in production,
      * but cannot be exercised here: the MockWebServer fixture cannot serve them yet.
      */
@@ -149,8 +156,40 @@ class ETagAwareHttpAdapterIntegrationTest {
                 () -> assertEquals(HttpErrorCategory.INVALID_CONTENT, result.getErrorCategory().orElse(null),
                         "The violation should be categorised as invalid content"),
                 () -> assertEquals(Optional.of(304), result.getHttpStatus(), "The observed status should be preserved"),
+                () -> assertEquals(
+                        "HTTP 304 is not a valid response to a %s request (RFC 7232 requires 412)".formatted(method.methodName()),
+                        result.getErrorMessage().orElse(null),
+                        "The failure must name the RFC 7232 violation - the generic error path would report 'HTTP 304: %s' instead"
+                                .formatted(method.methodName())),
                 () -> assertTrue(result.getContent().isEmpty(), "The cached GET body must not leak"),
                 () -> assertTrue(result.getETag().isEmpty(), "The cached GET validator must not leak"));
+    }
+
+    /**
+     * A 304 on a safe method with no cached entry is equally unresolvable: the adapter only issues a
+     * conditional request when it holds a validator, so an unsolicited 304 has nothing to be resolved
+     * against. It must fail as {@code INVALID_CONTENT} rather than surface as an empty success.
+     */
+    @Test
+    @DisplayName("A 304 with no cached entry should fail rather than yield an empty success")
+    @ModuleDispatcher
+    void unsolicited304WithoutCachedEntryShouldFail(URIBuilder uriBuilder) {
+        dispatcher.with304();
+        HttpAdapter<String> adapter = matrixAdapter(uriBuilder);
+
+        HttpResult<String> result = adapter.getBlocking();
+
+        assertAll("GET answered with an unsolicited 304",
+                () -> assertFalse(result.isSuccess(), "A 304 with nothing to resolve it against is not a success"),
+                () -> assertEquals(HttpErrorCategory.INVALID_CONTENT, result.getErrorCategory().orElse(null),
+                        "The unresolvable 304 should be categorised as invalid content"),
+                () -> assertEquals(Optional.of(304), result.getHttpStatus(), "The observed status should be preserved"),
+                () -> assertEquals(
+                        "HTTP 304 for a GET request with no cached entry to resolve it against (RFC 7232 permits 304 only in response to a conditional request the adapter issued)",
+                        result.getErrorMessage().orElse(null),
+                        "The failure must name why the 304 could not be resolved"),
+                () -> assertTrue(result.getContent().isEmpty(), "No content should be fabricated"),
+                () -> assertTrue(result.getETag().isEmpty(), "No validator should be fabricated"));
     }
 
     /**
