@@ -54,13 +54,16 @@ class URLLengthLimitAttackGeneratorTest {
 
     /**
      * Sized so that the rarest branch — the single traversal arm of the algorithmic-complexity
-     * family, reached on one of eight sub-cases of one of thirteen families — is missed with
-     * negligible probability.
+     * family, reached on one of eight sub-cases of one family — is missed with negligible
+     * probability.
      */
     private static final int AGGREGATE_DRAWS = 2000;
 
-    /** The number of attack families {@code AttackTypeSelector} cycles through. */
-    private static final int ATTACK_FAMILY_COUNT = 13;
+    /**
+     * The number of attack families {@code AttackTypeSelector} cycles through, sourced from the
+     * generator itself so the count cannot desync when a family is added or removed.
+     */
+    private static final int ATTACK_FAMILY_COUNT = URLLengthLimitAttackGenerator.ATTACK_FAMILY_COUNT;
 
     /**
      * Observable shapes that are each reachable only through a distinct branch family, so that
@@ -90,7 +93,7 @@ class URLLengthLimitAttackGeneratorTest {
     }
 
     @Test
-    @DisplayName("Should cycle through all thirteen attack families, each emitting overlong URLs")
+    @DisplayName("Should cycle through every attack family, each emitting overlong URLs")
     void shouldReachAllAttackFamilies() {
         URLLengthLimitAttackGenerator generator = new URLLengthLimitAttackGenerator();
         List<List<String>> valuesByFamily = new ArrayList<>();

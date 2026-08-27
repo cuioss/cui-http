@@ -90,6 +90,17 @@ import java.util.List;
  */
 public class URLLengthLimitAttackGenerator implements TypedGenerator<String> {
 
+    /**
+     * The number of attack families {@link #next()} cycles through, that is the number of
+     * {@code case} branches its switch declares.
+     *
+     * <p>The former cases 13 and 14 (encoding attacks) were removed because they exercise encoding
+     * validation rather than length validation. This constant is the single source of that count:
+     * it drives the {@link AttackTypeSelector} below, and the contract test references it instead
+     * of duplicating the literal, so adding or removing a family cannot silently desync the two.</p>
+     */
+    public static final int ATTACK_FAMILY_COUNT = 13;
+
     private static final List<String> BASE_PATTERNS = Arrays.asList(
             "/api",
             "/search",
@@ -103,7 +114,7 @@ public class URLLengthLimitAttackGenerator implements TypedGenerator<String> {
             "/request"
     );
 
-    private final AttackTypeSelector attackTypeSelector = new AttackTypeSelector(13); // Removed encoding attacks (13,14) - they test encoding not length
+    private final AttackTypeSelector attackTypeSelector = new AttackTypeSelector(ATTACK_FAMILY_COUNT);
 
     @Override
     public String next() {
