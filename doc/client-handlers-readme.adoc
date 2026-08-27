@@ -53,6 +53,44 @@ HttpHandler.builder().uri("http://localhost:8080").allowInsecureHttp(true).build
 minimum and the generic `TLS` context both enforce `[TLSv1.2, TLSv1.3]` (deliberate); a caller
 cannot express "TLS 1.3-only" via the generic `TLS` string.
 
+*Hostname verification (opt-in relaxation):* the default is `verifyHostname(true)`. Setting
+`verifyHostname(false)` skips the TLS hostname/endpoint-identification check *only* - the match
+between the peer certificate's SAN/CN and the connected host. Certificate-chain trust, validity
+period (expiry), revocation posture, and algorithm constraints all remain fully enforced. The
+mechanism is a delegating `X509ExtendedTrustManager` that forwards `checkServerTrusted` to the
+platform trust manager with a `null` `SSLEngine`, the JSSE-documented contract under which the
+chain is still validated but no peer identity is available to match. The relaxation applies only
+to the SSL context the handler builds itself, so combining it with a caller-supplied
+`.sslContext(...)` is rejected at `build()` time with `IllegalArgumentException`. A WARN
+(`HTTP-116`) is logged for every handler built this way.
+
+The rejection keys off whether the *caller* supplied the context, not off the handler's own
+derived one, so `asBuilder()` round-trips a relaxed handler without tripping it.
+
+[source,java]
+----
+// Accepted: opt in to hostname relaxation on the handler's own derived context
+HttpHandler relaxed = HttpHandler.builder()
+        .uri("https://10.0.0.7/api")
+        .verifyHostname(false)
+        .build();
+
+// Round-trips cleanly - the derived context is not "caller-supplied"
+HttpHandler cloned = relaxed.asBuilder().uri("https://10.0.0.8/api").build();
+
+// Rejected: the relaxation cannot be applied to caller-owned trust material
+HttpHandler.builder()
+        .uri("https://10.0.0.7/api")
+        .sslContext(myCustomContext)
+        .verifyHostname(false)
+        .build(); // throws IllegalArgumentException
+----
+
+Two commonly reached-for alternatives are deliberately *not* supported and must not be used:
+the JVM-wide `jdk.internal.httpclient.disableHostnameVerification` system property (it is
+process-global and affects every client in the JVM), and a trust-all `X509TrustManager` (it
+discards chain validation entirely, which this opt-in specifically preserves).
+
 ==== xref:../cui-http-core/src/main/java/de/cuioss/http/client/adapter/package-info.java[HTTP Adapters (New Architecture)]
 
 Async-first HTTP client adapters with composable retry and caching.
@@ -70,7 +108,9 @@ See xref:../cui-http-core/src/main/java/de/cuioss/http/client/adapter/package-in
 
 ==== xref:../cui-http-core/src/main/java/de/cuioss/http/client/handler/SecureSSLContextProvider.java[SecureSSLContextProvider]
 
-Utility for creating TLS 1.2+ SSL contexts.
+Utility for creating TLS 1.2+ SSL contexts, including `createHostnameRelaxedSSLContext()` - the
+opt-in context backing `HttpHandlerBuilder.verifyHostname(false)`, which relaxes hostname
+matching only and keeps certificate-chain validation intact.
 
 === HTTP Status Classification
 

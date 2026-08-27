@@ -71,6 +71,7 @@ xref:doc/client-handlers-readme.adoc[HTTP Client Handlers]:
 * `HttpHandler` - Builder-based HTTP client with SSL defaults
 * `SecureSSLContextProvider` - TLS 1.2+ SSL context
 * `HttpStatusFamily` - RFC 7231 status classification
+* Opt-in hostname-verification relaxation (`verifyHostname(false)`) - skips TLS identity matching only; certificate-chain validation is unaffected (xref:doc/client-handlers-readme.adoc[details])
 
 === Forwarded / Reverse-Proxy Header Resolution
 
