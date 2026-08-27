@@ -47,12 +47,18 @@ class ValidURLPathGeneratorTest {
 
     private static final Set<String> SYSTEM_PATHS = Set.of("/health", "/metrics", "/status", "/info");
     private static final String RESOURCES = "(users|orders|products|customers|documents)";
+    // The three patterns below are compiled once from compile-time-constant string literals
+    // (RESOURCES included), never from user input, and each alternation is a small flat set with no
+    // nested or overlapping quantifiers — so the ReDoS warning static analysis raises here is a
+    // false positive: there is no catastrophic-backtracking path and no attacker-controlled input.
     private static final Pattern PLAIN_API =
             Pattern.compile("^/api/" + RESOURCES + "(/\\d+/(search|profile|login|logout))?$");
     private static final Pattern VERSIONED_API =
             Pattern.compile("^/api/v[123]/" + RESOURCES + "(/\\d+)?$");
+    // The child-resource alternation is disjoint from PLAIN_API's action alternation, so a
+    // plain-API path can never satisfy the nested-resource family by coincidence.
     private static final Pattern NESTED_RESOURCE =
-            Pattern.compile("^/api/" + RESOURCES + "/\\d+/(items|orders|profile|notifications)$");
+            Pattern.compile("^/api/" + RESOURCES + "/\\d+/(items|orders|notifications)$");
     private static final Pattern AUTH_PATH =
             Pattern.compile("^/api/auth/(search|profile|login|logout)$");
     private static final Pattern ADMIN_PATH =

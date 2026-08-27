@@ -37,7 +37,7 @@ public class ValidURLPathGenerator implements TypedGenerator<String> {
     private final TypedGenerator<Integer> actionGen = Generators.integers(1, 4);
     private final TypedGenerator<Integer> adminActionGen = Generators.integers(1, 3);
     private final TypedGenerator<Integer> systemPathGen = Generators.integers(1, 4);
-    private final TypedGenerator<Integer> nestedResourceGen = Generators.integers(1, 4);
+    private final TypedGenerator<Integer> nestedResourceGen = Generators.integers(1, 3);
     private final TypedGenerator<Boolean> includeIdGen = Generators.booleans();
 
     @Override
@@ -147,12 +147,17 @@ public class ValidURLPathGenerator implements TypedGenerator<String> {
         };
     }
 
+    /**
+     * Child-resource tokens for the nested-resource family. The set is deliberately disjoint from
+     * {@link #generateAction()}: a token shared with the action set would make a plain-API path
+     * such as {@code /api/users/1/profile} indistinguishable from a nested-resource path, so a
+     * contract test could report the nested family reached without this branch ever running.
+     */
     private String generateNestedResource() {
         return switch (nestedResourceGen.next()) {
             case 1 -> "items";
             case 2 -> "orders";
-            case 3 -> "profile";
-            case 4 -> "notifications";
+            case 3 -> "notifications";
             default -> "items";
         };
     }
