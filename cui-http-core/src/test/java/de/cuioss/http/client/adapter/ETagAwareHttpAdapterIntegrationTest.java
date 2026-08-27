@@ -362,6 +362,51 @@ class ETagAwareHttpAdapterIntegrationTest {
     }
 
     /**
+     * The validator-bearing half of the invalidation invariant, and the case an eviction gated on a
+     * missing ETag misses entirely. A {@code 200} carrying an ETag whose body the converter rejects
+     * yields no content, so no replacement entry can be built from it — yet it is still a fresh
+     * representation that supersedes the cached one. What makes the old entry stale is that the
+     * fresh {@code 200} could not replace it, not the reason it could not, so this sequence must
+     * evict exactly as the ETag-less sibling above does.
+     * <p>
+     * Three independent observables pin it, and all three are wrong when the eviction is skipped:
+     * the later failure carries neither the superseded body nor the superseded validator, and the
+     * request that draws it sends no stale {@code If-None-Match}. The intermediate assertion that
+     * the conversion failure reports the <em>fresh</em> ETag rather than the seeded one keeps the
+     * scenario honest — it confirms the second response really did carry its own validator, so the
+     * case exercises the ETag-bearing branch and not the ETag-less one.
+     */
+    @Test
+    @DisplayName("An ETag-bearing 200 whose body is unparseable should invalidate the cached entry")
+    @ModuleDispatcher
+    void unparseable200WithETagShouldInvalidateCachedEntry(URIBuilder uriBuilder) {
+        HttpAdapter<String> adapter = typedAdapter(uriBuilder);
+
+        dispatcher.withSuccessAndETag(SEED_CONTENT, SEED_ETAG);
+        assertTrue(adapter.getBlocking().isSuccess(), "Seeding GET should succeed and populate the cache");
+
+        dispatcher.withSuccessAndETag(TypedResponseConverter.UNPARSEABLE_BODY, "\"etag-fresh\"");
+        HttpResult<String> unparseable = adapter.getBlocking();
+
+        assertAll("200 carrying an ETag whose body the converter rejects",
+                () -> assertFalse(unparseable.isSuccess(), "An unparseable body is a conversion failure"),
+                () -> assertEquals("\"etag-fresh\"", unparseable.getETag().orElse(null),
+                        "The response's own validator should be reported - proving this is the ETag-bearing branch"));
+
+        dispatcher.withServerError();
+        HttpResult<String> failure = adapter.getBlocking();
+
+        assertAll("Failure after an ETag-bearing, unparseable 200 evicted the entry",
+                () -> assertFalse(failure.isSuccess(), "503 should surface as a failure"),
+                () -> assertTrue(failure.getContent().isEmpty(),
+                        "The superseded entry must not be served as fallback content"),
+                () -> assertTrue(failure.getETag().isEmpty(),
+                        "The superseded entry's validator must not be served either"),
+                () -> assertTrue(dispatcher.getLastIfNoneMatch().isEmpty(),
+                        "No stale If-None-Match should be sent once the entry is gone"));
+    }
+
+    /**
      * Builds an adapter over {@link TypedResponseConverter} — the converter shape that can actually
      * reach the conversion-failure branch.
      */

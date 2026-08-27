@@ -148,9 +148,9 @@ import static de.cuioss.http.client.HttpLogMessages.WARN;
  * <p><strong>Benign last-writer-wins race on cache maintenance.</strong> Two cache writes are
  * check-then-act sequences on the {@code ConcurrentHashMap} rather than atomic compare-and-set
  * operations: the 304 timestamp refresh (read the entry, then write it back with a new timestamp)
- * and the eviction of a stale entry after an ETag-less {@code 200} (observe the missing validator,
- * then remove). Concurrent revalidations of the same key can therefore interleave, and the last
- * writer wins.</p>
+ * and the eviction of a stale entry after a {@code 200} that could not replace it (observe that no
+ * replacement entry can be built, then remove). Concurrent revalidations of the same key can
+ * therefore interleave, and the last writer wins.</p>
  *
  * <p>This is benign, and deliberately not locked. Every writer for a given key stores a
  * fully-formed immutable {@link CacheEntry}, so no reader can observe a torn or mismatched entry;
@@ -782,7 +782,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
         if (cache.remove(key) != null) {
             // The key embeds request header values, so it is deliberately not logged.
-            LOGGER.debug("Removed stale cache entry after an ETag-less 200");
+            LOGGER.debug("Removed stale cache entry after a GET 200 that could not replace it");
         }
     }
 
@@ -846,9 +846,9 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      *   <li>304 Not Modified detection, resolved per method by {@link #handleNotModified}</li>
      *   <li>ETag extraction from response headers</li>
      *   <li>Response body conversion using configured converter</li>
-     *   <li>GET {@code 200} cache maintenance — store on an ETag, evict without one. Runs ahead of
-     *       the conversion-failure return so an ETag-less {@code 200} the converter rejects still
-     *       drops the entry it superseded</li>
+     *   <li>GET {@code 200} cache maintenance — store when the response yields both a validator and
+     *       content, evict otherwise. Runs ahead of the conversion-failure return so a {@code 200}
+     *       the converter rejects still drops the entry it superseded</li>
      *   <li>Conversion failure handling for 2xx responses, excluding the no-body statuses
      *       {@code 204} and {@code 205} (see {@link #isNoBodyStatus})</li>
      *   <li>Success/failure result creation based on status code</li>
@@ -887,18 +887,22 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         Optional<T> content = responseConverter.convert(response.body());
 
         // Cache maintenance for a fresh GET 200. With an ETag and content, store (or refresh) the
-        // entry. Without an ETag the server has returned content it no longer identifies by any
-        // validator, so a previously cached entry is provably stale: drop it rather than leave it
-        // to be served later as fallback content or revalidated with a dead If-None-Match.
+        // entry. Otherwise evict: the 200 is a fresh representation that supersedes whatever was
+        // cached, and no replacement entry could be built from it, so the old one is provably
+        // stale. Both non-replaceable cases reach the eviction, and the reason does not matter -
+        // a missing validator (content the server no longer identifies) and an unparseable body
+        // under an ETag (a validator with nothing to pair it with) are equally unable to produce a
+        // replacement. Leaving the superseded entry behind would let a later failure serve it as
+        // fallback content, or revalidate it with a dead If-None-Match.
         //
-        // This runs BEFORE the conversion-failure return below. An ETag-less 200 whose body the
-        // converter rejects still supersedes the cached entry, and evicting after the early return
-        // would never reach it - leaving a later failure free to serve content the 200 replaced.
+        // This runs BEFORE the conversion-failure return below, which is what makes the
+        // unparseable-body cases reachable at all: evicting after that early return would never
+        // execute for them, leaving a later failure free to serve content the 200 replaced.
         if (method == HttpMethod.GET && statusCode == 200) {
             if (etag != null && content.isPresent()) {
                 putInCache(cacheKey, new CacheEntry<>(content.get(), etag, System.currentTimeMillis()));
                 LOGGER.debug("Cached GET response with ETag: %s", etag);
-            } else if (etag == null) {
+            } else {
                 evictFromCache(cacheKey);
             }
         }
