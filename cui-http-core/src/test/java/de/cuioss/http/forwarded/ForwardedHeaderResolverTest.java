@@ -631,6 +631,24 @@ class ForwardedHeaderResolverTest {
             assertEquals(ResolvedForwarding.empty(), result,
                     "an unresolvable header contributes no value of its own");
         }
+
+        @Test
+        @DisplayName("a malformed Forwarded header drops X-Forwarded-Port")
+        void malformedForwardedDropsDeFactoPort() {
+            var portOnly = proxyAwareResolver()
+                    .resolve(headers(Map.of("X-Forwarded-Port", "8080")));
+            var withMalformed = proxyAwareResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Port", "8080",
+                    "Forwarded", "host=trusted.example;broken")));
+
+            assertAll("port obeys the present-but-unresolvable rule like every other field",
+                    () -> assertEquals(8080, portOnly.port().orElseThrow(),
+                            "the same X-Forwarded-Port resolves on its own, so the drop below is the header's doing"),
+                    () -> assertTrue(withMalformed.port().isEmpty(),
+                            "a malformed forwarded-pair must not leave port as the one field that still honors X-Forwarded-Port"),
+                    () -> assertEquals(ResolvedForwarding.empty(), withMalformed,
+                            "no field survives an unresolvable Forwarded header"));
+        }
     }
 
     @Nested

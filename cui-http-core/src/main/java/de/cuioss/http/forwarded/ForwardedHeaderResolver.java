@@ -97,7 +97,9 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  * sanitization, <em>or</em> when it carries a malformed {@code forwarded-pair} (a non-blank pair with
  * no {@code =}, an empty directive name, or an empty value — a grammatically legal blank pair is
  * still accepted), the header is treated as present-but-unresolvable for <em>every</em> field it could
- * have carried (scheme, host, client-IP), not as absent. A garbage {@code Forwarded} header therefore
+ * have carried (scheme, host, port, client-IP), not as absent. The port belongs in that enumeration
+ * because a {@code Forwarded} header carries one through a {@code host=example.com:8443} directive.
+ * A garbage {@code Forwarded} header therefore
  * disagrees with — and drops — an otherwise clean {@code X-Forwarded-*} value, instead of letting the
  * de-facto family win by default. Only a header that is genuinely absent, or one that sanitizes and
  * parses cleanly while simply carrying no directive for a given field, leaves that field's de-facto
@@ -166,7 +168,7 @@ public final class ForwardedHeaderResolver {
 
         Optional<String> scheme = resolveScheme(lookup, forwarded);
         HostPort hostPort = resolveHost(lookup, forwarded);
-        OptionalInt port = resolvePort(lookup, hostPort.port());
+        OptionalInt port = resolvePort(lookup, forwarded, hostPort.port());
         String contextPath = resolveContextPath(lookup, forwarded);
         Optional<String> clientIp = resolveClientIp(lookup, forwarded);
 
@@ -289,7 +291,21 @@ public final class ForwardedHeaderResolver {
 
     // --- port --------------------------------------------------------------------------------
 
-    private OptionalInt resolvePort(UnaryOperator<String> lookup, OptionalInt hostPortFallback) {
+    /**
+     * Resolves the port, honoring the present-but-unresolvable rule that already governs scheme,
+     * host, and client-IP: an unresolvable {@code Forwarded} header counts as present for the port
+     * too — it could have carried one via a {@code host=example.com:8443} directive — so it
+     * disagrees with, and drops, any {@code X-Forwarded-Port} value.
+     *
+     * <p>The unresolvable check precedes the {@code hostPortFallback} branch deliberately. That
+     * fallback is derived from the {@code host} directive, so returning it for an unresolvable
+     * header would leak the very source the rule drops; guarding only the explicit port-header
+     * branch would leave that leak open.</p>
+     */
+    private OptionalInt resolvePort(UnaryOperator<String> lookup, ForwardedResult forwarded, OptionalInt hostPortFallback) {
+        if (forwarded.unresolvable()) {
+            return OptionalInt.empty();
+        }
         String raw = firstPresent(lookup, X_FORWARDED_PORT, X_PROXY_PORT);
         if (raw == null) {
             return hostPortFallback;
