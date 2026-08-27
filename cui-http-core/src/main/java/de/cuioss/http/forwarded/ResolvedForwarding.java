@@ -15,10 +15,7 @@
  */
 package de.cuioss.http.forwarded;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.OptionalInt;
+import java.util.*;
 
 /**
  * Immutable, sanitized result of resolving the reverse-proxy / forwarded-header family.
@@ -48,6 +45,20 @@ import java.util.OptionalInt;
  *
  * <p>This record is immutable and thread-safe.</p>
  *
+ * <h3>Enforced invariants</h3>
+ * <p>The record is {@code public}, so it is constructible by any caller — the invariants below are
+ * therefore enforced at construction rather than left to the resolver's convention. In particular a
+ * component carrying a control character (CR/LF) is unconstructible, so it can never round-trip out
+ * through {@link #toForwardedHeader()} / {@link #toXForwardedHeaders()} as a header-injection
+ * vector. Rejection messages name the violated component and never echo the offending value.</p>
+ * <ul>
+ *   <li>{@code scheme}, when present, is exactly {@code "http"} or {@code "https"}</li>
+ *   <li>{@code port}, when present, is in {@code 1..65535}</li>
+ *   <li>{@code host} / {@code clientIp}, when present, are non-blank and control-character free</li>
+ *   <li>{@code contextPath} is either empty or starts with exactly one {@code /}, does not end with
+ *       {@code /}, and is control-character free</li>
+ * </ul>
+ *
  * @param scheme      the resolved request scheme ({@code "http"} or {@code "https"}), empty when
  *                    absent or not honored
  * @param host        the resolved host without a port, empty when absent or not honored
@@ -56,6 +67,8 @@ import java.util.OptionalInt;
  *                    slash), or the empty string when none is present or honored
  * @param clientIp    the resolved originating client IP in canonical form, empty when absent or
  *                    not honored
+ * @throws NullPointerException     if any component is {@code null}
+ * @throws IllegalArgumentException if any component violates the invariants listed above
  *
  * @since 1.0
  */
@@ -67,8 +80,64 @@ String contextPath,
 Optional<String> clientIp
 ) {
 
+    private static final int MIN_PORT = 1;
+    private static final int MAX_PORT = 65535;
+
     private static final ResolvedForwarding EMPTY =
             new ResolvedForwarding(Optional.empty(), Optional.empty(), OptionalInt.empty(), "", Optional.empty());
+
+    /**
+     * Enforces the invariants documented on the record.
+     */
+    public ResolvedForwarding {
+        Objects.requireNonNull(scheme, "scheme must not be null");
+        Objects.requireNonNull(host, "host must not be null");
+        Objects.requireNonNull(port, "port must not be null");
+        Objects.requireNonNull(contextPath, "contextPath must not be null");
+        Objects.requireNonNull(clientIp, "clientIp must not be null");
+        // The scheme allow-list subsumes the control-character rule: neither "http" nor "https"
+        // can carry one.
+        if (scheme.isPresent() && !"http".equals(scheme.get()) && !"https".equals(scheme.get())) {
+            throw new IllegalArgumentException("scheme must be \"http\" or \"https\"");
+        }
+        if (port.isPresent() && (port.getAsInt() < MIN_PORT || port.getAsInt() > MAX_PORT)) {
+            throw new IllegalArgumentException("port must be in 1..65535");
+        }
+        host.ifPresent(value -> requireUsableAuthorityComponent(value, "host"));
+        clientIp.ifPresent(value -> requireUsableAuthorityComponent(value, "clientIp"));
+        requireUsableContextPath(contextPath);
+    }
+
+    /**
+     * Rejects a present-but-blank or control-character-bearing {@code host} / {@code clientIp}.
+     */
+    private static void requireUsableAuthorityComponent(String value, String component) {
+        if (value.isBlank()) {
+            throw new IllegalArgumentException(component + " must not be blank when present");
+        }
+        if (ContextPaths.containsControlCharacter(value)) {
+            throw new IllegalArgumentException(component + " must not contain control characters");
+        }
+    }
+
+    /**
+     * Rejects a non-empty {@code contextPath} that is not already in the normalized shape
+     * {@link ContextPaths#normalize(String)} produces.
+     */
+    private static void requireUsableContextPath(String contextPath) {
+        if (contextPath.isEmpty()) {
+            return;
+        }
+        if (ContextPaths.containsControlCharacter(contextPath)) {
+            throw new IllegalArgumentException("contextPath must not contain control characters");
+        }
+        if (!contextPath.startsWith("/") || contextPath.startsWith("//")) {
+            throw new IllegalArgumentException("contextPath must start with exactly one '/'");
+        }
+        if (contextPath.endsWith("/")) {
+            throw new IllegalArgumentException("contextPath must not end with '/'");
+        }
+    }
 
     /**
      * Returns the empty result: no scheme, host, port, or client IP, and an empty context-path.

@@ -14,7 +14,7 @@ Module: `de.cuioss.http`
 LogMessages Classes:
 
 - `de.cuioss.http.client.HttpLogMessages` - HTTP client operations (HTTP-106–108, HTTP-110–115, HTTP-200–201)
-- `de.cuioss.http.forwarded.ForwardedLogMessages` - Forwarded / reverse-proxy header resolution (HTTP-120–124)
+- `de.cuioss.http.forwarded.ForwardedLogMessages` - Forwarded / reverse-proxy header resolution (HTTP-120–125) - source: xref:../cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedLogMessages.java[ForwardedLogMessages.java]
 
 == HttpLogMessages
 
@@ -89,6 +89,11 @@ LogMessages Classes:
 
 == ForwardedLogMessages
 
+The authoritative source for the records below is
+xref:../cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedLogMessages.java[ForwardedLogMessages.java].
+This table is maintained by hand, so it must be updated whenever a record in that class is added,
+removed, renumbered, or reworded.
+
 === WARN Level (100-199)
 
 [cols="1,2,3,3", options="header"]
@@ -119,6 +124,11 @@ LogMessages Classes:
 |Forwarded
 |Dropping forwarded %s: sources disagree: %s resolves to %s but Forwarded resolves to %s
 |Logged when the de-facto X-Forwarded-* / X-Proxy* family and the RFC 7239 Forwarded header resolve a field to different values, so the field is dropped rather than letting either source win. Parameters: field name, de-facto header name, de-facto resolution, RFC 7239 resolution.
+
+|HTTP-125
+|Forwarded
+|Rejecting Forwarded header: malformed forwarded-pair: %s
+|Logged when the RFC 7239 Forwarded header carries a malformed forwarded-pair — a non-blank pair with no `=`, an empty directive name, or an empty value — so the whole header is treated as present-but-unresolvable for every field it could have carried. A grammatically legal blank pair (a trailing `;`) is not malformed. Parameters: sanitized header value.
 |===
 
 == Notes

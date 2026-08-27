@@ -86,14 +86,20 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  * <p><strong>Present-but-invalid = drop (no fall-through).</strong> A present, non-blank source is
  * validated; if it fails its field guard it is <em>dropped</em> — lower-precedence sources are
  * <em>not</em> consulted as a fallback. In particular a present-but-invalid
- * {@code X-Forwarded-Port} / {@code X-ProxyPort} (non-numeric or outside {@code 1..65535}) yields no
- * port; the host {@code :port} fallback is used only when no explicit port header is present at all.
+ * {@code X-Forwarded-Port} / {@code X-ProxyPort} (not digit-only, or outside {@code 1..65535})
+ * yields no port; the host {@code :port} fallback is used only when no explicit port header is
+ * present at all. Likewise an IPv6 host value must be supplied <em>bracketed</em>
+ * ({@code [2001:db8::1]}) to be honored — an unbracketed multi-colon value yields no host.
  * A source that is present but resolves to nothing valid also <em>disagrees</em> with a sibling
  * source that resolved successfully, so the conflicting-source rule above drops the field.</p>
  *
  * <p>This applies to the RFC 7239 {@code Forwarded} header as a whole: when its raw value fails
- * sanitization, the header is treated as present-but-unresolvable for <em>every</em> field it could
- * have carried (scheme, host, client-IP), not as absent. A garbage {@code Forwarded} header therefore
+ * sanitization, <em>or</em> when it carries a malformed {@code forwarded-pair} (a non-blank pair with
+ * no {@code =}, an empty directive name, or an empty value — a grammatically legal blank pair is
+ * still accepted), the header is treated as present-but-unresolvable for <em>every</em> field it could
+ * have carried (scheme, host, port, client-IP), not as absent. The port belongs in that enumeration
+ * because a {@code Forwarded} header carries one through a {@code host=example.com:8443} directive.
+ * A garbage {@code Forwarded} header therefore
  * disagrees with — and drops — an otherwise clean {@code X-Forwarded-*} value, instead of letting the
  * de-facto family win by default. Only a header that is genuinely absent, or one that sanitizes and
  * parses cleanly while simply carrying no directive for a given field, leaves that field's de-facto
@@ -162,7 +168,7 @@ public final class ForwardedHeaderResolver {
 
         Optional<String> scheme = resolveScheme(lookup, forwarded);
         HostPort hostPort = resolveHost(lookup, forwarded);
-        OptionalInt port = resolvePort(lookup, hostPort.port());
+        OptionalInt port = resolvePort(lookup, forwarded, hostPort.port());
         String contextPath = resolveContextPath(lookup, forwarded);
         Optional<String> clientIp = resolveClientIp(lookup, forwarded);
 
@@ -215,12 +221,33 @@ public final class ForwardedHeaderResolver {
      * path/backslash/whitespace/URL-authority-delimiter characters. Returns {@link HostPort#EMPTY}
      * for a malformed host.
      *
+     * <p><strong>An IPv6 host must be bracketed.</strong> An unbracketed value carrying more than
+     * one colon (a bare IPv6 literal such as {@code 2001:db8::1}) is rejected: the host is later
+     * composed back into a URL authority, where an unbracketed IPv6 literal produces a malformed or
+     * attacker-steerable authority. Supply it as {@code [2001:db8::1]} to have it honored.</p>
+     *
+     * <p><strong>Trailing content after {@code ]} is rejected.</strong> The only thing permitted
+     * after the closing bracket is a colon followed by one or more ASCII digits, so
+     * {@code [::1]garbage} and {@code [::1]x:8443} yield {@link HostPort#EMPTY} instead of resolving
+     * to host {@code [::1]}. That rule is not restated here: it is applied through the shared
+     * {@link IpAddresses#hasValidBracketTrailer(String)} helper.</p>
+     *
+     * <p><strong>The bracket contents must themselves be an IP literal.</strong> {@code []} and
+     * {@code [not-an-ip]} yield {@link HostPort#EMPTY} rather than becoming a host, because the
+     * brackets promise a literal and an invalid one would be composed into an invalid authority.
+     * The check accepts an IPv4 literal as well, so {@code [10.0.0.5]} is honored even though
+     * RFC 3986 reserves the bracketed form for IPv6. That laxity is deliberate and documented
+     * rather than intended: it keeps this path identical to
+     * {@link IpAddresses#parseChainEntry(String)}, which has always accepted the same shape, and
+     * a syntactically valid literal is still required either way. Tighten both together or
+     * neither — a one-sided change reintroduces the host-vs-chain asymmetry.</p>
+     *
      * <p>The {@code host:port} split here intentionally diverges from
      * {@link IpAddresses#parseChainEntry(String)}: this method reconstructs the <em>host string</em>
      * and therefore <em>retains</em> the IPv6 brackets (a host is later composed back into a URL),
      * whereas {@code parseChainEntry} strips them to obtain a bare literal for {@code InetAddress}
-     * matching. The divergence is deliberate — keep both bracket policies in sync when either
-     * changes.</p>
+     * matching. Only the bracket <em>retention</em> differs: the trailing-content rule has a single
+     * implementation shared by both call sites, so the two bracket policies cannot drift apart.</p>
      */
     private static HostPort parseHostPort(String value) {
         String host;
@@ -230,14 +257,27 @@ public final class ForwardedHeaderResolver {
             if (close < 0) {
                 return HostPort.EMPTY;
             }
-            host = value.substring(0, close + 1);
             String rest = value.substring(close + 1);
-            if (rest.startsWith(":")) {
+            if (!IpAddresses.hasValidBracketTrailer(rest)) {
+                return HostPort.EMPTY;
+            }
+            // The brackets promise an IP literal, so validate what is INSIDE them too — checking
+            // only the trailer would let "[]" and "[not-an-ip]" through as a host and hand a
+            // downstream consumer an invalid URL authority. This mirrors
+            // IpAddresses.parseChainEntry, which parses its bracketed literal for the same reason.
+            if (IpAddresses.parse(value.substring(1, close)) == null) {
+                return HostPort.EMPTY;
+            }
+            if (!rest.isEmpty()) {
                 port = parsePort(rest.substring(1));
             }
+            host = value.substring(0, close + 1);
         } else if (value.indexOf(':') == value.lastIndexOf(':') && value.indexOf(':') >= 0) {
             host = value.substring(0, value.indexOf(':'));
             port = parsePort(value.substring(value.indexOf(':') + 1));
+        } else if (value.indexOf(':') >= 0) {
+            // Neither bracketed nor host:port, yet colon-bearing: a bare IPv6 literal.
+            return HostPort.EMPTY;
         } else {
             host = value;
         }
@@ -268,7 +308,21 @@ public final class ForwardedHeaderResolver {
 
     // --- port --------------------------------------------------------------------------------
 
-    private OptionalInt resolvePort(UnaryOperator<String> lookup, OptionalInt hostPortFallback) {
+    /**
+     * Resolves the port, honoring the present-but-unresolvable rule that already governs scheme,
+     * host, and client-IP: an unresolvable {@code Forwarded} header counts as present for the port
+     * too — it could have carried one via a {@code host=example.com:8443} directive — so it
+     * disagrees with, and drops, any {@code X-Forwarded-Port} value.
+     *
+     * <p>The unresolvable check precedes the {@code hostPortFallback} branch deliberately. That
+     * fallback is derived from the {@code host} directive, so returning it for an unresolvable
+     * header would leak the very source the rule drops; guarding only the explicit port-header
+     * branch would leave that leak open.</p>
+     */
+    private OptionalInt resolvePort(UnaryOperator<String> lookup, ForwardedResult forwarded, OptionalInt hostPortFallback) {
+        if (forwarded.unresolvable()) {
+            return OptionalInt.empty();
+        }
         String raw = firstPresent(lookup, X_FORWARDED_PORT, X_PROXY_PORT);
         if (raw == null) {
             return hostPortFallback;
@@ -282,13 +336,40 @@ public final class ForwardedHeaderResolver {
                 .orElse(OptionalInt.empty());
     }
 
+    /**
+     * Parses a digit-only port in {@code 1..65535}. The digit-only precondition is what keeps
+     * {@code Integer.parseInt} from honoring its own lenient forms — a leading {@code +} would
+     * otherwise make {@code +443} resolve to {@code 443}, and an interior space would slip through
+     * a purely exception-based guard.
+     */
     private static OptionalInt parsePort(String value) {
-        try {
-            int port = Integer.parseInt(value.strip());
-            return port >= 1 && port <= MAX_PORT ? OptionalInt.of(port) : OptionalInt.empty();
-        } catch (NumberFormatException e) {
+        String trimmed = value.strip();
+        if (!isAllAsciiDigits(trimmed)) {
             return OptionalInt.empty();
         }
+        try {
+            int port = Integer.parseInt(trimmed);
+            return port >= 1 && port <= MAX_PORT ? OptionalInt.of(port) : OptionalInt.empty();
+        } catch (NumberFormatException e) {
+            // A digit run longer than int can hold.
+            return OptionalInt.empty();
+        }
+    }
+
+    /**
+     * @return {@code true} when {@code value} is non-empty and every character is an ASCII digit
+     */
+    private static boolean isAllAsciiDigits(String value) {
+        if (value.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c < '0' || c > '9') {
+                return false;
+            }
+        }
+        return true;
     }
 
     // --- context path ------------------------------------------------------------------------
@@ -415,9 +496,18 @@ public final class ForwardedHeaderResolver {
         // Sanitize the Forwarded header value before parsing its directives. A rejected value must
         // NOT collapse into the absent case: the header WAS sent, so it stays present-but-unresolvable
         // and disagrees with any de-facto sibling that resolves (fail closed).
-        return sanitize(FORWARDED, raw)
-                .map(value -> new ForwardedResult(true, false, RfcForwardedParser.parse(value)))
-                .orElse(ForwardedResult.UNRESOLVABLE);
+        Optional<String> sanitized = sanitize(FORWARDED, raw);
+        if (sanitized.isEmpty()) {
+            return ForwardedResult.UNRESOLVABLE;
+        }
+        // A grammar-violating forwarded-pair rejects the whole header with the same severity as a
+        // sanitization failure — the directives it could have carried are all unresolvable.
+        RfcForwardedParser.Parsed parsed = RfcForwardedParser.parse(sanitized.get());
+        if (parsed.malformed()) {
+            LOGGER.warn(ForwardedLogMessages.WARN.FORWARDED_DIRECTIVE_MALFORMED, sanitizeForLog(raw));
+            return ForwardedResult.UNRESOLVABLE;
+        }
+        return new ForwardedResult(true, false, parsed);
     }
 
     /**
@@ -532,23 +622,24 @@ public final class ForwardedHeaderResolver {
      *   <li>{@link #ABSENT} — no {@code Forwarded} header was sent; the RFC source contributes
      *       nothing and the de-facto family is honored on its own.</li>
      *   <li>{@link #UNRESOLVABLE} — the header WAS sent but its raw value failed sanitization
-     *       (CR/LF, control characters, over-length, suspicious pattern). The source counts as
-     *       present for <em>every</em> field, so it disagrees with any de-facto sibling that
-     *       resolves and the field is dropped (fail closed).</li>
+     *       (CR/LF, control characters, over-length, suspicious pattern) or violated the RFC 7239
+     *       grammar with a malformed {@code forwarded-pair}. The source counts as present for
+     *       <em>every</em> field, so it disagrees with any de-facto sibling that resolves and the
+     *       field is dropped (fail closed).</li>
      *   <li>Present and sanitized — the parsed directives decide per field. A well-formed value that
      *       simply carries no {@code proto} (say) leaves that one field's RFC source with nothing to
      *       contribute, which is an ordinary fallback rather than a disagreement.</li>
      * </ol>
      *
      * @param present      whether a non-blank {@code Forwarded} header was sent at all
-     * @param unresolvable whether that header's raw value failed sanitization outright
+     * @param unresolvable whether that header failed sanitization outright or parsed as malformed
      * @param parsed       the directives parsed from the sanitized value; empty unless present and
      *                     sanitized
      */
     private record ForwardedResult(boolean present, boolean unresolvable, RfcForwardedParser.Parsed parsed) {
 
         private static final RfcForwardedParser.Parsed NO_DIRECTIVES =
-                new RfcForwardedParser.Parsed(Optional.empty(), Optional.empty(), List.of());
+                new RfcForwardedParser.Parsed(Optional.empty(), Optional.empty(), List.of(), false);
 
         private static final ForwardedResult ABSENT = new ForwardedResult(false, false, NO_DIRECTIVES);
 

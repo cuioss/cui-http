@@ -43,6 +43,109 @@ class ResolvedForwardingTest {
             assertEquals("", empty.contextPath());
             assertTrue(empty.clientIp().isEmpty());
         }
+
+        @Test
+        @DisplayName("rejects a scheme outside the http/https allow-list")
+        void rejectsForeignScheme() {
+            assertAll("scheme allow-list",
+                    () -> assertThrows(IllegalArgumentException.class, () -> withScheme("ftp")),
+                    () -> assertThrows(IllegalArgumentException.class, () -> withScheme("HTTPS"),
+                            "the resolver lower-cases the scheme, so a mixed-case value is not canonical"),
+                    () -> assertThrows(IllegalArgumentException.class, () -> withScheme("")));
+        }
+
+        @Test
+        @DisplayName("rejects a port outside 1..65535")
+        void rejectsPortOutsideRange() {
+            assertAll("port range",
+                    () -> assertThrows(IllegalArgumentException.class, () -> withPort(0)),
+                    () -> assertThrows(IllegalArgumentException.class, () -> withPort(65536)),
+                    () -> assertThrows(IllegalArgumentException.class, () -> withPort(-1)));
+        }
+
+        @Test
+        @DisplayName("rejects a context path that is not in normalized shape")
+        void rejectsDenormalizedContextPath() {
+            assertAll("context-path shape",
+                    () -> assertThrows(IllegalArgumentException.class, () -> withContextPath("ui"),
+                            "a context path needs a leading slash"),
+                    () -> assertThrows(IllegalArgumentException.class, () -> withContextPath("//ui"),
+                            "a protocol-relative prefix must not survive construction"),
+                    () -> assertThrows(IllegalArgumentException.class, () -> withContextPath("/ui/"),
+                            "a trailing slash is not the normalized shape"),
+                    () -> assertThrows(IllegalArgumentException.class, () -> withContextPath("/")));
+        }
+
+        @Test
+        @DisplayName("rejects a control character in any component, so CR/LF cannot round-trip out")
+        void rejectsControlCharacters() {
+            assertAll("control characters",
+                    () -> assertThrows(IllegalArgumentException.class, () -> withHost("app.example.com\r\nX: y")),
+                    () -> assertThrows(IllegalArgumentException.class, () -> withContextPath("/ui\r\nX: y")),
+                    () -> assertThrows(IllegalArgumentException.class, () -> withClientIp("203.0.113.7\r\nX: y")),
+                    () -> assertThrows(IllegalArgumentException.class, () -> withHost("app.example.com\t")));
+        }
+
+        @Test
+        @DisplayName("rejects a present-but-blank host or client IP")
+        void rejectsBlankPresentComponents() {
+            assertAll("blank components",
+                    () -> assertThrows(IllegalArgumentException.class, () -> withHost("")),
+                    () -> assertThrows(IllegalArgumentException.class, () -> withHost("   ")),
+                    () -> assertThrows(IllegalArgumentException.class, () -> withClientIp("")));
+        }
+
+        @Test
+        @DisplayName("names the violated component without echoing the offending value")
+        void namesComponentWithoutEchoingValue() {
+            var thrown = assertThrows(IllegalArgumentException.class, () -> withHost("evil\r\nX: y"));
+
+            assertAll("message content",
+                    () -> assertTrue(thrown.getMessage().contains("host"), "the message names the component"),
+                    () -> assertFalse(thrown.getMessage().contains("evil"),
+                            "the message must not echo untrusted input"));
+        }
+
+        @Test
+        @DisplayName("accepts every valid shape, including the port range boundaries")
+        void acceptsValidShapes() {
+            assertAll("valid shapes",
+                    () -> assertDoesNotThrow(() -> withScheme("http")),
+                    () -> assertDoesNotThrow(() -> withScheme("https")),
+                    () -> assertDoesNotThrow(() -> withPort(1)),
+                    () -> assertDoesNotThrow(() -> withPort(65535)),
+                    () -> assertDoesNotThrow(() -> withContextPath("")),
+                    () -> assertDoesNotThrow(() -> withContextPath("/ui")),
+                    () -> assertDoesNotThrow(() -> withContextPath("/ui/admin")),
+                    () -> assertDoesNotThrow(() -> withHost("app.example.com")),
+                    () -> assertDoesNotThrow(() -> withHost("[2001:db8::1]")),
+                    () -> assertDoesNotThrow(() -> withClientIp("2001:db8::1")));
+        }
+
+        private static ResolvedForwarding withScheme(String scheme) {
+            return new ResolvedForwarding(Optional.of(scheme), Optional.empty(), OptionalInt.empty(),
+                    "", Optional.empty());
+        }
+
+        private static ResolvedForwarding withHost(String host) {
+            return new ResolvedForwarding(Optional.empty(), Optional.of(host), OptionalInt.empty(),
+                    "", Optional.empty());
+        }
+
+        private static ResolvedForwarding withPort(int port) {
+            return new ResolvedForwarding(Optional.empty(), Optional.empty(), OptionalInt.of(port),
+                    "", Optional.empty());
+        }
+
+        private static ResolvedForwarding withContextPath(String contextPath) {
+            return new ResolvedForwarding(Optional.empty(), Optional.empty(), OptionalInt.empty(),
+                    contextPath, Optional.empty());
+        }
+
+        private static ResolvedForwarding withClientIp(String clientIp) {
+            return new ResolvedForwarding(Optional.empty(), Optional.empty(), OptionalInt.empty(),
+                    "", Optional.of(clientIp));
+        }
     }
 
     @Nested

@@ -68,5 +68,11 @@ public final class ForwardedLogMessages {
                 .identifier(124)
                 .template("Dropping forwarded %s: sources disagree: %s resolves to %s but Forwarded resolves to %s")
                 .build();
+
+        public static final LogRecord FORWARDED_DIRECTIVE_MALFORMED = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(125)
+                .template("Rejecting Forwarded header: malformed forwarded-pair: %s")
+                .build();
     }
 }

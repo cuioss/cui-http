@@ -16,12 +16,12 @@
 package de.cuioss.http.forwarded;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("RfcForwardedParser")
 class RfcForwardedParserTest {
@@ -83,12 +83,58 @@ class RfcForwardedParserTest {
         assertTrue(parsed.forValues().isEmpty());
     }
 
-    @Test
-    @DisplayName("ignores malformed pairs without a value")
-    void ignoresMalformedPairs() {
-        RfcForwardedParser.Parsed parsed = RfcForwardedParser.parse("proto=;host");
+    @Nested
+    @DisplayName("malformed forwarded-pair")
+    class MalformedPairs {
 
-        assertTrue(parsed.proto().isEmpty());
-        assertTrue(parsed.host().isEmpty());
+        @Test
+        @DisplayName("rejects the whole header when a pair carries an empty value")
+        void rejectsEmptyValue() {
+            RfcForwardedParser.Parsed parsed = RfcForwardedParser.parse("proto=;host");
+
+            assertAll("rejected header",
+                    () -> assertTrue(parsed.malformed(), "proto= carries no value, so the header is malformed"),
+                    () -> assertTrue(parsed.proto().isEmpty(), "a malformed header reports no proto"),
+                    () -> assertTrue(parsed.host().isEmpty(), "a malformed header reports no host"),
+                    () -> assertTrue(parsed.forValues().isEmpty(), "a malformed header reports no for chain"));
+        }
+
+        @Test
+        @DisplayName("rejects the whole header when a non-blank pair carries no '='")
+        void rejectsPairWithoutEquals() {
+            RfcForwardedParser.Parsed parsed = RfcForwardedParser.parse("host");
+
+            assertTrue(parsed.malformed(), "a pair without '=' violates the forwarded-pair grammar");
+        }
+
+        @Test
+        @DisplayName("rejects the whole header when a pair carries an empty directive name")
+        void rejectsEmptyDirectiveName() {
+            RfcForwardedParser.Parsed parsed = RfcForwardedParser.parse("=https");
+
+            assertTrue(parsed.malformed(), "an empty directive name violates the forwarded-pair grammar");
+        }
+
+        @Test
+        @DisplayName("accepts a grammatically legal blank pair and still parses the header")
+        void acceptsLegalBlankPair() {
+            RfcForwardedParser.Parsed parsed = RfcForwardedParser.parse("for=203.0.113.7;");
+
+            assertAll("accepted header",
+                    () -> assertFalse(parsed.malformed(),
+                            "RFC 7239 §4 makes forwarded-pair optional, so a trailing ';' is legal"),
+                    () -> assertEquals(List.of("203.0.113.7"), parsed.forValues()));
+        }
+
+        @Test
+        @DisplayName("stops parsing at the first malformed pair")
+        void stopsAtFirstMalformedPair() {
+            RfcForwardedParser.Parsed parsed = RfcForwardedParser.parse("host, proto=https");
+
+            assertAll("abort before the later element",
+                    () -> assertTrue(parsed.malformed()),
+                    () -> assertTrue(parsed.proto().isEmpty(),
+                            "the trailing proto is not accumulated once the header is rejected"));
+        }
     }
 }

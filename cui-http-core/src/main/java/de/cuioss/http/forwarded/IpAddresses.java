@@ -27,8 +27,23 @@ import java.util.regex.Pattern;
  */
 final class IpAddresses {
 
-    private static final Pattern IPV4_LITERAL = Pattern.compile("\\d{1,3}(\\.\\d{1,3}){3}");
+    /**
+     * Dotted-quad with no leading zero in any octet and every octet in {@code 0..255}. A
+     * leading-zero octet ({@code 010.0.0.5}) is read as octal by some resolvers, which makes it a
+     * classic SSRF / allow-list bypass vector, so it is rejected outright rather than normalized.
+     * <p>
+     * The range bound is load-bearing, not cosmetic: {@link java.net.InetAddress#getByName} treats
+     * a dotted-quad it cannot parse as an address ({@code 999.1.1.1}) as a <em>hostname</em> and
+     * performs a real, blocking DNS lookup. A shape-only pattern would therefore let an attacker
+     * turn any {@code X-Forwarded-For} entry into an outbound resolver round trip from this
+     * header-parsing path, contradicting the class-level literal-only guarantee.
+     */
+    private static final String IPV4_OCTET = "(0|25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]\\d?)";
+    private static final Pattern IPV4_LITERAL = Pattern.compile(IPV4_OCTET + "(\\." + IPV4_OCTET + "){3}");
     private static final Pattern IPV6_LITERAL = Pattern.compile("[0-9A-Fa-f:.]+");
+
+    /** The only content permitted after a closing {@code ]}: a colon plus an all-ASCII-digit port. */
+    private static final Pattern BRACKET_PORT_SUFFIX = Pattern.compile(":\\d+");
 
     private IpAddresses() {
     }
@@ -61,11 +76,18 @@ final class IpAddresses {
      * {@code [2001:db8::1]:443}, and bare {@code 2001:db8::1}. RFC 7239 {@code unknown} and
      * obfuscated ({@code _hidden}) node identifiers yield {@code null}.</p>
      *
+     * <p><strong>Trailing content after {@code ]} is rejected.</strong> The only thing permitted
+     * after the closing bracket is a colon followed by one or more ASCII digits. Anything else —
+     * {@code [::1]garbage}, {@code [::1]:notaport}, a bare trailing {@code [::1]:} — yields
+     * {@code null} rather than silently resolving to the bracketed literal.</p>
+     *
      * <p>The {@code host:port} split here intentionally diverges from
      * {@code ForwardedHeaderResolver.parseHostPort}: this method <em>strips</em> the IPv6 brackets
      * to obtain a bare literal for {@link InetAddress} matching, whereas {@code parseHostPort}
-     * <em>retains</em> them because it reconstructs a host string. The divergence is deliberate —
-     * keep both bracket policies in sync when either changes.</p>
+     * <em>retains</em> them because it reconstructs a host string. Only the bracket <em>retention</em>
+     * differs: the trailing-content rule above has a single implementation,
+     * {@link #hasValidBracketTrailer(String)}, which both call sites share, so the two bracket
+     * policies cannot drift apart.</p>
      *
      * @param entry a single forwarded-chain entry (already trimmed, unquoted)
      * @return the parsed address, or {@code null} when the entry is not a usable IP literal
@@ -81,6 +103,10 @@ final class IpAddresses {
             if (close < 0) {
                 return null;
             }
+            String rest = token.substring(close + 1);
+            if (!hasValidBracketTrailer(rest)) {
+                return null;
+            }
             ipPart = token.substring(1, close);
         } else if (token.indexOf(':') == token.lastIndexOf(':') && token.indexOf(':') >= 0) {
             // exactly one colon -> IPv4:port
@@ -90,6 +116,24 @@ final class IpAddresses {
             ipPart = token;
         }
         return parse(ipPart);
+    }
+
+    /**
+     * The sole implementation of the "only {@code :digits} may follow a closing {@code ]}" rule,
+     * shared by {@link #parseChainEntry(String)} and {@code ForwardedHeaderResolver.parseHostPort}.
+     *
+     * <p>Both call sites must reject trailing content after the closing bracket for the same reason:
+     * a value such as {@code [::1]garbage}, {@code [::1]:notaport}, or a bare trailing {@code [::1]:}
+     * must not silently resolve to the bracketed literal, because that is a host-confusion vector.
+     * The rule therefore lives here once instead of being re-implemented per caller, where the two
+     * copies could drift apart and reopen the vulnerability they jointly prevent.</p>
+     *
+     * @param rest the substring following the closing {@code ]} (possibly empty)
+     * @return {@code true} when {@code rest} is empty, or is a colon followed by one or more ASCII
+     * digits; {@code false} for any other trailing content
+     */
+    static boolean hasValidBracketTrailer(String rest) {
+        return rest.isEmpty() || BRACKET_PORT_SUFFIX.matcher(rest).matches();
     }
 
     /**
