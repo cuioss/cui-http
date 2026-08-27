@@ -28,11 +28,18 @@ import java.util.regex.Pattern;
 final class IpAddresses {
 
     /**
-     * Dotted-quad with no leading zero in any octet. A leading-zero octet ({@code 010.0.0.5}) is
-     * read as octal by some resolvers, which makes it a classic SSRF / allow-list bypass vector,
-     * so it is rejected outright rather than normalized.
+     * Dotted-quad with no leading zero in any octet and every octet in {@code 0..255}. A
+     * leading-zero octet ({@code 010.0.0.5}) is read as octal by some resolvers, which makes it a
+     * classic SSRF / allow-list bypass vector, so it is rejected outright rather than normalized.
+     * <p>
+     * The range bound is load-bearing, not cosmetic: {@link java.net.InetAddress#getByName} treats
+     * a dotted-quad it cannot parse as an address ({@code 999.1.1.1}) as a <em>hostname</em> and
+     * performs a real, blocking DNS lookup. A shape-only pattern would therefore let an attacker
+     * turn any {@code X-Forwarded-For} entry into an outbound resolver round trip from this
+     * header-parsing path, contradicting the class-level literal-only guarantee.
      */
-    private static final Pattern IPV4_LITERAL = Pattern.compile("(0|[1-9]\\d{0,2})(\\.(0|[1-9]\\d{0,2})){3}");
+    private static final String IPV4_OCTET = "(0|25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]\\d?)";
+    private static final Pattern IPV4_LITERAL = Pattern.compile(IPV4_OCTET + "(\\." + IPV4_OCTET + "){3}");
     private static final Pattern IPV6_LITERAL = Pattern.compile("[0-9A-Fa-f:.]+");
 
     /** The only content permitted after a closing {@code ]}: a colon plus an all-ASCII-digit port. */

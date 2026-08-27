@@ -64,8 +64,18 @@ class IpAddressesTest {
                     "a leading-zero octet is read as octal by some resolvers, so it is an allow-list bypass");
         }
 
+        @ParameterizedTest(name = "\"{0}\" carries an out-of-range octet")
+        @ValueSource(strings = {"999.1.1.1", "256.1.1.1", "1.1.1.256", "300.400.500.600"})
+        @DisplayName("rejects an IPv4 literal with an out-of-range octet without a DNS lookup")
+        void rejectsOutOfRangeOctets(String entry) {
+            assertNull(IpAddresses.parseChainEntry(entry),
+                    "InetAddress.getByName treats an unparseable dotted-quad as a hostname and resolves it, "
+                            + "so an out-of-range octet must be rejected by the pattern to keep parsing literal-only");
+        }
+
         @ParameterizedTest(name = "\"{0}\" is still a usable node identifier")
-        @ValueSource(strings = {"[2001:db8::1]", "[2001:db8::1]:443", "0.0.0.0", "10.0.0.5", "2001:db8::1"})
+        @ValueSource(strings = {"[2001:db8::1]", "[2001:db8::1]:443", "0.0.0.0", "10.0.0.5", "2001:db8::1",
+                "255.255.255.255", "192.168.1.1"})
         @DisplayName("still parses the valid literals the tightened guards must not affect")
         void acceptsValidLiterals(String entry) {
             assertNotNull(IpAddresses.parseChainEntry(entry));
