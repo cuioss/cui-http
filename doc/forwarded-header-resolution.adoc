@@ -160,7 +160,7 @@ Immutable trust-model configuration built through a validating builder. See xref
 `HTTP-120`..`HTTP-125` WARN records for rejected/malformed values (context-path control
 characters, protocol-relative/backslash prefixes, values that failed sanitization, unparseable
 client-IP chain entries, — `HTTP-124` — a field dropped because the de-facto `X-Forwarded-*`
-family and the RFC 7239 `Forwarded` header disagree, and — `HTTP-125`
+family and the RFC 7239 `Forwarded` header disagree — and `HTTP-125`
 (`FORWARDED_DIRECTIVE_MALFORMED`) — a `Forwarded` header rejected because it carries a malformed
 `forwarded-pair`).
 
