@@ -208,6 +208,50 @@ public record SecureSSLContextProvider(String minimumTlsVersion) {
     }
 
     /**
+     * Creates an SSLContext that is identical to {@link #createSecureSSLContext()} except that TLS
+     * hostname/endpoint-identification checks are skipped.
+     * <p>
+     * This method:
+     * <ol>
+     *   <li>Creates an SSLContext instance with the secure protocol version</li>
+     *   <li>Initializes a TrustManagerFactory with the default algorithm</li>
+     *   <li>Configures the TrustManagerFactory to use the default trust store</li>
+     *   <li>Wraps the resulting trust managers in
+     *       {@link HostnameVerificationRelaxingTrustManager}</li>
+     *   <li>Initializes the SSLContext with the wrapped trust managers and a secure random source</li>
+     * </ol>
+     * <p>
+     * <strong>Hostname/endpoint-identification matching is the only check that is relaxed.</strong>
+     * Certificate-chain trust against the JVM's default trust store, validity period, and algorithm
+     * constraints all remain fully enforced; revocation posture is unchanged from whatever the
+     * default PKIX trust manager already applies - the {@code TrustManagerFactory.init((KeyStore)
+     * null)} call this method uses does not itself enable revocation checking - see
+     * {@link HostnameVerificationRelaxingTrustManager} for the mechanism.
+     * <p>
+     * This context is <strong>strictly opt-in</strong> and is not reachable without an explicit
+     * {@code HttpHandlerBuilder.verifyHostname(false)}. It removes the protection against a peer
+     * presenting an otherwise valid certificate issued for a <em>different</em> host, so it must
+     * only be used where that risk is understood and accepted.
+     *
+     * @return a configured SSLContext that uses a secure TLS protocol version and skips hostname
+     *         verification (never null)
+     * @throws IllegalStateException if the hostname-relaxed SSLContext cannot be created
+     */
+    public SSLContext createHostnameRelaxedSSLContext() {
+        try {
+            SSLContext relaxedContext = SSLContext.getInstance(minimumTlsVersion);
+            TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            trustManagerFactory.init((KeyStore) null);
+            TrustManager[] relaxedTrustManagers =
+                    HostnameVerificationRelaxingTrustManager.relaxHostnameVerification(trustManagerFactory.getTrustManagers());
+            relaxedContext.init(null, relaxedTrustManagers, new SecureRandom());
+            return relaxedContext;
+        } catch (NoSuchAlgorithmException | KeyStoreException | KeyManagementException e) {
+            throw new IllegalStateException("Failed to create a hostname-relaxed SSL context", e);
+        }
+    }
+
+    /**
      * Returns an SSLContext for HTTPS, honoring a caller-supplied context as-is.
      * <p>
      * This method:

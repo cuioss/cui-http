@@ -102,6 +102,17 @@ public final class HttpLogMessages {
                 .identifier(115)
                 .template("Using cleartext HTTP for %s (allowInsecureHttp=true); data is transmitted unencrypted")
                 .build();
+
+        /**
+         * Logged when an HTTPS handler is built with TLS hostname verification relaxed via the
+         * {@code verifyHostname(false)} opt-in.
+         * Used in: HttpHandler.HttpHandlerBuilder.build (https scheme with verifyHostname=false)
+         */
+        public static final LogRecord HOSTNAME_VERIFICATION_DISABLED = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(116)
+                .template("TLS hostname verification disabled for %s (verifyHostname=false); certificate chain validation remains enforced")
+                .build();
     }
 
     /**
