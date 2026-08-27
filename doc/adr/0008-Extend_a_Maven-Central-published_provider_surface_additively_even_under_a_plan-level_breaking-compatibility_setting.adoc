@@ -1,0 +1,115 @@
+= ADR-0008: Extend a Maven-Central-published provider surface additively, even under a plan-level breaking-compatibility setting
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: A published, externally-consumed provider (SecureSSLContextProvider) gains new capability via an additional method rather than a changed existing signature, regardless of the authoring plan's own breaking-compatibility posture.
+// tags: api-design, compatibility, ssl, provider-surface
+// affects: cui-http-core
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+A plan's `compatibility` setting (e.g. "breaking — clean-slate approach, no
+deprecation nor transitionary comments") governs how that plan's *own*
+internal invariants and shapes may change without preserving backward
+compatibility inside the change it is making. It answers "how freely may this
+plan restructure the surfaces it is actively reworking", not "how freely may
+this plan restructure every published surface it happens to touch".
+
+A provider class published to Maven Central and consumed by external,
+independently-versioned projects sits outside that plan-local scope: its
+existing method signatures are contract, already relied upon by call sites
+this repository does not control and cannot audit before release. Widening a
+plan's breaking-compatibility posture into an already-published, already-
+satisfied method signature imposes an unforced migration cost on every
+external consumer of that signature, for a benefit — internal shape
+uniformity — that a plan-scoped breaking setting was never meant to reach.
+
+The general architectural question this raises: when new capability is
+needed on a published provider type, does the new capability get folded into
+an existing published method's signature, or does it arrive as an additional
+method alongside the existing one?
+
+== Decision
+
+A published provider gains new capability through an additional method,
+never through an added or changed parameter on an existing published method
+signature — regardless of the authoring plan's own compatibility posture.
+`SecureSSLContextProvider` gains `createHostnameRelaxedSSLContext()` as a new
+method alongside the existing `getOrCreateSecureSSLContext(...)`, rather than
+an added parameter on that existing method.
+
+A plan's `compatibility: breaking` setting is scoped to the invariants and
+shapes the plan is actively reworking inside its own change — it is not a
+blanket license to make gratuitous, non-required changes to a call site that
+is already published and already fully served by its existing signature. The
+determining question for any published provider method is not "is this
+plan's compatibility posture permissive enough to change this", but "does
+the existing signature already serve every call site, including this plan's
+own new one, without modification" — when the answer is yes, the additive
+method is the only justified shape.
+
+== Consequences
+
+=== Positive
+
+* Every existing external consumer of `SecureSSLContextProvider`'s published
+  methods continues to compile and behave identically after this change —
+  no signature they depend on was touched.
+* The new capability is discoverable and self-describing at its own call
+  sites (`createHostnameRelaxedSSLContext()` names exactly what it returns),
+  rather than being an overload disambiguated only by a boolean or enum
+  parameter added to an existing, more general method.
+
+=== Negative
+
+* The provider type accumulates one additional public method per new
+  capability rather than folding capabilities into fewer, more parameterized
+  methods — a design that trades signature-surface breadth for consumer
+  stability.
+
+=== Risks
+
+* A future capability that is a small variation on an already-published
+  method could still be tempted toward parameter-widening instead of a new
+  method if this decision's rationale is not consulted; the risk is
+  reintroducing the exact breaking-signature pressure this decision exists
+  to close off.
+
+== Alternatives Considered
+
+Adding a boolean or enum parameter to the existing
+`getOrCreateSecureSSLContext(...)` signature was considered, since it keeps
+the provider's public method count from growing. It was rejected because it
+breaks the compiled signature every existing external consumer already
+depends on, for a change that a review of in-repository call sites found no
+call site requiring — the existing signature already fully serves every
+caller that does not need the new relaxed-context behavior.
+
+Treating the plan's `compatibility: breaking` setting as authorization to
+change the existing signature was considered, on the reasoning that the plan
+had already declared it was not preserving backward compatibility for this
+change. It was rejected because that setting governs the plan's own internal
+invariants and shapes, not the compiled contract of a type this repository
+publishes to Maven Central for consumption by independently-versioned
+external projects; a plan-local compatibility posture cannot retroactively
+authorize breaking a contract those external consumers already rely on.
+
+Both alternatives share the same underlying failure: each reaches for
+in-place modification of an already-satisfied, externally-consumed
+signature when an additive method fully solves the same problem without
+that cost. The unifying principle is that a published provider's
+compatibility posture is governed by its own consumers, not by the
+compatibility setting of whichever plan happens to be extending it next.
+
+== References
+
+* `README.adoc` and `doc/client-handlers-readme.adoc` — client configuration
+  documentation for `SecureSSLContextProvider`.

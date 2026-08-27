@@ -1,0 +1,144 @@
+= ADR-0007: TLS hostname-verification relaxation via a delegating trust manager, not a JVM-wide lever
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: Hostname-verification relaxation is scoped per handler via a delegating X509ExtendedTrustManager that forwards to the platform trust manager with a null SSLEngine/Socket, never via a JVM-wide or trust-all mechanism.
+// tags: security, tls, trust-boundary, http-client
+// affects: cui-http-core
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+An HTTP client sometimes needs to trust a server certificate chain while
+skipping *identity* verification — the server's hostname or SAN entries do not
+match the certificate presented (self-signed local endpoints, internal
+service meshes addressed by IP, test doubles). The architectural question is
+where the boundary between "identity checking" and "chain trust" is drawn,
+and how narrowly a caller can be allowed to cross it.
+
+TLS validation bundles several independent checks — certificate chain trust,
+expiry, algorithm constraints, and endpoint identity (hostname/SAN) matching —
+behind a single `SSLContext`. Any mechanism that relaxes one of these checks
+risks silently relaxing the others unless the relaxation is deliberately
+scoped to the one check it names. A relaxation lever that is coarser than the
+problem it solves creates a residual attack surface (an on-path attacker who
+merely holds *any* trusted-CA-signed certificate, rather than the endpoint's
+own) that the caller did not ask for and may not realize they accepted.
+
+A second axis is scope: whether the relaxation is a property of one HTTP
+client configuration, or a property of the JVM process. A process-global
+lever cannot be limited to the one endpoint that needs it — every other TLS
+connection in the same JVM, including ones the caller does not control,
+inherits the relaxation.
+
+== Decision
+
+Hostname-verification relaxation is implemented as an opt-in, per-handler
+setting realized by a package-private `X509ExtendedTrustManager` that
+delegates `checkServerTrusted` / `checkClientTrusted` to the platform trust
+manager, passing a `null` `SSLEngine` / `Socket` argument. This is the
+JSSE-documented contract under which the platform trust manager's endpoint
+identification step is skipped while chain trust, expiry, and algorithm
+constraint enforcement continue to run unchanged. Revocation posture is
+unaffected — it remains whatever the JVM's default PKIX configuration
+provides.
+
+The relaxation is scoped to the `SSLContext` the client's own provider builds
+from the default JVM trust store. A caller-supplied `SSLContext` combined
+with the relaxation setting is rejected at build time, keyed off an explicit
+provenance flag recorded when the context was supplied by the caller —
+`sslContextCallerSupplied` — rather than off a null-check on the context
+field. The context field is not a reliable discriminator: the client also
+stores its own internally-derived context in that same field, and the
+builder's copy-constructor path re-injects that derived context when a
+configuration is round-tripped. A null-check would misclassify that
+round-trip as caller-supplied and reject a request that never set a caller
+context. Because a relaxed context is itself a *derived* context, the
+provenance tracking is not limited to the caller-supplied case: the DERIVED
+relaxed context must also be tracked, so that re-deriving a configuration
+with hostname verification switched back on discards the stale relaxed
+context rather than silently returning a configuration that reports
+verification as enabled while an already-built relaxed context underneath it
+still skips it.
+
+== Consequences
+
+=== Positive
+
+* The relaxation is provably scoped to identity checking alone — chain
+  trust, expiry, and algorithm constraints stay enforced by the platform
+  trust manager on every call, because the delegating trust manager performs
+  no logic of its own beyond substituting the engine/socket argument.
+* The relaxation is opt-in per client configuration; unrelated TLS
+  connections in the same process are unaffected.
+* The mutual-exclusion rule between a caller-supplied context and the
+  relaxation setting is enforced at build time rather than left as a
+  documentation-only caveat, closing the path where a caller unknowingly
+  gets a context that is both externally managed and identity-relaxed.
+
+=== Negative
+
+* The provenance flag is additional state a maintainer must keep consistent
+  with the context field across every path that sets, re-derives, or copies
+  the context (initial build, `asBuilder()`, and any future context-mutating
+  operation). A path that sets the context field without updating the
+  provenance flag reintroduces the misclassification this decision exists to
+  prevent.
+
+=== Risks
+
+* Revocation checking is inherited from the JVM default PKIX behavior and is
+  not independently hardened by this mechanism; a deployment relying on
+  strict revocation enforcement must configure that separately from this
+  relaxation.
+* A caller who opts into the relaxation still accepts any certificate chain
+  trusted by the default JVM trust store, presented by any host — the
+  narrowing this decision provides is to identity checking only, not to
+  which chains are trusted overall.
+
+== Alternatives Considered
+
+A trust-all `X509TrustManager` that accepts every certificate chain
+unconditionally would also skip hostname verification, but it additionally
+disables chain trust validation — a strictly larger relaxation than the
+problem calls for. It was rejected because it removes protection the caller
+never asked to give up.
+
+The JVM-wide system property
+`jdk.internal.httpclient.disableHostnameVerification` relaxes hostname
+verification for the entire process rather than for one client
+configuration. It was rejected because it cannot be scoped per handler or
+per endpoint, and because it is documented by the JDK as intended for
+testing rather than as a supported production lever — a plan-scoped opt-in
+setting has no way to bound the property's process-wide reach.
+
+Setting `SSLParameters.setEndpointIdentificationAlgorithm(null)` on the
+client's SSL parameters was considered as the standard JSSE-documented way to
+disable endpoint identification. It was rejected because it is provably
+ineffective against the JDK's built-in HTTP client: the client's internal
+async SSL connection setup unconditionally overwrites the endpoint
+identification algorithm with `"HTTPS"` after copying the caller-supplied
+parameters, so a caller-set `null` value is silently discarded before the
+handshake runs.
+
+These three alternatives fail in the same class of way: each either
+over-relaxes the trust boundary beyond identity checking, or fails to
+confine the relaxation to the one client configuration that requested it, or
+is silently overridden by the platform before it can take effect. The
+delegating-trust-manager mechanism avoids all three failure modes by
+operating entirely within the one JSSE-documented seam — the trust manager's
+`checkServerTrusted` engine/socket argument — that both scopes the
+relaxation to identity checking and survives the platform's own parameter
+handling.
+
+== References
+
+* `README.adoc` and `doc/client-handlers-readme.adoc` — client configuration
+  documentation for `HttpHandler` and `SecureSSLContextProvider`.
