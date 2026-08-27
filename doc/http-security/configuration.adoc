@@ -64,7 +64,12 @@ defense (that is a UTS #39 capability).
 
 `DecodingStage` selects its decoder by validation type: URL path decoding follows RFC 3986 and
 preserves a literal `+`, while parameter and body decoding apply form
-(`application/x-www-form-urlencoded`) semantics, in which `+` decodes to a space.
+(`application/x-www-form-urlencoded`) semantics, in which `+` decodes to a space. This is
+`DecodingStage`'s own per-type decoder contract, not a statement about wiring: no `BODY` pipeline
+exists (`PipelineFactory.createPipeline` rejects `ValidationType.BODY`), so the body branch is
+never reached today. `DecodingStage` runs only in the URL path and URL parameter (name and value)
+pipelines - the header and content-type pipelines omit it entirely, so none of the decoding rules
+above apply to header or content-type validation.
 
 == Pattern matching policy
 
