@@ -233,6 +233,7 @@ public class TestApiDispatcher implements ModuleDispatcherElement {
      * Configure for successful response with ETag.
      */
     public TestApiDispatcher withSuccessAndETag(String content, String etagValue) {
+        clearSequenceModes();
         this.statusCode = 200;
         this.responseContent = content;
         this.etag = etagValue;
@@ -243,6 +244,7 @@ public class TestApiDispatcher implements ModuleDispatcherElement {
      * Configure for 304 Not Modified response.
      */
     public TestApiDispatcher with304() {
+        clearSequenceModes();
         this.statusCode = 304;
         this.responseContent = "";
         // Keep existing etag
@@ -264,6 +266,7 @@ public class TestApiDispatcher implements ModuleDispatcherElement {
      * @return this dispatcher
      */
     public TestApiDispatcher withNoContentAndStatus(int noBodyStatus) {
+        clearSequenceModes();
         this.statusCode = noBodyStatus;
         this.responseContent = "";
         this.etag = null;
@@ -274,6 +277,7 @@ public class TestApiDispatcher implements ModuleDispatcherElement {
      * Configure for server error (5xx).
      */
     public TestApiDispatcher withServerError() {
+        clearSequenceModes();
         this.statusCode = 503;
         this.responseContent = "";
         this.etag = null;
@@ -284,6 +288,7 @@ public class TestApiDispatcher implements ModuleDispatcherElement {
      * Configure for client error (4xx).
      */
     public TestApiDispatcher withClientError() {
+        clearSequenceModes();
         this.statusCode = 404;
         this.responseContent = "";
         this.etag = null;
@@ -295,11 +300,10 @@ public class TestApiDispatcher implements ModuleDispatcherElement {
      * Useful for testing cache fallback scenarios.
      */
     public TestApiDispatcher withSuccessThenError(String initialContent, String etagValue) {
+        clearSequenceModes();
         this.successContent = initialContent;
         this.successEtag = etagValue;
         this.successThenErrorMode = true;
-        this.errorThenSuccessMode = false;
-        this.seedThen304Mode = false;
         this.callCounter = 0;
         return this;
     }
@@ -309,11 +313,10 @@ public class TestApiDispatcher implements ModuleDispatcherElement {
      * Useful for testing retry scenarios.
      */
     public TestApiDispatcher withServerErrorThenSuccess(String recoveryContent, String etagValue) {
+        clearSequenceModes();
         this.errorSuccessContent = recoveryContent;
         this.errorSuccessEtag = etagValue;
         this.errorThenSuccessMode = true;
-        this.successThenErrorMode = false;
-        this.seedThen304Mode = false;
         this.callCounter = 0;
         return this;
     }
@@ -332,13 +335,27 @@ public class TestApiDispatcher implements ModuleDispatcherElement {
      * @return this dispatcher
      */
     public TestApiDispatcher withSeedThen304(String content, String etagValue) {
+        clearSequenceModes();
         this.seedContent = content;
         this.seedEtag = etagValue;
         this.seedThen304Mode = true;
-        this.successThenErrorMode = false;
-        this.errorThenSuccessMode = false;
         this.callCounter = 0;
         return this;
+    }
+
+    /**
+     * Clears every sequence mode so at most one is ever active.
+     * <p>
+     * Every configurator calls this first — the sequence configurators so the modes stay mutually
+     * exclusive, and the single-shot ones so a previously configured sequence cannot outlive the
+     * reconfiguration and keep serving its own responses. Adding the reset to each configurator
+     * individually is what let {@code withNoContentAndStatus} be missed: a sequence configured
+     * earlier stayed active and served its seed response instead of the requested status.
+     */
+    private void clearSequenceModes() {
+        this.successThenErrorMode = false;
+        this.errorThenSuccessMode = false;
+        this.seedThen304Mode = false;
     }
 
     /**
@@ -350,9 +367,7 @@ public class TestApiDispatcher implements ModuleDispatcherElement {
         this.lastIfNoneMatch = null;
         this.lastAccept = null;
         this.lastContentType = null;
-        this.successThenErrorMode = false;
-        this.errorThenSuccessMode = false;
-        this.seedThen304Mode = false;
+        clearSequenceModes();
         return this;
     }
 
