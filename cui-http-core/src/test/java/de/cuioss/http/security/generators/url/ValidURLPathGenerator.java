@@ -30,14 +30,24 @@ import de.cuioss.test.generator.TypedGenerator;
  */
 public class ValidURLPathGenerator implements TypedGenerator<String> {
 
+    /**
+     * The number of path families {@link #next()} dispatches over, that is the number of
+     * {@code case} branches its switch declares.
+     *
+     * <p>This constant is the single source of that count: it bounds {@link #pathTypeGen} below,
+     * and the contract test references it instead of hardcoding the family cardinality, so adding
+     * or removing a family cannot silently desync the dispatch from the coverage assertion.</p>
+     */
+    public static final int PATH_FAMILY_COUNT = 7;
+
     // QI-6: Dynamic generation components
-    private final TypedGenerator<Integer> pathTypeGen = Generators.integers(1, 7);
+    private final TypedGenerator<Integer> pathTypeGen = Generators.integers(1, PATH_FAMILY_COUNT);
     private final TypedGenerator<Integer> apiVersionGen = Generators.integers(1, 3);
     private final TypedGenerator<Integer> resourceGen = Generators.integers(1, 5);
     private final TypedGenerator<Integer> actionGen = Generators.integers(1, 4);
     private final TypedGenerator<Integer> adminActionGen = Generators.integers(1, 3);
     private final TypedGenerator<Integer> systemPathGen = Generators.integers(1, 4);
-    private final TypedGenerator<Integer> nestedResourceGen = Generators.integers(1, 4);
+    private final TypedGenerator<Integer> nestedResourceGen = Generators.integers(1, 3);
     private final TypedGenerator<Boolean> includeIdGen = Generators.booleans();
 
     @Override
@@ -147,12 +157,17 @@ public class ValidURLPathGenerator implements TypedGenerator<String> {
         };
     }
 
+    /**
+     * Child-resource tokens for the nested-resource family. The set is deliberately disjoint from
+     * {@link #generateAction()}: a token shared with the action set would make a plain-API path
+     * such as {@code /api/users/1/profile} indistinguishable from a nested-resource path, so a
+     * contract test could report the nested family reached without this branch ever running.
+     */
     private String generateNestedResource() {
         return switch (nestedResourceGen.next()) {
             case 1 -> "items";
             case 2 -> "orders";
-            case 3 -> "profile";
-            case 4 -> "notifications";
+            case 3 -> "notifications";
             default -> "items";
         };
     }

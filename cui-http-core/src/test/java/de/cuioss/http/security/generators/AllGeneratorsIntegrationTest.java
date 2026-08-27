@@ -61,21 +61,6 @@ class AllGeneratorsIntegrationTest {
     private final AttackCookieGenerator attackCookieGenerator = new AttackCookieGenerator();
 
     @Test
-    void shouldHaveAllGeneratorsImplemented() {
-        // Verify all generators are instantiated and functional (now using framework-compliant variants)
-        assertNotNull(pathTraversalGenerator);
-        assertNotNull(encodingGenerator);
-        assertNotNull(unicodeGenerator);
-        assertNotNull(boundaryGenerator);
-        assertNotNull(validUrlGenerator);
-        assertNotNull(invalidUrlGenerator);
-        assertNotNull(validParameterGenerator);
-        assertNotNull(attackParameterGenerator);
-        assertNotNull(validCookieGenerator);
-        assertNotNull(attackCookieGenerator);
-    }
-
-    @Test
     void shouldReturnCorrectTypes() {
         assertEquals(String.class, pathTraversalGenerator.getType());
         assertEquals(String.class, encodingGenerator.getType());

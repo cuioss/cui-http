@@ -15,32 +15,75 @@
  */
 package de.cuioss.http.security.generators.url;
 
+import de.cuioss.http.security.config.SecurityConfiguration;
+import de.cuioss.http.security.monitoring.SecurityEventCounter;
+import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 
-import static org.junit.jupiter.api.Assertions.*;
+import java.util.HashSet;
+import java.util.Set;
+
+import static de.cuioss.http.security.generators.GeneratorContractAssertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * QI-5: Basic generator test for NullByteURLGenerator.
+ * Contract test for {@link NullByteURLGenerator}.
  *
- * <p>
- * Simple validation to ensure the generator works without exceptions and produces
- * non-null, non-empty output. Following cui-test-generator lightweight testing pattern.
- * </p>
- *
- * @author QI-5 Generator Coverage Initiative
+ * <p>The defining property of this generator is that every emitted value is an API path
+ * carrying a null byte — raw or percent-encoded — and is therefore rejected by the URL path
+ * validation pipeline. The aggregate test asserts that both null-byte encodings are
+ * reachable.</p>
  */
 @EnableGeneratorController
+@DisplayName("NullByteURLGenerator Contract Tests")
 class NullByteURLGeneratorTest {
 
+    private static final int AGGREGATE_DRAWS = 400;
+    private static final String RAW_NULL_BYTE = "\0";
+    private static final String ENCODED_NULL_BYTE = "%00";
+
     @ParameterizedTest
-    @TypeGeneratorSource(value = NullByteURLGenerator.class, count = 10)
-    @DisplayName("Generator should produce valid non-null null byte injection URLs")
-    void shouldGenerateValidOutput(String generatedValue) {
-        assertNotNull(generatedValue, "Generator must not produce null values");
-        assertFalse(generatedValue.isEmpty(), "Generator should produce non-empty null byte URLs");
-        assertTrue(generatedValue.length() > 5, "Null byte URLs should be substantial (more than 5 characters)");
+    @TypeGeneratorSource(value = NullByteURLGenerator.class, count = 100)
+    @DisplayName("Every generated URL carries a null byte and is rejected by the pipeline")
+    void shouldGenerateNullByteInjection(String generatedValue) {
+        assertTrue(generatedValue.startsWith("/api"),
+                () -> "Null byte URLs are rooted at '/api'. Value: <" + generatedValue + ">");
+        assertContainsAny(generatedValue, NULL_BYTE_MARKERS, "Null byte injection URL");
+
+        assertPipelineRejects(
+                new URLPathValidationPipeline(SecurityConfiguration.defaults(), new SecurityEventCounter()),
+                generatedValue);
+    }
+
+    @Test
+    @DisplayName("Should reach both the raw and the percent-encoded null-byte form")
+    void shouldReachBothNullByteEncodings() {
+        NullByteURLGenerator generator = new NullByteURLGenerator();
+        Set<String> forms = new HashSet<>();
+
+        for (int i = 0; i < AGGREGATE_DRAWS; i++) {
+            String value = generator.next();
+            if (value.contains(RAW_NULL_BYTE)) {
+                forms.add("raw");
+            }
+            if (value.contains(ENCODED_NULL_BYTE)) {
+                forms.add("encoded");
+            }
+        }
+
+        assertEquals(Set.of("raw", "encoded"), forms,
+                "Both null-byte encodings must be reachable within " + AGGREGATE_DRAWS + " draws");
+    }
+
+    @Test
+    @DisplayName("Should return correct type")
+    void shouldReturnCorrectType() {
+        assertEquals(String.class, new NullByteURLGenerator().getType(),
+                "Generator should return String.class");
     }
 }
