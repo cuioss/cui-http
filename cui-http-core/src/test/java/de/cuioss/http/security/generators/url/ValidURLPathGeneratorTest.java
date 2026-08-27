@@ -85,7 +85,7 @@ class ValidURLPathGeneratorTest {
     }
 
     @Test
-    @DisplayName("Should reach all seven documented path families")
+    @DisplayName("Should reach every path family the generator dispatches over")
     void shouldReachAllPathFamilies() {
         ValidURLPathGenerator generator = new ValidURLPathGenerator();
         Set<String> families = new HashSet<>();
@@ -115,7 +115,11 @@ class ValidURLPathGeneratorTest {
             }
         }
 
-        assertEquals(Set.of("api", "versioned", "nested", "system", "auth", "admin", "reporting"), families,
+        Set<String> expected = Set.of("api", "versioned", "nested", "system", "auth", "admin", "reporting");
+        assertEquals(ValidURLPathGenerator.PATH_FAMILY_COUNT, expected.size(),
+                "The labelled families must cover every family the generator dispatches over; "
+                        + "a case added to or removed from next() must be reflected here");
+        assertEquals(expected, families,
                 "Every documented path family must be reachable within " + AGGREGATE_DRAWS + " draws");
     }
 

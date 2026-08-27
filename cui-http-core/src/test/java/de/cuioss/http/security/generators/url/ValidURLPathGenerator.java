@@ -30,8 +30,18 @@ import de.cuioss.test.generator.TypedGenerator;
  */
 public class ValidURLPathGenerator implements TypedGenerator<String> {
 
+    /**
+     * The number of path families {@link #next()} dispatches over, that is the number of
+     * {@code case} branches its switch declares.
+     *
+     * <p>This constant is the single source of that count: it bounds {@link #pathTypeGen} below,
+     * and the contract test references it instead of hardcoding the family cardinality, so adding
+     * or removing a family cannot silently desync the dispatch from the coverage assertion.</p>
+     */
+    public static final int PATH_FAMILY_COUNT = 7;
+
     // QI-6: Dynamic generation components
-    private final TypedGenerator<Integer> pathTypeGen = Generators.integers(1, 7);
+    private final TypedGenerator<Integer> pathTypeGen = Generators.integers(1, PATH_FAMILY_COUNT);
     private final TypedGenerator<Integer> apiVersionGen = Generators.integers(1, 3);
     private final TypedGenerator<Integer> resourceGen = Generators.integers(1, 5);
     private final TypedGenerator<Integer> actionGen = Generators.integers(1, 4);

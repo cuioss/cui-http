@@ -155,7 +155,7 @@ class URLLengthLimitAttackGeneratorTest {
         if (value.indexOf('?') >= 0) {
             shapes.add(QUERY_SHAPE);
         }
-        if (value.indexOf('?') < 0 && value.indexOf('#') < 0) {
+        if (isRelative(value) && value.indexOf('?') < 0 && value.indexOf('#') < 0) {
             shapes.add(PURE_PATH_SHAPE);
         }
         if (value.contains("../")) {
