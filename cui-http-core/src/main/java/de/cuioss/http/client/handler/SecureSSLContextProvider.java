@@ -222,8 +222,10 @@ public record SecureSSLContextProvider(String minimumTlsVersion) {
      * </ol>
      * <p>
      * <strong>Hostname/endpoint-identification matching is the only check that is relaxed.</strong>
-     * Certificate-chain trust against the JVM's default trust store, validity period, revocation
-     * posture, and algorithm constraints all remain fully enforced - see
+     * Certificate-chain trust against the JVM's default trust store, validity period, and algorithm
+     * constraints all remain fully enforced; revocation posture is unchanged from whatever the
+     * default PKIX trust manager already applies - the {@code TrustManagerFactory.init((KeyStore)
+     * null)} call this method uses does not itself enable revocation checking - see
      * {@link HostnameVerificationRelaxingTrustManager} for the mechanism.
      * <p>
      * This context is <strong>strictly opt-in</strong> and is not reachable without an explicit

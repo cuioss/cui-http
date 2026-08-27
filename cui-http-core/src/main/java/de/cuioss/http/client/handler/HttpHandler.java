@@ -110,13 +110,20 @@ import java.util.regex.Pattern;
  * ({@link HttpHandlerBuilder#verifyHostname(boolean)}, default {@code true}). Setting it to
  * {@code false} is a deliberate opt-in that skips <em>only</em> the match between the peer
  * certificate's identity (SAN / CN) and the connected host. Certificate-chain trust, validity
- * period, revocation posture, and algorithm constraints remain fully enforced, and a WARN
+ * period, and algorithm constraints remain fully enforced; revocation posture is unchanged from
+ * whatever the JVM's default PKIX trust manager already applies (the JDK's default PKIX
+ * configuration does not itself enable revocation checking - see
+ * {@link SecureSSLContextProvider#createHostnameRelaxedSSLContext()}). A WARN
  * ({@code HTTP-116}) is logged for every handler built this way.</p>
  * <p>The relaxation is confined to the default-trust-store context this class derives itself, so
  * combining {@code verifyHostname(false)} with a caller-supplied
  * {@link HttpHandlerBuilder#sslContext(SSLContext)} is rejected at {@link HttpHandlerBuilder#build()}
  * time with {@link IllegalArgumentException}. A context {@link #asBuilder()} carries over from a
- * handler's own derivation is not caller-supplied and round-trips cleanly.</p>
+ * handler's own derivation is not caller-supplied and round-trips cleanly. Flipping
+ * {@code verifyHostname} back to {@code true} on a builder cloned from a relaxed handler never
+ * silently keeps the relaxed context: {@link HttpHandlerBuilder#build()} discards it and derives a
+ * fresh secure context instead, so the relaxation cannot leak into a handler that reports hostname
+ * verification as enabled.</p>
  * <pre>
  * // Opt in to hostname relaxation (e.g. connecting to an internal host by IP)
  * HttpHandler relaxed = HttpHandler.builder()
@@ -232,6 +239,11 @@ public final class HttpHandler {
     }
 
     // Constructor for HTTPS URIs (SSL context required)
+    // NOSONAR java:S107 - private constructor invoked only from HttpHandlerBuilder#build(); the wide
+    // parameter list mirrors the builder's own fields one-for-one and is the intended shape for a
+    // Lombok-style immutable value object assembled by a single caller-facing builder. Splitting it
+    // into a parameter object would only move the same fields to a second private type.
+    @SuppressWarnings("java:S107")
     private HttpHandler(URI uri, URL url, SSLContext sslContext, SecureSSLContextProvider secureSSLContextProvider,
             int connectionTimeoutSeconds, int readTimeoutSeconds, boolean allowInsecureHttp,
             boolean verifyHostname, boolean sslContextCallerSupplied) {
@@ -281,11 +293,17 @@ public final class HttpHandler {
      * which can be used to create a new handler with modified URL.</p>
      *
      * <p>A context this handler <em>derived</em> for itself is re-injected through the
-     * package-private {@link HttpHandlerBuilder#derivedSslContext(SSLContext)} seam, so it does not
-     * become "caller-supplied" on the returned builder. This is what lets a handler built with
-     * {@code verifyHostname(false)} round-trip through {@code asBuilder().build()} without tripping
-     * the mutual-exclusion rejection. A context that genuinely came from the caller is re-injected
-     * through {@link HttpHandlerBuilder#sslContext(SSLContext)} and keeps that provenance.</p>
+     * package-private {@link HttpHandlerBuilder#derivedSslContext(SSLContext, boolean)} seam, so it
+     * does not become "caller-supplied" on the returned builder. This is what lets a handler built
+     * with {@code verifyHostname(false)} round-trip through {@code asBuilder().build()} without
+     * tripping the mutual-exclusion rejection. A context that genuinely came from the caller is
+     * re-injected through {@link HttpHandlerBuilder#sslContext(SSLContext)} and keeps that
+     * provenance.</p>
+     * <p>The re-injected derived context also carries whether it is <em>hostname-relaxed</em> — i.e.
+     * whether this handler itself was built with {@code verifyHostname(false)}. {@link
+     * HttpHandlerBuilder#build()} consults that flag to refuse silently reusing a relaxed context for
+     * a handler that flips {@code verifyHostname} back to {@code true} on the returned builder: see
+     * {@link HttpHandlerBuilder#build()} for the mechanism.</p>
      *
      * @return A pre-configured {@link HttpHandlerBuilder} with the same timeouts as this handler
      */
@@ -298,7 +316,7 @@ public final class HttpHandler {
                 .verifyHostname(verifyHostname);
         return sslContextCallerSupplied
                 ? handlerBuilder.sslContext(sslContext)
-                : handlerBuilder.derivedSslContext(sslContext);
+                : handlerBuilder.derivedSslContext(sslContext, !verifyHostname);
     }
 
     /**
@@ -379,6 +397,11 @@ public final class HttpHandler {
         private boolean allowInsecureHttp = false;
         private boolean verifyHostname = true;
         private boolean sslContextCallerSupplied = false;
+        // True when the current (derived, non-caller-supplied) sslContext was produced by
+        // createHostnameRelaxedSSLContext() on the handler asBuilder() cloned this builder from.
+        // build() consults this to refuse silently reusing a relaxed context once verifyHostname
+        // has been flipped back to true on this builder - see build() for the rationale.
+        private boolean derivedSslContextRelaxed = false;
 
         /**
          * Sets the URI as a string.
@@ -477,6 +500,7 @@ public final class HttpHandler {
         public HttpHandlerBuilder sslContext(@Nullable SSLContext sslContext) {
             this.sslContext = sslContext;
             this.sslContextCallerSupplied = sslContext != null;
+            this.derivedSslContextRelaxed = false;
             return this;
         }
 
@@ -489,12 +513,24 @@ public final class HttpHandler {
          * {@link #verifyHostname(boolean) verifyHostname(false)} is rejected against. It is otherwise
          * identical to {@link #sslContext(SSLContext)}.
          * </p>
+         * <p>
+         * {@code relaxed} records whether the carried-over context is the hostname-relaxed context
+         * produced by {@link SecureSSLContextProvider#createHostnameRelaxedSSLContext()} - i.e.
+         * whether the source handler was built with {@code verifyHostname(false)}. {@link #build()}
+         * uses this to detect a builder that has since flipped {@code verifyHostname} back to
+         * {@code true}: reusing the relaxed context in that case would silently keep hostname
+         * verification disabled on a handler that reports it as enabled, so {@link #build()} discards
+         * the relaxed context instead of reusing it - see {@link #build()}.
+         * </p>
          *
          * @param sslContext The already-resolved SSL context to carry over.
+         * @param relaxed    {@code true} when {@code sslContext} is the hostname-relaxed context the
+         *                   source handler was built with.
          * @return This builder instance.
          */
-        HttpHandlerBuilder derivedSslContext(@Nullable SSLContext sslContext) {
+        HttpHandlerBuilder derivedSslContext(@Nullable SSLContext sslContext, boolean relaxed) {
             this.sslContext = sslContext;
+            this.derivedSslContextRelaxed = relaxed;
             return this;
         }
 
@@ -563,7 +599,9 @@ public final class HttpHandler {
          * Setting this to {@code false} is a deliberate, narrowly scoped opt-in: the <strong>only</strong>
          * check that is skipped is the match between the peer certificate's identity (SAN / CN) and
          * the connected host. Certificate-chain trust against the JVM default trust store, validity
-         * period, revocation posture, and algorithm constraints all remain fully enforced - see
+         * period, and algorithm constraints all remain fully enforced; revocation posture is
+         * unchanged from whatever the JVM's default PKIX trust manager already applies (the JDK's
+         * default PKIX configuration does not itself enable revocation checking) - see
          * {@link SecureSSLContextProvider#createHostnameRelaxedSSLContext()}. A WARN
          * ({@code HTTP-116}) is logged for every handler built this way.
          * </p>
@@ -639,13 +677,7 @@ public final class HttpHandler {
                 // For HTTPS, create or validate SSL context and pin the enabled protocols
                 SecureSSLContextProvider actualSecureSSLContextProvider = secureSSLContextProvider != null ?
                         secureSSLContextProvider : new SecureSSLContextProvider();
-                SSLContext secureContext;
-                if (verifyHostname) {
-                    secureContext = actualSecureSSLContextProvider.getOrCreateSecureSSLContext(sslContext);
-                } else {
-                    secureContext = actualSecureSSLContextProvider.createHostnameRelaxedSSLContext();
-                    LOGGER.warn(HttpLogMessages.WARN.HOSTNAME_VERIFICATION_DISABLED, uri);
-                }
+                SSLContext secureContext = resolveHttpsSecureContext(actualSecureSSLContextProvider);
                 return new HttpHandler(uri, verifiedUrl, secureContext, actualSecureSSLContextProvider,
                         actualConnectionTimeoutSeconds, actualReadTimeoutSeconds, allowInsecureHttp,
                         verifyHostname, sslContextCallerSupplied);
@@ -662,6 +694,34 @@ public final class HttpHandler {
             }
             throw new IllegalArgumentException("Unsupported URI scheme '" + scheme + "' for " + uri
                     + "; only http and https are supported.");
+        }
+
+        /**
+         * Resolves the {@link SSLContext} for an HTTPS handler, honoring the {@link #verifyHostname}
+         * opt-in and refusing to silently reuse a stale hostname-relaxed context.
+         * <p>
+         * When {@link #verifyHostname} is {@code false}, a fresh hostname-relaxed context is created
+         * and the {@code HTTP-116} WARN is logged. When {@code true}, a derived (non-caller-supplied)
+         * context carried over from {@link HttpHandler#asBuilder()} may be the hostname-relaxed
+         * context of a source handler built with {@code verifyHostname(false)}; reusing it verbatim
+         * here would silently keep hostname verification disabled underneath a handler that reports
+         * {@code isVerifyHostname() == true}. Such a context is discarded (falling back to
+         * {@code null}, which {@link SecureSSLContextProvider#getOrCreateSecureSSLContext(SSLContext)}
+         * resolves to a fresh secure default context) rather than let the relaxation leak through a
+         * {@code verifyHostname(true)} rebuild. A genuinely caller-supplied context is never
+         * discarded - {@link #sslContextCallerSupplied} gates it.
+         *
+         * @param provider the TLS-floor provider used to create or validate the context
+         * @return the resolved {@link SSLContext} for the handler under construction
+         */
+        private SSLContext resolveHttpsSecureContext(SecureSSLContextProvider provider) {
+            if (!verifyHostname) {
+                SSLContext relaxedContext = provider.createHostnameRelaxedSSLContext();
+                LOGGER.warn(HttpLogMessages.WARN.HOSTNAME_VERIFICATION_DISABLED, uri);
+                return relaxedContext;
+            }
+            boolean discardStaleRelaxedContext = !sslContextCallerSupplied && derivedSslContextRelaxed;
+            return provider.getOrCreateSecureSSLContext(discardStaleRelaxedContext ? null : sslContext);
         }
 
         /**

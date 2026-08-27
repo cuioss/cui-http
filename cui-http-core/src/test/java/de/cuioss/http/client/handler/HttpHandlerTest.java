@@ -702,6 +702,29 @@ class HttpHandlerTest {
         }
 
         @Test
+        @DisplayName("asBuilder().verifyHostname(true) must not silently keep the relaxed context")
+        void shouldDiscardRelaxedContextWhenReVerifyingHostname() {
+            HttpHandler relaxed = HttpHandler.builder()
+                    .uri(VALID_URL)
+                    .verifyHostname(false)
+                    .build();
+            SSLContext relaxedContext = relaxed.getSslContext();
+
+            HttpHandler reVerified = relaxed.asBuilder()
+                    .uri(VALID_URL)
+                    .verifyHostname(true)
+                    .build();
+
+            assertAll("re-verified handler must not reuse the relaxed context",
+                    () -> assertTrue(reVerified.isVerifyHostname(),
+                            "verifyHostname(true) must be reflected on the rebuilt handler"),
+                    () -> assertNotSame(relaxedContext, reVerified.getSslContext(),
+                            "A handler that re-enables hostname verification must not silently keep "
+                                    + "the hostname-relaxed SSLContext carried over from asBuilder(); "
+                                    + "it must be discarded in favor of a fresh secure context"));
+        }
+
+        @Test
         @DisplayName("Caller-supplied provenance survives an asBuilder round-trip")
         void shouldKeepCallerSuppliedProvenanceThroughAsBuilder() throws Exception {
             HttpHandler handler = HttpHandler.builder()

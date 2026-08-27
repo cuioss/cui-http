@@ -203,7 +203,7 @@ class SecureSSLContextProviderTest {
 
     @Test
     @DisplayName("Should create a distinct instance per hostname-relaxed context request")
-    void shouldCreateDistinctHostnameRelaxedContexts() throws Exception {
+    void shouldCreateDistinctHostnameRelaxedContexts() {
         SecureSSLContextProvider provider = new SecureSSLContextProvider();
 
         SSLContext relaxed = provider.createHostnameRelaxedSSLContext();
