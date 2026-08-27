@@ -15,11 +15,7 @@
  */
 package de.cuioss.http.forwarded;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.OptionalInt;
+import java.util.*;
 
 /**
  * Immutable, sanitized result of resolving the reverse-proxy / forwarded-header family.
