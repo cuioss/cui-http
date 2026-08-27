@@ -1,0 +1,141 @@
+= ADR-0006: PatternMatchingStage does not observe non-failing suspicious-pattern matches
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: PatternMatchingStage neither logs nor counts a suspicious-pattern match when failOnSuspiciousPatterns is false; security-event observability is scoped to SecurityEventCounter on thrown violations only
+// tags: observability, security-configuration, pattern-matching, logging
+// affects: cui-http-core
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+A validation stage that can be configured to permit a suspicious-but-not-rejected match faces a
+recurring design question: does permitting the match also mean the event goes unrecorded, or does the
+architecture record it anyway for observability even though it does not block? The two options carry
+materially different costs. Recording every non-failing match requires the stage to have write access
+to a shared observability sink and a way to represent that specific event kind (a "detected but
+permitted" record, distinct from a thrown violation) — which is not free plumbing to add to a stage
+that otherwise has neither concern.
+
+This library's security-event observability is centralized in a counter object owned by the pipeline
+that composes each stage, not by the individual stage itself. A stage implemented as an immutable
+value type with no reference to that counter cannot participate in observability without either being
+handed a reference to it (changing its construction contract for every caller) or the pipeline
+reaching back into the stage's internal decision after the fact (which the stage's return contract —
+"accept and continue, or throw" — does not expose a channel for). Introducing a new logged event kind
+independently of that question additionally requires a durable, indexed log-message definition,
+because ad hoc string logging bypasses this library's structured-logging convention entirely; a
+module that has never needed one for this package has no such infrastructure to extend.
+
+The generalizable question this class of decision poses: when a configuration flag deliberately
+converts a would-be violation into permitted-and-silent behavior, is "silent" scoped to mean
+"un-thrown" or "un-observed anywhere"? A stage's architecture — what state it holds, what its return
+contract exposes, whether structured-logging infrastructure already exists for its package — can make
+one answer materially cheaper than the other, and that cost differential is itself an architectural
+fact worth recording, not just an implementation detail.
+
+== Decision
+
+`PatternMatchingStage` does not log or count a suspicious-pattern match when
+`failOnSuspiciousPatterns=false`. Security-event observability for this stage is scoped to
+`SecurityEventCounter`, and only for matches that actually throw `UrlSecurityException` — a permitted
+match under a non-failing configuration produces no observable side effect of any kind.
+
+This follows from the stage's own construction and the location of the observability primitive it
+would otherwise need. `PatternMatchingStage` is an immutable value type constructed with only the
+configuration and validation type it needs to make its accept/reject decision; it holds no reference
+to `SecurityEventCounter`, which is owned and incremented by the pipeline that composes the stage,
+strictly on the thrown-exception path. Extending the stage to also observe a non-failing match would
+require either widening its construction contract to accept the counter (a change to every call site,
+for a stage whose contract is otherwise "configuration in, decision out") or inventing a new
+notification channel the stage's `Optional<String>`-or-throw return type does not provide. Separately,
+recording the event durably (rather than an ad hoc unstructured log line) requires a `LogRecord`-style
+definition, and the `de.cuioss.http.security` package has no `LogMessages` class to extend — the
+infrastructure this decision would need does not exist for a single call site.
+
+The decision is deliberately scoped to *this specific case*: a single WARN-level observation of a
+permitted, non-failing match. It is not a general statement that this library's security stages can
+never gain observability — it states that the cost of adding it here (new construction contract,
+new notification channel, new logging infrastructure) is disproportionate to what a single silent
+data point buys, under a project posture that favors the leanest implementation that satisfies the
+stated contract.
+
+== Consequences
+
+=== Positive
+
+* `PatternMatchingStage` stays a small, dependency-free value type — it needs no reference to
+  `SecurityEventCounter` and no new notification channel, so its construction contract and its
+  `HttpSecurityValidator` return contract stay exactly as small as the accept/reject decision they
+  encode.
+* Security-event observability has one unambiguous meaning across the codebase: it counts thrown
+  violations. A consumer reading `SecurityEventCounter` never has to ask whether a given count
+  includes permitted-but-detected matches from some stages and not others.
+* No new `LogMessages` infrastructure is introduced for a single call site, keeping the
+  `de.cuioss.http.security` package's logging surface exactly as large as its actual logging needs.
+
+=== Negative
+
+* An operator running with `failOnSuspiciousPatterns=false` has zero visibility into how often the
+  suspicious-pattern databases actually match traffic that is nonetheless permitted through — that
+  signal is architecturally unavailable, not merely undocumented.
+* A caller who wants to *tune* `failOnSuspiciousPatterns` toward `true` based on real traffic data
+  (rather than guessing) has no built-in way to gather that data from this stage; they would need to
+  build equivalent detection outside the library to observe what a non-failing configuration is
+  silently permitting.
+
+=== Risks
+
+* The absence of an observation channel here is a genuine, permanent detection-visibility gap for any
+  deployment that runs with `failOnSuspiciousPatterns=false` — this decision accepts that gap rather
+  than closing it, on the grounds that closing it is disproportionate to the cost for this single
+  stage.
+* A future reviewer unfamiliar with this decision may re-flag the silent-permit behavior as a defect
+  rather than the deliberate, cost-justified scope boundary it is, and re-propose adding the logging
+  branch without re-deriving the construction-contract and infrastructure cost that made it
+  disproportionate the first time.
+
+== Alternatives Considered
+
+**Add logging or counting for a permitted, non-failing suspicious-pattern match inside
+`PatternMatchingStage`.** This would close the visibility gap directly and let an operator observe
+detection-without-rejection traffic. It is rejected because of what it costs the stage's architecture:
+`PatternMatchingStage` has no access to `SecurityEventCounter` (held by the composing pipeline, not
+the stage), so counting requires widening the stage's construction contract for every caller, and
+logging requires introducing a `LogRecord`-backed `LogMessages` class for a package that currently has
+none — new durable infrastructure built to emit a single WARN message. Under a project posture that
+favors the leanest change that satisfies the stated contract, adding two new architectural surfaces
+(a counter reference, a logging-infrastructure class) to fix what is, on inspection, a
+documentation-accuracy defect rather than a missing-detection defect is disproportionate.
+
+**Escalate the pipeline itself to observe every stage's internal decisions, not just thrown
+violations.** This would generalize observability beyond `PatternMatchingStage` specifically, closing
+the same gap for any current or future stage with a permit-but-detect mode. It is rejected at this
+scope because it is a considerably larger architectural change — a new stage-to-pipeline
+communication channel that every existing and future `HttpSecurityValidator` implementation would
+need to support — proposed to solve a single stage's single-message visibility gap; the cost is not
+proportionate to the problem this decision is scoped to address.
+
+Both alternatives solve the visibility gap by adding new architectural surface area sized for a
+*general* capability, while the actual unmet need is a single non-failing-match signal from a single
+stage. The accepted decision instead documents the boundary honestly — a permitted match is allowed
+silently — and leaves both alternatives available as a deliberate future decision if the
+disproportion calculus changes (for example, if a second stage independently needs the same
+capability, amortizing the infrastructure cost across more than one call site).
+
+== References
+
+* `PatternMatchingStage` — the stage this decision governs; its Javadoc documents that a non-failing
+  match is allowed silently, with observability delegated to `SecurityEventCounter` on thrown
+  violations.
+* `SecurityConfigurationBuilder.failOnSuspiciousPatterns(boolean)` — the configuration flag whose
+  Javadoc states the same silent-permit contract from the configuration-authoring side.
+* `AbstractValidationPipeline` — the owner of `SecurityEventCounter`, and the boundary this decision
+  keeps `PatternMatchingStage` on the far side of.
