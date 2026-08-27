@@ -313,6 +313,17 @@ public final class SecurityDefaults {
      *
      * <p>Single source of truth for strict preset semantics -
      * {@link SecurityConfiguration#strict()} delegates to this constant.</p>
+     *
+     * <p><strong>Why {@code caseSensitiveComparison} is {@code false} here.</strong>
+     * Case-insensitive comparison lowercases both the input and the pattern set, so it matches a
+     * superset of what case-sensitive comparison matches - enabling case sensitivity can only
+     * reduce detection. Setting it {@code false} is therefore what makes the strict preset detect
+     * at least as much as an equivalent hand-built configuration. Concretely,
+     * {@link #SUSPICIOUS_PATH_PATTERNS} and {@link #SUSPICIOUS_PARAMETER_NAMES} are all-lowercase
+     * literals, so under case-sensitive comparison they cannot match a mixed-case input such as
+     * {@code /ETC/passwd} at all. ({@link #PATH_TRAVERSAL_PATTERNS} is deliberately mixed-case and
+     * is unaffected by that particular argument, but it too matches only the case permutations it
+     * literally enumerates when comparison is case-sensitive.)</p>
      */
     public static final SecurityConfiguration STRICT_CONFIGURATION = new SecurityConfiguration(
             MAX_PATH_LENGTH_STRICT, false,
@@ -321,7 +332,7 @@ public final class SecurityDefaults {
             MAX_COOKIE_NAME_LENGTH_STRICT, MAX_COOKIE_VALUE_LENGTH_STRICT,
             MAX_BODY_SIZE_STRICT,
             false, false, false, true, // no null bytes, no control chars, no extended ASCII, normalize Unicode
-            true, true, // case-sensitive comparison, fail on suspicious patterns
+            false, true, // case-insensitive comparison (detects a superset), fail on suspicious patterns
             false, false, // requireSecureCookies, requireHttpOnlyCookies (opt-in)
             MAX_PARAMETER_COUNT_STRICT, MAX_HEADER_COUNT_STRICT, MAX_COOKIE_COUNT_STRICT,
             Set.of(), Set.of(), Set.of(), Set.of()); // allow/block lists (empty = allow-all, opt-in)

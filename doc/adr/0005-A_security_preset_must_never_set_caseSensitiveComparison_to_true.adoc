@@ -1,0 +1,139 @@
+= ADR-0005: A security preset must never set caseSensitiveComparison to true
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: A named security preset must never enable caseSensitiveComparison, because case-insensitive pattern matching strictly dominates case-sensitive matching for this library's pattern databases
+// tags: security-configuration, presets, pattern-matching, invariant
+// affects: cui-http-core
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+A configuration system that ships named presets (e.g. "strict", "default", "lenient") makes an
+implicit promise about their relative ordering: a stricter preset should never detect *less* than a
+looser one, and in particular a preset advertised as strict should detect at least as much as an
+equivalent hand-assembled configuration a caller could build themselves from the same building
+blocks. That promise is easy to violate silently when a preset composes several independent flags,
+because a flag that is individually reasonable — "compare literally, don't normalize case" — can
+interact with a *different* piece of configuration state (a pattern database's own case shape) in a
+way that only shows up as a detection gap, not as a type error or a test that obviously fails.
+
+Attack-pattern matching against a fixed literal database is exactly this situation. A pattern
+database is authored with a specific case shape — some databases are written entirely in one case,
+others deliberately enumerate multiple case permutations because attackers vary case as an evasion
+technique. Whether case-sensitive comparison against such a database detects a *superset*, a
+*subset*, or an *unrelated set* of what case-insensitive comparison detects depends entirely on how
+that specific database was authored — it is not a property comparison logic can derive from the flag
+alone. A configuration surface that exposes both a case-sensitivity toggle and one or more
+attack-pattern databases therefore has an architectural obligation to know, per database, what each
+setting of that toggle actually detects — and a preset that composes the toggle with the databases
+without that knowledge can silently regress detection while still passing every unit test that
+exercises the flag or the database independently.
+
+== Decision
+
+A security preset in this library must never set `caseSensitiveComparison=true`.
+
+The invariant follows from a general rule about combining a comparison-mode flag with a fixed
+pattern database: **a preset's flag composition must never detect less than an equivalent hand-built
+configuration.** For this library's specific databases, case-insensitive comparison is proven to
+satisfy that rule and case-sensitive comparison is not: `caseSensitiveComparison=false` lowercases
+both the input and the pattern set before comparison, so it matches a strict *superset* of what
+`caseSensitiveComparison=true` matches against the same database — enabling case sensitivity can
+therefore only ever *reduce* detection, never increase it, for a comparison mechanism structured this
+way.
+
+The superset relation is the load-bearing fact; it does not depend on every database sharing the
+same case shape. `SUSPICIOUS_PATH_PATTERNS` and `SUSPICIOUS_PARAMETER_NAMES` are all-lowercase
+literal sets, so under case-sensitive comparison they cannot match any mixed- or upper-case input at
+all. `PATH_TRAVERSAL_PATTERNS` is deliberately mixed-case — it enumerates multiple case permutations
+of the same encoded traversal sequence as separate literal entries — so under case-sensitive
+comparison it still matches only the specific permutations it literally spells out, a narrower match
+than case-insensitive comparison achieves against the same enumeration. The superset relation holds
+for both shapes; only the *magnitude* of the gap differs, so the all-lowercase property is a property
+of two of the three databases, not the reason the invariant holds.
+
+`SecurityConfiguration.isStrict()` classifies a configuration as strict independently of the
+`caseSensitiveComparison` flag, so this decision changes what a strict-classified configuration
+detects without changing which configurations are classified as strict.
+
+== Consequences
+
+=== Positive
+
+* Every named preset in the library detects at least as much as an equivalent hand-built
+  configuration using the same pattern databases — the ordering promise a preset system implies is
+  actually true, not merely assumed.
+* `caseSensitiveComparison` remains a meaningful, non-dead knob on the public configuration surface:
+  a caller who deliberately wants verbatim, case-sensitive comparison for a use case outside the
+  preset system can still set it, with the documented consequence that doing so can only narrow
+  detection against these databases.
+* The invariant is checkable per-database independently of any one database's specific literal
+  contents: it depends only on whether case-insensitive comparison is a superset of case-sensitive
+  comparison for that database's structure, which holds regardless of whether the database happens to
+  be single-case or deliberately multi-case.
+
+=== Negative
+
+* A caller who deliberately wants case-sensitive attack-pattern matching outside a named preset must
+  build a custom configuration and accept, by construction, that it detects no more than the
+  case-insensitive equivalent — the option exists but is architecturally incapable of strengthening
+  detection against these databases.
+* The invariant is a property of *this library's specific databases*, not a law of comparison logic
+  in general; it must be re-verified, not assumed, if a future database is authored with a case shape
+  where case-sensitive comparison could plausibly detect something case-insensitive comparison
+  misses (for example, a database that encodes meaning in case, such as distinguishing a literal
+  uppercase token from a coincidental lowercase substring).
+
+=== Risks
+
+* A future contributor adding a new attack-pattern database, or a new preset, may not know this
+  invariant exists and may reintroduce a case-sensitive strict-style preset without recognizing the
+  detection-gap consequence, since the failure mode (a specific mixed-case string escaping
+  detection) does not surface as an obvious type or contract violation.
+* The invariant is stated at the preset-composition level; it does not, by itself, prevent a
+  general-purpose (non-preset) configuration from setting `caseSensitiveComparison=true` and
+  incurring the same detection narrowing deliberately or inadvertently outside preset construction.
+
+== Alternatives Considered
+
+**Make the pattern databases always match case-insensitively, regardless of the
+`caseSensitiveComparison` flag.** This would close the gap by removing the flag's effect on pattern
+matching entirely rather than constraining which presets may enable it. It is rejected because it
+turns `caseSensitiveComparison` into a dead knob on a public configuration record component — a
+caller who explicitly requests case-sensitive comparison would receive case-insensitive behavior
+anyway, silently. A public, documented configuration flag that has no effect on the actual matching
+behavior is a worse contract violation than a preset that composes flags incorrectly, because it
+misleads every caller of the general-purpose configuration API, not just the preset authors.
+
+**Leave `caseSensitiveComparison=true` in the strict preset and treat the detection gap as accepted
+strict-preset behavior.** This was the prior state and is rejected because it directly contradicts
+the strict preset's own purpose: a preset named "strict" that detects *less* than an equivalent
+hand-built configuration — for example, passing `/ETC/passwd` through undetected while a
+`failOnSuspiciousPatterns(true)` + `caseSensitiveComparison(false)` configuration built from the same
+primitives rejects it — inverts the ordering promise a preset system exists to provide. A caller who
+selects the strict preset specifically because they want the strongest built-in detection has no way
+to discover, short of reading the pattern databases' case shape directly, that a differently-composed
+configuration using the same building blocks would have caught more.
+
+Both alternatives share the same underlying failure: neither preserves the ordering invariant that
+composing a comparison-mode flag with these specific pattern databases can only be safely resolved
+one way. The accepted decision is the only one of the three options that keeps both the flag
+meaningful and the preset's detection guarantee true.
+
+== References
+
+* `SecurityDefaults.STRICT_CONFIGURATION` — the preset this decision governs; its Javadoc documents
+  the superset argument and names each database's case shape.
+* `PatternMatchingStage` — the sole consumer of `caseSensitiveComparison`, and the stage whose
+  Javadoc documents the per-database effect of the flag.
+* `SecurityConfigurationBuilder.caseSensitiveComparison(boolean)` — the general-purpose setter,
+  documented with the same superset warning for callers building a configuration outside the preset
+  system.

@@ -1,0 +1,140 @@
+= ADR-0004: CharacterValidationStage validates the wire form; DecodingStage owns decoded-character safety
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: CharacterValidationStage enforces the RFC 3986 allow-list on the encoded (wire) form only; DecodingStage owns decoded-output character safety and does not re-apply that allow-list
+// tags: input-validation, url-path, character-validation, decoding, xss-boundary
+// affects: cui-http-core
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+A percent-decoding validation pipeline has two forms of the same value in flight at different
+stages: the encoded (wire) form the caller sent, and the decoded form the pipeline hands back after
+percent-decoding. A single allow-list of permitted characters cannot correctly govern both forms,
+because percent-encoding exists precisely to let characters outside a component's raw-form allow-list
+travel safely inside it. A path allow-list built for the wire form necessarily excludes `%` (the
+encoding escape character itself), delimiter characters such as `[` and `]` that are only legal
+percent-encoded, and any code point above the ASCII/Latin-1 range that a legitimate path may still
+carry in decoded form (a CJK search term, an accented city name).
+
+The architectural choice point this creates: does character-set enforcement apply uniformly to both
+forms via one check, or does each form get its own, form-appropriate check owned by a different
+stage? A pipeline that gets this wrong in either direction has a real security or correctness gap —
+enforcing the raw-form allow-list against decoded output rejects legitimate, already-shipped inputs;
+enforcing nothing against decoded output lets a decoded control character (never percent-encoded
+alone as an attack, but arriving that way) reach the caller unchecked.
+
+A further choice point sits inside decoded-output enforcement itself: which decoded characters are a
+structural/protocol threat worth blocking centrally, versus which are a threat only in a specific
+output context (HTML, JavaScript) the validation pipeline has no visibility into. Conflating the two
+either overreaches into presentation-layer concerns the library cannot correctly discharge, or
+underreaches and leaves a real protocol-level bypass (a decoded control character) unguarded.
+
+== Decision
+
+`CharacterValidationStage` enforces its RFC 3986 / RFC 7230 character allow-list against the encoded
+(wire) form only. It runs before decoding, sees percent-encoded sequences as percent-encoding
+(`%` plus two hex digits), and makes no claim about what those sequences decode to.
+
+`DecodingStage` owns decoded-output character safety. In the pipelines where it runs after
+`CharacterValidationStage` (URL path, URL parameter name, URL parameter value), it re-checks the
+decoded output against a narrower, decode-specific guarantee set: a literal null byte, a Unicode
+combining mark, and — the scope this decision widens — the whole C0/C1 control-character class,
+governed by the `allowControlCharacters` configuration flag with the existing per-`ValidationType`
+context rules preserved (header and cookie components reject control characters unconditionally;
+parameter values and bodies continue to tolerate the CR/LF/TAB that legitimate form data carries).
+This is a protocol-safety boundary, not a content-classification one: control characters are a
+structural hazard regardless of what a downstream consumer does with the value, so the pipeline can
+correctly own rejecting them without knowing anything about that consumer.
+
+HTML- or JavaScript-context escaping of decoded content is explicitly out of scope for both stages
+and for the pipeline as a whole. A decoded value such as `<script>` is not rejected — `<` and `>` are
+not a path-structure or protocol threat, they are a threat only in the specific context where a
+consumer renders the value into HTML or JS without escaping it, and only the consumer knows which
+escaping its own sink requires. This mirrors an already-standing decision in the same package: the
+XSS pattern database was removed from `PatternMatchingStage` for the identical reason, and the
+project's own pipeline-architecture standards name HTML entity decoding as a presentation-layer
+concern.
+
+== Consequences
+
+=== Positive
+
+* The allow-list a caller reads on `CharacterValidationStage` is honest about what it actually
+  checks — the wire form — so nothing downstream can silently invalidate an implicit "decoded form
+  is also covered" assumption.
+* Decoded-output protocol safety (null byte, combining mark, C0/C1 control characters) is enforced
+  uniformly across every pipeline that decodes, governed by one configuration flag, rather than
+  being scattered across ad hoc per-stage checks.
+* The library's own documented legitimate inputs — a percent-encoded literal `%`, `[`/`]` array-index
+  path segments, a decoded CJK search path — continue to validate correctly, because no stage
+  re-applies the wire-form allow-list to decoded output.
+* The boundary between structural/protocol safety (owned here) and output-context safety (explicitly
+  not owned here) is drawn once and stated in both stages' contracts, instead of being an implicit
+  assumption a caller has to reconstruct.
+
+=== Negative
+
+* A caller that expected percent-decoding itself to double as HTML/JS sanitization receives no such
+  guarantee, and must apply context-appropriate escaping at the point where the decoded value is
+  rendered or interpreted.
+* The security surface this pipeline covers is narrower than "reject anything a downstream sink
+  might mishandle" — it is scoped to characters that are unsafe regardless of context.
+
+=== Risks
+
+* A caller that is unaware of the wire-form/decoded-form split may assume `CharacterValidationStage`
+  alone is sufficient input hardening and skip output-context escaping entirely; the risk is mitigated
+  by stating the scope explicitly in both stages' documentation rather than leaving it implicit.
+* Widening decoded-output enforcement to the full C0/C1 class narrows what "escaped, not rejected"
+  Unicode range remains available to a legitimate caller; the risk is bounded because no documented
+  legitimate database entry uses a C0/C1 control character.
+
+== Alternatives Considered
+
+**Re-validate decoded output against the full `CharacterValidationStage` allow-list.** This would
+give a single, uniform allow-list covering both forms, which is simpler to reason about at first
+glance. It fails architecturally because the wire-form allow-list is defined in terms of what
+percent-encoding is FOR — letting characters outside it travel safely — so applying it to the
+already-decoded result rejects the exact class of input percent-encoding exists to carry. Concretely,
+this would newly reject inputs the library documents as legitimate: a percent-encoded literal `%`
+(decodes to a character the path allow-list excludes), `[`/`]` array-index segments, and any decoded
+code point above 255 (excluded by the URL-path Unicode-support rule). This is not a narrow edge case;
+it is a large functional regression against the library's own contract.
+
+**Reject decoded HTML/JS-significant characters (`<`, `>`, quotes) centrally in the decoding
+pipeline.** This would close the specific decoded-`<script>`-style case a naive reading of "sanitize
+everything" might expect. It fails architecturally because the pipeline has no visibility into the
+sink a value ultimately flows into — a path segment rendered into an HTML attribute needs different
+escaping than one written into a shell command or a log line — so a central reject-list is either
+too broad (breaking legitimate paths that happen to contain those characters) or too narrow (missing
+a context-specific sink it never anticipated). This is the same reasoning that already led to
+removing the XSS pattern database from `PatternMatchingStage`; folding equivalent logic back in here
+would silently reintroduce the position that decision rejected.
+
+Both rejected alternatives share the same underlying error: treating "reachable by an attacker" as
+equivalent to "unconditionally unsafe". The accepted decision instead partitions the threat surface
+into what is unsafe *regardless of context* (protocol-structural — owned centrally) and what is
+unsafe *only in a specific rendering context* (owned by the consumer that knows that context).
+
+== References
+
+* `CharacterValidationStage` — encoded-form allow-list enforcement and the documented boundary
+  handoff to `DecodingStage`.
+* `DecodingStage` — decoded-output character safety (null byte, combining mark, C0/C1 control
+  characters) governed by the `allowControlCharacters` configuration flag.
+* `PatternMatchingStage` — the sibling stage whose removed XSS pattern database established the same
+  application-layer-escaping boundary this decision extends to decoded-character enforcement.
+* `doc/http-security/specification/pipeline-architecture-standards.adoc` — pipeline selection rules
+  and the presentation-layer scoping of HTML entity decoding.
+* `PostDecodeEnforcementRegressionTest` — pipeline-level characterization test pinning both halves of
+  this boundary: a decoded control character is rejected, and a decoded `<script>`-shaped value is
+  accepted and returned unchanged.

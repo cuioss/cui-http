@@ -386,4 +386,23 @@ class NormalizationStageTest {
                 "Pattern '" + input + "' should be detected as traversal attempt but was allowed");
         assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, exception.getFailureType());
     }
+
+    /**
+     * Percent-encoding hex digits are case-insensitive, so every case permutation of the encoded
+     * double dot denotes the same traversal sequence and must be detected alike. The two
+     * homogeneous spellings were already covered; the mixed-case ones are the bypass this guards.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "/app/%2e%2e/etc/passwd",  // all lowercase
+            "/app/%2E%2E/etc/passwd",  // all uppercase
+            "/app/%2E%2e/etc/passwd",  // mixed: upper then lower
+            "/app/%2e%2E/etc/passwd"   // mixed: lower then upper
+    })
+    void validate_withEncodedDoubleDotInAnyCase_shouldBeRejected(String input) {
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> stage.validate(input),
+                "Encoded double dot '" + input + "' should be detected regardless of hex-digit case");
+        assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, exception.getFailureType());
+    }
 }

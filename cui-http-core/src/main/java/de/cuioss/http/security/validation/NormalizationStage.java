@@ -24,6 +24,7 @@ import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
@@ -452,8 +453,11 @@ ValidationType validationType) implements HttpSecurityValidator {
         }
 
         // Pattern 2: Encoded traversal attempts (based on Apache CVE research)
-        // Covers URL encoded variants like "..%2e/" or "%2e%2e/"
-        if (input.contains("..%") || input.contains("%2e%2e") || input.contains("%2E%2E")) {
+        // Covers URL encoded variants like "..%2e/" or "%2e%2e/". Percent-encoding hex digits are
+        // case-insensitive, so the check runs against a case-folded copy: that covers all four
+        // permutations (%2e%2e, %2E%2E, %2e%2E, %2E%2e) rather than only the two homogeneous ones.
+        String caseFolded = input.toLowerCase(Locale.ROOT);
+        if (caseFolded.contains("..%") || caseFolded.contains("%2e%2e")) {
             return true;
         }
 

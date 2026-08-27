@@ -45,6 +45,27 @@ import java.util.function.IntPredicate;
  * </ul>
  *
  * <h3>Character Validation Rules</h3>
+ *
+ * <p><strong>Scope - encoded (wire) form only.</strong> This stage sees the input exactly as it
+ * arrived on the wire, so the allow-list below is enforced against the encoded form. A
+ * percent-encoded sequence is validated as percent-encoding ({@code %} plus two hex digits); the
+ * characters it decodes to are not visible here. This stage therefore guarantees nothing about the
+ * decoded form.</p>
+ *
+ * <p><strong>Which pipelines pair this stage with {@link DecodingStage}.</strong> Only the URL path
+ * and URL parameter (name and value) pipelines run this stage <em>before</em> a
+ * {@code DecodingStage}; there, {@code DecodingStage} owns the decoded-form guarantees (null byte,
+ * combining mark, control characters, and parameter-name delimiters) and re-checks them after
+ * decoding for exactly this reason. The header pipelines ({@link ValidationType#HEADER_NAME},
+ * {@link ValidationType#HEADER_VALUE}) run this stage with no {@code DecodingStage} at all - header
+ * input is not percent-decoded, so the wire form is the only form and there is no decoded-form
+ * re-check downstream. The content-type pipeline runs neither stage, and no {@link
+ * ValidationType#BODY} pipeline exists - {@code PipelineFactory.createPipeline} rejects that
+ * type.</p>
+ *
+ * <p>Per-{@link ValidationType} character sets. A character set is defined for each type below,
+ * independently of whether a pipeline currently wires that type:</p>
+ *
  * <ul>
  *   <li><strong>URL Paths</strong> - RFC 3986 unreserved + path-specific characters</li>
  *   <li><strong>Parameters</strong> - RFC 3986 query characters with percent-encoding support</li>
@@ -54,12 +75,22 @@ import java.util.function.IntPredicate;
  * </ul>
  *
  * <h3>Security Features</h3>
+ *
+ * <p>Each feature below applies to the encoded form only, per the scope note above.</p>
+ *
  * <ul>
- *   <li><strong>Null Byte Detection</strong> - Prevents null byte injection attacks</li>
- *   <li><strong>Control Character Filtering</strong> - Blocks dangerous control characters</li>
+ *   <li><strong>Null Byte Detection</strong> - Rejects a literal null byte, and the encoded
+ *       {@code %00} spelling, in the wire form</li>
+ *   <li><strong>Control Character Filtering</strong> - Blocks control characters present literally
+ *       in the wire form; in the URL path and parameter pipelines a percent-encoded control
+ *       character is caught after decoding by {@link DecodingStage}</li>
  *   <li><strong>Percent Encoding Validation</strong> - Validates hex digit sequences</li>
  *   <li><strong>High-Bit Character Control</strong> - Configurable handling of non-ASCII characters</li>
  * </ul>
+ *
+ * <p>Escaping decoded content for an HTML or JavaScript context is <em>not</em> performed here and
+ * is an application-layer responsibility: only the application knows the sink a value flows into,
+ * and therefore which escaping applies.</p>
  *
  * <h3>Usage Examples</h3>
  * <pre>

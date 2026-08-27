@@ -322,6 +322,80 @@ class DecodingStageTest {
         }
     }
 
+    @ParameterizedTest
+    @DisplayName("Should reject decoded C0/C1 control characters in URL paths")
+    @ValueSource(strings = {"%01", "%08", "%1B", "%1F", "%7F", "%C2%85", "%C2%9F"})
+    void shouldRejectDecodedControlCharactersInPath(String encodedControl) {
+        SecurityConfiguration config = SecurityConfiguration.builder()
+                .normalizeUnicode(false)
+                .build();
+        DecodingStage decoder = new DecodingStage(config, ValidationType.URL_PATH);
+
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> decoder.validate("/a" + encodedControl + "b"));
+
+        assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType());
+        String detail = exception.getDetail().orElse("");
+        assertTrue(detail.contains("control character"), "Detail should name the control character");
+        assertFalse(detail.chars().anyMatch(Character::isISOControl),
+                "Detail must render the code point escaped, never as a raw control character");
+    }
+
+    @Test
+    @DisplayName("Should accept decoded control characters in URL paths when explicitly allowed")
+    void shouldAcceptDecodedControlCharactersWhenAllowed() {
+        SecurityConfiguration config = SecurityConfiguration.builder()
+                .allowControlCharacters(true)
+                .normalizeUnicode(false)
+                .build();
+        DecodingStage decoder = new DecodingStage(config, ValidationType.URL_PATH);
+
+        String expected = "/a" + (char) 0x1B + (char) 0x08 + "b";
+
+        Optional<String> result = decoder.validate("/a%1B%08b");
+
+        assertTrue(result.isPresent());
+        assertEquals(expected, result.get(),
+                "ESC (%1B) and BS (%08) survive decoding when control characters are allowed");
+    }
+
+    @Test
+    @DisplayName("Should tolerate decoded CR/LF/TAB in parameter values but reject other control characters")
+    void shouldTolerateFormWhitespaceInParameterValues() {
+        SecurityConfiguration config = SecurityConfiguration.builder()
+                .normalizeUnicode(false)
+                .build();
+        DecodingStage decoder = new DecodingStage(config, ValidationType.PARAMETER_VALUE);
+
+        Optional<String> result = decoder.validate("line1%0D%0Aline2%09tabbed");
+        assertTrue(result.isPresent());
+        assertEquals("line1\r\nline2\ttabbed", result.get());
+
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> decoder.validate("value%1Bescape"));
+        assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType());
+    }
+
+    @Test
+    @DisplayName("Should preserve a literal plus in URL paths but decode it to a space in parameter values")
+    void shouldApplyPathVersusFormPlusSemantics() {
+        SecurityConfiguration config = SecurityConfiguration.builder()
+                .normalizeUnicode(false)
+                .build();
+        DecodingStage pathStage = new DecodingStage(config, ValidationType.URL_PATH);
+        DecodingStage parameterStage = new DecodingStage(config, ValidationType.PARAMETER_VALUE);
+
+        assertAll("plus semantics by validation type",
+                () -> assertEquals("/a+b", pathStage.validate("/a+b").orElseThrow(),
+                        "RFC 3986 path decoding preserves a literal +"),
+                () -> assertEquals("/a+b", pathStage.validate("/a%2Bb").orElseThrow(),
+                        "%2B still decodes to + on a path"),
+                () -> assertEquals("a b", parameterStage.validate("a+b").orElseThrow(),
+                        "form decoding maps + to a space"),
+                () -> assertEquals("a+b", parameterStage.validate("a%2Bb").orElseThrow(),
+                        "%2B still decodes to + in a parameter value"));
+    }
+
     @Test
     @DisplayName("Should preserve validation type in exceptions")
     void shouldPreserveValidationType() {
