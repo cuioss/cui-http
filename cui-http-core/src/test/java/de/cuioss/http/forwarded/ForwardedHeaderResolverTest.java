@@ -303,6 +303,23 @@ class ForwardedHeaderResolverTest {
         }
 
         @Test
+        @DisplayName("rejects a bracketed host whose contents are not an IP literal")
+        void rejectsBracketedNonLiteralHost() {
+            assertAll("bracket contents",
+                    // Positive control: a well-formed bracketed literal IS honored, so the empty
+                    // results below are attributable to the bracket contents and not to the
+                    // bracketed form being rejected wholesale.
+                    () -> assertEquals(Optional.of("[2001:db8::1]"), trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Host", "[2001:db8::1]"))).host()),
+                    () -> assertTrue(trustAllResolver()
+                                    .resolve(headers(Map.of("X-Forwarded-Host", "[]"))).host().isEmpty(),
+                            "empty brackets carry no literal, so they compose an invalid authority"),
+                    () -> assertTrue(trustAllResolver()
+                                    .resolve(headers(Map.of("X-Forwarded-Host", "[not-an-ip]"))).host().isEmpty(),
+                            "the brackets promise an IP literal; a non-literal must not reach a consumer"));
+        }
+
+        @Test
         @DisplayName("rejects a port that is not digit-only")
         void rejectsNonDigitPort() {
             assertAll("digit-only port",

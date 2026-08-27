@@ -251,6 +251,13 @@ public final class ForwardedHeaderResolver {
             if (!IpAddresses.hasValidBracketTrailer(rest)) {
                 return HostPort.EMPTY;
             }
+            // The brackets promise an IP literal, so validate what is INSIDE them too — checking
+            // only the trailer would let "[]" and "[not-an-ip]" through as a host and hand a
+            // downstream consumer an invalid URL authority. This mirrors
+            // IpAddresses.parseChainEntry, which parses its bracketed literal for the same reason.
+            if (IpAddresses.parse(value.substring(1, close)) == null) {
+                return HostPort.EMPTY;
+            }
             if (!rest.isEmpty()) {
                 port = parsePort(rest.substring(1));
             }
