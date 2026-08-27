@@ -187,6 +187,37 @@ class SecureSSLContextProviderTest {
     }
 
     @Test
+    @DisplayName("Should create hostname-relaxed SSL context honoring the configured minimum")
+    void shouldCreateHostnameRelaxedSSLContext() {
+        SecureSSLContextProvider provider = new SecureSSLContextProvider(SecureSSLContextProvider.TLS_V1_3);
+
+        SSLContext relaxed = provider.createHostnameRelaxedSSLContext();
+
+        assertAll("hostname-relaxed context",
+                () -> assertNotNull(relaxed, "Hostname-relaxed context should not be null"),
+                () -> assertEquals(SecureSSLContextProvider.TLS_V1_3, relaxed.getProtocol(),
+                        "Hostname-relaxed context must use the configured minimum TLS version"),
+                () -> assertNotNull(relaxed.getSocketFactory(),
+                        "Hostname-relaxed context must be initialized and usable"));
+    }
+
+    @Test
+    @DisplayName("Should create a distinct instance per hostname-relaxed context request")
+    void shouldCreateDistinctHostnameRelaxedContexts() throws Exception {
+        SecureSSLContextProvider provider = new SecureSSLContextProvider();
+
+        SSLContext relaxed = provider.createHostnameRelaxedSSLContext();
+
+        assertAll("hostname-relaxed context identity",
+                () -> assertNotSame(relaxed, provider.createHostnameRelaxedSSLContext(),
+                        "Each call must yield a fresh context"),
+                () -> assertNotSame(relaxed, provider.createSecureSSLContext(),
+                        "The relaxed context must never be the strict context instance"),
+                () -> assertEquals(SecureSSLContextProvider.TLS_V1_2, relaxed.getProtocol(),
+                        "The default minimum TLS version must be honored"));
+    }
+
+    @Test
     @DisplayName("Should throw exception for invalid minimum TLS version")
     void shouldThrowExceptionForInvalidMinimumTlsVersion() {
         assertThrows(IllegalArgumentException.class, () -> new SecureSSLContextProvider("invalid"));
