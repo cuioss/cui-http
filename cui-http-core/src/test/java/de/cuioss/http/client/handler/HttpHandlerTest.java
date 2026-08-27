@@ -613,6 +613,147 @@ class HttpHandlerTest {
     }
 
     @Nested
+    @DisplayName("Hostname verification policy")
+    class HostnameVerificationPolicy {
+
+        @Test
+        @DisplayName("Hostname verification is on by default")
+        void shouldVerifyHostnameByDefault() {
+            HttpHandler handler = HttpHandler.builder().uri(VALID_URL).build();
+
+            assertTrue(handler.isVerifyHostname(),
+                    "Hostname verification must default to enabled");
+        }
+
+        @Test
+        @DisplayName("verifyHostname(false) builds an https handler and logs the HTTP-116 WARN")
+        void shouldBuildRelaxedHandler() {
+            HttpHandler handler = HttpHandler.builder()
+                    .uri(VALID_URL)
+                    .verifyHostname(false)
+                    .build();
+
+            assertAll("relaxed handler",
+                    () -> assertFalse(handler.isVerifyHostname(),
+                            "The opt-in must be reflected on the handler"),
+                    () -> assertNotNull(handler.getSslContext(),
+                            "A relaxed https handler must still carry an SSL context"),
+                    () -> LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN,
+                            "verifyHostname=false"));
+        }
+
+        @Test
+        @DisplayName("verifyHostname(false) with a caller-supplied sslContext is rejected")
+        void shouldRejectRelaxationWithCallerSuppliedContext() throws Exception {
+            var builder = HttpHandler.builder()
+                    .uri(VALID_URL)
+                    .sslContext(SSLContext.getDefault())
+                    .verifyHostname(false);
+
+            var exception = assertThrows(IllegalArgumentException.class, builder::build);
+
+            assertAll("rejection message names both knobs",
+                    () -> assertTrue(exception.getMessage().contains("verifyHostname(false)"),
+                            "Message must name the verifyHostname knob: " + exception.getMessage()),
+                    () -> assertTrue(exception.getMessage().contains("sslContext"),
+                            "Message must name the sslContext knob: " + exception.getMessage()));
+        }
+
+        @Test
+        @DisplayName("A caller-supplied sslContext still builds with verification enabled")
+        void shouldAcceptCallerSuppliedContextWithVerification() throws Exception {
+            SSLContext callerContext = SSLContext.getDefault();
+
+            HttpHandler explicit = HttpHandler.builder()
+                    .uri(VALID_URL)
+                    .sslContext(callerContext)
+                    .verifyHostname(true)
+                    .build();
+            HttpHandler implicit = HttpHandler.builder()
+                    .uri(VALID_URL)
+                    .sslContext(callerContext)
+                    .build();
+
+            assertAll("caller-supplied context with verification",
+                    () -> assertSame(callerContext, explicit.getSslContext(),
+                            "The caller-supplied context must be preserved"),
+                    () -> assertSame(callerContext, implicit.getSslContext(),
+                            "The knob-absent form must behave like verifyHostname(true)"),
+                    () -> assertTrue(implicit.isVerifyHostname(),
+                            "The knob-absent form must keep verification enabled"));
+        }
+
+        @Test
+        @DisplayName("asBuilder round-trips a relaxed handler without tripping the rejection")
+        void shouldRoundTripRelaxedHandler() {
+            HttpHandler handler = HttpHandler.builder()
+                    .uri(VALID_URL)
+                    .verifyHostname(false)
+                    .build();
+
+            HttpHandler rebuilt = assertDoesNotThrow(() -> handler.asBuilder().uri(VALID_URL).build(),
+                    "A derived context must not be treated as caller-supplied");
+
+            assertAll("round-tripped relaxed handler",
+                    () -> assertFalse(rebuilt.isVerifyHostname(),
+                            "asBuilder() must preserve the verifyHostname opt-in"),
+                    () -> assertNotNull(rebuilt.getSslContext(),
+                            "The rebuilt handler must still carry an SSL context"));
+        }
+
+        @Test
+        @DisplayName("Caller-supplied provenance survives an asBuilder round-trip")
+        void shouldKeepCallerSuppliedProvenanceThroughAsBuilder() throws Exception {
+            HttpHandler handler = HttpHandler.builder()
+                    .uri(VALID_URL)
+                    .sslContext(SSLContext.getDefault())
+                    .build();
+
+            var builder = handler.asBuilder().uri(VALID_URL).verifyHostname(false);
+
+            var exception = assertThrows(IllegalArgumentException.class, builder::build,
+                    "A genuinely caller-supplied context must keep tripping the rejection after cloning");
+            assertTrue(exception.getMessage().contains("verifyHostname(false)"),
+                    "The failure must be the mutual-exclusion rejection: " + exception.getMessage());
+        }
+
+        @Test
+        @DisplayName("toString renders the hostname-verification setting")
+        void shouldRenderVerifyHostnameInToString() {
+            HttpHandler relaxed = HttpHandler.builder()
+                    .uri(VALID_URL)
+                    .verifyHostname(false)
+                    .build();
+
+            assertTrue(relaxed.toString().contains("verifyHostname=false"),
+                    "The opt-in must be visible in toString: " + relaxed);
+        }
+
+        @Test
+        @DisplayName("Handlers differing only in verifyHostname are not equal")
+        void shouldTreatVerifyHostnameAsConfigurationIdentity() {
+            HttpHandler strict = HttpHandler.builder().uri(VALID_URL).build();
+            HttpHandler relaxed = HttpHandler.builder().uri(VALID_URL).verifyHostname(false).build();
+
+            assertNotEquals(strict, relaxed,
+                    "verifyHostname is part of the handler's configuration identity");
+        }
+
+        @Test
+        @DisplayName("Context provenance alone does not change configuration identity")
+        void shouldIgnoreContextProvenanceForEquality() throws Exception {
+            HttpHandler derivedContext = HttpHandler.builder().uri(VALID_URL).build();
+            HttpHandler callerContext = HttpHandler.builder()
+                    .uri(VALID_URL)
+                    .sslContext(SSLContext.getDefault())
+                    .build();
+
+            assertEquals(derivedContext, callerContext,
+                    "sslContext and its provenance are excluded from equals/hashCode");
+        }
+    }
+
+    @Nested
     @DisplayName("equals/hashCode")
     class EqualsHashCode {
 
