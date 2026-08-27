@@ -846,9 +846,11 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      *   <li>304 Not Modified detection, resolved per method by {@link #handleNotModified}</li>
      *   <li>ETag extraction from response headers</li>
      *   <li>Response body conversion using configured converter</li>
+     *   <li>GET {@code 200} cache maintenance — store on an ETag, evict without one. Runs ahead of
+     *       the conversion-failure return so an ETag-less {@code 200} the converter rejects still
+     *       drops the entry it superseded</li>
      *   <li>Conversion failure handling for 2xx responses, excluding the no-body statuses
      *       {@code 204} and {@code 205} (see {@link #isNoBodyStatus})</li>
-     *   <li>Successful GET response caching with ETag</li>
      *   <li>Success/failure result creation based on status code</li>
      * </ul>
      *
@@ -884,6 +886,23 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         // Convert response body
         Optional<T> content = responseConverter.convert(response.body());
 
+        // Cache maintenance for a fresh GET 200. With an ETag and content, store (or refresh) the
+        // entry. Without an ETag the server has returned content it no longer identifies by any
+        // validator, so a previously cached entry is provably stale: drop it rather than leave it
+        // to be served later as fallback content or revalidated with a dead If-None-Match.
+        //
+        // This runs BEFORE the conversion-failure return below. An ETag-less 200 whose body the
+        // converter rejects still supersedes the cached entry, and evicting after the early return
+        // would never reach it - leaving a later failure free to serve content the 200 replaced.
+        if (method == HttpMethod.GET && statusCode == 200) {
+            if (etag != null && content.isPresent()) {
+                putInCache(cacheKey, new CacheEntry<>(content.get(), etag, System.currentTimeMillis()));
+                LOGGER.debug("Cached GET response with ETag: %s", etag);
+            } else if (etag == null) {
+                evictFromCache(cacheKey);
+            }
+        }
+
         // Handle conversion failure. Two exemptions: converters that intentionally produce no
         // content (e.g. VoidResponseConverter for status-code-only operations), and statuses RFC
         // 7231 defines as carrying no body at all, where emptiness is the protocol-mandated
@@ -903,19 +922,6 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
                     etag,
                     statusCode
             );
-        }
-
-        // Cache maintenance for a fresh GET 200. With an ETag and content, store (or refresh) the
-        // entry. Without an ETag the server has returned content it no longer identifies by any
-        // validator, so a previously cached entry is provably stale: drop it rather than leave it
-        // to be served later as fallback content or revalidated with a dead If-None-Match.
-        if (method == HttpMethod.GET && statusCode == 200) {
-            if (etag != null && content.isPresent()) {
-                putInCache(cacheKey, new CacheEntry<>(content.get(), etag, System.currentTimeMillis()));
-                LOGGER.debug("Cached GET response with ETag: %s", etag);
-            } else if (etag == null) {
-                evictFromCache(cacheKey);
-            }
         }
 
         // Return success for 2xx status codes

@@ -328,6 +328,40 @@ class ETagAwareHttpAdapterIntegrationTest {
     }
 
     /**
+     * The converter-blind half of the same invalidation invariant. {@link StringResponseConverter}
+     * maps an empty body to {@code Optional.of("")}, so the sibling case above never reaches the
+     * conversion-failure return and cannot observe whether eviction happens before or after it. A
+     * typed converter that rejects the body does return early, so this sequence pins the ordering:
+     * an ETag-less 200 must drop the superseded entry even when its body is unparseable, or the
+     * following 503 serves content the 200 already replaced.
+     */
+    @Test
+    @DisplayName("An ETag-less 200 should invalidate the cached entry even when conversion fails")
+    @ModuleDispatcher
+    void etagLess200WithFailedConversionShouldInvalidateCachedEntry(URIBuilder uriBuilder) {
+        HttpAdapter<String> adapter = typedAdapter(uriBuilder);
+
+        dispatcher.withSuccessAndETag(SEED_CONTENT, SEED_ETAG);
+        assertTrue(adapter.getBlocking().isSuccess(), "Seeding GET should succeed and populate the cache");
+
+        dispatcher.withSuccessAndETag(TypedResponseConverter.UNPARSEABLE_BODY, null);
+        HttpResult<String> unparseable = adapter.getBlocking();
+        assertFalse(unparseable.isSuccess(), "An unparseable body is a conversion failure");
+
+        dispatcher.withServerError();
+        HttpResult<String> failure = adapter.getBlocking();
+
+        assertAll("Failure after an ETag-less, unparseable 200 evicted the entry",
+                () -> assertFalse(failure.isSuccess(), "503 should surface as a failure"),
+                () -> assertTrue(failure.getContent().isEmpty(),
+                        "The evicted entry must not be served as fallback content"),
+                () -> assertTrue(failure.getETag().isEmpty(),
+                        "The evicted entry's validator must not be served either"),
+                () -> assertTrue(dispatcher.getLastIfNoneMatch().isEmpty(),
+                        "No stale If-None-Match should be sent once the entry is gone"));
+    }
+
+    /**
      * Builds an adapter over {@link TypedResponseConverter} — the converter shape that can actually
      * reach the conversion-failure branch.
      */
