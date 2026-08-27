@@ -24,7 +24,7 @@ import de.cuioss.test.generator.TypedGenerator;
  */
 public class HttpResultFailureGenerator implements TypedGenerator<HttpResult<String>> {
 
-    private final TypedGenerator<String> strings = Generators.nonEmptyStrings();
+    private final TypedGenerator<String> strings = Generators.letterStrings(1, 64);
     private final TypedGenerator<HttpErrorCategory> categories = Generators.enumValues(HttpErrorCategory.class);
     private final TypedGenerator<Boolean> hasFallback = Generators.booleans();
     private final TypedGenerator<Integer> statusCodes = Generators.integers(400, 599);
