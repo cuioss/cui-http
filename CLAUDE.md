@@ -39,8 +39,10 @@ The authoritative Git workflow is defined in the "Git Workflow" section below.
 
 1. **Security Validation Pipelines** (`de.cuioss.http.security.pipeline`)
    - `URLPathValidationPipeline`: All URL validation (paths, full URLs, directory traversal, CVE exploits)
-   - `HTTPHeaderValidationPipeline`: Header injection attacks
-   - `URLParameterValidationPipeline`: Query parameter validation
+   - `URLParameterValidationPipeline`: Query parameter *value* validation
+   - `URLParameterNameValidationPipeline`: Query parameter *name* validation (rejects delimiters that appear only after decoding)
+   - `HTTPHeaderValidationPipeline`: Header injection attacks (header names and values)
+   - `ContentTypeValidationPipeline`: Content-Type allow/block-list enforcement
 
 2. **Validation Stages** (`de.cuioss.http.security.validation`)
    - `DecodingStage`: URL percent-decoding, UTF-8 overlong detection, and Unicode normalization (NFKC for URL paths, NFC for parameter values)
@@ -48,21 +50,26 @@ The authoritative Git workflow is defined in the "Git Workflow" section below.
    - `CharacterValidationStage`: Invalid character detection
    - `LengthValidationStage`: Length limits enforcement
    - `PatternMatchingStage`: Attack pattern detection
+   - `AllowBlockListStage`: Case-insensitive header-name / content-type allow and block lists
+   - `CookiePrefixValidationStage`: RFC 6265bis cookie prefix rules; standalone, invoked via `validateCookie(Cookie)` rather than as part of a factory-built pipeline
+   - `RequestCollectionValidator`: Request-level limits that need collection or attribute context
 
-3. **Client Handlers** (`de.cuioss.http.client.handler`)
-   - `HttpHandler`: General HTTP request/response handling
-   - `SecureSSLContextProvider`: SSL/TLS context management
-   - `HttpStatusFamily`: HTTP status code classification
+3. **Client and Forwarded-Header Packages**
+   - `de.cuioss.http.client`: Log messages and shared client types
+   - `de.cuioss.http.client.adapter`: Async-first adapters with composable retry and ETag caching
+   - `de.cuioss.http.client.converter`: Response-body converters
+   - `de.cuioss.http.client.handler`: `HttpHandler`, `SecureSSLContextProvider`, `HttpStatusFamily`
+   - `de.cuioss.http.client.result`: `HttpResult` sealed interface and `HttpErrorCategory`
+   - `de.cuioss.http.forwarded`: Reverse-proxy / forwarded-header resolution
+
+   See `README.adoc` and `/doc/client-handlers-readme.adoc` for the component documentation.
 
 ### Pipeline Selection Rules
 
-**Use URLPathValidationPipeline for:**
-- All URL validation (paths and full URLs)
-- Attack patterns with or without protocols
-- Directory traversal testing (`../../../etc/passwd`)
-- CVE exploits for specific servers (Apache, IIS, Nginx)
-- XSS or script injection in URLs
-- Full URL parsing with domain validation
+The authoritative selection matrix — one section per concrete pipeline, with Purpose, Use When,
+Current Implementations, and Attack Pattern Examples — lives in
+`/doc/http-security/specification/pipeline-architecture-standards.adoc`. Consult it rather than
+guessing which pipeline a given attack pattern belongs to.
 
 ## Testing Architecture
 

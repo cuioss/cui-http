@@ -116,5 +116,5 @@ static Stream<AttackTestCase> getAllTestCases() {
 == Related Documentation
 
 * xref:http-security/specification/testing.adoc[Testing Framework] - Complete test framework structure
-* xref:test-framework-structure.adoc[Test Framework Structure] - Detailed file listing with links
+* xref:test-framework-structure.adoc[Test Framework Structure] - Package-level navigation map of the security test tree
 * xref:http-security/analysis/cve-analysis.adoc[CVE Analysis] - Attack patterns and vulnerabilities

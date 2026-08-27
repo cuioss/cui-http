@@ -285,7 +285,7 @@ The following test suites verify the implementation meets this specification:
 
 - Individual stage: <0.2ms per stage
 - Complete pipeline: <1ms total for typical inputs (the URL path pipeline runs 6 stage
-  invocations — see the two-pass pattern-matching note below)
+  invocations — see xref:#_two_pass_pattern_matching[the two-pass pattern-matching note])
 - Memory: O(n) where n is input length
 - Thread safety: No synchronization needed (immutable)
 - Benchmark: 95th percentile must meet these requirements

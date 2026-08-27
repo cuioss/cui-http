@@ -222,7 +222,7 @@ persistent audit trails are *not* provided by the validation core.
 
 ==== Unit Tests
 
- * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/monitoring/SecurityEventCounterTest.java[SecurityEventCounterTest]: Event counter validation
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/monitoring/SecurityEventCounterTest.java[SecurityEventCounterTest]: Event counter validation
 * All attack database tests verify security events are counted:
 * `assertTrue(eventCounter.getTotalCount() > initialEventCount)`
 
@@ -436,7 +436,7 @@ does not persist or ship audit records.
 * Original input
 * Sanitized input (if available)
 * Detailed error message
- * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]: In-memory event counting by failure type
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]: In-memory event counting by failure type
 
 ==== Unit Tests
 
@@ -457,7 +457,7 @@ generation is not provided.
 
 ==== Specifications
 
- * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]: In-memory event counting by failure type
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]: In-memory event counting by failure type
 
 ==== Unit Tests
 
@@ -643,7 +643,7 @@ audit *logging* is a caller responsibility, not provided by the validation core.
 ==== Specifications
 
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java[SecurityEventCounter]: In-memory event counting by failure type
- * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/exceptions/UrlSecurityException.java[UrlSecurityException]: Detailed context on each violation
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/exceptions/UrlSecurityException.java[UrlSecurityException]: Detailed context on each violation
 
 ==== Unit Tests
 
@@ -668,12 +668,11 @@ audit *logging* is a caller responsibility, not provided by the validation core.
 
 === Test Coverage Summary
 
-* *Total Test Classes*: 70+
-* *Attack Database Tests*: 25+
-* *Validation Stage Tests*: 7
-* *Pipeline Tests*: 4
-* *Integration Tests*: 5+
-* *Attack Patterns Tested*: 1000+
+The test tree is the authoritative inventory — see xref:testing.adoc[Testing Framework] for the
+package map, and browse the `de.cuioss.http.security` test packages in `cui-http-core` for the
+current set of classes. Attack patterns are enumerated by the attack databases themselves rather
+than counted here.
+
 * *Code Coverage*: &gt;80% (enforced by build)
 
 === Key Implementation Artifacts
@@ -687,8 +686,10 @@ audit *logging* is a caller responsibility, not provided by the validation core.
 
 ==== Test Framework
 
-* 14 Databases (10 attack databases: OWASP Top 10, OWASP ZAP, ModSecurity CRS, Apache/IIS/Nginx CVE, Homograph, IDN, IPv6, ProtocolHandler; plus 4 legitimate-pattern databases)
-* 20+ Test Generators
+* Attack databases and legitimate-pattern databases — the test tree is the authoritative
+  inventory; see xref:testing.adoc[Testing Framework] for the package map rather than a count
+  repeated here
+* `TypedGenerator` implementations grouped by input type — see xref:testing.adoc[Testing Framework]
 * Comprehensive attack pattern coverage
 * CVE-based test cases
 
@@ -720,6 +721,7 @@ Each compliance claim is supported by:
 - ✅ Unit test(s) with specific test case examples
 - ✅ Line number references for verification
 
+[#_limitations_and_scope]
 == Limitations and Scope
 
 === HTTP/URL Protocol Layer Scope
@@ -751,8 +753,8 @@ This traceability matrix should be updated when:
 - Security vulnerabilities are discovered
 - Code coverage changes significantly
 
-*Last Updated*: 2026-07-04
-*Next Review*: 2026-08-04 (Monthly)
+*Last Updated*: 2026-08-26
+*Next Review*: 2026-09-26 (Monthly)
 
 == References
 

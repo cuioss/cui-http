@@ -1,0 +1,113 @@
+= ADR-0004: Documentation inventories point at package-level source trees, not per-class enumerations
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: Documentation that describes a set of code artifacts names the package that holds them and points at the tree, rather than enumerating the members in prose.
+// tags: documentation, drift, maintenance
+// affects: doc/http-security/specification/testing.adoc, doc/http-security/specification/compliance-traceability.adoc, doc/test-framework-structure.adoc, CLAUDE.md
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+Documentation frequently needs to describe a set of code artifacts: the test classes covering a
+subsystem, the concrete implementations behind an interface, the packages a module exports. There
+are two shapes available. The document can enumerate the members — listing each class by name, and
+often stating how many there are — or it can name the package that holds them and point at the tree.
+
+The enumerating shape carries a structural defect: the document asserts a fact the code owns, and
+nothing keeps the two in agreement. Every addition, rename, or removal in the source tree silently
+falsifies the prose, and the falsification is invisible until a reader notices or a review catches
+it. Counts are the sharpest form of this — "(26)" is wrong the moment a twenty-seventh class lands
+— but a per-class link table drifts the same way, just less legibly.
+
+The defect compounds when several documents enumerate the same set. Each becomes an independent
+copy that must be updated together, and a correction applied to one leaves the others asserting the
+old value. A prose count backed by a traceability row is the same claim stored twice; editing one
+face and not the other produces a document that contradicts itself.
+
+Nothing in the build verifies these claims. Type checking, linting, and tests all pass over a
+document whose inventory is a year stale, so the drift accumulates without any signal until it is
+found by inspection.
+
+== Decision
+
+**Documentation that describes a set of code artifacts names the package and points at the tree; it
+does not enumerate the members.**
+
+A section covering a package states what the package is for and links to it. The source tree is the
+inventory, and it is authoritative by construction — it cannot disagree with itself.
+
+Two things survive this rule:
+
+* **A count that carries meaning** may stay in prose when the number is itself the point — an
+  architectural fact a reader needs, not an incidental cardinality. Such a count is verified against
+  the tree when written, and it is edited together with every other statement of the same claim.
+* **An entry with semantic content** may stay enumerated. A list whose entries each say what the
+  member is *for* is documentation, not an inventory; dropping it would lose information the tree
+  does not carry.
+
+The distinguishing question is whether the reader learns something from the entry beyond the
+member's existence. If not, the tree already says it better.
+
+== Consequences
+
+=== Positive
+
+* Inventories cannot drift, because the document no longer asserts what the tree owns.
+* Adding, renaming, or removing a class requires no documentation edit — the pointer stays correct.
+* The surviving counts are few enough to verify by hand, which makes verifying them realistic.
+* A correction has one site rather than several, so the paired-claim class of defect largely
+  disappears.
+
+=== Negative
+
+* A reader who wanted the member list must open the tree; the document no longer answers that
+  question in place.
+* Package-level prose is less specific, so a section that formerly named the exact class covering a
+  behaviour now names only the package.
+
+=== Risks
+
+* The "count that carries meaning" carve-out is a judgement, and a generous reading of it
+  reintroduces the enumerating shape under an exemption. The carve-out is narrow by intent: the
+  number must be an architectural fact, not a convenience.
+* A pointer to a package that is later renamed or removed becomes a broken link. The project runs
+  no link validation today (`pom.xml` configures no AsciiDoc processing, and the Maven workflow
+  skips documentation-only changes), so this breakage is currently silent too. The trade is still
+  deliberate: a broken link is *decidable by a checker*, whereas a stale enumeration is not
+  decidable at all — so the failure mode moves from undetectable to merely undetected.
+
+== Alternatives Considered
+
+**Regenerate the inventories from the tree.** A build step could emit the enumerations, making them
+correct by construction. This solves drift but pays for it in machinery: a generator, a template, an
+invocation in the build, and a diff to review whenever the tree shifts. It also keeps the generated
+prose as a second copy of the tree, so a reader still has two places to look. The cost is
+justifiable where the enumeration carries real value; it is not justifiable to preserve a list whose
+only content is member existence.
+
+**Verify the inventories in CI.** A check could compare each documented list against the tree and
+fail on divergence. This detects drift rather than preventing it, so every unrelated change to the
+tree can turn the documentation build red and demand a doc edit before merging. It converts a
+silent-wrongness problem into a friction problem without removing the duplication that causes both.
+
+**Accept the drift and correct it periodically.** Sweeping the documentation on a schedule keeps the
+enumerations roughly current. This is what produced the divergence the rule exists to remove: between
+sweeps the documents are wrong, nothing signals it, and each sweep must re-derive the same facts.
+
+Each alternative preserves the duplicated claim and then invests in keeping the copies aligned. The
+decision removes the duplication instead, which is why it needs no ongoing machinery.
+
+== References
+
+* `doc/http-security/specification/testing.adoc` — package-level test-framework map
+* `doc/http-security/specification/compliance-traceability.adoc` — count-free coverage summary
+* `doc/test-framework-structure.adoc` — package-level navigation map
+* `CLAUDE.md` — architecture section describing packages rather than enumerating classes

@@ -39,6 +39,102 @@ This document establishes the authoritative standards for selecting appropriate 
 "/admin/..\\..\\windows\\system32"
 ----
 
+=== URLParameterValidationPipeline - Parameter Value Attacks
+
+**Purpose**: Validates query-parameter *values*, where percent-decoding and encoding attacks matter but path semantics do not.
+
+**Use When**:
+
+* The pattern targets a parameter value rather than a path segment
+* Percent-encoding, double-encoding, or Unicode normalization attacks in parameter values
+* Null-byte and control-character injection carried in a parameter value
+
+**Current Implementations**:
+
+* ✅ `URLParameterValidationPipelineTest` - Parameter-value pipeline behaviour
+* ✅ `PipelineFactoryTest` - Factory construction and stage composition
+
+**Attack Pattern Examples**:
+
+[source]
+----
+"%2e%2e%2f%2e%2e%2fetc%2fpasswd"
+"value%00truncated"
+"%252e%252e%252f"
+----
+
+=== URLParameterNameValidationPipeline - Parameter Name Attacks
+
+**Purpose**: Validates query-parameter *names*. Names are structurally narrower than values: a delimiter that appears only after decoding would silently split the query string, so the pipeline rejects it.
+
+**Use When**:
+
+* The pattern targets the parameter key rather than its value
+* Encoded structural delimiters (`=`, `&`, `;`, space) or encoded CR/LF smuggled into a name
+* Parameter-name length limits
+
+**Current Implementations**:
+
+* ✅ `URLParameterNameValidationPipelineBehaviorTest` - Parameter-name pipeline behaviour
+* ✅ `PipelineFactoryTest` - Factory construction and stage composition
+
+**Attack Pattern Examples**:
+
+[source]
+----
+"name%0d%0aInjected"
+"key%3dvalue"
+"first%26second"
+----
+
+=== HTTPHeaderValidationPipeline - Header Injection Attacks
+
+**Purpose**: Validates HTTP header names and values. Headers are not percent-decoded and carry no path semantics, so the pipeline is deliberately short: `LengthValidationStage` then `CharacterValidationStage`, plus an `AllowBlockListStage` for `HEADER_NAME` only.
+
+**Use When**:
+
+* The pattern targets a header name or header value
+* CRLF / header-injection and response-splitting payloads
+* Header names that must be constrained to the RFC 7230 `token` grammar or to an explicit allow/block list
+
+**Current Implementations**:
+
+* ✅ `HTTPHeaderValidationPipelineTest` - Header pipeline behaviour
+* ✅ `HeaderAndContentTypeEnforcementRegressionTest` - Header-name allow/block-list enforcement
+* ✅ `PipelineFactoryTest` - Factory construction and stage composition
+
+**Attack Pattern Examples**:
+
+[source]
+----
+"Bearer\r\nX-Injected: true"
+"X-Forwarded-For: 127.0.0.1\nX-Admin: true"
+"Set-Cookie: session=abc\r\n\r\n<html>"
+----
+
+=== ContentTypeValidationPipeline - Content-Type Allow/Block Lists
+
+**Purpose**: Enforces an allow/block list over the `Content-Type` header. This pipeline is a single `AllowBlockListStage` — it performs no length, character, decoding, normalization, or pattern-matching check.
+
+**Use When**:
+
+* The decision is "is this media type permitted here?", not "is this string well-formed?"
+* A service accepts only an explicit set of media types, or must reject specific dangerous ones
+
+**Current Implementations**:
+
+* ✅ `ContentTypeValidationPipelineTest` - Allow/block-list semantics, parameter stripping, case folding
+* ✅ `HeaderAndContentTypeEnforcementRegressionTest` - Content-type enforcement regressions
+
+**Attack Pattern Examples**:
+
+[source]
+----
+"text/html"                       # rejected when the allow-list is application/json
+"application/x-msdownload"        # rejected by an explicit block-list entry
+"text/html; charset=UTF-8"        # parameters are stripped before matching
+----
+
 
 == Architectural Principles
 
@@ -121,7 +217,7 @@ SecurityConfiguration unicodeConfig = SecurityConfiguration.builder()
 
 Pipeline architecture audit:
 
-* ✅ Audit of all attack database / integration test classes (26 in `cui-http-core/src/test/java/de/cuioss/http/security/tests`) completed
+* ✅ Audit of all attack database / integration test classes in the `de.cuioss.http.security.tests` package completed
 * ✅ Pipeline selection decision matrix established
 * ✅ All pipeline assignments verified as architecturally correct
 * ✅ No pipeline mismatches identified after thorough analysis
@@ -139,5 +235,5 @@ Pipeline architecture audit:
 . **Security Standards Evolution**: Update standards as HTTP security threats evolve
 
 ---
-_Document Version: 1.1_
+_Document Version: 1.2_
 _Maintained by: HTTP Security Validation Framework Team_

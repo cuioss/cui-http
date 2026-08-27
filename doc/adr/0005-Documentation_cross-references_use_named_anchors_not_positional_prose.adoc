@@ -1,0 +1,101 @@
+= ADR-0005: Documentation cross-references use named anchors, not positional prose
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: A reference from one part of a document to another names its target with an explicit anchor, rather than describing where the target sits on the page.
+// tags: documentation, cross-references, asciidoc
+// affects: doc/http-security/specification/specification.adoc
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+Documents refer to their own other parts constantly — a requirement points at the rule that
+constrains it, a summary points at the detail behind it. The reference can be written two ways. It
+can describe the target's position ("see the note below", "as stated above"), or it can name the
+target with an explicit anchor.
+
+Positional references encode a fact that the document's structure owns and that nothing preserves.
+Any reordering — moving a section, promoting a note, inserting a subsection between the reference
+and its target — silently inverts or breaks the reference, and the document keeps rendering
+perfectly. A "see below" pointing at content that now sits above is not a broken link; it is a
+correct link with wrong prose, so no validator can see it. The reader is simply sent the wrong way.
+
+The failure is asymmetric with the reordering that causes it. Whoever moves a section has no signal
+that a reference elsewhere depended on the old position, and no practical way to find one — the
+dependency is expressed in English, not in markup. So the reference decays as a side effect of an
+edit made somewhere else entirely, by someone who never saw it.
+
+Anchors invert this. A named reference either resolves or it does not, so the same class of breakage
+becomes *mechanically detectable* — a checker can decide it from the document alone, where no tool
+can decide whether "below" still points below. The project runs no such checker today: `pom.xml`
+configures no AsciiDoc processing and the Maven workflow skips documentation-only changes. This
+decision makes the breakage checkable; it does not claim it is currently checked.
+
+== Decision
+
+**A cross-reference within a document names its target with an explicit anchor. It does not describe
+the target's position on the page.**
+
+Where a target has no anchor, the reference adds one rather than falling back to positional prose.
+
+Directional words remain acceptable as *narrative flow* when they carry no reference — "the sections
+below cover each stage in turn" orients a reader without pointing at a specific target that could
+move out from under it. The rule governs references, not prose rhythm: the test is whether a reader
+would follow the direction to find a particular thing.
+
+== Consequences
+
+=== Positive
+
+* Reordering a document cannot silently invert a reference; the anchor follows its target.
+* A reference to a removed or renamed target becomes decidable by a checker, instead of
+  misdirecting readers in a form nothing can detect.
+* Anchors are navigable — a named reference is a link the reader can follow, where "see below" is
+  an instruction they must execute manually.
+
+=== Negative
+
+* Targets need anchors, so adding a reference sometimes means editing the target section too.
+* Anchor names are themselves a small naming surface to keep sensible and stable.
+
+=== Risks
+
+* A renamed anchor breaks every reference to it. This is the intended trade — the breakage is
+  locatable, where the positional failure it replaces was neither.
+* Auto-generated anchors derived from section titles change when a title is reworded, so a
+  reference can break on an edit that looks purely cosmetic. **Until a link checker is added to the
+  build, that breakage is silent** — the anchor form makes it findable, not found. Adding such a
+  checker is the follow-on this decision enables and deliberately does not assume.
+
+== Alternatives Considered
+
+**Keep positional prose and catch drift in review.** Reviewers can notice a "below" that now points
+above. This depends on a reviewer holding both the reference and its target in mind while reading a
+diff that may contain neither — the reference is not part of the change that broke it, so it does
+not appear in the diff at all.
+
+**Keep positional prose and sweep periodically.** A documentation pass can re-read each reference
+and check its direction. This is linear in the number of references, must be redone after every
+structural edit, and leaves the references wrong in between.
+
+**Restrict section reordering.** Freezing document structure would preserve positional references by
+removing the event that breaks them. This subordinates the document's organisation to a limitation
+of its reference style, which is the wrong thing to hold fixed.
+
+The alternatives all leave the reference expressed in a form no tool can check, and then spend human
+attention compensating. The decision moves the reference into a form a tool *could* check — which is
+the precondition for ever automating it, and is worth having before the checker exists.
+
+== References
+
+* `doc/http-security/specification/specification.adoc` — anchored cross-reference to the two-pass
+  pattern-matching note
+* xref:0004-Documentation_inventories_point_at_package-level_source_trees_not_per-class_enumerations.adoc[ADR-0004] —
+  the sibling decision removing prose claims that no tool can verify

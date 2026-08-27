@@ -30,6 +30,9 @@ HTTP/URL path traversal security architecture leveraging Java 21+ built-in types
 xref:specification/pipeline-architecture-standards.adoc[Pipeline Architecture Standards]::
 Detailed standards for validation pipeline selection, configuration, and implementation patterns.
 
+xref:configuration.adoc[Configuration Reference]::
+Central reference for every enforced `SecurityConfiguration` setting: its default across the three presets (`defaults()`, `strict()`, `lenient()`) and the stage or validator that enforces it.
+
 === Security Analysis
 
 xref:analysis/owasp-best-practices.adoc[OWASP Best Practices]::
@@ -49,6 +52,9 @@ In-depth analysis of RFC 6265bis Cookie Chaos vulnerabilities, prefix validation
 xref:specification/testing.adoc[Testing Framework]::
 Complete testing framework specification including CVE-based test vectors, encoding matrices, and automated security validation.
 
+xref:specification/compliance-traceability.adoc[Compliance Traceability Matrix]::
+Traceability from each claimed standard (OWASP Top 10, CWE Top 25, NIST 800-53, ISO 27001, PCI DSS) to the requirements, specifications, and tests that substantiate it.
+
 == Quick Start
 
 For developers implementing path traversal security:
@@ -65,8 +71,7 @@ For developers implementing path traversal security:
 The implementation follows these HTTP and URL standards:
 
 * **RFC 3986** - Uniform Resource Identifier (URI): Generic Syntax
-* **RFC 7230** - Hypertext Transfer Protocol (HTTP/1.1): Message Syntax and Routing
-* **RFC 8941** - Structured Field Values for HTTP
+* **RFC 7230** - Hypertext Transfer Protocol (HTTP/1.1): Message Syntax and Routing — applied to *header names*, whose token grammar `CharacterValidationStage` enforces
 * **RFC 6265** - HTTP State Management Mechanism (Cookies)
 
 === URL Component Validation
@@ -77,14 +82,18 @@ According to RFC 3986, valid URL path components must adhere to:
 * **Reserved Characters**: `:`, `/`, `?`, `#`, `[`, `]`, `@`, `!`, `$`, `&`, `'`, `(`, `)`, `*`, `+`, `,`, `;`, `=`
 * **Percent-Encoding**: Non-ASCII and special characters must be percent-encoded
 
-=== HTTP Parameter Validation
+=== HTTP Header-Name Validation
 
-Valid HTTP parameter names (RFC 7230):
+Header names are validated against the RFC 7230 `token` grammar by `CharacterValidationStage`,
+which rejects CR and LF unconditionally. Header-name matching is case-insensitive, and an
+optional allow/block list (`AllowBlockListStage`) narrows the accepted set further.
 
-* Must start with alphanumeric character
-* Can contain: `A-Z`, `a-z`, `0-9`, `-`, `_`
-* Case-insensitive in headers, case-sensitive in query parameters
-* Maximum length considerations for security
+=== Query-Parameter Name Validation
+
+Query-parameter names are *not* governed by RFC 7230 — they are validated by
+`URLParameterNameValidationPipeline` under RFC 3986 query-component rules, plus rejection of
+delimiters that appear only after decoding. Parameter names are case-sensitive, and length
+limits are enforced by `LengthValidationStage` as the pipeline's first stage.
 
 == Key Security Patterns
 
@@ -97,19 +106,32 @@ Primary attack vectors in HTTP/URL contexts:
 * **UTF-8 Overlong**: Malformed UTF-8 encoding attacks
 * **HTTP Protocol Mixed Encoding**: Combining URL encoding schemes
 
-=== Validation Pipeline
+=== Validation Pipelines
 
-[source]
-----
-Input → Decode → Normalize → Validate → Verify → Output
-----
+There is no single generic stage order. Each of the five concrete pipelines composes its own
+sequence, chosen so that every stage in it actually performs a check for that component type.
+The authoritative description is
+xref:specification/specification.adoc#_validation_stages[the specification]; the orders are:
 
-Each stage must handle:
+`URLPathValidationPipeline`::
+`LengthValidationStage` → `CharacterValidationStage` → `PatternMatchingStage` → `DecodingStage` → `NormalizationStage` → `PatternMatchingStage`.
+Pattern matching runs xref:specification/specification.adoc#_two_pass_pattern_matching[twice by design] — once on the raw input and once after normalization — so this pipeline performs six stage invocations, not five.
 
-* HTTP protocol-layer encoding only (URL encoding, UTF-8, Unicode normalization)
-* Platform-specific separators
-* Context-aware validation
-* Performance optimization
+`URLParameterValidationPipeline` (parameter *values*)::
+`LengthValidationStage` → `CharacterValidationStage` → `DecodingStage` → `NormalizationStage` → `PatternMatchingStage`.
+
+`URLParameterNameValidationPipeline` (parameter *names*)::
+`LengthValidationStage` → `CharacterValidationStage` → `DecodingStage` → `NormalizationStage` → `PatternMatchingStage`.
+
+`HTTPHeaderValidationPipeline`::
+`LengthValidationStage` → `CharacterValidationStage`, plus an `AllowBlockListStage` for `HEADER_NAME` only.
+`DecodingStage`, `NormalizationStage`, and `PatternMatchingStage` are deliberately absent: headers are not percent-decoded, dot-segment resolution applies to path components only, and the attack-pattern databases cover `URL_PATH`, `PARAMETER_NAME`, and `PARAMETER_VALUE` only.
+
+`ContentTypeValidationPipeline`::
+A single `AllowBlockListStage`.
+
+Across all pipelines the stages handle HTTP protocol-layer encoding only — URL encoding, UTF-8,
+and Unicode normalization (NFKC for paths, NFC for parameter values).
 
 **Architectural Boundary**: Application-layer encodings (HTML entities, JavaScript escapes, Base64) handled by higher layers.
 
@@ -130,7 +152,13 @@ When updating this documentation suite:
 
 * https://www.rfc-editor.org/rfc/rfc3986[RFC 3986 - URI Generic Syntax]
 * https://www.rfc-editor.org/rfc/rfc7230[RFC 7230 - HTTP/1.1 Message Syntax]
-* https://www.rfc-editor.org/rfc/rfc8941[RFC 8941 - Structured Field Values]
+* https://www.rfc-editor.org/rfc/rfc6265[RFC 6265 - HTTP State Management Mechanism]
+
+=== Background Reading
+
+Referenced for context; the library does not implement or claim conformance to these:
+
+* https://www.rfc-editor.org/rfc/rfc8941[RFC 8941 - Structured Field Values for HTTP]
 
 === Security Resources
 

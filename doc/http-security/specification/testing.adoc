@@ -14,137 +14,48 @@ Testing framework for HTTP security validation with generator-based testing, att
 
 == Test Framework Structure
 
-----
-src/test/java/de/cuioss/http/security/
-├── config/                                  # Configuration tests
-│   ├── SecurityConfigurationBuilderTest.java
-│   ├── SecurityConfigurationTest.java
-│   └── SecurityDefaultsTest.java
-│
-├── core/                                    # Core component tests
-│   ├── HttpSecurityValidatorTest.java
-│   ├── UrlSecurityFailureTypeTest.java
-│   └── ValidationTypeTest.java
-│
-├── data/                                    # Data-model tests
-│   ├── AttributeParserTest.java
-│   ├── CookieTest.java
-│   ├── HTTPBodyTest.java
-│   └── URLParameterTest.java
-│
-├── database/                                # Attack & legitimate pattern databases
-│   ├── AttackDatabase.java                  # Attack-database interface
-│   ├── AttackTestCase.java                  # Attack test-case record
-│   ├── LegitimateTestCase.java              # Legitimate test-case record
-│   ├── package-info.java
-│   ├── ApacheCVEAttackDatabase.java         # Apache CVE patterns
-│   ├── HomographAttackDatabase.java         # Unicode homograph attacks
-│   ├── IDNAttackDatabase.java               # Internationalized domain attacks
-│   ├── IISCVEAttackDatabase.java            # IIS CVE patterns
-│   ├── IPv6AttackDatabase.java              # IPv6 address exploits
-│   ├── ModSecurityCRSAttackDatabase.java    # ModSecurity CRS patterns
-│   ├── NginxCVEAttackDatabase.java          # Nginx CVE patterns
-│   ├── OWASPTop10AttackDatabase.java        # OWASP Top 10 patterns
-│   ├── OWASPZAPAttackDatabase.java          # OWASP ZAP scanner patterns
-│   ├── ProtocolHandlerAttackDatabase.java   # Protocol handler exploits
-│   ├── EdgeCaseValidURLsDatabase.java       # Legitimate edge-case URLs
-│   ├── LegitimatePathPatternsDatabase.java  # Legitimate path patterns
-│   ├── LegitimatePatternDatabase.java       # Legitimate-pattern interface
-│   └── LegitimateSpecialCharactersDatabase.java # Legitimate special chars
-│
-├── exceptions/                              # Exception handling tests
-│   └── UrlSecurityExceptionTest.java
-│
-├── generators/                              # Test data generators + their tests (by type)
-│   ├── AllGeneratorsIntegrationTest.java
-│   ├── SupportedValidationTypeGenerator.java
-│   ├── SupportedValidationTypeGeneratorContractTest.java
-│   ├── cookie/
-│   │   ├── AttackCookieGenerator.java / AttackCookieGeneratorTest.java
-│   │   ├── CookieNameAsciiWhitespaceGenerator.java
-│   │   ├── CookieNameLegacyParsingGenerator.java
-│   │   ├── CookieNameUnicodeWhitespaceGenerator.java
-│   │   ├── CookieNameZeroWidthGenerator.java
-│   │   └── ValidCookieGenerator.java / ValidCookieGeneratorTest.java
-│   ├── encoding/
-│   │   ├── BoundaryFuzzingGenerator.java / BoundaryFuzzingGeneratorTest.java
-│   │   ├── DoubleEncodingAttackGenerator.java / DoubleEncodingAttackGeneratorTest.java
-│   │   ├── EncodingCombinationGenerator.java / EncodingCombinationGeneratorTest.java
-│   │   ├── PathTraversalGenerator.java / PathTraversalGeneratorTest.java
-│   │   ├── UnicodeAttackGenerator.java / UnicodeAttackGeneratorTest.java
-│   │   ├── UnicodeControlCharacterAttackGenerator.java
-│   │   └── UnicodeNormalizationAttackGenerator.java
-│   ├── header/
-│   │   ├── HttpHeaderInjectionAttackGenerator.java
-│   │   ├── HTTPHeaderInjectionGenerator.java / HTTPHeaderInjectionGeneratorTest.java
-│   │   ├── InvalidHTTPHeaderNameGenerator.java / InvalidHTTPHeaderNameGeneratorTest.java
-│   │   ├── ValidHTTPHeaderNameGenerator.java / ValidHTTPHeaderNameGeneratorTest.java
-│   │   └── ValidHTTPHeaderValueGenerator.java
-│   ├── injection/
-│   │   ├── HttpRequestSmugglingAttackGenerator.java / HttpRequestSmugglingAttackGeneratorTest.java
-│   │   ├── ProtocolHandlerAttackGenerator.java
-│   │   └── URLLengthLimitAttackGeneratorTest.java
-│   └── url/
-│       ├── AttackURLParameterGenerator.java
-│       ├── InvalidURLGenerator.java / InvalidURLGeneratorTest.java
-│       ├── NullByteInjectionParameterGenerator.java
-│       ├── NullByteURLGenerator.java / NullByteURLGeneratorTest.java
-│       ├── PathTraversalParameterGenerator.java / PathTraversalParameterGeneratorTest.java
-│       ├── PathTraversalURLGenerator.java / PathTraversalURLGeneratorTest.java
-│       ├── URLLengthLimitAttackGenerator.java
-│       ├── ValidURLGenerator.java / ValidURLGeneratorTest.java
-│       ├── ValidURLParameterGenerator.java / ValidURLParameterGeneratorTest.java
-│       ├── ValidURLParameterStringGenerator.java
-│       └── ValidURLPathGenerator.java / ValidURLPathGeneratorTest.java
-│
-├── monitoring/                              # Security monitoring tests
-│   └── SecurityEventCounterTest.java
-│
-├── pipeline/                                # Validation pipeline tests
-│   ├── HTTPHeaderValidationPipelineTest.java
-│   ├── PipelineFactoryTest.java
-│   ├── URLParameterValidationPipelineTest.java
-│   └── URLPathValidationPipelineTest.java
-│
-├── tests/                                   # Attack-specific test classes (26)
-│   ├── ApacheCVEAttackDatabaseTest.java
-│   ├── CookieChaosAttackTest.java
-│   ├── DoubleEncodingAttackTest.java
-│   ├── EdgeCaseValidURLsDatabaseTest.java
-│   ├── EncodedPathTraversalAttackTest.java
-│   ├── HomographAttackDatabaseTest.java
-│   ├── Http1VulnerabilitiesTest.java
-│   ├── HttpHeaderInjectionAttackTest.java
-│   ├── HttpRequestSmugglingAttackTest.java
-│   ├── IDNAttackDatabaseTest.java
-│   ├── IISCVEAttackDatabaseTest.java
-│   ├── IPv6AttackDatabaseTest.java
-│   ├── LegitimatePathPatternsDatabaseTest.java
-│   ├── LegitimateSpecialCharactersDatabaseTest.java
-│   ├── MixedEncodingAttackTest.java
-│   ├── ModSecurityCRSAttackDatabaseTest.java
-│   ├── NginxCVEAttackDatabaseTest.java
-│   ├── NullBytePathTraversalAttackTest.java
-│   ├── OWASPTop10AttackDatabaseTest.java
-│   ├── OWASPZAPAttackDatabaseTest.java
-│   ├── PathTraversalAttackTest.java
-│   ├── ProtocolHandlerAttackTest.java
-│   ├── UnicodeControlCharacterAttackTest.java
-│   ├── UnicodeNormalizationAttackTest.java
-│   ├── UnicodePathTraversalAttackTest.java
-│   └── URLLengthLimitAttackTest.java
-│
-└── validation/                              # Validation stage tests
-    ├── AllowBlockListStageTest.java
-    ├── CharacterValidationConstantsTest.java
-    ├── CharacterValidationStageTest.java
-    ├── CookiePrefixValidationStageTest.java
-    ├── DecodingStageTest.java
-    ├── LengthValidationStageTest.java
-    ├── NormalizationStageTest.java
-    ├── PatternMatchingStageTest.java
-    └── RequestCollectionValidatorTest.java
-----
+The test tree is the authoritative inventory of test classes. This section is a navigation
+map over the `de.cuioss.http.security` test packages in the `cui-http-core` module — browse
+the package itself for the current set of classes rather than relying on a list here.
+
+[cols="1,3"]
+|===
+|Package |Contents
+
+|`config`
+|Tests for `SecurityConfiguration`, its builder, and the security defaults.
+
+|`core`
+|Tests for the `HttpSecurityValidator` contract, `ValidationType`, and `UrlSecurityFailureType`.
+
+|`data`
+|Tests for the HTTP data model — cookies, URL parameters, bodies, and attribute parsing.
+
+|`database`
+|Attack and legitimate-pattern databases, plus the shared interfaces and records they build on
+(`AttackDatabase`, `AttackTestCase`, `LegitimatePatternDatabase`, `LegitimateTestCase`).
+These classes are curated test *data*; the tests that consume them live in `tests`.
+
+|`exceptions`
+|Tests for `UrlSecurityException` and its builder.
+
+|`generators`
+|`TypedGenerator` implementations and their contract tests, grouped by input type in the
+`cookie`, `encoding`, `header`, `injection`, and `url` sub-packages.
+
+|`monitoring`
+|Tests for `SecurityEventCounter`.
+
+|`pipeline`
+|Tests for `PipelineFactory` and for each concrete validation pipeline.
+
+|`tests`
+|Attack-specific test classes — one per attack family or attack database, each driving a
+pipeline with the corresponding curated patterns.
+
+|`validation`
+|Tests for the individual validation stages and for `RequestCollectionValidator`.
+|===
 
 == Test Components
 
