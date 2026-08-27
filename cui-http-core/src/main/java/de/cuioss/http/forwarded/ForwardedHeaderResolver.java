@@ -227,15 +227,15 @@ public final class ForwardedHeaderResolver {
      * <p><strong>Trailing content after {@code ]} is rejected.</strong> The only thing permitted
      * after the closing bracket is a colon followed by one or more ASCII digits, so
      * {@code [::1]garbage} and {@code [::1]x:8443} yield {@link HostPort#EMPTY} instead of resolving
-     * to host {@code [::1]}.</p>
+     * to host {@code [::1]}. That rule is not restated here: it is applied through the shared
+     * {@link IpAddresses#hasValidBracketTrailer(String)} helper.</p>
      *
      * <p>The {@code host:port} split here intentionally diverges from
      * {@link IpAddresses#parseChainEntry(String)}: this method reconstructs the <em>host string</em>
      * and therefore <em>retains</em> the IPv6 brackets (a host is later composed back into a URL),
      * whereas {@code parseChainEntry} strips them to obtain a bare literal for {@code InetAddress}
-     * matching. Only the bracket <em>retention</em> differs — the trailing-content rule above is
-     * identical on both sides. The divergence is deliberate — keep both bracket policies in sync
-     * when either changes.</p>
+     * matching. Only the bracket <em>retention</em> differs: the trailing-content rule has a single
+     * implementation shared by both call sites, so the two bracket policies cannot drift apart.</p>
      */
     private static HostPort parseHostPort(String value) {
         String host;
@@ -246,10 +246,10 @@ public final class ForwardedHeaderResolver {
                 return HostPort.EMPTY;
             }
             String rest = value.substring(close + 1);
+            if (!IpAddresses.hasValidBracketTrailer(rest)) {
+                return HostPort.EMPTY;
+            }
             if (!rest.isEmpty()) {
-                if (rest.charAt(0) != ':' || !isAllAsciiDigits(rest.substring(1))) {
-                    return HostPort.EMPTY;
-                }
                 port = parsePort(rest.substring(1));
             }
             host = value.substring(0, close + 1);

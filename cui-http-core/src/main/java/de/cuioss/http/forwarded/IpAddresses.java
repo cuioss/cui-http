@@ -43,7 +43,7 @@ final class IpAddresses {
     private static final Pattern IPV6_LITERAL = Pattern.compile("[0-9A-Fa-f:.]+");
 
     /** The only content permitted after a closing {@code ]}: a colon plus an all-ASCII-digit port. */
-    private static final Pattern BRACKET_PORT_SUFFIX = Pattern.compile(":[0-9]+");
+    private static final Pattern BRACKET_PORT_SUFFIX = Pattern.compile(":\\d+");
 
     private IpAddresses() {
     }
@@ -85,8 +85,9 @@ final class IpAddresses {
      * {@code ForwardedHeaderResolver.parseHostPort}: this method <em>strips</em> the IPv6 brackets
      * to obtain a bare literal for {@link InetAddress} matching, whereas {@code parseHostPort}
      * <em>retains</em> them because it reconstructs a host string. Only the bracket <em>retention</em>
-     * differs — the trailing-content rule above is identical on both sides. The divergence is
-     * deliberate — keep both bracket policies in sync when either changes.</p>
+     * differs: the trailing-content rule above has a single implementation,
+     * {@link #hasValidBracketTrailer(String)}, which both call sites share, so the two bracket
+     * policies cannot drift apart.</p>
      *
      * @param entry a single forwarded-chain entry (already trimmed, unquoted)
      * @return the parsed address, or {@code null} when the entry is not a usable IP literal
@@ -103,7 +104,7 @@ final class IpAddresses {
                 return null;
             }
             String rest = token.substring(close + 1);
-            if (!rest.isEmpty() && !BRACKET_PORT_SUFFIX.matcher(rest).matches()) {
+            if (!hasValidBracketTrailer(rest)) {
                 return null;
             }
             ipPart = token.substring(1, close);
@@ -115,6 +116,24 @@ final class IpAddresses {
             ipPart = token;
         }
         return parse(ipPart);
+    }
+
+    /**
+     * The sole implementation of the "only {@code :digits} may follow a closing {@code ]}" rule,
+     * shared by {@link #parseChainEntry(String)} and {@code ForwardedHeaderResolver.parseHostPort}.
+     *
+     * <p>Both call sites must reject trailing content after the closing bracket for the same reason:
+     * a value such as {@code [::1]garbage}, {@code [::1]:notaport}, or a bare trailing {@code [::1]:}
+     * must not silently resolve to the bracketed literal, because that is a host-confusion vector.
+     * The rule therefore lives here once instead of being re-implemented per caller, where the two
+     * copies could drift apart and reopen the vulnerability they jointly prevent.</p>
+     *
+     * @param rest the substring following the closing {@code ]} (possibly empty)
+     * @return {@code true} when {@code rest} is empty, or is a colon followed by one or more ASCII
+     * digits; {@code false} for any other trailing content
+     */
+    static boolean hasValidBracketTrailer(String rest) {
+        return rest.isEmpty() || BRACKET_PORT_SUFFIX.matcher(rest).matches();
     }
 
     /**
