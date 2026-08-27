@@ -32,8 +32,11 @@ that a reference elsewhere depended on the old position, and no practical way to
 dependency is expressed in English, not in markup. So the reference decays as a side effect of an
 edit made somewhere else entirely, by someone who never saw it.
 
-Anchors invert this. A named reference either resolves or it does not, which makes the same class of
-breakage mechanically detectable by the link validation the documentation build already runs.
+Anchors invert this. A named reference either resolves or it does not, so the same class of breakage
+becomes *mechanically detectable* — a checker can decide it from the document alone, where no tool
+can decide whether "below" still points below. The project runs no such checker today: `pom.xml`
+configures no AsciiDoc processing and the Maven workflow skips documentation-only changes. This
+decision makes the breakage checkable; it does not claim it is currently checked.
 
 == Decision
 
@@ -52,8 +55,8 @@ would follow the direction to find a particular thing.
 === Positive
 
 * Reordering a document cannot silently invert a reference; the anchor follows its target.
-* A reference to a removed or renamed target fails loudly at link-validation time instead of
-  misdirecting readers indefinitely.
+* A reference to a removed or renamed target becomes decidable by a checker, instead of
+  misdirecting readers in a form nothing can detect.
 * Anchors are navigable — a named reference is a link the reader can follow, where "see below" is
   an instruction they must execute manually.
 
@@ -64,11 +67,12 @@ would follow the direction to find a particular thing.
 
 === Risks
 
-* A renamed anchor breaks every reference to it. This is the intended trade — the breakage is loud
-  and locatable, where the positional failure it replaces was neither.
+* A renamed anchor breaks every reference to it. This is the intended trade — the breakage is
+  locatable, where the positional failure it replaces was neither.
 * Auto-generated anchors derived from section titles change when a title is reworded, so a
-  reference can break on an edit that looks purely cosmetic. Link validation catches it, which is
-  precisely the property positional references lack.
+  reference can break on an edit that looks purely cosmetic. **Until a link checker is added to the
+  build, that breakage is silent** — the anchor form makes it findable, not found. Adding such a
+  checker is the follow-on this decision enables and deliberately does not assume.
 
 == Alternatives Considered
 
@@ -85,9 +89,9 @@ structural edit, and leaves the references wrong in between.
 removing the event that breaks them. This subordinates the document's organisation to a limitation
 of its reference style, which is the wrong thing to hold fixed.
 
-The alternatives all leave the reference expressed in a form no tool can check, and then spend
-human attention compensating. The decision moves the reference into a form the existing validation
-already covers.
+The alternatives all leave the reference expressed in a form no tool can check, and then spend human
+attention compensating. The decision moves the reference into a form a tool *could* check — which is
+the precondition for ever automating it, and is worth having before the checker exists.
 
 == References
 

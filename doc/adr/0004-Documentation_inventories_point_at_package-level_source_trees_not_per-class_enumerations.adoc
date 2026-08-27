@@ -78,9 +78,11 @@ member's existence. If not, the tree already says it better.
 * The "count that carries meaning" carve-out is a judgement, and a generous reading of it
   reintroduces the enumerating shape under an exemption. The carve-out is narrow by intent: the
   number must be an architectural fact, not a convenience.
-* A pointer to a package that is later renamed or removed becomes a broken link. This fails
-  loudly — link validation catches it — whereas a stale enumeration fails silently, so the trade is
-  deliberate.
+* A pointer to a package that is later renamed or removed becomes a broken link. The project runs
+  no link validation today (`pom.xml` configures no AsciiDoc processing, and the Maven workflow
+  skips documentation-only changes), so this breakage is currently silent too. The trade is still
+  deliberate: a broken link is *decidable by a checker*, whereas a stale enumeration is not
+  decidable at all — so the failure mode moves from undetectable to merely undetected.
 
 == Alternatives Considered
 
