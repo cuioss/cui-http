@@ -232,6 +232,16 @@ public final class ForwardedHeaderResolver {
      * to host {@code [::1]}. That rule is not restated here: it is applied through the shared
      * {@link IpAddresses#hasValidBracketTrailer(String)} helper.</p>
      *
+     * <p><strong>The bracket contents must themselves be an IP literal.</strong> {@code []} and
+     * {@code [not-an-ip]} yield {@link HostPort#EMPTY} rather than becoming a host, because the
+     * brackets promise a literal and an invalid one would be composed into an invalid authority.
+     * The check accepts an IPv4 literal as well, so {@code [10.0.0.5]} is honored even though
+     * RFC 3986 reserves the bracketed form for IPv6. That laxity is deliberate and documented
+     * rather than intended: it keeps this path identical to
+     * {@link IpAddresses#parseChainEntry(String)}, which has always accepted the same shape, and
+     * a syntactically valid literal is still required either way. Tighten both together or
+     * neither — a one-sided change reintroduces the host-vs-chain asymmetry.</p>
+     *
      * <p>The {@code host:port} split here intentionally diverges from
      * {@link IpAddresses#parseChainEntry(String)}: this method reconstructs the <em>host string</em>
      * and therefore <em>retains</em> the IPv6 brackets (a host is later composed back into a URL),
