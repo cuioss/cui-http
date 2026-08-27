@@ -72,7 +72,7 @@ final class RfcForwardedParser {
     record Parsed(Optional<String> proto, Optional<String> host, List<String> forValues, boolean malformed) {
 
         /** The single outcome for a header carrying a grammar-violating pair. */
-        static final Parsed MALFORMED = new Parsed(Optional.empty(), Optional.empty(), List.of(), true);
+        static final Parsed MALFORMED_RESULT = new Parsed(Optional.empty(), Optional.empty(), List.of(), true);
     }
 
     static Parsed parse(String headerValue) {
@@ -81,7 +81,7 @@ final class RfcForwardedParser {
             for (String pair : splitTopLevel(element, ';')) {
                 acc.apply(pair);
                 if (acc.malformed) {
-                    return Parsed.MALFORMED;
+                    return Parsed.MALFORMED_RESULT;
                 }
             }
         }
