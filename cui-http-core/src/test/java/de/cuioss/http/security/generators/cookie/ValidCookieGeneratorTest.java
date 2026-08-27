@@ -123,19 +123,11 @@ class ValidCookieGeneratorTest {
 
     private void assertCarriesNoAttackMarker(String component, String description) {
         assertAll(description + " must carry no attack marker: <" + component + ">",
-                () -> assertNoneContained(component, TRAVERSAL_MARKERS, description, "traversal"),
-                () -> assertNoneContained(component, NULL_BYTE_MARKERS, description, "null-byte"),
-                () -> assertNoneContained(component, CRLF_MARKERS, description, "CRLF"),
+                () -> assertContainsNone(component, TRAVERSAL_MARKERS, description + " (traversal)"),
+                () -> assertContainsNone(component, NULL_BYTE_MARKERS, description + " (null-byte)"),
+                () -> assertContainsNone(component, CRLF_MARKERS, description + " (CRLF)"),
                 () -> assertFalse(containsControlCharacter(component),
                         () -> description + " must carry no control character: <" + component + ">"));
-    }
-
-    private void assertNoneContained(String component, Set<String> markers, String description, String kind) {
-        markers.stream()
-                .filter(component::contains)
-                .findFirst()
-                .ifPresent(marker -> fail(description + " must carry no " + kind + " marker, but contains <"
-                        + marker + ">: <" + component + ">"));
     }
 
     private void assertWellFormedAttributes(String attributes) {

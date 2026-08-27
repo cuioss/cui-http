@@ -70,8 +70,10 @@ class ValidURLParameterGeneratorTest {
                 () -> "Parameter name must be a lower-case identifier. Value: <" + name + ">");
         assertTrue(VALUE_PATTERN.matcher(value).matches(),
                 () -> "Parameter value must be alphanumeric. Value: <" + value + ">");
-        assertCarriesNoMarker(name, "name");
-        assertCarriesNoMarker(value, "value");
+        assertContainsNone(name, TRAVERSAL_MARKERS, "Parameter name (traversal)");
+        assertContainsNone(name, NULL_BYTE_MARKERS, "Parameter name (null-byte)");
+        assertContainsNone(value, TRAVERSAL_MARKERS, "Parameter value (traversal)");
+        assertContainsNone(value, NULL_BYTE_MARKERS, "Parameter value (null-byte)");
 
         assertPipelineAccepts(
                 new URLParameterValidationPipeline(SecurityConfiguration.defaults(), new SecurityEventCounter()),
@@ -130,14 +132,5 @@ class ValidURLParameterGeneratorTest {
             return "test";
         }
         return fail("Value <" + value + "> belongs to no documented value shape");
-    }
-
-    private static void assertCarriesNoMarker(String component, String description) {
-        TRAVERSAL_MARKERS.forEach(marker -> assertFalse(component.contains(marker),
-                () -> "Valid parameter " + description + " carries no traversal marker <" + marker
-                        + ">. Value: <" + component + ">"));
-        NULL_BYTE_MARKERS.forEach(marker -> assertFalse(component.contains(marker),
-                () -> "Valid parameter " + description + " carries no null-byte marker <" + marker
-                        + ">. Value: <" + component + ">"));
     }
 }

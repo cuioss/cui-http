@@ -136,6 +136,23 @@ public final class GeneratorContractAssertions {
     }
 
     /**
+     * Asserts that the value contains none of the given markers — the negated counterpart of
+     * {@link #assertContainsAny(String, Set, String)}, for the legitimacy contract that a
+     * generated value carries no marker from a closed attack vocabulary.
+     *
+     * @param value the generated value under test, must not be null
+     * @param markers the closed set of markers, none of which may occur in {@code value}
+     * @param description names the contract being asserted; it is prefixed to the failure message
+     */
+    public static void assertContainsNone(String value, Set<String> markers, String description) {
+        markers.stream()
+                .filter(value::contains)
+                .findFirst()
+                .ifPresent(marker -> fail(description + " — value contains marker <" + marker
+                        + ">. Value: <" + preview(value) + ">"));
+    }
+
+    /**
      * Asserts that the pipeline accepts the value, that is it neither throws nor discards it.
      *
      * @param pipeline the validation pipeline under test

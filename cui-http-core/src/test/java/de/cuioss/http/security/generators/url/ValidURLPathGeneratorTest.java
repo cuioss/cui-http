@@ -72,8 +72,8 @@ class ValidURLPathGeneratorTest {
     void shouldGenerateLegitimateApiPath(String generatedValue) {
         assertTrue(generatedValue.startsWith("/"),
                 () -> "Valid URL paths are rooted at '/'. Value: <" + generatedValue + ">");
-        assertCarriesNoMarker(generatedValue, TRAVERSAL_MARKERS, "path traversal");
-        assertCarriesNoMarker(generatedValue, NULL_BYTE_MARKERS, "null byte");
+        assertContainsNone(generatedValue, TRAVERSAL_MARKERS, "path traversal");
+        assertContainsNone(generatedValue, NULL_BYTE_MARKERS, "null byte");
         assertFalse(generatedValue.contains("<script"),
                 () -> "Valid URL paths carry no script tag. Value: <" + generatedValue + ">");
         assertFalse(generatedValue.contains("javascript:"),
@@ -124,11 +124,5 @@ class ValidURLPathGeneratorTest {
     void shouldReturnCorrectType() {
         assertEquals(String.class, new ValidURLPathGenerator().getType(),
                 "Generator should return String.class");
-    }
-
-    private static void assertCarriesNoMarker(String value, Set<String> markers, String description) {
-        markers.forEach(marker -> assertFalse(value.contains(marker),
-                () -> "Valid URL paths carry no " + description + " marker <" + marker
-                        + ">. Value: <" + value + ">"));
     }
 }
