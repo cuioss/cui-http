@@ -187,17 +187,20 @@ final class AttributeParser {
 
         String inner = value.substring(1, value.length() - 1);
         StringBuilder unescaped = new StringBuilder(inner.length());
-        for (int index = 0; index < inner.length(); index++) {
+        int index = 0;
+        while (index < inner.length()) {
             char current = inner.charAt(index);
             if (current == '\\' && index + 1 < inner.length()) {
                 char next = inner.charAt(index + 1);
                 if (next == '"' || next == '\\') {
+                    // Consume both the backslash and the character it escapes.
                     unescaped.append(next);
-                    index++;
+                    index += 2;
                     continue;
                 }
             }
             unescaped.append(current);
+            index++;
         }
         return unescaped.toString();
     }
