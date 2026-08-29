@@ -81,7 +81,8 @@ import java.util.Objects;
  * pipeline never equals a header-value one and a strict-configured pipeline never equals a
  * lenient-configured one. The configuration is retained solely to give
  * {@code equals}/{@code hashCode} a value basis and is deliberately <strong>not</strong> exposed
- * via an accessor, so this class's public API is unaffected by holding it; the pre-existing
+ * via an accessor, nor included in the generated {@code toString()}, so this class's public API
+ * and rendered form are both unaffected by holding it; the pre-existing
  * {@code getValidationType()} accessor is unchanged.</p>
  *
  * <p>Two fields are deliberately excluded from the basis. The {@link SecurityEventCounter} is
@@ -102,6 +103,7 @@ public final class HTTPHeaderValidationPipeline extends AbstractValidationPipeli
     private final ValidationType validationType;
 
     @Getter(AccessLevel.NONE)
+    @ToString.Exclude
     private final SecurityConfiguration config;
 
     /**

@@ -257,5 +257,15 @@ class ContentTypeValidationPipelineTest {
                     () -> ContentTypeValidationPipeline.class.getMethod("getConfig"),
                     "The retained config must not become part of the exported public API");
         }
+
+        @Test
+        @DisplayName("the retained configuration is excluded from toString()")
+        void shouldNotExposeConfigInToString() {
+            String rendered = pipeline(SecurityConfiguration.strict()).toString();
+
+            assertFalse(rendered.contains("config="),
+                    "The retained config is held for the equality basis only and must not leak "
+                            + "into the generated toString(): " + rendered);
+        }
     }
 }

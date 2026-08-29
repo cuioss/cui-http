@@ -57,7 +57,8 @@ import java.util.Objects;
  * <p>Two {@code ContentTypeValidationPipeline} instances are equal when their
  * {@link SecurityConfiguration} is equal. The configuration is retained solely to give
  * {@code equals}/{@code hashCode} a value basis and is deliberately <strong>not</strong> exposed
- * via an accessor, so this class's public API is unaffected by holding it.</p>
+ * via an accessor, nor included in the generated {@code toString()}, so this class's public
+ * API and rendered form are both unaffected by holding it.</p>
  *
  * <p>Two fields are deliberately excluded from the basis. The {@link SecurityEventCounter} is
  * mutable shared monitoring state, so including it would make {@code hashCode} change as events
@@ -76,6 +77,7 @@ public final class ContentTypeValidationPipeline extends AbstractValidationPipel
     private static final ValidationType VALIDATION_TYPE = ValidationType.HEADER_VALUE;
 
     @Getter(AccessLevel.NONE)
+    @ToString.Exclude
     private final SecurityConfiguration config;
 
     /**
