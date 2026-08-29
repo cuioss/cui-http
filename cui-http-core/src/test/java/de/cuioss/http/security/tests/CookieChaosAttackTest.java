@@ -433,10 +433,47 @@ class CookieChaosAttackTest {
      * @param generatedName a name drawn from either whitespace generator
      */
     private void assertCarriesCookiePrefix(String generatedName) {
-        String undecorated = generatedName.replaceAll("^[\\s\\p{Z}\\p{Cc}]+|[\\s\\p{Z}\\p{Cc}]+$", "");
+        String undecorated = stripDecoration(generatedName);
         assertTrue(undecorated.startsWith("__Host-") || undecorated.startsWith("__Secure-"),
                 () -> "A prefix-bypass generator must decorate a __Host- or __Secure- prefixed name, but was: "
                         + getDisplayableString(generatedName));
+    }
+
+    /**
+     * Strips leading and trailing decoration characters with a linear scan. A regex of the shape
+     * {@code ^[...]+|[...]+$} expresses the same intent but backtracks super-linearly on a run of
+     * matching characters, so the scan is used instead.
+     *
+     * @param value the decorated name
+     * @return {@code value} without its leading and trailing decoration
+     */
+    private static String stripDecoration(String value) {
+        int start = 0;
+        int end = value.length();
+        while (start < end && isDecoration(value.charAt(start))) {
+            start++;
+        }
+        while (end > start && isDecoration(value.charAt(end - 1))) {
+            end--;
+        }
+        return value.substring(start, end);
+    }
+
+    /**
+     * Matches the {@code [\s\p{Z}\p{Cc}]} class the generators decorate with. The explicit
+     * separator-category checks are what cover the non-breaking forms (U+00A0, U+2007, U+202F)
+     * that {@link Character#isWhitespace(char)} reports as false.
+     *
+     * @param character the character to classify
+     * @return {@code true} when the character is whitespace, a separator, or a control character
+     */
+    private static boolean isDecoration(char character) {
+        int type = Character.getType(character);
+        return Character.isWhitespace(character)
+                || type == Character.SPACE_SEPARATOR
+                || type == Character.LINE_SEPARATOR
+                || type == Character.PARAGRAPH_SEPARATOR
+                || type == Character.CONTROL;
     }
 
     /**
