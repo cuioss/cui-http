@@ -65,6 +65,33 @@ import de.cuioss.test.generator.TypedGenerator;
 // Intentional Unicode escapes for security testing attack patterns
 public class UnicodeNormalizationAttackGenerator implements TypedGenerator<String> {
 
+    /** FULL STOP followed by COMBINING GRAVE ACCENT — a decomposed (NFD) sequence. */
+    private static final String DECOMPOSED_DOT = fromCodePoints(0x002E, 0x0300);
+
+    /**
+     * The ASCII letters that have a counterpart in both substitution scripts, in the order the
+     * two counterpart tables below use. A letter outside this set is left as it stands, and the
+     * whole-value fallback in {@link #createMixedScriptAttack(String)} covers the pattern in
+     * which no letter is substituted at all.
+     */
+    private static final String MIXED_SCRIPT_LETTERS = "abceikmnoprstuvxy";
+
+    /** Cyrillic counterparts of {@link #MIXED_SCRIPT_LETTERS}, index-aligned with it. */
+    private static final String CYRILLIC_COUNTERPARTS = fromCodePoints(
+            0x0430, 0x0432, 0x0441, 0x0435, 0x0456, 0x043A, 0x043C, 0x043D, 0x043E,
+            0x0440, 0x0433, 0x0455, 0x0442, 0x0446, 0x0475, 0x0445, 0x0443);
+
+    /** Greek counterparts of {@link #MIXED_SCRIPT_LETTERS}, index-aligned with it. */
+    private static final String GREEK_COUNTERPARTS = fromCodePoints(
+            0x03B1, 0x03B2, 0x03F2, 0x03B5, 0x03B9, 0x03BA, 0x03BC, 0x03B7, 0x03BF,
+            0x03C1, 0x03F1, 0x03C2, 0x03C4, 0x03C5, 0x03BD, 0x03C7, 0x03B3);
+
+    /** Cyrillic rendering of "admin", used to mark a value that no per-letter rule reached. */
+    private static final String CYRILLIC_MARKER = fromCodePoints(0x0430, 0x0434, 0x043C, 0x0438, 0x043D);
+
+    /** Greek rendering of "root", paired with {@link #CYRILLIC_MARKER} to mix two foreign scripts. */
+    private static final String GREEK_MARKER = fromCodePoints(0x03C1, 0x03BF, 0x03BF, 0x03C4);
+
     // QI-6: Dynamic generation components
     private final TypedGenerator<Integer> basePatternTypeGen = Generators.integers(1, 5);
     private final TypedGenerator<Integer> depthGen = Generators.integers(2, 6);
@@ -169,7 +196,14 @@ public class UnicodeNormalizationAttackGenerator implements TypedGenerator<Strin
                 default -> result.append(c);
             }
         }
-        return result.toString();
+
+        // Ensure the value always carries a decomposed sequence, even for a pattern in which no
+        // character has a decomposable counterpart above.
+        String decomposed = result.toString();
+        if (decomposed.equals(pattern)) {
+            return decomposed + DECOMPOSED_DOT;
+        }
+        return decomposed;
     }
 
     /**
@@ -177,7 +211,7 @@ public class UnicodeNormalizationAttackGenerator implements TypedGenerator<Strin
      */
     private String createComposedNormalizationAttack(String pattern) {
         // Use precomposed characters that might normalize differently
-        String result = pattern.replace(".", "\u1E00") // A with ring below (looks similar to dot in some fonts)
+        String result = pattern.replace(".", "\uFF0E") // Fullwidth full stop (NFKC-normalizes back to '.')
                 .replace("/", "\u2044")       // Fraction slash (different from regular solidus)
                 .replace("\\", "\u29F5")      // Reverse solidus operator
                 .replace(":", "\uFF1A")       // Fullwidth colon
@@ -292,31 +326,34 @@ public class UnicodeNormalizationAttackGenerator implements TypedGenerator<Strin
         boolean useCyrillic = false;
         for (char c : pattern.toCharArray()) {
             if (Character.isLetter(c)) {
-                if (useCyrillic) {
-                    // Use Cyrillic lookalikes
-                    switch (c) {
-                        case 'a' -> result.append('\u0430');
-                        case 'o' -> result.append('\u043E');
-                        case 'p' -> result.append('\u0440');
-                        case 'c' -> result.append('\u0441');
-                        case 'e' -> result.append('\u0435');
-                        default -> result.append(c);
-                    }
-                } else {
-                    // Use Greek lookalikes
-                    switch (c) {
-                        case 'a' -> result.append('\u03B1'); // Greek alpha
-                        case 'o' -> result.append('\u03BF'); // Greek omicron
-                        case 'p' -> result.append('\u03C1'); // Greek rho
-                        default -> result.append(c);
-                    }
-                }
+                result.append(mixedScriptCounterpart(c, useCyrillic));
                 useCyrillic = !useCyrillic;
             } else {
                 result.append(c);
             }
         }
-        return result.toString();
+
+        // Ensure the value always carries the mixed-script property, even for a pattern whose
+        // letters all fall outside the counterpart tables.
+        String mixed = result.toString();
+        if (mixed.equals(pattern)) {
+            return CYRILLIC_MARKER + mixed + GREEK_MARKER;
+        }
+        return mixed;
+    }
+
+    /**
+     * Maps an ASCII letter to its counterpart in the requested script, alternating scripts so a
+     * pattern ends up drawing from two Unicode blocks at once. A letter outside
+     * {@link #MIXED_SCRIPT_LETTERS} is returned unchanged; the whole-value fallback in
+     * {@link #createMixedScriptAttack(String)} covers the case where that happens throughout.
+     */
+    private char mixedScriptCounterpart(char letter, boolean useCyrillic) {
+        int index = MIXED_SCRIPT_LETTERS.indexOf(letter);
+        if (index < 0) {
+            return letter;
+        }
+        return useCyrillic ? CYRILLIC_COUNTERPARTS.charAt(index) : GREEK_COUNTERPARTS.charAt(index);
     }
 
     /**
@@ -360,5 +397,20 @@ public class UnicodeNormalizationAttackGenerator implements TypedGenerator<Strin
     @Override
     public Class<String> getType() {
         return String.class;
+    }
+
+    /**
+     * Builds a string from explicit code points, so the substitution tables above can be declared
+     * without embedding non-ASCII characters in this source file.
+     *
+     * @param codePoints the code points to append, in order
+     * @return the string formed by appending every given code point
+     */
+    private static String fromCodePoints(int... codePoints) {
+        StringBuilder builder = new StringBuilder(codePoints.length);
+        for (int codePoint : codePoints) {
+            builder.appendCodePoint(codePoint);
+        }
+        return builder.toString();
     }
 }
