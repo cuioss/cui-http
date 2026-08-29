@@ -22,10 +22,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.time.DateTimeException;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
 import java.util.regex.Pattern;
 
 import static de.cuioss.http.security.generators.GeneratorContractAssertions.*;
@@ -66,6 +66,13 @@ class ValidCookieGeneratorTest {
 
     /** The generator must emit at least this many distinct names to be worth calling a generator. */
     private static final int MINIMUM_DISTINCT_NAMES = 10;
+
+    /**
+     * RFC 6265's {@code sane-cookie-date}: the fixed-width RFC 1123 form, with the time-of-day and
+     * the {@code GMT} zone that a truncated {@code "Thu, 01 Jan 1970"} omits.
+     */
+    private static final DateTimeFormatter SANE_COOKIE_DATE =
+            DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss 'GMT'", Locale.ENGLISH);
 
     @ParameterizedTest
     @TypeGeneratorSource(value = ValidCookieGenerator.class, count = 100)
@@ -115,6 +122,24 @@ class ValidCookieGeneratorTest {
     }
 
     @Test
+    @DisplayName("Should accept a complete Expires date and reject truncated or inconsistent ones")
+    void shouldValidateExpiresValueShape() {
+        assertAll("Expires value-shape assertion",
+                () -> assertTrue(isValidAttribute("Expires=Thu, 01 Jan 1970 00:00:00 GMT"),
+                        "A complete RFC 1123 date must be accepted"),
+                () -> assertTrue(isValidAttribute("Expires=Tue, 31 Dec 2999 23:59:59 GMT"),
+                        "A complete RFC 1123 date must be accepted"),
+                () -> assertFalse(isValidAttribute("Expires=Thu, 01 Jan 1970"),
+                        "A date truncated before the time-of-day and GMT zone must be rejected"),
+                () -> assertFalse(isValidAttribute("Expires=Thu, 01 Jan 1970 00:00:00"),
+                        "A date without the GMT zone must be rejected"),
+                () -> assertFalse(isValidAttribute("Expires=Fri, 31 Dec 2999 23:59:59 GMT"),
+                        "A day-of-week name contradicting the calendar date must be rejected"),
+                () -> assertFalse(isValidAttribute("Expires=Thu, 1 Jan 1970 00:00:00 GMT"),
+                        "A single-digit day-of-month must be rejected: sane-cookie-date is fixed-width"));
+    }
+
+    @Test
     @DisplayName("Should return correct type")
     void shouldReturnCorrectType() {
         assertEquals(Cookie.class, new ValidCookieGenerator().getType(),
@@ -138,16 +163,18 @@ class ValidCookieGeneratorTest {
             assertTrue(isValidAttribute(attribute),
                     () -> "Attribute <" + attribute + "> is not a legitimate cookie attribute: it must be one of "
                             + FLAG_ATTRIBUTES + " / " + VALUED_ATTRIBUTE_PREFIXES
-                            + ", carry a non-empty value, and — for Path and Max-Age — a value that is itself "
-                            + "legitimate (no traversal segment, no negative age). Attributes: <" + attributes + ">");
+                            + ", carry a non-empty value, and — for Path, Max-Age and Expires — a value that is "
+                            + "itself legitimate (no traversal segment, no negative age, a complete RFC 1123 "
+                            + "date). Attributes: <" + attributes + ">");
         }
     }
 
     /**
      * Decides whether the attribute is one a legitimate cookie may carry. Membership in the
-     * documented vocabulary is necessary but not sufficient: {@code Path} and {@code Max-Age} also
-     * have to carry a legitimate <em>value</em>, otherwise this test would accept a hostile
-     * {@code Path=../../../} or {@code Max-Age=-1} and stop being the counterpart of
+     * documented vocabulary is necessary but not sufficient: {@code Path}, {@code Max-Age} and
+     * {@code Expires} also have to carry a legitimate <em>value</em>, otherwise this test would
+     * accept a hostile {@code Path=../../../} or {@code Max-Age=-1}, or a malformed
+     * {@code Expires=Thu, 01 Jan 1970}, and stop being the counterpart of
      * {@link AttackCookieGeneratorTest}.
      */
     private boolean isValidAttribute(String attribute) {
@@ -165,8 +192,24 @@ class ValidCookieGeneratorTest {
         return switch (prefix) {
             case PATH_PREFIX -> carriesNoTraversalMarker(attributeValue);
             case MAX_AGE_PREFIX -> isNonNegativeAge(attributeValue);
+            case EXPIRES_PREFIX -> isSaneCookieDate(attributeValue);
             default -> true;
         };
+    }
+
+    /**
+     * A legitimate {@code Expires} is RFC 6265's {@code sane-cookie-date} — a complete RFC 1123
+     * date. Round-tripping through {@link #SANE_COOKIE_DATE} makes the whole value accountable: a
+     * truncated date fails to parse, and a day-of-week name that contradicts the calendar date is
+     * rejected by the resolver's cross-check rather than silently accepted.
+     */
+    private boolean isSaneCookieDate(String expiresValue) {
+        try {
+            LocalDateTime parsed = LocalDateTime.parse(expiresValue, SANE_COOKIE_DATE);
+            return SANE_COOKIE_DATE.format(parsed).equals(expiresValue);
+        } catch (DateTimeException malformed) {
+            return false;
+        }
     }
 
     private boolean carriesNoTraversalMarker(String pathValue) {

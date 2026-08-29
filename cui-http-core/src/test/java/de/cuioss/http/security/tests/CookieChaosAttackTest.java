@@ -106,7 +106,7 @@ class CookieChaosAttackTest {
      *
      * <p>
      * Uses generator to produce combinations of 13 Unicode whitespace types
-     * (multibyte and single-byte) combined with __Host-, __Secure-, and regular
+     * (multibyte and single-byte) combined with __Host- and __Secure- prefixed
      * cookie names in leading, trailing, and both positions.
      * </p>
      */
@@ -114,6 +114,8 @@ class CookieChaosAttackTest {
     @TypeGeneratorSource(value = CookieNameUnicodeWhitespaceGenerator.class, count = 50)
     @DisplayName("Attack #1: Unicode whitespace injection in cookie names must be rejected")
     void shouldRejectUnicodeWhitespaceInCookieName(String maliciousName) {
+        assertCarriesCookiePrefix(maliciousName);
+
         var exception = assertThrows(UrlSecurityException.class,
                 () -> cookieNameValidator.validate(maliciousName),
                 "Unicode space in cookie name should be rejected: " + getDisplayableString(maliciousName));
@@ -174,6 +176,8 @@ class CookieChaosAttackTest {
     @TypeGeneratorSource(value = CookieNameAsciiWhitespaceGenerator.class, count = 40)
     @DisplayName("Attack #3: Leading/trailing ASCII whitespace must be rejected")
     void shouldRejectLeadingTrailingWhitespaceInCookieName(String invalidName) {
+        assertCarriesCookiePrefix(invalidName);
+
         var exception = assertThrows(UrlSecurityException.class,
                 () -> cookieNameValidator.validate(invalidName),
                 "Whitespace in cookie name should be rejected: '" + invalidName + "'");
@@ -417,6 +421,59 @@ class CookieChaosAttackTest {
         var ex4 = assertThrows(UrlSecurityException.class,
                 () -> cookieNameValidator.validate(name4));
         assertNotNull(ex4);
+    }
+
+    /**
+     * Asserts the prefix-bypass contract both whitespace generators declare: the name they
+     * decorate is always a {@code __Host-} or {@code __Secure-} prefixed one, so every emitted
+     * value exercises a prefix bypass rather than an ordinary cookie name. The decoration is
+     * stripped first because the generators wrap the name in leading and trailing whitespace,
+     * including non-breaking forms that {@link String#strip()} leaves in place.
+     *
+     * @param generatedName a name drawn from either whitespace generator
+     */
+    private void assertCarriesCookiePrefix(String generatedName) {
+        String undecorated = stripDecoration(generatedName);
+        assertTrue(undecorated.startsWith("__Host-") || undecorated.startsWith("__Secure-"),
+                () -> "A prefix-bypass generator must decorate a __Host- or __Secure- prefixed name, but was: "
+                        + getDisplayableString(generatedName));
+    }
+
+    /**
+     * Strips leading and trailing decoration characters with a linear scan. A regex of the shape
+     * {@code ^[...]+|[...]+$} expresses the same intent but backtracks super-linearly on a run of
+     * matching characters, so the scan is used instead.
+     *
+     * @param value the decorated name
+     * @return {@code value} without its leading and trailing decoration
+     */
+    private static String stripDecoration(String value) {
+        int start = 0;
+        int end = value.length();
+        while (start < end && isDecoration(value.charAt(start))) {
+            start++;
+        }
+        while (end > start && isDecoration(value.charAt(end - 1))) {
+            end--;
+        }
+        return value.substring(start, end);
+    }
+
+    /**
+     * Matches the {@code [\s\p{Z}\p{Cc}]} class the generators decorate with. The explicit
+     * separator-category checks are what cover the non-breaking forms (U+00A0, U+2007, U+202F)
+     * that {@link Character#isWhitespace(char)} reports as false.
+     *
+     * @param character the character to classify
+     * @return {@code true} when the character is whitespace, a separator, or a control character
+     */
+    private static boolean isDecoration(char character) {
+        int type = Character.getType(character);
+        return Character.isWhitespace(character)
+                || type == Character.SPACE_SEPARATOR
+                || type == Character.LINE_SEPARATOR
+                || type == Character.PARAGRAPH_SEPARATOR
+                || type == Character.CONTROL;
     }
 
     /**

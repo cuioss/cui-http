@@ -20,6 +20,7 @@ import de.cuioss.test.generator.TypedGenerator;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.BiFunction;
 
 /**
  * Generator for URL length limit attack patterns.
@@ -91,15 +92,36 @@ import java.util.List;
 public class URLLengthLimitAttackGenerator implements TypedGenerator<String> {
 
     /**
-     * The number of attack families {@link #next()} cycles through, that is the number of
-     * {@code case} branches its switch declares.
+     * The attack families {@link #next()} selects among, registered once so the family set and the
+     * selection bound cannot desync.
      *
-     * <p>The former cases 13 and 14 (encoding attacks) were removed because they exercise encoding
-     * validation rather than length validation. This constant is the single source of that count:
-     * it drives the {@link AttackTypeSelector} below, and the contract test references it instead
-     * of duplicating the literal, so adding or removing a family cannot silently desync the two.</p>
+     * <p>The former encoding-attack families were removed because they exercise encoding validation
+     * rather than length validation. Registering the families as a list rather than a switch keyed by
+     * a hand-maintained count means adding or removing one automatically widens or narrows the
+     * selection bound: {@link #ATTACK_FAMILY_COUNT} is derived from {@code size()}, so a new family is
+     * reachable the moment it is registered, with no literal to update.</p>
      */
-    public static final int ATTACK_FAMILY_COUNT = 13;
+    private static final List<BiFunction<URLLengthLimitAttackGenerator, String, String>> ATTACK_FAMILIES = List.of(
+            URLLengthLimitAttackGenerator::createBasicLengthOverflow,
+            URLLengthLimitAttackGenerator::createPathComponentOverflow,
+            URLLengthLimitAttackGenerator::createQueryParameterOverflow,
+            URLLengthLimitAttackGenerator::createFragmentOverflow,
+            URLLengthLimitAttackGenerator::createHostnameOverflow,
+            URLLengthLimitAttackGenerator::createRepeatedParameterAttack,
+            URLLengthLimitAttackGenerator::createDeepPathNesting,
+            URLLengthLimitAttackGenerator::createLongParameterNames,
+            URLLengthLimitAttackGenerator::createLongParameterValues,
+            URLLengthLimitAttackGenerator::createMixedLengthAttacks,
+            URLLengthLimitAttackGenerator::createBufferOverflowPatterns,
+            URLLengthLimitAttackGenerator::createMemoryExhaustionAttack,
+            URLLengthLimitAttackGenerator::createAlgorithmicComplexity);
+
+    /**
+     * The number of attack families {@link #next()} selects among, derived from
+     * {@link #ATTACK_FAMILIES} rather than declared as a literal, so it cannot drift from the
+     * registered set. The contract test references this constant instead of duplicating a number.
+     */
+    public static final int ATTACK_FAMILY_COUNT = ATTACK_FAMILIES.size();
 
     private static final List<String> BASE_PATTERNS = Arrays.asList(
             "/api",
@@ -114,29 +136,11 @@ public class URLLengthLimitAttackGenerator implements TypedGenerator<String> {
             "/request"
     );
 
-    private final AttackTypeSelector attackTypeSelector = new AttackTypeSelector(ATTACK_FAMILY_COUNT);
-
     @Override
     public String next() {
         String basePattern = BASE_PATTERNS.get(hashBasedSelection(BASE_PATTERNS.size()));
 
-        return switch (attackTypeSelector.nextAttackType()) {
-            case 0 -> createBasicLengthOverflow(basePattern);
-            case 1 -> createPathComponentOverflow(basePattern);
-            case 2 -> createQueryParameterOverflow(basePattern);
-            case 3 -> createFragmentOverflow(basePattern);
-            case 4 -> createHostnameOverflow(basePattern);
-            case 5 -> createRepeatedParameterAttack(basePattern);
-            case 6 -> createDeepPathNesting(basePattern);
-            case 7 -> createLongParameterNames(basePattern);
-            case 8 -> createLongParameterValues(basePattern);
-            case 9 -> createMixedLengthAttacks(basePattern);
-            case 10 -> createBufferOverflowPatterns(basePattern);
-            case 11 -> createMemoryExhaustionAttack(basePattern);
-            case 12 -> createAlgorithmicComplexity(basePattern);
-            // Removed case 13 (encoding attacks) and case 14 - they test encoding validation not length validation
-            default -> createBasicLengthOverflow(basePattern);
-        };
+        return ATTACK_FAMILIES.get(hashBasedSelection(ATTACK_FAMILY_COUNT)).apply(this, basePattern);
     }
 
     /**
@@ -410,23 +414,5 @@ public class URLLengthLimitAttackGenerator implements TypedGenerator<String> {
      */
     private String repeat(String token, int minCount, int maxCount) {
         return token.repeat(Generators.integers(minCount, maxCount).next());
-    }
-
-    /**
-     * Helper class to cycle through attack types systematically.
-     */
-    private static class AttackTypeSelector {
-        private final int maxTypes;
-        private int currentType = 0;
-
-        AttackTypeSelector(int maxTypes) {
-            this.maxTypes = maxTypes;
-        }
-
-        int nextAttackType() {
-            int type = currentType;
-            currentType = (currentType + 1) % maxTypes;
-            return type;
-        }
     }
 }

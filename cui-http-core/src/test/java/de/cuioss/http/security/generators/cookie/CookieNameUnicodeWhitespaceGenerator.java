@@ -91,7 +91,7 @@ public class CookieNameUnicodeWhitespaceGenerator implements TypedGenerator<Stri
         return switch (prefixTypeGen.next()) {
             case 0 -> "__Host-session";
             case 1 -> "__Secure-token";
-            case 2 -> "session_id";
+            case 2 -> "__Secure-session";
             default -> "__Host-session";
         };
     }

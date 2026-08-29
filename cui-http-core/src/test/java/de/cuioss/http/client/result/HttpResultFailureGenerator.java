@@ -19,8 +19,15 @@ import de.cuioss.test.generator.Generators;
 import de.cuioss.test.generator.TypedGenerator;
 
 /**
- * Generator for HttpResult.Failure instances with random error information.
- * Used in parameterized tests with @TypeGeneratorSource.
+ * Generator for {@link HttpResult} failure instances with random error information, optionally
+ * carrying fallback content.
+ * <p>
+ * Instantiated directly as a test field and driven via {@link #next()}, for example:
+ * <pre>{@code
+ * private final HttpResultFailureGenerator failureGen = new HttpResultFailureGenerator();
+ *
+ * HttpResult<String> result = failureGen.next();
+ * }</pre>
  */
 public class HttpResultFailureGenerator implements TypedGenerator<HttpResult<String>> {
 
@@ -45,5 +52,19 @@ public class HttpResultFailureGenerator implements TypedGenerator<HttpResult<Str
         } else {
             return HttpResult.failure(errorMessage, null, category);
         }
+    }
+
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Generic type arguments are erased at runtime, so the only class token available is the raw
+     * {@code HttpResult} one. The double cast re-attaches the {@code String} type argument the
+     * declared return type carries; it is safe because {@link #next()} only ever produces
+     * {@code HttpResult<String>} instances.
+     */
+    @SuppressWarnings("unchecked")
+    @Override
+    public Class<HttpResult<String>> getType() {
+        return (Class<HttpResult<String>>) (Class<?>) HttpResult.class;
     }
 }

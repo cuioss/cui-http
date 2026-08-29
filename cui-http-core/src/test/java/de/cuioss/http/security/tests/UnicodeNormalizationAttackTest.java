@@ -182,7 +182,7 @@ class UnicodeNormalizationAttackTest {
                 "\u2215config",                        // Division slash + config
 
                 // Overlong-style Unicode sequences
-                "\u1E00\u1E00\u2044",                  // A with ring below (dot-like) + fraction slash
+                "\uFF0E\uFF0E\u2044",                  // Fullwidth full stops (NFKC-fold to '.') + fraction slash
 
                 // Complex normalization bypass attempts
                 ".\u0300.\u0301/\u0302.\u0303.\u0304/\u0305etc\u0306/\u0307passwd\u0308",

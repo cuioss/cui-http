@@ -332,12 +332,22 @@ public class ValidCookieGenerator implements TypedGenerator<Cookie> {
         };
     }
 
+    /**
+     * Produces a complete RFC 1123 date, the {@code sane-cookie-date} form RFC 6265 requires for
+     * {@code Expires}: {@code EEE, dd MMM yyyy HH:mm:ss 'GMT'}. Both arms carry the time-of-day and
+     * the {@code GMT} zone, and the day-of-week name matches the calendar date, so the value
+     * round-trips through {@link java.time.format.DateTimeFormatter#RFC_1123_DATE_TIME}.
+     * <p>
+     * The comma-and-space after the day-of-week is required RFC 1123 syntax and is safe to emit:
+     * {@code AttributeParser.extractAttributeValue} splits attribute strings on {@code ';'} only and
+     * never on {@code ','}, so the comma cannot fragment attribute parsing.
+     */
     private String generateExpires() {
         int expiresType = Generators.integers(0, 1).next();
         return switch (expiresType) {
-            case 0 -> "Thu, 01 Jan 1970";
-            case 1 -> "Fri, 31 Dec 2999";
-            default -> "Thu, 01 Jan 1970";
+            case 0 -> "Thu, 01 Jan 1970 00:00:00 GMT";
+            case 1 -> "Tue, 31 Dec 2999 23:59:59 GMT";
+            default -> "Thu, 01 Jan 1970 00:00:00 GMT";
         };
     }
 
