@@ -27,13 +27,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static de.cuioss.http.security.generators.GeneratorContractAssertions.NULL_BYTE_MARKERS;
-import static de.cuioss.http.security.generators.GeneratorContractAssertions.SHELL_METACHARACTERS;
-import static de.cuioss.http.security.generators.GeneratorContractAssertions.TRAVERSAL_MARKERS;
-import static de.cuioss.http.security.generators.GeneratorContractAssertions.assertContainsAny;
-import static org.junit.jupiter.api.Assertions.assertAll;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static de.cuioss.http.security.generators.GeneratorContractAssertions.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Contract test for {@link AttackURLParameterGenerator}.
@@ -62,8 +57,8 @@ class AttackURLParameterGeneratorTest {
 
     /** The closed vocabulary of markers, at least one of which every emitted value must carry. */
     private static final Set<String> ATTACK_MARKERS = Stream.of(
-                    TRAVERSAL_MARKERS, NULL_BYTE_MARKERS, SHELL_METACHARACTERS,
-                    PROTOCOL_AND_SYSTEM_PATH_MARKERS)
+            TRAVERSAL_MARKERS, NULL_BYTE_MARKERS, SHELL_METACHARACTERS,
+            PROTOCOL_AND_SYSTEM_PATH_MARKERS)
             .flatMap(Set::stream)
             .collect(Collectors.toUnmodifiableSet());
 
