@@ -35,7 +35,11 @@ import java.util.stream.Collectors;
  *   <li><strong>Thread Safety</strong> - All operations are atomic and thread-safe</li>
  *   <li><strong>Lock-Free</strong> - Uses lock-free data structures for performance</li>
  *   <li><strong>Memory</strong> - Only allocates counters for observed failure types</li>
- *   <li><strong>Non-Blocking</strong> - All operations complete in constant time</li>
+ *   <li><strong>Non-Blocking</strong> - {@link #increment(UrlSecurityFailureType)},
+ *       {@link #incrementBy(UrlSecurityFailureType, long)}, {@link #getCount(UrlSecurityFailureType)}
+ *       and {@link #hasEvents(UrlSecurityFailureType)} complete in constant time.
+ *       {@link #getAllCounts()} and {@link #getTotalCount()} are O(n) snapshots over the
+ *       observed failure types.</li>
  * </ul>
  *
  * <h3>Usage Examples</h3>
@@ -142,11 +146,17 @@ public class SecurityEventCounter {
     /**
      * Returns a snapshot of all current counts.
      *
-     * <p>Returns an immutable map containing all observed failure types and their
-     * current counts. Only failure types with non-zero counts are included.
-     * This is useful for reporting and monitoring purposes.</p>
+     * <p>Returns an immutable map containing every observed failure type and its
+     * current count. A type whose count is currently zero — because
+     * {@link #reset()} or {@link #reset(UrlSecurityFailureType)} was called after it
+     * was observed — is still included; observation, not a non-zero count, is what
+     * puts a type in the map. Use {@link #clear()} for the drop-the-types semantics
+     * that removes them entirely.</p>
      *
-     * @return An immutable map of failure types to their current counts
+     * <p>This is an O(n) snapshot over the observed failure types, useful for
+     * reporting and monitoring purposes.</p>
+     *
+     * @return An immutable map of every observed failure type to its current count
      */
     public Map<UrlSecurityFailureType, Long> getAllCounts() {
         return counters.entrySet().stream()
@@ -174,10 +184,13 @@ public class SecurityEventCounter {
     /**
      * Returns the number of distinct failure types that have been observed.
      *
-     * <p>This returns the number of different {@link UrlSecurityFailureType} values
-     * that have had at least one event recorded.</p>
+     * <p>This returns the number of distinct {@link UrlSecurityFailureType} values
+     * currently tracked. A type observed at least once stays tracked after
+     * {@link #reset()} or {@link #reset(UrlSecurityFailureType)}, so the returned
+     * number includes types whose count is now zero. Only {@link #clear()} removes
+     * types from tracking and lowers this number.</p>
      *
-     * @return The number of distinct failure types with recorded events
+     * @return The number of distinct failure types currently tracked
      */
     public int getFailureTypeCount() {
         return counters.size();
@@ -223,9 +236,15 @@ public class SecurityEventCounter {
     /**
      * Resets all counters to zero.
      *
-     * <p>This atomically resets all failure type counters to zero. The failure types
-     * remain in the internal map but with zero counts. This is useful for periodic
-     * reporting cycles where you want to start fresh counts.</p>
+     * <p>Each individual failure type counter is reset atomically, but the sweep
+     * across counters is not a single atomic operation: a concurrent reader can
+     * observe a partially-reset state in which some counters are already zero and
+     * others still carry their previous value.</p>
+     *
+     * <p>The failure types remain in the internal map but with zero counts, so they
+     * continue to appear in {@link #getAllCounts()} and to be included in
+     * {@link #getFailureTypeCount()}. This is useful for periodic reporting cycles
+     * where you want to start fresh counts.</p>
      */
     public void reset() {
         counters.values().forEach(counter -> counter.set(0));

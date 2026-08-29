@@ -187,6 +187,30 @@ class SecurityEventCounterTest {
     }
 
     @Test
+    @DisplayName("Should retain zero-count types in the snapshot after reset")
+    void shouldRetainZeroedTypesInSnapshotAfterReset() {
+        UrlSecurityFailureType type1 = UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED;
+        UrlSecurityFailureType type2 = UrlSecurityFailureType.DOUBLE_ENCODING;
+        counter.increment(type1);
+        counter.increment(type2);
+
+        counter.reset();
+
+        Map<UrlSecurityFailureType, Long> allCounts = counter.getAllCounts();
+        assertAll("Post-reset snapshot retains every observed type at zero",
+                () -> assertEquals(2, allCounts.size(),
+                        "getAllCounts() includes observed types whose count is now zero"),
+                () -> assertEquals(0L, allCounts.get(type1),
+                        "A reset type is present in the snapshot with a zero count"),
+                () -> assertEquals(0L, allCounts.get(type2),
+                        "A reset type is present in the snapshot with a zero count"),
+                () -> assertEquals(2, counter.getFailureTypeCount(),
+                        "getFailureTypeCount() counts types currently tracked, including zeroed ones"),
+                () -> assertEquals(0, counter.getTotalCount(),
+                        "Every counter is zero after reset even though the types remain tracked"));
+    }
+
+    @Test
     @DisplayName("Should clear all counters and failure types")
     void shouldClearAllCounters() {
         UrlSecurityFailureType type1 = UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED;
