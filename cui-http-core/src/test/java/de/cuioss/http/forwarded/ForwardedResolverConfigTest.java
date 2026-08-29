@@ -16,6 +16,9 @@
 package de.cuioss.http.forwarded;
 
 import de.cuioss.http.security.config.SecurityConfiguration;
+import de.cuioss.test.juli.LogAsserts;
+import de.cuioss.test.juli.TestLogLevel;
+import de.cuioss.test.juli.junit5.EnableTestLogger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -29,6 +32,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@EnableTestLogger
 @DisplayName("ForwardedResolverConfig")
 @SuppressWarnings("java:S5778") // assertThrows lambdas intentionally wrap the whole failing call chain
 class ForwardedResolverConfigTest {
@@ -140,13 +144,25 @@ class ForwardedResolverConfigTest {
         }
 
         @Test
-        @DisplayName("skips blank trusted-proxy entries")
+        @DisplayName("skips blank trusted-proxy entries and warns rather than dropping them silently")
         void skipsBlankTrustedProxies() {
             ForwardedResolverConfig config = ForwardedResolverConfig.builder()
                     .trustedProxies(new LinkedHashSet<>(List.of("10.0.0.0/8", "   ")))
                     .build();
 
             assertEquals(Set.of("10.0.0.0/8"), config.trustedProxies());
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "blank trusted-proxy entry");
+        }
+
+        @Test
+        @DisplayName("emits no blank-entry warning when every trusted-proxy entry is non-blank")
+        void noWarningWhenNoBlankEntries() {
+            ForwardedResolverConfig config = ForwardedResolverConfig.builder()
+                    .trustedProxies(new LinkedHashSet<>(List.of("10.0.0.0/8", "192.168.1.1")))
+                    .build();
+
+            assertEquals(2, config.trustedProxies().size());
+            LogAsserts.assertNoLogMessagePresent(TestLogLevel.WARN, ForwardedResolverConfig.class);
         }
     }
 

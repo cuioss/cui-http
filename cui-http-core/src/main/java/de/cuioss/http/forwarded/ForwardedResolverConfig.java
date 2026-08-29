@@ -16,6 +16,7 @@
 package de.cuioss.http.forwarded;
 
 import de.cuioss.http.security.config.SecurityConfiguration;
+import de.cuioss.tools.logging.CuiLogger;
 import org.jspecify.annotations.Nullable;
 
 import java.net.InetAddress;
@@ -75,6 +76,8 @@ import java.util.*;
  * @since 1.0
  */
 public final class ForwardedResolverConfig {
+
+    private static final CuiLogger LOGGER = new CuiLogger(ForwardedResolverConfig.class);
 
     private final boolean trustAll;
     private final Set<String> allowedContextPaths;
@@ -226,6 +229,11 @@ public final class ForwardedResolverConfig {
          * configured range is skipped like a real proxy, so whatever it prepends to the chain is
          * returned as the client IP.</p>
          *
+         * <p>A blank entry is skipped rather than parsed, but not silently: each one is reported at
+         * {@code WARN} via {@code HTTP-126} so a configuration that produced an empty slot (a
+         * trailing comma, an unsubstituted placeholder) is visible to the operator instead of
+         * quietly shrinking the trusted set.</p>
+         *
          * @param trustedProxies CIDR ranges / IP literals defining trusted proxy hops for
          *                       client-IP resolution; scope each to the proxy tier itself, never to
          *                       the enclosing VPC or office network
@@ -239,6 +247,7 @@ public final class ForwardedResolverConfig {
             List<CidrRange> ranges = new ArrayList<>();
             for (String entry : trustedProxies) {
                 if (entry.isBlank()) {
+                    LOGGER.warn(ForwardedLogMessages.WARN.TRUSTED_PROXY_ENTRY_BLANK);
                     continue;
                 }
                 ranges.add(CidrRange.parse(entry));
