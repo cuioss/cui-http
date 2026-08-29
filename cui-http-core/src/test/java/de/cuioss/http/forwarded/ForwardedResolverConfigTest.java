@@ -103,6 +103,43 @@ class ForwardedResolverConfigTest {
         }
 
         @Test
+        @DisplayName("explains the dotted-quad requirement for an IPv4-mapped IPv6 CIDR")
+        void explainsIpv4MappedPrefixBound() {
+            var thrown = assertThrows(IllegalArgumentException.class,
+                    () -> ForwardedResolverConfig.builder().trustedProxies(Set.of("::ffff:10.0.0.0/104")));
+
+            assertAll("the message must name the cause and the remedy, not just the bound",
+                    () -> assertTrue(thrown.getMessage().contains("IPv4-mapped IPv6"),
+                            "names why the ceiling is 32: " + thrown.getMessage()),
+                    () -> assertTrue(thrown.getMessage().contains("dotted-quad"),
+                            "names the remedy: " + thrown.getMessage()));
+        }
+
+        @Test
+        @DisplayName("accepts an IPv4-mapped IPv6 CIDR written with an IPv4-width prefix")
+        void acceptsIpv4MappedWithIpv4WidthPrefix() {
+            ForwardedResolverConfig config = ForwardedResolverConfig.builder()
+                    .trustedProxies(Set.of("::ffff:10.0.0.0/24"))
+                    .build();
+
+            assertTrue(config.isTrustedProxy(IpAddresses.parse("10.0.0.5")),
+                    "the mapped literal is an IPv4 range, so it matches the dotted-quad address");
+        }
+
+        @Test
+        @DisplayName("keeps the plain out-of-range message for a genuine IPv6 CIDR")
+        void keepsPlainMessageForGenuineIpv6() {
+            var thrown = assertThrows(IllegalArgumentException.class,
+                    () -> ForwardedResolverConfig.builder().trustedProxies(Set.of("2001:db8::/129")));
+
+            assertAll("the IPv4-mapped branch must not swallow the general case",
+                    () -> assertTrue(thrown.getMessage().contains("[0..128]"),
+                            "reports the real IPv6 bound: " + thrown.getMessage()),
+                    () -> assertFalse(thrown.getMessage().contains("dotted-quad"),
+                            "a genuine IPv6 spec has no dotted-quad remedy: " + thrown.getMessage()));
+        }
+
+        @Test
         @DisplayName("skips blank trusted-proxy entries")
         void skipsBlankTrustedProxies() {
             ForwardedResolverConfig config = ForwardedResolverConfig.builder()
