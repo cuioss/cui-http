@@ -730,4 +730,100 @@ class ForwardedHeaderResolverTest {
             assertFalse(forwarding.toXForwardedHeaders().isEmpty());
         }
     }
+
+    /**
+     * Every diagnostic must name the header the value was actually read from. Reporting the head of
+     * the precedence list instead sends an operator to a header the request never carried.
+     *
+     * <p>Each assertion below matches through the colon that closes the header-name slot of the
+     * record template, so a message naming the sibling header cannot satisfy it.</p>
+     */
+    @Nested
+    @DisplayName("Diagnostic header attribution")
+    class DiagnosticAttribution {
+
+        /** A raw value the header-value pipeline rejects outright (CRLF injection). */
+        private static final String CRLF_REJECTED = "\r\nInjected: 1";
+
+        /** Exceeds MAX_HEADER_VALUE_LENGTH_DEFAULT (2048) while carrying no control character. */
+        private static final String OVER_LENGTH_PATH = "/" + "a".repeat(2100);
+
+        @Test
+        @DisplayName("names X-ProxyHost, not X-Forwarded-Host, for a rejected proxy host")
+        void attributesProxyHost() {
+            var result = trustAllResolver()
+                    .resolve(headers(Map.of("X-ProxyHost", "evil.com" + CRLF_REJECTED)));
+
+            assertTrue(result.host().isEmpty(), "a rejected value stays dropped");
+            LogAsserts.assertSingleLogMessagePresentContaining(TestLogLevel.WARN,
+                    "Rejecting forwarded header X-ProxyHost:");
+        }
+
+        @Test
+        @DisplayName("names X-ProxyScheme, not X-Forwarded-Proto, for a rejected proxy scheme")
+        void attributesProxyScheme() {
+            var result = trustAllResolver()
+                    .resolve(headers(Map.of("X-ProxyScheme", "https" + CRLF_REJECTED)));
+
+            assertTrue(result.scheme().isEmpty(), "a rejected value stays dropped");
+            LogAsserts.assertSingleLogMessagePresentContaining(TestLogLevel.WARN,
+                    "Rejecting forwarded header X-ProxyScheme:");
+        }
+
+        @Test
+        @DisplayName("names X-ProxyContextPath, not X-Forwarded-Prefix, for a rejected context path")
+        void attributesProxyContextPath() {
+            var result = trustAllResolver()
+                    .resolve(headers(Map.of("X-ProxyContextPath", OVER_LENGTH_PATH)));
+
+            assertEquals("", result.contextPath(), "a rejected value stays dropped");
+            LogAsserts.assertSingleLogMessagePresentContaining(TestLogLevel.WARN,
+                    "Rejecting forwarded header X-ProxyContextPath:");
+        }
+
+        @Test
+        @DisplayName("names X-ProxyPort, not X-Forwarded-Port, for a rejected proxy port")
+        void attributesProxyPort() {
+            var result = trustAllResolver()
+                    .resolve(headers(Map.of("X-ProxyPort", "8443" + CRLF_REJECTED)));
+
+            assertTrue(result.port().isEmpty(), "a rejected value stays dropped");
+            LogAsserts.assertSingleLogMessagePresentContaining(TestLogLevel.WARN,
+                    "Rejecting forwarded header X-ProxyPort:");
+        }
+
+        @Test
+        @DisplayName("names X-ProxyScheme as the de-facto side of a scheme disagreement")
+        void attributesProxySchemeInDisagreement() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-ProxyScheme", "http",
+                    "Forwarded", "proto=https")));
+
+            assertTrue(result.scheme().isEmpty(), "a forged source must not win by precedence");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN,
+                    "sources disagree: X-ProxyScheme resolves to");
+        }
+
+        @Test
+        @DisplayName("still names the X-Forwarded-* header when that is the matched source")
+        void attributesXForwardedFamilyUnchanged() {
+            var result = trustAllResolver()
+                    .resolve(headers(Map.of("X-Forwarded-Host", "evil.com" + CRLF_REJECTED)));
+
+            assertTrue(result.host().isEmpty());
+            LogAsserts.assertSingleLogMessagePresentContaining(TestLogLevel.WARN,
+                    "Rejecting forwarded header X-Forwarded-Host:");
+        }
+
+        @Test
+        @DisplayName("names Forwarded, not X-Forwarded-Proto, for a rejected RFC 7239 header value")
+        void attributesForwardedHeader() {
+            var result = trustAllResolver()
+                    .resolve(headers(Map.of("Forwarded", "proto=" + "h".repeat(2100))));
+
+            assertTrue(result.scheme().isEmpty(), "an over-long value stays dropped");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN,
+                    "Rejecting forwarded header Forwarded:");
+        }
+    }
 }
