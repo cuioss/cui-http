@@ -30,6 +30,15 @@ import de.cuioss.test.generator.TypedGenerator;
  * <p>
  * FRAMEWORK COMPLIANT: Uses seed-based generation without call-counter anti-pattern.
  * Reproducibility = f(seed), not f(internal_state).
+ *
+ * <h3>Value-carries-signal invariant</h3>
+ *
+ * <p>Every emitted parameter <em>value</em> carries an attack payload on its own — a traversal,
+ * a script tag, an injection, a null byte, a hostile protocol scheme or a system path. The
+ * malicious parameter name is an independent attack surface, never the thing that makes the
+ * value hostile. The two overlong branches therefore pad a real payload up to their length band
+ * rather than emitting benign filler that is an attack only when a caller pairs it with a
+ * hostile name.</p>
  * <p>
  * Implements: Task G7 (Attack Cases) from HTTP verification specification
  */
@@ -178,12 +187,39 @@ public class AttackURLParameterGenerator implements TypedGenerator<URLParameter>
 
     private String generateLongStringAttack() {
         int size = attackStringSize.next();
-        return Generators.strings("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", size, size + 150).next();
+        return padAttackCoreToLength(size, size + 150);
     }
 
     private String generateVeryLongStringAttack() {
         int size = veryLongStringSize.next();
-        return Generators.strings("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", size, size + 500).next();
+        return padAttackCoreToLength(size, size + 500);
+    }
+
+    /**
+     * Builds an overlong value in the {@code [minLength, maxLength]} band that carries a real
+     * attack payload rather than filler alone: a payload core drawn from the generator's own
+     * attack helpers, surrounded by letter padding at a seed-chosen split point. The length band
+     * is what makes the value a length-limit attack; the embedded core is what makes it an attack
+     * independently of the parameter name it is paired with.
+     */
+    private String padAttackCoreToLength(int minLength, int maxLength) {
+        String core = generateEmbeddableAttackCore();
+        int totalLength = Generators.integers(minLength, maxLength).next();
+        int paddingLength = Math.max(1, totalLength - core.length());
+        String padding = Generators.letterStrings(paddingLength, paddingLength).next();
+        int split = Generators.integers(0, padding.length()).next();
+        return padding.substring(0, split) + core + padding.substring(split);
+    }
+
+    /**
+     * Draws a compact attack payload suitable for embedding inside a longer value.
+     */
+    private String generateEmbeddableAttackCore() {
+        return switch (Generators.integers(0, 2).next()) {
+            case 1 -> generateXSSAttack();
+            case 2 -> generateNullByteAttack();
+            default -> generatePathTraversalAttack();
+        };
     }
 
     private String generateFilePathAttack() {
