@@ -14,7 +14,7 @@ Module: `de.cuioss.http`
 LogMessages Classes:
 
 - `de.cuioss.http.client.HttpLogMessages` - HTTP client operations (HTTP-106–108, HTTP-110–116, HTTP-200–201)
-- `de.cuioss.http.forwarded.ForwardedLogMessages` - Forwarded / reverse-proxy header resolution (HTTP-120–125) - source: xref:../cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedLogMessages.java[ForwardedLogMessages.java]
+- `de.cuioss.http.forwarded.ForwardedLogMessages` - Forwarded / reverse-proxy header resolution (HTTP-120–126) - source: xref:../cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedLogMessages.java[ForwardedLogMessages.java]
 
 == HttpLogMessages
 
@@ -134,6 +134,11 @@ removed, renumbered, or reworded.
 |Forwarded
 |Rejecting Forwarded header: malformed forwarded-pair: %s
 |Logged when the RFC 7239 Forwarded header carries a malformed forwarded-pair — a non-blank pair with no `=`, an empty directive name, or an empty value — so the whole header is treated as present-but-unresolvable for every field it could have carried. A grammatically legal blank pair (a trailing `;`) is not malformed. Parameters: sanitized header value.
+
+|HTTP-126
+|Forwarded
+|Ignoring blank trusted-proxy entry in configuration
+|Logged when a configured `trustedProxies` entry is blank and is therefore skipped rather than parsed as a CIDR range or IP literal, so a configuration that produced an empty slot (a trailing comma, an unsubstituted placeholder) is visible instead of quietly shrinking the trusted set. No parameters — the entry is not interpolated.
 |===
 
 == Notes

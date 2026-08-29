@@ -74,5 +74,11 @@ public final class ForwardedLogMessages {
                 .identifier(125)
                 .template("Rejecting Forwarded header: malformed forwarded-pair: %s")
                 .build();
+
+        public static final LogRecord TRUSTED_PROXY_ENTRY_BLANK = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(126)
+                .template("Ignoring blank trusted-proxy entry in configuration")
+                .build();
     }
 }

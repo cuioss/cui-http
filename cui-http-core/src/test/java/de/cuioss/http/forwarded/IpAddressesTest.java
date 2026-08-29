@@ -88,6 +88,18 @@ class IpAddressesTest {
             assertNotNull(address);
             assertEquals("192.0.2.7", IpAddresses.canonical(address));
         }
+
+        @Test
+        @DisplayName("rejects an IPv6 literal carrying a zone/scope ID")
+        void rejectsZoneId() {
+            assertAll("a scope ID is meaningful only on its own interface, so it identifies no hop",
+                    () -> assertNull(IpAddresses.parse("fe80::1%eth0"),
+                            "'%' is outside the IPv6 character class, so the value never reaches getByName"),
+                    () -> assertNull(IpAddresses.parseChainEntry("fe80::1%eth0"),
+                            "the chain entry inherits parse's literal rules"),
+                    () -> assertNotNull(IpAddresses.parse("fe80::1"),
+                            "positive control: the same literal without a zone ID still resolves"));
+        }
     }
 
     @Nested

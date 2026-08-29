@@ -51,6 +51,20 @@ final class IpAddresses {
     /**
      * Parses an IPv4 or IPv6 literal without any DNS lookup.
      *
+     * <p><strong>A zone/scope ID is not a usable literal here.</strong> An IPv6 value carrying one
+     * ({@code fe80::1%eth0}) yields {@code null}. The rejection happens in the shape guard, not in
+     * {@link InetAddress}: {@code %} is outside the {@link #IPV6_LITERAL} character class, so the
+     * value never reaches {@link InetAddress#getByName}. That ordering is deliberate — letting a
+     * {@code %}-bearing value through to {@code getByName} is exactly what would turn an
+     * unrecognized form into a blocking DNS lookup, breaking the class-level literal-only
+     * guarantee. A scope ID is meaningful only on the interface that defines it, so it identifies
+     * no forwarded hop worth matching against a trusted-proxy range.</p>
+     *
+     * <p>The {@code null} is not silent at the call site: a chain entry rejected here surfaces
+     * through the {@code HTTP-123}
+     * {@link ForwardedLogMessages.WARN#CLIENT_IP_ENTRY_UNPARSEABLE} warning, and the resolver
+     * drops the client IP fail-closed rather than honoring an unverifiable chain.</p>
+     *
      * @param literal the candidate literal (already trimmed)
      * @return the parsed address, or {@code null} when {@code literal} is not a valid IP literal
      */
@@ -88,6 +102,11 @@ final class IpAddresses {
      * differs: the trailing-content rule above has a single implementation,
      * {@link #hasValidBracketTrailer(String)}, which both call sites share, so the two bracket
      * policies cannot drift apart.</p>
+     *
+     * <p>The literal itself is validated by {@link #parse(String)}, so its rules apply here
+     * unchanged — in particular an IPv6 value carrying a zone/scope ID ({@code fe80::1%eth0}) is
+     * not a usable literal and yields {@code null}. See that method for why the rejection is
+     * deliberate and where it surfaces.</p>
      *
      * @param entry a single forwarded-chain entry (already trimmed, unquoted)
      * @return the parsed address, or {@code null} when the entry is not a usable IP literal

@@ -16,6 +16,9 @@
 package de.cuioss.http.forwarded;
 
 import de.cuioss.http.security.config.SecurityConfiguration;
+import de.cuioss.test.juli.LogAsserts;
+import de.cuioss.test.juli.TestLogLevel;
+import de.cuioss.test.juli.junit5.EnableTestLogger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -29,6 +32,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@EnableTestLogger
 @DisplayName("ForwardedResolverConfig")
 @SuppressWarnings("java:S5778") // assertThrows lambdas intentionally wrap the whole failing call chain
 class ForwardedResolverConfigTest {
@@ -76,6 +80,19 @@ class ForwardedResolverConfigTest {
         }
 
         @Test
+        @DisplayName("accessors return the stored view rather than allocating a copy per call")
+        void accessorsReturnStoredView() {
+            ForwardedResolverConfig config = ForwardedResolverConfig.builder()
+                    .allowedContextPaths(Set.of("/app"))
+                    .trustedProxies(Set.of("10.0.0.0/8"))
+                    .build();
+
+            assertAll("the constructor's defensive copy is the only copy",
+                    () -> assertSame(config.allowedContextPaths(), config.allowedContextPaths()),
+                    () -> assertSame(config.trustedProxies(), config.trustedProxies()));
+        }
+
+        @Test
         @DisplayName("rejects null setters")
         void rejectsNullSetters() {
             ForwardedResolverConfig.Builder builder = ForwardedResolverConfig.builder();
@@ -103,13 +120,62 @@ class ForwardedResolverConfigTest {
         }
 
         @Test
-        @DisplayName("skips blank trusted-proxy entries")
+        @DisplayName("explains the dotted-quad requirement for an IPv4-mapped IPv6 CIDR")
+        void explainsIpv4MappedPrefixBound() {
+            var thrown = assertThrows(IllegalArgumentException.class,
+                    () -> ForwardedResolverConfig.builder().trustedProxies(Set.of("::ffff:10.0.0.0/104")));
+
+            assertAll("the message must name the cause and the remedy, not just the bound",
+                    () -> assertTrue(thrown.getMessage().contains("IPv4-mapped IPv6"),
+                            "names why the ceiling is 32: " + thrown.getMessage()),
+                    () -> assertTrue(thrown.getMessage().contains("dotted-quad"),
+                            "names the remedy: " + thrown.getMessage()));
+        }
+
+        @Test
+        @DisplayName("accepts an IPv4-mapped IPv6 CIDR written with an IPv4-width prefix")
+        void acceptsIpv4MappedWithIpv4WidthPrefix() {
+            ForwardedResolverConfig config = ForwardedResolverConfig.builder()
+                    .trustedProxies(Set.of("::ffff:10.0.0.0/24"))
+                    .build();
+
+            assertTrue(config.isTrustedProxy(IpAddresses.parse("10.0.0.5")),
+                    "the mapped literal is an IPv4 range, so it matches the dotted-quad address");
+        }
+
+        @Test
+        @DisplayName("keeps the plain out-of-range message for a genuine IPv6 CIDR")
+        void keepsPlainMessageForGenuineIpv6() {
+            var thrown = assertThrows(IllegalArgumentException.class,
+                    () -> ForwardedResolverConfig.builder().trustedProxies(Set.of("2001:db8::/129")));
+
+            assertAll("the IPv4-mapped branch must not swallow the general case",
+                    () -> assertTrue(thrown.getMessage().contains("[0..128]"),
+                            "reports the real IPv6 bound: " + thrown.getMessage()),
+                    () -> assertFalse(thrown.getMessage().contains("dotted-quad"),
+                            "a genuine IPv6 spec has no dotted-quad remedy: " + thrown.getMessage()));
+        }
+
+        @Test
+        @DisplayName("skips blank trusted-proxy entries and warns rather than dropping them silently")
         void skipsBlankTrustedProxies() {
             ForwardedResolverConfig config = ForwardedResolverConfig.builder()
                     .trustedProxies(new LinkedHashSet<>(List.of("10.0.0.0/8", "   ")))
                     .build();
 
             assertEquals(Set.of("10.0.0.0/8"), config.trustedProxies());
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "blank trusted-proxy entry");
+        }
+
+        @Test
+        @DisplayName("emits no blank-entry warning when every trusted-proxy entry is non-blank")
+        void noWarningWhenNoBlankEntries() {
+            ForwardedResolverConfig config = ForwardedResolverConfig.builder()
+                    .trustedProxies(new LinkedHashSet<>(List.of("10.0.0.0/8", "192.168.1.1")))
+                    .build();
+
+            assertEquals(2, config.trustedProxies().size());
+            LogAsserts.assertNoLogMessagePresent(TestLogLevel.WARN, ForwardedResolverConfig.class);
         }
     }
 

@@ -30,7 +30,11 @@ import java.util.*;
  * resolved state back as proxy headers, so a resolved request can be forwarded upstream and
  * round-trip-tested. <strong>Asymmetry:</strong> RFC 7239 {@code Forwarded} has no prefix
  * directive, so {@code contextPath} is expressible only through {@code X-Forwarded-Prefix}
- * (via {@link #toXForwardedHeaders()}), never through {@link #toForwardedHeader()}.</p>
+ * (via {@link #toXForwardedHeaders()}), never through {@link #toForwardedHeader()}. A
+ * {@code port} without a {@code host} is asymmetric in the same way: {@code Forwarded} carries a
+ * port only folded into {@code host="name:port"}, so a host-less port is omitted from
+ * {@link #toForwardedHeader()} and survives only as the independent {@code X-Forwarded-Port}
+ * emitted by {@link #toXForwardedHeaders()}.</p>
  *
  * <h3>Usage Example</h3>
  * <pre>{@code
@@ -180,7 +184,12 @@ Optional<String> clientIp
      * RFC 7239 token.</p>
      *
      * <p><strong>Note:</strong> {@code contextPath} is intentionally absent — RFC 7239 defines no
-     * prefix/context-path directive. Use {@link #toXForwardedHeaders()} to preserve it.</p>
+     * prefix/context-path directive. Use {@link #toXForwardedHeaders()} to preserve it.
+     * A {@code port} present <em>without</em> a {@code host} is likewise not expressible and is
+     * therefore omitted: RFC 7239 defines no standalone port directive, so a port can only be
+     * folded into {@code host="name:port"}, and emitting {@code host=":8443"} would produce an
+     * invalid authority. Use {@link #toXForwardedHeaders()}, which emits {@code X-Forwarded-Port}
+     * independently of the host, to preserve it.</p>
      *
      * @return the {@code Forwarded} value, or {@link Optional#empty()} when no
      *         {@code Forwarded}-expressible field ({@code proto}/{@code host}/{@code for}) is present

@@ -38,6 +38,13 @@ final class CidrRange {
      * Parses a CIDR spec such as {@code 10.0.0.0/8}, {@code 2001:db8::/32}, or a bare literal
      * {@code 192.168.1.1} (treated as a single host).
      *
+     * <p><strong>An IPv4-mapped IPv6 spec takes an IPv4-width prefix.</strong>
+     * {@code InetAddress.getByName("::ffff:10.0.0.0")} returns an {@code Inet4Address} whose
+     * {@code getAddress()} is four bytes wide, so the mapped literal is an IPv4 address for every
+     * purpose here and its prefix is bounded by 32, not 128. Write such a range in dotted-quad form
+     * ({@code 10.0.0.0/8}); {@code ::ffff:10.0.0.0/104} is rejected, and the rejection message says
+     * so rather than reporting a bare out-of-range prefix.</p>
+     *
      * @param spec the CIDR or IP literal
      * @return the parsed range
      * @throws IllegalArgumentException if the spec is not a valid IP literal / CIDR
@@ -62,12 +69,31 @@ final class CidrRange {
                 throw new IllegalArgumentException("Invalid CIDR prefix in trusted proxy: " + spec, e);
             }
             if (prefix < 0 || prefix > maxBits) {
-                throw new IllegalArgumentException(
-                        "CIDR prefix out of range [0.." + maxBits + "] in trusted proxy: " + spec);
+                throw new IllegalArgumentException(outOfRangeMessage(spec, ipPart, address.length, maxBits));
             }
         }
         maskInPlace(address, prefix);
         return new CidrRange(address, prefix);
+    }
+
+    /**
+     * Builds the out-of-range prefix message, naming the IPv4-mapped IPv6 cause when that is what
+     * produced the surprising bound.
+     *
+     * <p>A colon-bearing spec that parses to a four-byte address is an IPv4-mapped IPv6 literal:
+     * Java collapses it to an {@code Inet4Address}, so the prefix ceiling is 32 even though the
+     * spec looks IPv6-wide. Reporting only "out of range [0..32]" for {@code ::ffff:10.0.0.0/104}
+     * reads as a contradiction, so that case gets the explanation instead. Genuine IPv4 and IPv6
+     * specs keep the plain message.</p>
+     */
+    private static String outOfRangeMessage(String spec, String ipPart, int addressLength, int maxBits) {
+        if (addressLength == 4 && ipPart.indexOf(':') >= 0) {
+            return "CIDR prefix out of range [0..32] in trusted proxy: " + spec
+                    + " — an IPv4-mapped IPv6 literal is parsed as an IPv4 address, so its prefix is"
+                    + " bounded by 32; write the range in dotted-quad form (for example 10.0.0.0/8)"
+                    + " rather than with an IPv6-width prefix";
+        }
+        return "CIDR prefix out of range [0.." + maxBits + "] in trusted proxy: " + spec;
     }
 
     /**
