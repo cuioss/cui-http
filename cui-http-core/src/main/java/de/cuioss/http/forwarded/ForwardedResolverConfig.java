@@ -102,18 +102,18 @@ public final class ForwardedResolverConfig {
 
     /**
      * @return the normalized context paths honored even when {@link #trustAll()} is {@code false},
-     *         as an order-preserving unmodifiable copy
+     *         as the order-preserving unmodifiable view held by this configuration
      */
     public Set<String> allowedContextPaths() {
-        return Collections.unmodifiableSet(new LinkedHashSet<>(allowedContextPaths));
+        return allowedContextPaths;
     }
 
     /**
-     * @return the raw trusted-proxy CIDR / IP specs, in configuration order, as an order-preserving
-     *         unmodifiable copy
+     * @return the raw trusted-proxy CIDR / IP specs, in configuration order, as the
+     *         order-preserving unmodifiable view held by this configuration
      */
     public Set<String> trustedProxies() {
-        return Collections.unmodifiableSet(new LinkedHashSet<>(trustedProxies));
+        return trustedProxies;
     }
 
     /**

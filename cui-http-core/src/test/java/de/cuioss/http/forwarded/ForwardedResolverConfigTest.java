@@ -80,6 +80,19 @@ class ForwardedResolverConfigTest {
         }
 
         @Test
+        @DisplayName("accessors return the stored view rather than allocating a copy per call")
+        void accessorsReturnStoredView() {
+            ForwardedResolverConfig config = ForwardedResolverConfig.builder()
+                    .allowedContextPaths(Set.of("/app"))
+                    .trustedProxies(Set.of("10.0.0.0/8"))
+                    .build();
+
+            assertAll("the constructor's defensive copy is the only copy",
+                    () -> assertSame(config.allowedContextPaths(), config.allowedContextPaths()),
+                    () -> assertSame(config.trustedProxies(), config.trustedProxies()));
+        }
+
+        @Test
         @DisplayName("rejects null setters")
         void rejectsNullSetters() {
             ForwardedResolverConfig.Builder builder = ForwardedResolverConfig.builder();
