@@ -24,6 +24,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 
+import java.text.Normalizer;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -57,8 +58,8 @@ class UnicodeAttackGeneratorTest {
 
     /** Unicode dots and slash, which the generator's escapes decode to. */
     private static final String DECODED_DOTS_AND_SLASH = fromCodePoints(0x002E, 0x002E, 0x002F);
-    /** One-dot leaders and division slash, the homoglyph lookalike family. */
-    private static final String LOOKALIKE_DOTS_AND_SLASH = fromCodePoints(0x2024, 0x2024, 0x2215);
+    /** One-dot leaders and fullwidth solidus, the homoglyph lookalike family. */
+    private static final String LOOKALIKE_DOTS_AND_SLASH = fromCodePoints(0x2024, 0x2024, 0xFF0F);
     private static final String RIGHT_TO_LEFT_OVERRIDE = fromCodePoints(0x202E);
     private static final String ZERO_WIDTH_SPACE = fromCodePoints(0x200B);
     private static final String ZERO_WIDTH_NO_BREAK_SPACE = fromCodePoints(0xFEFF);
@@ -80,6 +81,18 @@ class UnicodeAttackGeneratorTest {
     /** The four code points that carry no attack signal alone and must always be embedded. */
     private static final Set<String> INVISIBLE_CODE_POINTS = Set.of(
             RIGHT_TO_LEFT_OVERRIDE, ZERO_WIDTH_SPACE, ZERO_WIDTH_NO_BREAK_SPACE, NULL_CHARACTER);
+
+    @Test
+    @DisplayName("The homoglyph lookalike family NFKC-folds to the ASCII traversal it claims to encode")
+    void shouldNfkcFoldLookalikeTraversalToAsciiTraversal() {
+        assertEquals(DECODED_DOTS_AND_SLASH,
+                Normalizer.normalize(LOOKALIKE_DOTS_AND_SLASH, Normalizer.Form.NFKC),
+                "LOOKALIKE_DOTS_AND_SLASH must NFKC-fold to '../'. The generator's Javadoc calls it "
+                        + "a complete traversal payload once NFKC folds the homoglyphs, and nothing but "
+                        + "this assertion holds that claim to account: U+2215 DIVISION SLASH carries no "
+                        + "compatibility decomposition and folds to itself, so a payload built from it "
+                        + "is never resolved to a traversal by a normalizing validator");
+    }
 
     /** Derived from the generator so a target added or renamed there cannot leave this assertion stale. */
     private static final Set<String> PATH_TARGETS = Set.copyOf(UnicodeAttackGenerator.PATH_TARGETS);

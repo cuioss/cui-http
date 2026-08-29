@@ -42,11 +42,15 @@ public class UnicodeAttackGenerator implements TypedGenerator<String> {
             + Character.toString(0x002E) + Character.toString(0x002F);
 
     /**
-     * One-dot leaders and division slash (U+2024 U+2024 U+2215) — a complete traversal payload
+     * One-dot leaders and fullwidth solidus (U+2024 U+2024 U+FF0F) — a complete traversal payload
      * once NFKC folds the homoglyphs to their ASCII counterparts.
+     *
+     * <p>U+FF0F rather than U+2215 DIVISION SLASH: U+2215 has no compatibility decomposition, so it
+     * NFKC-normalizes to itself and a payload built from it never folds to {@code ../}. Only the
+     * separator was wrong — U+2024 ONE DOT LEADER does decompose to {@code .} correctly.</p>
      */
     private static final String LOOKALIKE_TRAVERSAL = Character.toString(0x2024)
-            + Character.toString(0x2024) + Character.toString(0x2215);
+            + Character.toString(0x2024) + Character.toString(0xFF0F);
 
     /** RIGHT-TO-LEFT OVERRIDE (U+202E). */
     private static final String RIGHT_TO_LEFT_OVERRIDE = Character.toString(0x202E);
