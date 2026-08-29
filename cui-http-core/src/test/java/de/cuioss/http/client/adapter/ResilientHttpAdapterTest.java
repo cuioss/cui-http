@@ -20,6 +20,7 @@ import de.cuioss.http.client.result.HttpErrorCategory;
 import de.cuioss.http.client.result.HttpResult;
 import org.junit.jupiter.api.Test;
 
+import javax.net.ssl.SSLHandshakeException;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Map;
@@ -540,6 +541,42 @@ class ResilientHttpAdapterTest {
         assertInstanceOf(IllegalArgumentException.class, cause);
         // Non-retryable: exactly one attempt, no retries.
         assertEquals(1, attemptCount.get());
+    }
+
+    /**
+     * A TLS handshake failure is an {@code IOException} by inheritance, so the retry chain would
+     * treat it as a transient network error unless the classifier carves it out. Retrying it only
+     * multiplies the handshake cost against a trust problem that will not resolve, so the adapter
+     * must stop after exactly one attempt and report a non-retryable {@code CONFIGURATION_ERROR}.
+     * <p>
+     * The handshake is injected at the delegate rather than driven against a real TLS server:
+     * {@code @EnableMockWebServer(useHttps = true)} cannot accept a connection in this project (see
+     * the class comment on {@link ResilientHttpAdapterIntegrationTest}), and a genuine handshake
+     * failure would in any case surface here as exactly this exception.
+     */
+    @Test
+    void handshakeFailureIsNotRetried() {
+        AtomicInteger attemptCount = new AtomicInteger(0);
+        HttpAdapter<String> mockAdapter = MockAdapter.exceptional(attemptCount, 5,
+                new SSLHandshakeException("PKIX path building failed"),
+                HttpResult.success("Should not reach", null, 200));
+
+        RetryConfig config = RetryConfig.builder()
+                .maxAttempts(5)
+                .initialDelay(Duration.ofMillis(10))
+                .build();
+
+        HttpAdapter<String> resilient = ResilientHttpAdapter.wrap(mockAdapter, config);
+
+        CompletionException thrown = assertThrows(CompletionException.class, resilient::getBlocking);
+
+        assertAll("A handshake failure is a configuration problem, not a transient one",
+                () -> assertInstanceOf(SSLHandshakeException.class, thrown.getCause(),
+                        "The original failure is re-propagated, not swallowed"),
+                () -> assertEquals(HttpErrorCategory.CONFIGURATION_ERROR,
+                        HttpErrorCategory.fromException(thrown),
+                        "The chain classified it as non-retryable"),
+                () -> assertEquals(1, attemptCount.get(), "Exactly one attempt, no retries"));
     }
 
     /**
