@@ -54,6 +54,15 @@ import java.util.Optional;
  * Optional&lt;String&gt; charset = AttributeParser.extractAttributeValue(contentType, "charset");
  * // Returns: Optional.of("UTF-8")
  *
+ * // Extract a quoted charset - the surrounding quotes are stripped
+ * String quotedContentType = "text/html; charset=\"UTF-8\"";
+ * Optional&lt;String&gt; quotedCharset = AttributeParser.extractAttributeValue(quotedContentType, "charset");
+ * // Returns: Optional.of("UTF-8")
+ *
+ * // An unbalanced quote is not a quoted-string and is preserved verbatim
+ * Optional&lt;String&gt; unbalanced = AttributeParser.extractAttributeValue("name=\"abc", "name");
+ * // Returns: Optional.of("\"abc")
+ *
  * // Missing attribute
  * Optional&lt;String&gt; missing = AttributeParser.extractAttributeValue(cookieAttrs, "MaxAge");
  * // Returns: Optional.empty()
@@ -78,6 +87,15 @@ final class AttributeParser {
      * <p>This method performs case-insensitive matching for the attribute name and handles
      * common edge cases like missing values, trailing/leading whitespace, and attributes
      * at the end of the string.</p>
+     *
+     * <p><strong>Quoted values:</strong> RFC 6265 and RFC 7231 both permit an attribute value
+     * to be a {@code quoted-string}. After whitespace trimming, a value that is at least two
+     * characters long and both starts and ends with a double quote has that surrounding pair
+     * stripped, and the RFC 7230 {@code quoted-pair} escapes {@code \"} and {@code \\} within
+     * the remainder are resolved to {@code "} and {@code \} respectively. So
+     * {@code charset="UTF-8"} yields {@code UTF-8}, and {@code name="say \"hi\""} yields
+     * {@code say "hi"}. A value with an unbalanced quote — only a leading quote or only a
+     * trailing one — is not a quoted-string and is returned unchanged.</p>
      *
      * <p><strong>Implementation Note:</strong> This method uses simple semicolon splitting
      * which is sufficient for the current use cases (cookie attributes per RFC 6265 and
@@ -121,12 +139,51 @@ final class AttributeParser {
                     // RFC 6265 allows trimming whitespace from attribute values
                     String trimmedValue = value.trim();
 
-                    // Return the trimmed value (which may be empty for "name=")
-                    return Optional.of(trimmedValue);
+                    // Unwrap a well-formed quoted-string (which may be empty for "name=")
+                    return Optional.of(unquote(trimmedValue));
                 }
             }
         }
 
         return Optional.empty();
+    }
+
+    /**
+     * Unwraps a well-formed RFC 7230 {@code quoted-string}, returning any other value unchanged.
+     *
+     * <p>A value qualifies as a quoted-string only when it is at least two characters long and
+     * both starts and ends with a double quote. For such a value the surrounding quote pair is
+     * removed and every {@code quoted-pair} escape within the remainder is resolved: {@code \"}
+     * becomes {@code "} and {@code \\} becomes {@code \}. A backslash followed by any other
+     * character is not an escape this parser recognises and is preserved verbatim.</p>
+     *
+     * <p>A value carrying only a leading quote or only a trailing quote is unbalanced, is
+     * therefore NOT a quoted-string, and is returned unchanged rather than being silently
+     * corrupted by a partial strip.</p>
+     *
+     * @param value The trimmed attribute value to unwrap, never null
+     * @return The unquoted and unescaped value when {@code value} is a well-formed quoted-string,
+     * otherwise {@code value} itself
+     */
+    private static String unquote(String value) {
+        if (value.length() < 2 || value.charAt(0) != '"' || value.charAt(value.length() - 1) != '"') {
+            return value;
+        }
+
+        String inner = value.substring(1, value.length() - 1);
+        StringBuilder unescaped = new StringBuilder(inner.length());
+        for (int index = 0; index < inner.length(); index++) {
+            char current = inner.charAt(index);
+            if (current == '\\' && index + 1 < inner.length()) {
+                char next = inner.charAt(index + 1);
+                if (next == '"' || next == '\\') {
+                    unescaped.append(next);
+                    index++;
+                    continue;
+                }
+            }
+            unescaped.append(current);
+        }
+        return unescaped.toString();
     }
 }

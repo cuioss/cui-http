@@ -141,7 +141,11 @@ class AttributeParserTest {
 
         @ParameterizedTest
         @CsvSource({
-                "'name=\"quoted value\"; other=unquoted', 'name', '\"quoted value\"'",
+                "'name=\"quoted value\"; other=unquoted', 'name', 'quoted value'",
+                "'name=\"say \\\"hi\\\"\"', 'name', 'say \"hi\"'",
+                "'name=\"\"; other=value', 'name', ''",
+                "'name=\"abc; other=value', 'name', '\"abc'",
+                "'name=abc\"; other=value', 'name', 'abc\"'",
                 "'Name=CaseSensitiveValue', 'name', 'CaseSensitiveValue'",
                 "'session_id=123; id=456', 'id', '456'",
                 "'user-id=abc; id=xyz', 'id', 'xyz'",
