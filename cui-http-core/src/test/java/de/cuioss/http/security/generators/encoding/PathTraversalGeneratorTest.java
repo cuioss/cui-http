@@ -24,6 +24,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 
+import java.text.Normalizer;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -56,7 +57,7 @@ class PathTraversalGeneratorTest {
     private static final List<String> DOUBLE_ENCODED_SIGNATURES = List.of("%252e%252e");
     /** Homoglyph dots with a homoglyph separator, emitted only by {@code generateUnicodeTraversal}. */
     private static final List<String> UNICODE_SIGNATURES = List.of(
-            fromCodePoints(0x2024, 0x2024, 0x2215),
+            fromCodePoints(0x2024, 0x2024, 0xFF0F),
             fromCodePoints(0x2024, 0x2024, 0xFF3C));
     /** Homoglyph dots with a raw separator, emitted only by the mixed arm. */
     private static final List<String> MIXED_SIGNATURES = List.of(
@@ -101,6 +102,19 @@ class PathTraversalGeneratorTest {
         assertEquals(Set.of("basic", "encoded", "double-encoded", "unicode",
                         "mixed", "null-byte", "advanced"), attackTypes,
                 "Every documented attack type must be reachable within " + AGGREGATE_DRAWS + " draws");
+    }
+
+    @Test
+    @DisplayName("Every Unicode signature NFKC-folds to the ASCII traversal it claims to encode")
+    void shouldNfkcFoldUnicodeSignaturesToAsciiTraversal() {
+        assertEquals(List.of("../", "..\\"),
+                UNICODE_SIGNATURES.stream()
+                        .map(signature -> Normalizer.normalize(signature, Normalizer.Form.NFKC))
+                        .toList(),
+                "Each UNICODE_SIGNATURES entry must NFKC-fold to the ASCII traversal the class Javadoc "
+                        + "claims for it. A homoglyph that normalizes to itself (U+2215 DIVISION SLASH and "
+                        + "U+2044 FRACTION SLASH both do) silently turns the normalization attack into a "
+                        + "value no normalizing validator ever resolves to a traversal");
     }
 
     @Test

@@ -81,8 +81,8 @@ class UnicodeAttackGeneratorTest {
     private static final Set<String> INVISIBLE_CODE_POINTS = Set.of(
             RIGHT_TO_LEFT_OVERRIDE, ZERO_WIDTH_SPACE, ZERO_WIDTH_NO_BREAK_SPACE, NULL_CHARACTER);
 
-    private static final Set<String> PATH_TARGETS =
-            Set.of("etc/passwd", "etc/shadow", "windows/win.ini", "boot.ini");
+    /** Derived from the generator so a target added or renamed there cannot leave this assertion stale. */
+    private static final Set<String> PATH_TARGETS = Set.copyOf(UnicodeAttackGenerator.PATH_TARGETS);
 
     @ParameterizedTest
     @TypeGeneratorSource(value = UnicodeAttackGenerator.class, count = 100)

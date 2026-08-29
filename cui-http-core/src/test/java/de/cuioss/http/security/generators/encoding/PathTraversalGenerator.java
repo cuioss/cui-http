@@ -43,8 +43,8 @@ public class PathTraversalGenerator implements TypedGenerator<String> {
     /** ONE DOT LEADER (U+2024), a homoglyph of {@code .} that NFKC-normalizes to it. */
     private static final String LOOKALIKE_DOT = Character.toString(0x2024);
 
-    /** DIVISION SLASH (U+2215), a homoglyph of {@code /} that NFKC-normalizes to it. */
-    private static final String LOOKALIKE_FORWARD_SEPARATOR = Character.toString(0x2215);
+    /** FULLWIDTH SOLIDUS (U+FF0F), a homoglyph of {@code /} that NFKC-normalizes to it. */
+    private static final String LOOKALIKE_FORWARD_SEPARATOR = Character.toString(0xFF0F);
 
     /** FULLWIDTH REVERSE SOLIDUS (U+FF3C), a homoglyph of the backslash that NFKC-normalizes to it. */
     private static final String LOOKALIKE_BACKWARD_SEPARATOR = Character.toString(0xFF3C);
@@ -52,7 +52,12 @@ public class PathTraversalGenerator implements TypedGenerator<String> {
     /** VARIATION SELECTOR-15 (U+FE0E), an invisible selector that decorates the dot preceding it. */
     private static final String VARIATION_SELECTOR_15 = Character.toString(0xFE0E);
 
-    /** FRACTION SLASH (U+2044), a separator homoglyph distinct from {@link #LOOKALIKE_FORWARD_SEPARATOR}. */
+    /**
+     * FRACTION SLASH (U+2044), a separator homoglyph distinct from {@link #LOOKALIKE_FORWARD_SEPARATOR}.
+     * Unlike that constant this one does NOT NFKC-normalize to {@code /} — it normalizes to itself — so it
+     * exercises the visual-confusability surface rather than the normalization surface. It is used only in
+     * the variation-selector branch, whose technique does not depend on normalization.
+     */
     private static final String FRACTION_SLASH = Character.toString(0x2044);
 
     // QI-6: Dynamic generation components

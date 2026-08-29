@@ -18,6 +18,8 @@ package de.cuioss.http.security.generators.encoding;
 import de.cuioss.test.generator.Generators;
 import de.cuioss.test.generator.TypedGenerator;
 
+import java.util.List;
+
 /**
  * Generates Unicode-based attack patterns.
  *
@@ -58,9 +60,18 @@ public class UnicodeAttackGenerator implements TypedGenerator<String> {
     /** NULL (U+0000). */
     private static final String NULL_CHARACTER = Character.toString(0x0000);
 
+    /**
+     * The sensitive-path targets {@link #generatePathTarget()} selects among. Exposed so a contract test
+     * asserts against this collection rather than mirroring it in a literal of its own — a mirrored copy
+     * goes stale the moment a target is added or renamed, and the assertion then silently stops covering
+     * the new value.
+     */
+    public static final List<String> PATH_TARGETS =
+            List.of("etc/passwd", "etc/shadow", "windows/win.ini", "boot.ini");
+
     // QI-6: Dynamic generation components
     private final TypedGenerator<Integer> unicodeAttackTypeGen = Generators.integers(1, 6);
-    private final TypedGenerator<Integer> pathTargetSelector = Generators.integers(1, 4);
+    private final TypedGenerator<Integer> pathTargetSelector = Generators.integers(1, PATH_TARGETS.size());
 
     private final TypedGenerator<Boolean> combineGen = Generators.booleans();
 
@@ -97,13 +108,7 @@ public class UnicodeAttackGenerator implements TypedGenerator<String> {
     }
 
     private String generatePathTarget() {
-        return switch (pathTargetSelector.next()) {
-            case 1 -> "etc/passwd";
-            case 2 -> "etc/shadow";
-            case 3 -> "windows/win.ini";
-            case 4 -> "boot.ini";
-            default -> "etc/passwd";
-        };
+        return PATH_TARGETS.get(pathTargetSelector.next() - 1);
     }
 
     @Override
