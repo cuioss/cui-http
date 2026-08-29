@@ -37,7 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  *
  * <p>The defining property of this generator is that every emitted value carries a traversal
  * marker and is rejected by the URL path validation pipeline. The Unicode arms contribute real
- * homoglyph characters — ONE DOT LEADER and DIVISION SLASH or FULLWIDTH REVERSE SOLIDUS — which
+ * homoglyph characters — ONE DOT LEADER and FULLWIDTH SOLIDUS or FULLWIDTH REVERSE SOLIDUS — which
  * NFKC-fold to the ASCII traversal, so they are genuine attacks and carry the same round-trip
  * obligation as the encoded arms.</p>
  *

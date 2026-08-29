@@ -26,7 +26,7 @@ import de.cuioss.test.generator.TypedGenerator;
  * This generator creates various path traversal patterns including:
  * - Basic traversal sequences (../, ..\\)
  * - Encoded variants (%2e%2e%2f, %252e%252e%252f)
- * - Unicode lookalike variants (U+2024 ONE DOT LEADER, U+2215 DIVISION SLASH,
+ * - Unicode lookalike variants (U+2024 ONE DOT LEADER, U+FF0F FULLWIDTH SOLIDUS,
  *   U+FF3C FULLWIDTH REVERSE SOLIDUS), which NFKC-normalize to the ASCII traversal
  * - Mixed encoding attempts
  * - Null byte injection variants
