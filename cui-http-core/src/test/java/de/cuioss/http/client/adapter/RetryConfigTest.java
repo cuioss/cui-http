@@ -446,8 +446,9 @@ class RetryConfigTest {
                             VALID_MAX_DELAY, VALID_JITTER, true));
             assertEquals("initialDelay must be positive", zero.getMessage());
 
+            Duration negativeDelay = Duration.ofSeconds(-1);
             assertThrows(IllegalArgumentException.class,
-                    () -> new RetryConfig(VALID_MAX_ATTEMPTS, Duration.ofSeconds(-1),
+                    () -> new RetryConfig(VALID_MAX_ATTEMPTS, negativeDelay,
                             VALID_MULTIPLIER, VALID_MAX_DELAY, VALID_JITTER, true));
 
             assertThrows(IllegalArgumentException.class,
@@ -462,9 +463,10 @@ class RetryConfigTest {
                             Duration.ZERO, VALID_JITTER, true));
             assertEquals("maxDelay must be positive", zero.getMessage());
 
+            Duration negativeDelay = Duration.ofSeconds(-1);
             assertThrows(IllegalArgumentException.class,
                     () -> new RetryConfig(VALID_MAX_ATTEMPTS, VALID_INITIAL_DELAY, VALID_MULTIPLIER,
-                            Duration.ofSeconds(-1), VALID_JITTER, true));
+                            negativeDelay, VALID_JITTER, true));
 
             assertThrows(IllegalArgumentException.class,
                     () -> new RetryConfig(VALID_MAX_ATTEMPTS, VALID_INITIAL_DELAY, VALID_MULTIPLIER,
@@ -508,6 +510,84 @@ class RetryConfigTest {
         void shouldAcceptMinimumValidBoundaryValues() {
             assertDoesNotThrow(() -> new RetryConfig(1, Duration.ofMillis(1), 1.0,
                     Duration.ofMillis(1), 0.0, false));
+        }
+    }
+
+    /**
+     * Verifies that non-finite {@code jitter} / {@code multiplier} values are rejected on both
+     * construction paths. Every ordered comparison against {@link Double#NaN} evaluates to
+     * {@code false}, so a plain range check silently admits {@code NaN} — which would then reach
+     * {@link RetryConfig#calculateDelay(int)} and produce a zero-millisecond hot-retry loop.
+     */
+    @Nested
+    class NonFiniteValidation {
+
+        private static final int VALID_MAX_ATTEMPTS = 5;
+        private static final Duration VALID_INITIAL_DELAY = Duration.ofSeconds(1);
+        private static final double VALID_MULTIPLIER = 2.0;
+        private static final Duration VALID_MAX_DELAY = Duration.ofMinutes(1);
+        private static final double VALID_JITTER = 0.1;
+
+        @Test
+        void shouldRejectNonFiniteJitterViaCanonicalConstructor() {
+            IllegalArgumentException nan = assertThrows(IllegalArgumentException.class,
+                    () -> new RetryConfig(VALID_MAX_ATTEMPTS, VALID_INITIAL_DELAY, VALID_MULTIPLIER,
+                            VALID_MAX_DELAY, Double.NaN, true));
+            assertEquals("jitter must be between 0.0 and 1.0, but was: NaN", nan.getMessage());
+
+            assertAll("Infinite jitter is rejected",
+                    () -> assertThrows(IllegalArgumentException.class,
+                            () -> new RetryConfig(VALID_MAX_ATTEMPTS, VALID_INITIAL_DELAY,
+                                    VALID_MULTIPLIER, VALID_MAX_DELAY, Double.POSITIVE_INFINITY, true)),
+                    () -> assertThrows(IllegalArgumentException.class,
+                            () -> new RetryConfig(VALID_MAX_ATTEMPTS, VALID_INITIAL_DELAY,
+                                    VALID_MULTIPLIER, VALID_MAX_DELAY, Double.NEGATIVE_INFINITY, true)));
+        }
+
+        @Test
+        void shouldRejectNonFiniteMultiplierViaCanonicalConstructor() {
+            IllegalArgumentException nan = assertThrows(IllegalArgumentException.class,
+                    () -> new RetryConfig(VALID_MAX_ATTEMPTS, VALID_INITIAL_DELAY, Double.NaN,
+                            VALID_MAX_DELAY, VALID_JITTER, true));
+            assertEquals("multiplier must be >= 1.0, but was: NaN", nan.getMessage());
+
+            assertAll("Infinite multiplier is rejected",
+                    () -> assertThrows(IllegalArgumentException.class,
+                            () -> new RetryConfig(VALID_MAX_ATTEMPTS, VALID_INITIAL_DELAY,
+                                    Double.POSITIVE_INFINITY, VALID_MAX_DELAY, VALID_JITTER, true)),
+                    () -> assertThrows(IllegalArgumentException.class,
+                            () -> new RetryConfig(VALID_MAX_ATTEMPTS, VALID_INITIAL_DELAY,
+                                    Double.NEGATIVE_INFINITY, VALID_MAX_DELAY, VALID_JITTER, true)));
+        }
+
+        @Test
+        void shouldRejectNonFiniteJitterViaBuilder() {
+            RetryConfig.Builder builder = RetryConfig.builder();
+
+            IllegalArgumentException nan = assertThrows(IllegalArgumentException.class,
+                    () -> builder.jitter(Double.NaN));
+            assertEquals("jitter must be between 0.0 and 1.0, but was: NaN", nan.getMessage());
+
+            assertAll("Infinite jitter is rejected by the builder setter",
+                    () -> assertThrows(IllegalArgumentException.class,
+                            () -> builder.jitter(Double.POSITIVE_INFINITY)),
+                    () -> assertThrows(IllegalArgumentException.class,
+                            () -> builder.jitter(Double.NEGATIVE_INFINITY)));
+        }
+
+        @Test
+        void shouldRejectNonFiniteMultiplierViaBuilder() {
+            RetryConfig.Builder builder = RetryConfig.builder();
+
+            IllegalArgumentException nan = assertThrows(IllegalArgumentException.class,
+                    () -> builder.multiplier(Double.NaN));
+            assertEquals("multiplier must be >= 1.0, but was: NaN", nan.getMessage());
+
+            assertAll("Infinite multiplier is rejected by the builder setter",
+                    () -> assertThrows(IllegalArgumentException.class,
+                            () -> builder.multiplier(Double.POSITIVE_INFINITY)),
+                    () -> assertThrows(IllegalArgumentException.class,
+                            () -> builder.multiplier(Double.NEGATIVE_INFINITY)));
         }
     }
 }

@@ -85,9 +85,9 @@ import java.util.concurrent.ThreadLocalRandom;
  *
  * @param maxAttempts   Total attempts including initial try (must be >= 1)
  * @param initialDelay  Starting delay after first failure (must be positive)
- * @param multiplier    Each retry delay multiplied by this value (must be >= 1.0)
+ * @param multiplier    Each retry delay multiplied by this value (must be finite and >= 1.0)
  * @param maxDelay      Cap on delay regardless of exponential growth (must be positive)
- * @param jitter        Randomization factor to prevent thundering herd (must be 0.0 to 1.0)
+ * @param jitter        Randomization factor to prevent thundering herd (must be finite, 0.0 to 1.0)
  * @param idempotentOnly When true, only retry GET/PUT/DELETE/HEAD/OPTIONS; skip POST/PATCH
  *
  * @since 1.0
@@ -113,7 +113,10 @@ boolean idempotentOnly
      *
      * @throws IllegalArgumentException if {@code maxAttempts < 1}, {@code initialDelay} is null,
      *         negative or zero, {@code maxDelay} is null, negative or zero, {@code jitter} is
-     *         outside {@code [0.0, 1.0]}, or {@code multiplier < 1.0}
+     *         non-finite ({@code NaN} or infinite) or outside {@code [0.0, 1.0]}, or
+     *         {@code multiplier} is non-finite or {@code < 1.0}. Non-finite values are rejected
+     *         explicitly because every ordered comparison against {@code NaN} evaluates to
+     *         {@code false}, so a range check alone would silently admit it.
      */
     @SuppressWarnings("java:S2589") // False positive: @NonNull doesn't enforce runtime null checks
     public RetryConfig {
@@ -126,10 +129,10 @@ boolean idempotentOnly
         if (maxDelay == null || maxDelay.isNegative() || maxDelay.isZero()) {
             throw new IllegalArgumentException("maxDelay must be positive");
         }
-        if (jitter < 0.0 || jitter > 1.0) {
+        if (!Double.isFinite(jitter) || jitter < 0.0 || jitter > 1.0) {
             throw new IllegalArgumentException("jitter must be between 0.0 and 1.0, but was: " + jitter);
         }
-        if (multiplier < 1.0) {
+        if (!Double.isFinite(multiplier) || multiplier < 1.0) {
             throw new IllegalArgumentException("multiplier must be >= 1.0, but was: " + multiplier);
         }
     }
@@ -260,12 +263,13 @@ boolean idempotentOnly
         /**
          * Sets the backoff multiplier.
          *
-         * @param multiplier each retry delay multiplied by this value (must be &gt;= 1.0)
+         * @param multiplier each retry delay multiplied by this value (must be finite and &gt;= 1.0)
          * @return this builder for chaining
-         * @throws IllegalArgumentException if multiplier &lt; 1.0
+         * @throws IllegalArgumentException if multiplier is non-finite ({@code NaN} or infinite)
+         *         or &lt; 1.0
          */
         public Builder multiplier(double multiplier) {
-            if (multiplier < 1.0) {
+            if (!Double.isFinite(multiplier) || multiplier < 1.0) {
                 throw new IllegalArgumentException("multiplier must be >= 1.0, but was: " + multiplier);
             }
             this.multiplier = multiplier;
@@ -297,12 +301,13 @@ boolean idempotentOnly
         /**
          * Sets the jitter randomization factor.
          *
-         * @param jitter randomization factor (must be 0.0 to 1.0, where 0.1 = 10%)
+         * @param jitter randomization factor (must be finite and 0.0 to 1.0, where 0.1 = 10%)
          * @return this builder for chaining
-         * @throws IllegalArgumentException if jitter not in range [0.0, 1.0]
+         * @throws IllegalArgumentException if jitter is non-finite ({@code NaN} or infinite) or
+         *         not in range [0.0, 1.0]
          */
         public Builder jitter(double jitter) {
-            if (jitter < 0.0 || jitter > 1.0) {
+            if (!Double.isFinite(jitter) || jitter < 0.0 || jitter > 1.0) {
                 throw new IllegalArgumentException("jitter must be between 0.0 and 1.0, but was: " + jitter);
             }
             this.jitter = jitter;
