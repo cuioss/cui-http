@@ -23,6 +23,7 @@ Usage in CI:
 
 import argparse
 import json
+import re
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -40,18 +41,71 @@ _BADGE_MAPPING = {
 _BENCHMARK_TYPES = ("micro",)
 _DEFAULT_MAX_HISTORY = 10
 
+# Trend history deployed before this cutoff was recorded while the forwarded attack benchmark
+# measured the JUL ConsoleHandler instead of the resolver, so those numbers are not comparable
+# with post-fix runs. Previously deployed entries whose timestamp prefix sorts before this value
+# are purged instead of being merged forward. Shape matches the timestamp prefix of a
+# {timestamp}-{sha8}.json history entry: yyyy-MM-dd-THHmmZ.
+_HISTORY_PURGE_BEFORE = "2026-08-29-T0000Z"
 
-def _copy_json_files(src_dir: Path, dst_dir: Path, *, skip_existing: bool = False) -> int:
-    """Copy all .json files from src to dst. Returns count of files copied."""
+# Exact shape of a deployed history entry: {yyyy-MM-dd-THHmmZ}-{sha8}.json. Matching the whole
+# name — not just splitting on the last hyphen — is what makes the cutoff comparison fail-closed:
+# a name like "zz-bad.json" sorts after the cutoff string but is not a history entry at all.
+_HISTORY_ENTRY_PATTERN = re.compile(
+    r"(?P<timestamp>\d{4}-\d{2}-\d{2}-T\d{4}Z)-(?P<sha8>[0-9a-fA-F]{8})\.json"
+)
+
+
+def _is_post_cutoff(filename: str) -> bool:
+    """Report whether a history entry was recorded at or after the purge cutoff.
+
+    The comparison is lexicographic over the timestamp prefix of a ``{timestamp}-{sha8}.json``
+    file name — no JSON is parsed. Fail-closed: a name that does not match that exact shape is
+    treated as pre-cutoff and therefore purged, so a malformed entry can never be merged
+    forward on the strength of sorting after the cutoff string.
+
+    Args:
+        filename: History file name, e.g. ``2026-08-29-T1200Z-a1b2c3d4.json``.
+
+    Returns:
+        True when the entry should be merged forward, False when it should be purged.
+    """
+    match = _HISTORY_ENTRY_PATTERN.fullmatch(filename)
+    if match is None:
+        return False
+    return match.group("timestamp") >= _HISTORY_PURGE_BEFORE
+
+
+def _copy_json_files(
+    src_dir: Path,
+    dst_dir: Path,
+    *,
+    skip_existing: bool = False,
+) -> tuple[int, int]:
+    """Copy post-cutoff .json files from src to dst, purging older entries.
+
+    Args:
+        src_dir: Source directory scanned for ``*.json`` entries.
+        dst_dir: Destination directory, created when missing.
+        skip_existing: When True, an already-present destination file is left untouched.
+
+    Returns:
+        ``(copied, purged)`` — the number of files copied and the number dropped by the
+        :func:`_is_post_cutoff` predicate.
+    """
     dst_dir.mkdir(parents=True, exist_ok=True)
     copied = 0
+    purged = 0
     for f in src_dir.glob("*.json"):
+        if not _is_post_cutoff(f.name):
+            purged += 1
+            continue
         dst = dst_dir / f.name
         if skip_existing and dst.exists():
             continue
         shutil.copy2(f, dst)
         copied += 1
-    return copied
+    return copied, purged
 
 
 def _enforce_retention(history_dir: Path, max_files: int) -> int:
@@ -79,8 +133,13 @@ def prepare_history(args: argparse.Namespace) -> None:
         history_src = previous_dir / benchmark_type / "history"
         if not history_src.is_dir():
             continue
-        count = _copy_json_files(history_src, output_dir / benchmark_type)
+        count, purged = _copy_json_files(history_src, output_dir / benchmark_type)
         print(f"Prepared {count} {benchmark_type} history files")
+        if purged:
+            print(
+                f"Purged {purged} {benchmark_type} history entries recorded "
+                f"before {_HISTORY_PURGE_BEFORE}"
+            )
 
 
 def assemble(args: argparse.Namespace) -> None:
@@ -105,18 +164,35 @@ def assemble(args: argparse.Namespace) -> None:
         print("Error: --micro-results is required", file=sys.stderr)
         sys.exit(1)
 
+    # 0. Establish the per-module results-directory verdict ONCE, before any directory-creating
+    # work runs. The step-1 history merge below calls mkdir(parents=True) on {results_dir}/history,
+    # which would materialize a missing results directory and make the step-3 existence guard
+    # always pass. Deciding here keeps the guard authoritative and keeps the warning to one line
+    # per missing module rather than one per phase.
+    present_modules: list[tuple[str, Path]] = []
+    for name, results_dir in modules:
+        if results_dir.is_dir():
+            present_modules.append((name, results_dir))
+        else:
+            print(f"Warning: {name} results not found at {results_dir}, skipping")
+
     # 1. Merge previous history (skip files that already exist to avoid overwriting current run)
     if previous_dir and previous_dir.is_dir():
-        for name, results_dir in modules:
+        for name, results_dir in present_modules:
             prev_history = previous_dir / name / "history"
             if not prev_history.is_dir():
                 continue
             history_dir = results_dir / "history"
-            count = _copy_json_files(prev_history, history_dir, skip_existing=True)
+            count, purged = _copy_json_files(prev_history, history_dir, skip_existing=True)
             print(f"Merged {count} previous {name} history files")
+            if purged:
+                print(
+                    f"Purged {purged} previous {name} history entries recorded "
+                    f"before {_HISTORY_PURGE_BEFORE}"
+                )
 
     # 2. Enforce retention policy per module
-    for name, results_dir in modules:
+    for name, results_dir in present_modules:
         removed = _enforce_retention(results_dir / "history", max_history)
         if removed:
             print(f"Removed {removed} old {name} history files (retention: {max_history})")
@@ -126,11 +202,7 @@ def assemble(args: argparse.Namespace) -> None:
     badges_dir = output_dir / "badges"
     badges_dir.mkdir(exist_ok=True)
 
-    for name, results_dir in modules:
-        if not results_dir.is_dir():
-            print(f"Warning: {name} results not found at {results_dir}, skipping")
-            continue
-
+    for name, results_dir in present_modules:
         # Copy full module output into type subdirectory
         shutil.copytree(results_dir, output_dir / name, dirs_exist_ok=True)
         print(f"Copied {name} benchmark artifacts to {output_dir / name}")

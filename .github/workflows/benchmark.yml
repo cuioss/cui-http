@@ -13,7 +13,9 @@ permissions:
   contents: read
 
 # Serialize all benchmark runs behind a single static group so that closely-merged PRs
-# queue instead of racing the git push to cuioss.github.io (which has no fetch/rebase/retry).
+# queue instead of racing each other's git push to cuioss.github.io. The concurrency group
+# covers this repository's own runs; the deploy step's bounded fetch-rebase-retry loop
+# absorbs races against deploys pushed by sibling repositories.
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false  # Don't cancel in-progress runs as benchmarks are expensive
@@ -26,7 +28,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     timeout-minutes: 30
     permissions:
-      contents: write
+      contents: read
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -118,4 +120,22 @@ jobs:
           git config user.email "cuioss-release-bot[bot]@users.noreply.github.com"
           git add .
           git diff --staged --quiet || git commit -m "Deploy benchmark results from ${{ github.sha }}"
-          git push
+          # cuioss.github.io also receives deploys from sibling repositories, which this
+          # workflow's concurrency group cannot serialize, so the push can lose a race.
+          # Retry a bounded number of times, rebasing onto the new remote tip between
+          # attempts. A fetch or rebase failure is not a race — propagate it immediately
+          # rather than burning the remaining attempts on it.
+          max_attempts=5
+          attempt=1
+          while [ "$attempt" -le "$max_attempts" ]; do
+            if git push; then
+              echo "Deploy push succeeded on attempt ${attempt}/${max_attempts}"
+              exit 0
+            fi
+            echo "Deploy push rejected on attempt ${attempt}/${max_attempts}; rebasing onto origin/main"
+            git fetch origin main
+            git rebase origin/main
+            attempt=$((attempt + 1))
+          done
+          echo "Deploy push failed after ${max_attempts} attempts" >&2
+          exit 1

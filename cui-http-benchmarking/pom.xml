@@ -21,6 +21,14 @@
         <skip.benchmark>true</skip.benchmark>
         <!-- Sonar: skip analysis for benchmarking module -->
         <sonar.skip>true</sonar.skip>
+        <!-- Never publish this module: the JMH harness is a development tool, not a library, and
+             publishing it would put de.cuioss.sheriff.oauth:benchmarking-common on Maven Central
+             as a transitive dependency. central-publishing-maven-plugin is what actually performs
+             the release (it ignores maven.deploy.skip), so its own skipPublishing switch is the
+             load-bearing one; maven.deploy.skip covers the standard deploy plugin as well. Scoped
+             to this POM — cui-http-core's Maven Central publication is unaffected. -->
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <skipPublishing>true</skipPublishing>
 
         <!-- Default benchmark runner -->
         <benchmark.runner>de.cuioss.http.security.benchmark.SecurityBenchmarkRunner</benchmark.runner>
@@ -175,9 +183,10 @@
                 <skip.benchmark>false</skip.benchmark>
             </properties>
         </profile>
-        <!-- Quick benchmark profile for faster testing -->
+        <!-- Smoke benchmark profile: cuts the iteration and warmup counts while lengthening each
+             measurement window, so total wall time drops but the run is not measurement-grade. -->
         <profile>
-            <id>quick</id>
+            <id>smoke</id>
             <properties>
                 <jmh.iterations>2</jmh.iterations>
                 <jmh.warmupIterations>1</jmh.warmupIterations>

@@ -264,10 +264,11 @@ Benchmark execution is gated behind Maven profiles in `cui-http-benchmarking/pom
 
 [source,bash]
 ----
-# Quick benchmark run (shortened iterations), benchmarking module only.
-# The `benchmark` profile enables execution; `quick` shortens warmup/measurement iterations.
+# Smoke benchmark run, benchmarking module only — not measurement-grade.
+# The `benchmark` profile enables execution; `smoke` cuts the iteration and warmup counts
+# while lengthening each measurement window, so total wall time drops.
 python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
-    --command-args "verify -Pbenchmark,quick -pl cui-http-benchmarking -am"
+    --command-args "verify -Pbenchmark,smoke -pl cui-http-benchmarking -am"
 ----
 
 Results are archived and published by the `.github/workflows/benchmark.yml` workflow.
