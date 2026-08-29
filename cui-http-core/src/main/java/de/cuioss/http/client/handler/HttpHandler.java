@@ -46,6 +46,10 @@ import java.util.regex.Pattern;
  * Validates URIs and configures timeouts at build time.
  * <p>
  * Thread-safe and immutable after construction.
+ * <p>
+ * Owns the underlying {@link HttpClient} and implements {@link AutoCloseable}: call {@link #close()}
+ * — or use the handler in a try-with-resources block — to deterministically release the client's
+ * connection pool and executor. See <a href="#lifecycle">Lifecycle</a>.
  *
  * <h3>Usage Examples</h3>
  * <pre>
@@ -90,6 +94,22 @@ import java.util.regex.Pattern;
  *   <li>Default timeout: 10 seconds for both connection and read</li>
  *   <li>Schemeless string URLs default to HTTPS</li>
  * </ul>
+ *
+ * <h3 id="lifecycle">Lifecycle</h3>
+ * <p>A handler creates exactly one {@link HttpClient} during construction and shares it across every
+ * call to {@link #createHttpClient()}, {@link #pingGet()}, and {@link #pingHead()}. That client owns
+ * a connection pool and — for the default configuration — a virtual-thread executor, neither of which
+ * is released until the client is closed. {@link #close()} delegates to {@link HttpClient#close()},
+ * which blocks until all in-flight requests on that client have completed. A handler is unusable
+ * after {@code close()}: requests issued through the returned client fail. Handlers held for the
+ * lifetime of the JVM need not be closed; short-lived handlers should be:</p>
+ * <pre>
+ * try (HttpHandler handler = HttpHandler.builder().uri("https://api.example.com").build()) {
+ *     HttpStatusFamily status = handler.pingGet();
+ * }
+ * </pre>
+ * <p>Adapters such as {@code ETagAwareHttpAdapter} <em>borrow</em> the client from the handler they
+ * are configured with and never close it — closing the handler is the caller's responsibility.</p>
  *
  * <h3>Scheme policy (fail-secure)</h3>
  * <p>HTTPS is required by default. {@link HttpHandlerBuilder#build()} rejects an {@code http://}
@@ -140,7 +160,7 @@ import java.util.regex.Pattern;
 @EqualsAndHashCode
 @ToString
 @Builder(builderClassName = "HttpHandlerBuilder", access = AccessLevel.PRIVATE)
-public final class HttpHandler {
+public final class HttpHandler implements AutoCloseable {
 
     private static final CuiLogger LOGGER = new CuiLogger(HttpHandler.class);
 
@@ -149,6 +169,23 @@ public final class HttpHandler {
      * Matches RFC 3986 scheme format: scheme:remainder
      */
     private static final Pattern URL_SCHEME_PATTERN = Pattern.compile("^[a-zA-Z][a-zA-Z0-9+.-]*:.*");
+
+    /**
+     * Pre-compiled pattern disambiguating a schemeless {@code host:port} shorthand from a genuine
+     * {@code scheme:remainder} URI.
+     * <p>
+     * {@link #URL_SCHEME_PATTERN} alone cannot tell the two apart: {@code localhost:8443} satisfies
+     * it, because {@code localhost} is a syntactically valid scheme name and {@code 8443} a valid
+     * remainder. Treating that input as scheme-bearing yields a URI with scheme {@code localhost}
+     * and no host, which {@link HttpHandlerBuilder#build()} then rejects as an unsupported scheme.
+     * <p>
+     * The disambiguator is that a genuine scheme is never followed <em>solely</em> by digits in the
+     * forms this builder accepts: {@code build()} admits only {@code http} and {@code https}, whose
+     * remainder always begins with {@code //}. So when the text immediately after the first colon is
+     * one or more digits terminated by end-of-string or one of {@code /}, {@code ?}, {@code #}, the
+     * input is a {@code host:port} shorthand and {@code https://} is prepended.
+     */
+    private static final Pattern HOST_PORT_PATTERN = Pattern.compile("^[a-zA-Z][a-zA-Z0-9+.-]*:\\d+(?:[/?#].*)?$");
 
     public static final int DEFAULT_CONNECTION_TIMEOUT_SECONDS = 10;
     public static final int DEFAULT_READ_TIMEOUT_SECONDS = 10;
@@ -324,7 +361,8 @@ public final class HttpHandler {
      *
      * @return The HTTP status code family, or {@link HttpStatusFamily#UNKNOWN} if an error occurred
      */
-    // HttpClient implements AutoCloseable in Java 17 but doesn't need to be closed
+    // Uses this handler's shared HttpClient and deliberately does not close it: the client's
+    // lifetime is the handler's, released by HttpHandler#close().
     @SuppressWarnings("try")
     public HttpStatusFamily pingHead() {
         return pingWithMethod("HEAD", HttpRequest.BodyPublishers.noBody());
@@ -335,7 +373,8 @@ public final class HttpHandler {
      *
      * @return The HTTP status code family, or {@link HttpStatusFamily#UNKNOWN} if an error occurred
      */
-    // HttpClient implements AutoCloseable in Java 17 but doesn't need to be closed
+    // Uses this handler's shared HttpClient and deliberately does not close it: the client's
+    // lifetime is the handler's, released by HttpHandler#close().
     @SuppressWarnings("try")
     public HttpStatusFamily pingGet() {
         return pingWithMethod("GET", HttpRequest.BodyPublishers.noBody());
@@ -348,7 +387,8 @@ public final class HttpHandler {
      * @param bodyPublisher The body publisher to use for the request
      * @return The HTTP status code family, or {@link HttpStatusFamily#UNKNOWN} if an error occurred
      */
-    // HttpClient implements AutoCloseable in Java 17 but doesn't need to be closed
+    // Uses this handler's shared HttpClient and deliberately does not close it: the client's
+    // lifetime is the handler's, released by HttpHandler#close().
     @SuppressWarnings("try")
     private HttpStatusFamily pingWithMethod(String method, HttpRequest.BodyPublisher bodyPublisher) {
         try {
@@ -384,6 +424,28 @@ public final class HttpHandler {
     }
 
     /**
+     * Releases the {@link HttpClient} this handler owns, shutting down its connection pool and
+     * executor.
+     * <p>
+     * Delegates to {@link HttpClient#close()}, which initiates an orderly shutdown and blocks until
+     * every request in flight <em>on that client</em> has completed. This handler — and any client
+     * reference previously obtained from {@link #createHttpClient()} — is unusable afterwards.
+     * </p>
+     * <p>
+     * Closing is idempotent: {@link HttpClient#close()} returns immediately once the client is
+     * already shut down, so calling this method more than once is safe. A handler retained for the
+     * lifetime of the JVM does not need to be closed; a short-lived one should be, ideally via
+     * try-with-resources. Note that this closes only the client, not any adapter that borrows it.
+     * </p>
+     *
+     * @since 2.2
+     */
+    @Override
+    public void close() {
+        httpClient.close();
+    }
+
+    /**
      * Builder for creating {@link HttpHandler} instances.
      */
     public static class HttpHandlerBuilder {
@@ -411,6 +473,11 @@ public final class HttpHandler {
          * single slot shared with {@link #url(String)}, so the last of {@code uri(String)} /
          * {@code url(String)} wins, and a typed {@code uri(URI)} or {@code url(URL)} set on the same
          * builder takes precedence over it.
+         * </p>
+         * <p>
+         * <strong>Schemeless input:</strong> a string without a scheme resolves to {@code https://}.
+         * This includes the {@code host:port} shorthand — {@code localhost:8443} resolves to
+         * {@code https://localhost:8443}, not to a URI with scheme {@code localhost}.
          * </p>
          *
          * @param uriString The string representation of the URI.
@@ -449,6 +516,11 @@ public final class HttpHandler {
          * <p>
          * This shares a single string slot with {@link #uri(String)} (last call wins) and has the
          * lowest resolution precedence; see {@link #uri(String)} for the full ordering.
+         * </p>
+         * <p>
+         * <strong>Schemeless input:</strong> a string without a scheme resolves to {@code https://},
+         * including the {@code host:port} shorthand — {@code localhost:8443} resolves to
+         * {@code https://localhost:8443}.
          * </p>
          *
          * @param urlString The string representation of the URL.
@@ -643,8 +715,10 @@ public final class HttpHandler {
                         + "sslContext(...) or keep verifyHostname(true).");
             }
 
-            // Resolve the URI from the provided inputs
-            resolveUri();
+            // Resolve the URI from the provided inputs. The result is bound to a local and threaded
+            // through the rest of build() so the builder's own uri field is never mutated - a reused
+            // builder therefore re-resolves from its current inputs instead of pinning the first result.
+            URI resolvedUri = resolveUri();
 
             // Validate connection timeout
             int actualConnectionTimeoutSeconds = connectionTimeoutSeconds != null ?
@@ -663,36 +737,37 @@ public final class HttpHandler {
             // Convert the URI to a URL
             // Note: URI.toURL() is deprecated but all alternatives (URL constructors) are also deprecated.
             // We suppress the warning since we need to create a URL for backward compatibility.
-            // At this point, uri is guaranteed to be non-null because resolveUri() was called above.
+            // At this point, resolvedUri is guaranteed to be non-null because resolveUri() either
+            // returns a non-null URI or throws.
             URL verifiedUrl;
             try {
-                verifiedUrl = uri.toURL();
+                verifiedUrl = resolvedUri.toURL();
             } catch (MalformedURLException | IllegalArgumentException | NullPointerException e) {
-                throw new IllegalStateException("Failed to convert URI to URL: " + uri, e);
+                throw new IllegalStateException("Failed to convert URI to URL: " + resolvedUri, e);
             }
 
             // Fail-secure scheme policy: HTTPS is required; http is opt-in; anything else is rejected.
-            String scheme = uri.getScheme();
+            String scheme = resolvedUri.getScheme();
             if ("https".equalsIgnoreCase(scheme)) {
                 // For HTTPS, create or validate SSL context and pin the enabled protocols
                 SecureSSLContextProvider actualSecureSSLContextProvider = secureSSLContextProvider != null ?
                         secureSSLContextProvider : new SecureSSLContextProvider();
-                SSLContext secureContext = resolveHttpsSecureContext(actualSecureSSLContextProvider);
-                return new HttpHandler(uri, verifiedUrl, secureContext, actualSecureSSLContextProvider,
+                SSLContext secureContext = resolveHttpsSecureContext(actualSecureSSLContextProvider, resolvedUri);
+                return new HttpHandler(resolvedUri, verifiedUrl, secureContext, actualSecureSSLContextProvider,
                         actualConnectionTimeoutSeconds, actualReadTimeoutSeconds, allowInsecureHttp,
                         verifyHostname, sslContextCallerSupplied);
             }
             if ("http".equalsIgnoreCase(scheme)) {
                 if (!allowInsecureHttp) {
-                    throw new IllegalArgumentException("Refusing to build a plaintext HTTP handler for " + uri
+                    throw new IllegalArgumentException("Refusing to build a plaintext HTTP handler for " + resolvedUri
                             + "; HTTPS is required. Call allowInsecureHttp(true) to permit cleartext HTTP, "
                             + "or use an https:// URI.");
                 }
-                LOGGER.warn(HttpLogMessages.WARN.INSECURE_HTTP_CONNECTION, uri);
+                LOGGER.warn(HttpLogMessages.WARN.INSECURE_HTTP_CONNECTION, resolvedUri);
                 // For HTTP, no SSL context needed
-                return new HttpHandler(uri, verifiedUrl, actualConnectionTimeoutSeconds, actualReadTimeoutSeconds);
+                return new HttpHandler(resolvedUri, verifiedUrl, actualConnectionTimeoutSeconds, actualReadTimeoutSeconds);
             }
-            throw new IllegalArgumentException("Unsupported URI scheme '" + scheme + "' for " + uri
+            throw new IllegalArgumentException("Unsupported URI scheme '" + scheme + "' for " + resolvedUri
                     + "; only http and https are supported.");
         }
 
@@ -711,13 +786,14 @@ public final class HttpHandler {
          * {@code verifyHostname(true)} rebuild. A genuinely caller-supplied context is never
          * discarded - {@link #sslContextCallerSupplied} gates it.
          *
-         * @param provider the TLS-floor provider used to create or validate the context
+         * @param provider    the TLS-floor provider used to create or validate the context
+         * @param resolvedUri the URI resolved for the handler under construction, used for logging
          * @return the resolved {@link SSLContext} for the handler under construction
          */
-        private SSLContext resolveHttpsSecureContext(SecureSSLContextProvider provider) {
+        private SSLContext resolveHttpsSecureContext(SecureSSLContextProvider provider, URI resolvedUri) {
             if (!verifyHostname) {
                 SSLContext relaxedContext = provider.createHostnameRelaxedSSLContext();
-                LOGGER.warn(HttpLogMessages.WARN.HOSTNAME_VERIFICATION_DISABLED, uri);
+                LOGGER.warn(HttpLogMessages.WARN.HOSTNAME_VERIFICATION_DISABLED, resolvedUri);
                 return relaxedContext;
             }
             boolean discardStaleRelaxedContext = !sslContextCallerSupplied && derivedSslContextRelaxed;
@@ -725,20 +801,28 @@ public final class HttpHandler {
         }
 
         /**
-         * Resolves the URI from the provided inputs.
-         * Priority: 1. uri, 2. url, 3. urlString
+         * Resolves the URI from the provided inputs without mutating builder state.
+         * <p>
+         * Resolution precedence is unchanged: {@code uri(URI)} wins over {@code url(URL)}, which
+         * wins over the shared string slot (where the last string setter wins). Because this method
+         * is pure, a builder reused after {@link #build()} re-resolves from its <em>current</em>
+         * inputs — a newly supplied string URI is honored rather than silently ignored in favor of
+         * a URI pinned by an earlier build.
+         *
+         * @return the resolved URI, never {@code null}
+         * @throws IllegalArgumentException if no valid URI source was provided, or if a supplied
+         *                                  {@link URL} cannot be converted to a {@link URI}
          */
-        private void resolveUri() {
+        private URI resolveUri() {
             // If URI is already set, use it
             if (uri != null) {
-                return;
+                return uri;
             }
 
             // If URL is set, convert it to URI
             if (url != null) {
                 try {
-                    uri = url.toURI();
-                    return;
+                    return url.toURI();
                 } catch (URISyntaxException e) {
                     throw new IllegalArgumentException("Invalid URL: " + url, e);
                 }
@@ -746,15 +830,18 @@ public final class HttpHandler {
 
             // If urlString is set, convert it to URI
             if (!MoreStrings.isBlank(urlString)) {
-                // Check if the URL has a scheme, if not prepend https://
+                // Check if the URL has a scheme, if not prepend https://. A host:port shorthand
+                // also satisfies URL_SCHEME_PATTERN, so HOST_PORT_PATTERN excludes it from being
+                // mistaken for a scheme-bearing URI - see HOST_PORT_PATTERN.
                 String urlToUse = urlString;
-                if (!URL_SCHEME_PATTERN.matcher(urlToUse).matches()) {
+                boolean schemeBearing = URL_SCHEME_PATTERN.matcher(urlToUse).matches()
+                        && !HOST_PORT_PATTERN.matcher(urlToUse).matches();
+                if (!schemeBearing) {
                     LOGGER.debug("URL missing scheme, prepending https:// to %s", urlString);
                     urlToUse = "https://" + urlToUse;
                 }
 
-                uri = URI.create(urlToUse);
-                return;
+                return URI.create(urlToUse);
             }
 
             // If we get here, no valid URI source was provided

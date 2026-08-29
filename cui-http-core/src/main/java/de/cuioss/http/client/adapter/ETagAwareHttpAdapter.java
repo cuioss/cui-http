@@ -141,9 +141,20 @@ import static de.cuioss.http.client.HttpLogMessages.WARN;
  * <ul>
  *   <li>Builder: NOT thread-safe (build once per adapter)</li>
  *   <li>Built adapter: Immutable fields, concurrent cache, safe for shared use</li>
- *   <li>HttpClient: Created once in constructor, reused for all requests</li>
+ *   <li>HttpClient: Borrowed once in the constructor from the configured handler, reused for all
+ *       requests</li>
  *   <li>Cache: ConcurrentHashMap with local reference pattern for 304 handling</li>
  * </ul>
+ *
+ * <h2>Client Ownership</h2>
+ * <p>
+ * This adapter <strong>borrows</strong> the {@link HttpClient} from the {@link HttpHandler} it is
+ * configured with — the handler creates and owns that client, and the adapter merely holds a
+ * reference to it. The adapter is deliberately <em>not</em> {@link AutoCloseable}: closing a
+ * borrowed client would shut down a resource shared with the handler and with every other adapter
+ * built from it. Release the client by closing the <em>handler</em>
+ * ({@link HttpHandler#close()}), once every adapter built from it is done.
+ * </p>
  *
  * <p><strong>Benign last-writer-wins race on cache maintenance.</strong> Two cache writes are
  * check-then-act sequences on the {@code ConcurrentHashMap} rather than atomic compare-and-set
@@ -1121,8 +1132,15 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
         /**
          * Sets the HTTP handler (required).
+         * <p>
+         * The built adapter <strong>borrows</strong> this handler's {@link HttpClient}; it does not
+         * own it and never closes it. Releasing the client stays the caller's responsibility, via
+         * {@link HttpHandler#close()} on the handler supplied here — and only once every adapter
+         * built from that handler is done with it, since the client is shared.
+         * </p>
          *
-         * @param httpHandler Handler with base URI, SSL, and timeout configuration
+         * @param httpHandler Handler with base URI, SSL, and timeout configuration; its
+         *                    {@link HttpClient} is borrowed, not owned, by the built adapter
          * @return this builder
          */
         public Builder<T> httpHandler(HttpHandler httpHandler) {
