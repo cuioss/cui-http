@@ -26,7 +26,8 @@ import de.cuioss.test.generator.TypedGenerator;
  * This generator creates various path traversal patterns including:
  * - Basic traversal sequences (../, ..\\)
  * - Encoded variants (%2e%2e%2f, %252e%252e%252f)
- * - Unicode variants (\\u002e\\u002e\\u002f)
+ * - Unicode lookalike variants (U+2024 ONE DOT LEADER, U+2215 DIVISION SLASH,
+ *   U+FF3C FULLWIDTH REVERSE SOLIDUS), which NFKC-normalize to the ASCII traversal
  * - Mixed encoding attempts
  * - Null byte injection variants
  * <p>
@@ -38,6 +39,21 @@ import de.cuioss.test.generator.TypedGenerator;
  * @author Claude Code Generator
  */
 public class PathTraversalGenerator implements TypedGenerator<String> {
+
+    /** ONE DOT LEADER (U+2024), a homoglyph of {@code .} that NFKC-normalizes to it. */
+    private static final String LOOKALIKE_DOT = Character.toString(0x2024);
+
+    /** DIVISION SLASH (U+2215), a homoglyph of {@code /} that NFKC-normalizes to it. */
+    private static final String LOOKALIKE_FORWARD_SEPARATOR = Character.toString(0x2215);
+
+    /** FULLWIDTH REVERSE SOLIDUS (U+FF3C), a homoglyph of the backslash that NFKC-normalizes to it. */
+    private static final String LOOKALIKE_BACKWARD_SEPARATOR = Character.toString(0xFF3C);
+
+    /** VARIATION SELECTOR-15 (U+FE0E), an invisible selector that decorates the dot preceding it. */
+    private static final String VARIATION_SELECTOR_15 = Character.toString(0xFE0E);
+
+    /** FRACTION SLASH (U+2044), a separator homoglyph distinct from {@link #LOOKALIKE_FORWARD_SEPARATOR}. */
+    private static final String FRACTION_SLASH = Character.toString(0x2044);
 
     // QI-6: Dynamic generation components
     private final TypedGenerator<Integer> depthGenerator = Generators.integers(1, 8);
@@ -180,8 +196,8 @@ public class PathTraversalGenerator implements TypedGenerator<String> {
         boolean useBackslash = "\\".equals(generateSeparator());
         StringBuilder pattern = new StringBuilder();
 
-        String dotUnicode = "\\u002e";
-        String separatorUnicode = useBackslash ? "\\u005c" : "\\u002f";
+        String dotUnicode = LOOKALIKE_DOT;
+        String separatorUnicode = useBackslash ? LOOKALIKE_BACKWARD_SEPARATOR : LOOKALIKE_FORWARD_SEPARATOR;
 
         for (int i = 0; i < depth; i++) {
             pattern.append(dotUnicode).append(dotUnicode).append(separatorUnicode);
@@ -200,7 +216,7 @@ public class PathTraversalGenerator implements TypedGenerator<String> {
             int encodingChoice = Generators.integers(0, 3).next();
             switch (encodingChoice) {
                 case 1 -> pattern.append("%2e%2e").append(separator);
-                case 2 -> pattern.append("\\u002e\\u002e").append(separator);
+                case 2 -> pattern.append(LOOKALIKE_DOT).append(LOOKALIKE_DOT).append(separator);
                 case 3 -> pattern.append("%2e%2e").append("/".equals(separator) ? "%2f" : "%5c");
                 default -> pattern.append("..").append(separator);
             }
@@ -251,8 +267,9 @@ public class PathTraversalGenerator implements TypedGenerator<String> {
                 pattern.append(generateBasicTraversal());
             }
             case 4 ->
-                // Unicode overlong sequences
-                pattern.append("\\ufe0e\\ufe0e\\u2044".repeat(Math.max(0, depth)));
+                // Variation-selector-decorated dots followed by a fraction slash
+                pattern.append(("." + VARIATION_SELECTOR_15 + "." + VARIATION_SELECTOR_15 + FRACTION_SLASH)
+                        .repeat(Math.max(0, depth)));
             default ->
                 // Fallback to basic traversal
                 pattern.append(generateBasicTraversal());

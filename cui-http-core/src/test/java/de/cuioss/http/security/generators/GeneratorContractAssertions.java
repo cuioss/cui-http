@@ -36,23 +36,32 @@ import static org.junit.jupiter.api.Assertions.*;
  * <h3>Traceability</h3>
  *
  * <p>Every marker declared here is emitted by a concrete branch of a generator in this tree;
- * the vocabularies are closed sets, not speculative catalogues. In particular
- * {@link #TRAVERSAL_MARKERS} carries the two <em>literal escape-text</em> forms
- * &#92;u002e and &#92;ufe0e: {@code PathTraversalGenerator.generateUnicodeTraversal()} and
- * {@code generateAdvancedTraversal()} case 4 append the six-character escape <em>text</em> to
- * their output, not the decoded character, so a contract assertion must look for the text.</p>
+ * the vocabularies are closed sets, not speculative catalogues.</p>
  *
  * <h3>Pipeline round-trip</h3>
  *
  * <p>{@link #assertPipelineAccepts(HttpSecurityValidator, String)} and
  * {@link #assertPipelineRejects(HttpSecurityValidator, String)} express the stronger contract
  * available to generators whose every branch is unambiguously legitimate (accepts) or
- * unambiguously an attack (rejects). Generators that mix the two — or that emit escape text
- * rather than decoded characters — assert marker properties only.</p>
+ * unambiguously an attack (rejects). Generators that mix the two assert marker properties
+ * only.</p>
  *
  * @since 1.0
  */
 public final class GeneratorContractAssertions {
+
+    /**
+     * A pair of ONE DOT LEADER characters (U+2024), the homoglyph form of {@code ..} emitted by
+     * {@code PathTraversalGenerator}'s Unicode and mixed arms. NFKC folds it to {@code ..}.
+     */
+    private static final String LOOKALIKE_DOUBLE_DOT = fromCodePoints(0x2024, 0x2024);
+
+    /**
+     * Two dots each decorated by VARIATION SELECTOR-15 (U+FE0E) and closed by a FRACTION SLASH
+     * (U+2044), emitted by {@code PathTraversalGenerator.generateAdvancedTraversal()} case 4.
+     */
+    private static final String DECORATED_DOTS_AND_FRACTION_SLASH =
+            fromCodePoints(0x002E, 0xFE0E, 0x002E, 0xFE0E, 0x2044);
 
     /**
      * Substrings that mark a value as a path-traversal payload, as actually emitted by the
@@ -74,8 +83,8 @@ public final class GeneratorContractAssertions {
             "%C0%AE",
             "..%c0%af",
             "..%00",
-            "\\u002e",
-            "\\ufe0e");
+            LOOKALIKE_DOUBLE_DOT,
+            DECORATED_DOTS_AND_FRACTION_SLASH);
 
     /**
      * Substrings that mark a value as a null-byte injection payload: the raw null byte and its
@@ -97,6 +106,21 @@ public final class GeneratorContractAssertions {
 
     private GeneratorContractAssertions() {
         // utility class
+    }
+
+    /**
+     * Builds a string from explicit code points, so a marker or signature made of non-ASCII
+     * characters can be declared without embedding those characters in the source file.
+     *
+     * @param codePoints the code points to append, in order
+     * @return the string formed by appending every given code point
+     */
+    public static String fromCodePoints(int... codePoints) {
+        StringBuilder builder = new StringBuilder(codePoints.length);
+        for (int codePoint : codePoints) {
+            builder.appendCodePoint(codePoint);
+        }
+        return builder.toString();
     }
 
     /**

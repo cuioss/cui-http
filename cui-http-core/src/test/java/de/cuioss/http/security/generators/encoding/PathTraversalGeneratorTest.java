@@ -15,6 +15,9 @@
  */
 package de.cuioss.http.security.generators.encoding;
 
+import de.cuioss.http.security.config.SecurityConfiguration;
+import de.cuioss.http.security.monitoring.SecurityEventCounter;
+import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.DisplayName;
@@ -27,24 +30,23 @@ import java.util.Set;
 
 import static de.cuioss.http.security.generators.GeneratorContractAssertions.TRAVERSAL_MARKERS;
 import static de.cuioss.http.security.generators.GeneratorContractAssertions.assertContainsAny;
+import static de.cuioss.http.security.generators.GeneratorContractAssertions.assertPipelineRejects;
+import static de.cuioss.http.security.generators.GeneratorContractAssertions.fromCodePoints;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Contract test for {@link PathTraversalGenerator}.
  *
  * <p>The defining property of this generator is that every emitted value carries a traversal
- * marker. The Unicode arms contribute the <em>literal escape text</em> forms of the marker
- * vocabulary rather than decoded characters, because
- * {@link PathTraversalGenerator} builds them from doubled backslashes.</p>
- *
- * <p>There is deliberately no per-value pipeline round-trip: those literal escape-text values
- * are ordinary printable text to a validator, so a uniform "the pipeline rejects it" assertion
- * would not hold.</p>
+ * marker and is rejected by the URL path validation pipeline. The Unicode arms contribute real
+ * homoglyph characters — ONE DOT LEADER and DIVISION SLASH or FULLWIDTH REVERSE SOLIDUS — which
+ * NFKC-fold to the ASCII traversal, so they are genuine attacks and carry the same round-trip
+ * obligation as the encoded arms.</p>
  *
  * <p>The generator's seven attack types deliberately share encodings — the mixed arm re-emits
  * the basic, encoded and Unicode forms — so the aggregate test asserts reachability of one
- * literal signature per attack type rather than attempting to attribute each value back to the
- * branch that produced it.</p>
+ * signature per attack type rather than attempting to attribute each value back to the branch
+ * that produced it.</p>
  */
 @EnableGeneratorController
 @DisplayName("PathTraversalGenerator Contract Tests")
@@ -55,21 +57,31 @@ class PathTraversalGeneratorTest {
     private static final List<String> BASIC_SIGNATURES = List.of("../", "..\\");
     private static final List<String> ENCODED_SIGNATURES = List.of("%2e%2e%2f", "%2e%2e%5c");
     private static final List<String> DOUBLE_ENCODED_SIGNATURES = List.of("%252e%252e");
-    /** Escape text with an escaped separator, emitted only by {@code generateUnicodeTraversal}. */
-    private static final List<String> UNICODE_LITERAL_SIGNATURES =
-            List.of("\\u002e\\u002e\\u002f", "\\u002e\\u002e\\u005c");
-    /** Escape text with a raw separator, emitted only by the mixed arm. */
-    private static final List<String> MIXED_SIGNATURES =
-            List.of("\\u002e\\u002e/", "\\u002e\\u002e\\");
+    /** Homoglyph dots with a homoglyph separator, emitted only by {@code generateUnicodeTraversal}. */
+    private static final List<String> UNICODE_SIGNATURES = List.of(
+            fromCodePoints(0x2024, 0x2024, 0x2215),
+            fromCodePoints(0x2024, 0x2024, 0xFF3C));
+    /** Homoglyph dots with a raw separator, emitted only by the mixed arm. */
+    private static final List<String> MIXED_SIGNATURES = List.of(
+            fromCodePoints(0x2024, 0x2024, 0x002F),
+            fromCodePoints(0x2024, 0x2024, 0x005C));
     private static final List<String> NULL_BYTE_SIGNATURES = List.of("%00");
-    private static final List<String> ADVANCED_SIGNATURES =
-            List.of("....", "%c0%ae%c0%ae%c0%af", "\\ufe0e\\ufe0e\\u2044", "/var/www/", "C:\\inetpub\\wwwroot\\");
+    private static final List<String> ADVANCED_SIGNATURES = List.of(
+            "....",
+            "%c0%ae%c0%ae%c0%af",
+            fromCodePoints(0x002E, 0xFE0E, 0x002E, 0xFE0E, 0x2044),
+            "/var/www/",
+            "C:\\inetpub\\wwwroot\\");
 
     @ParameterizedTest
     @TypeGeneratorSource(value = PathTraversalGenerator.class, count = 100)
-    @DisplayName("Every generated value carries a traversal marker")
+    @DisplayName("Every generated value carries a traversal marker and is rejected by the pipeline")
     void shouldGeneratePathTraversal(String generatedValue) {
         assertContainsAny(generatedValue, TRAVERSAL_MARKERS, "Path traversal value");
+
+        assertPipelineRejects(
+                new URLPathValidationPipeline(SecurityConfiguration.defaults(), new SecurityEventCounter()),
+                generatedValue);
     }
 
     @Test
@@ -83,13 +95,13 @@ class PathTraversalGeneratorTest {
             recordIfMatched(attackTypes, "basic", value, BASIC_SIGNATURES);
             recordIfMatched(attackTypes, "encoded", value, ENCODED_SIGNATURES);
             recordIfMatched(attackTypes, "double-encoded", value, DOUBLE_ENCODED_SIGNATURES);
-            recordIfMatched(attackTypes, "unicode-literal", value, UNICODE_LITERAL_SIGNATURES);
+            recordIfMatched(attackTypes, "unicode", value, UNICODE_SIGNATURES);
             recordIfMatched(attackTypes, "mixed", value, MIXED_SIGNATURES);
             recordIfMatched(attackTypes, "null-byte", value, NULL_BYTE_SIGNATURES);
             recordIfMatched(attackTypes, "advanced", value, ADVANCED_SIGNATURES);
         }
 
-        assertEquals(Set.of("basic", "encoded", "double-encoded", "unicode-literal",
+        assertEquals(Set.of("basic", "encoded", "double-encoded", "unicode",
                         "mixed", "null-byte", "advanced"), attackTypes,
                 "Every documented attack type must be reachable within " + AGGREGATE_DRAWS + " draws");
     }

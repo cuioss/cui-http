@@ -43,7 +43,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * <ul>
  *   <li>Basic path traversal sequences (../, ..\\)</li>
  *   <li>URL encoded traversal patterns (%2e%2e%2f)</li>
- *   <li>Unicode traversal variants (\\u002e)</li>
+ *   <li>Unicode traversal variants (U+2024 ONE DOT LEADER with U+2215 DIVISION SLASH or
+ *       U+FF3C FULLWIDTH REVERSE SOLIDUS)</li>
  *   <li>Mixed encoding attacks</li>
  *   <li>Null byte injection patterns</li>
  *   <li>Advanced traversal combinations</li>
