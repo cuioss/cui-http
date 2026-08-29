@@ -151,7 +151,7 @@ ValidationType validationType) implements HttpSecurityValidator {
                 : value.length();
 
         // Determine the appropriate limit and failure type based on validation type
-        int limit = getMaxLength();
+        long limit = getMaxLength();
         UrlSecurityFailureType failureType = getFailureType();
         String componentName = getComponentName();
 
@@ -207,9 +207,12 @@ ValidationType validationType) implements HttpSecurityValidator {
     /**
      * Gets the maximum allowed length for the current validation type.
      *
-     * @return Maximum length in characters (or bytes for body content)
+     * @return Maximum length in characters, or in UTF-8 bytes for {@link ValidationType#BODY}.
+     * The full configured {@code long} range is honoured: a {@code maxBodySize} above
+     * {@code Integer.MAX_VALUE} is returned as configured rather than being silently capped.
+     * The other validation types return {@code int} accessors, which widen implicitly.
      */
-    private int getMaxLength() {
+    private long getMaxLength() {
         return switch (validationType) {
             case URL_PATH -> config.maxPathLength();
             case PARAMETER_NAME -> config.maxParameterNameLength();
@@ -218,7 +221,7 @@ ValidationType validationType) implements HttpSecurityValidator {
             case HEADER_VALUE -> config.maxHeaderValueLength();
             case COOKIE_NAME -> config.maxCookieNameLength();
             case COOKIE_VALUE -> config.maxCookieValueLength();
-            case BODY -> (int) Math.min(config.maxBodySize(), Integer.MAX_VALUE);
+            case BODY -> config.maxBodySize();
         };
     }
 
