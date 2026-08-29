@@ -35,11 +35,18 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  * {@link ResolvedForwarding}.
  *
  * <p>For each field the resolver: (1) selects the raw value by header precedence, (2) sanitizes it
- * through the existing {@link de.cuioss.http.security} header-value pipeline (rejecting CR/LF, NUL,
- * control characters, over-length, and suspicious patterns), (3) applies field-specific
- * normalization and injection guards, and (4) honors it only when the configured trust model
- * permits. Values that fail sanitization or are not trusted are dropped (and logged) rather than
- * honored — {@code resolve} never throws.</p>
+ * through the existing {@link de.cuioss.http.security} header-value pipeline (rejecting over-length
+ * input, NUL, other control characters including CR/LF, and — when so configured — extended ASCII),
+ * (3) applies field-specific normalization and injection guards, and (4) honors it only when the
+ * configured trust model permits. A value that fails sanitization is dropped and logged; a value
+ * that is merely not trusted is also dropped, but only the context-path drop is logged (at
+ * {@code DEBUG}).</p>
+ *
+ * <p><strong>{@code resolve} is fail-safe, not exception-free.</strong> No rejected or untrusted
+ * header value produces an exception. It does, however, throw {@link NullPointerException} for a
+ * {@code null} {@code headerLookup} (see {@link #resolve(Function)}), propagate any
+ * {@link RuntimeException} thrown by the caller-supplied lookup, and propagate any exception other
+ * than {@link UrlSecurityException} escaping the sanitization pipeline.</p>
  *
  * <h3 id="security-precondition">Security precondition — trusted network placement (MANDATORY)</h3>
  * <p><strong>{@code resolve(...)} trusts HTTP headers, not the socket.</strong> The resolver
@@ -655,7 +662,7 @@ public final class ForwardedHeaderResolver {
      *   <li>{@link #ABSENT} — no {@code Forwarded} header was sent; the RFC source contributes
      *       nothing and the de-facto family is honored on its own.</li>
      *   <li>{@link #UNRESOLVABLE} — the header WAS sent but its raw value failed sanitization
-     *       (CR/LF, control characters, over-length, suspicious pattern) or violated the RFC 7239
+     *       (over-length, NUL, other control characters including CR/LF) or violated the RFC 7239
      *       grammar with a malformed {@code forwarded-pair}. The source counts as present for
      *       <em>every</em> field, so it disagrees with any de-facto sibling that resolves and the
      *       field is dropped (fail closed).</li>

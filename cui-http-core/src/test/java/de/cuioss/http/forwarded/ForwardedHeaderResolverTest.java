@@ -69,6 +69,35 @@ class ForwardedHeaderResolverTest {
         }
     }
 
+    /**
+     * {@code resolve} is fail-safe, not exception-free: no rejected or untrusted header value
+     * produces an exception, but a broken caller contract still does. These cases make that
+     * distinction falsifiable rather than leaving the old "never throws" claim unchecked.
+     */
+    @Nested
+    @DisplayName("Exception propagation")
+    class ExceptionPropagation {
+
+        @Test
+        @DisplayName("throws NullPointerException for a null header lookup")
+        void throwsOnNullLookup() {
+            assertThrows(NullPointerException.class, () -> trustAllResolver().resolve(null));
+        }
+
+        @Test
+        @DisplayName("propagates a RuntimeException thrown by the caller-supplied lookup")
+        void propagatesLookupFailure() {
+            Function<String, List<String>> failing = name -> {
+                throw new IllegalStateException("header accessor unavailable");
+            };
+
+            var thrown = assertThrows(IllegalStateException.class,
+                    () -> trustAllResolver().resolve(failing));
+            assertEquals("header accessor unavailable", thrown.getMessage(),
+                    "a broken accessor must surface, not be swallowed into an empty result");
+        }
+    }
+
     @Nested
     @DisplayName("Secure default")
     class SecureDefault {

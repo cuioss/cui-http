@@ -48,7 +48,12 @@
  * <p>The resolver is transport-agnostic (it consumes a {@link java.util.function.Function
  * Function&lt;String,java.util.List&lt;String&gt;&gt;} header accessor, so no servlet/Jetty type
  * leaks in) and secure-by-default: with no allowlist and no explicit {@code trustAll} opt-in,
- * client-supplied forwarded values are ignored (never trusted), only logged. See
+ * client-supplied forwarded values are ignored (never trusted). The ignoring is mostly
+ * <em>silent</em>: scheme, host, and port are discarded with no log line at all, because the
+ * {@code !trustAll} check returns before sanitization is ever reached, and the client IP is
+ * likewise discarded without logging when no {@code trustedProxies} are configured. Only an
+ * un-allowlisted context path produces a line, and only at {@code DEBUG}. Do not rely on the log
+ * to tell you that forwarded headers are being dropped — read the configuration. See
  * {@link de.cuioss.http.forwarded.ForwardedResolverConfig} for the trust model.</p>
  * <p>Transport-agnostic does <strong>not</strong> mean obligation-free. The accessor MUST return
  * <em>every</em> instance of the named header, in wire order — a proxy appends by adding a repeated
