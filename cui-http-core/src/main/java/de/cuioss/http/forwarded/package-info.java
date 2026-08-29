@@ -51,8 +51,13 @@
  * client-supplied forwarded values are ignored (never trusted). The ignoring is mostly
  * <em>silent</em>: scheme, host, and port are discarded with no log line at all, because the
  * {@code !trustAll} check returns before sanitization is ever reached, and the client IP is
- * likewise discarded without logging when no {@code trustedProxies} are configured. Only an
- * un-allowlisted context path produces a line, and only at {@code DEBUG}. Do not rely on the log
+ * likewise discarded without logging when no {@code trustedProxies} are configured. The context
+ * path is the one field that does produce a line, at either of two levels depending on <em>why</em>
+ * it was dropped: a <strong>rejected</strong> context path — one carrying control characters, one
+ * that is protocol-relative or backslash-led, or one the header-value sanitization pipeline throws
+ * on — is logged at {@code WARN} regardless of the trust configuration, because those guards run
+ * before the trust/allowlist check is ever reached; a <strong>well-formed but untrusted and
+ * un-allowlisted</strong> context path is logged only at {@code DEBUG}. Do not rely on the log
  * to tell you that forwarded headers are being dropped — read the configuration. See
  * {@link de.cuioss.http.forwarded.ForwardedResolverConfig} for the trust model.</p>
  * <p>Transport-agnostic does <strong>not</strong> mean obligation-free. The accessor MUST return
