@@ -27,7 +27,7 @@ Never hard-code build tool commands (`./mvnw`, `mvn`) — invoke builds via the 
 - Full verify: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify"`
 - Coverage: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -Pcoverage"`
 - Tests (cui-http): `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "test -pl cui-http-core -am"` — only on cui-http
-- Benchmark (cui-http-benchmarking): `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -Pbenchmark,quick -pl cui-http-benchmarking -am"` — only on cui-http-benchmarking (the `benchmark` profile flips `skip.benchmark=false`; `quick` only shortens iterations, so it must be combined with `benchmark` to actually run)
+- Benchmark (cui-http-benchmarking): `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -Pbenchmark,smoke -pl cui-http-benchmarking -am"` — only on cui-http-benchmarking (the `benchmark` profile flips `skip.benchmark=false`; `smoke` only retunes JMH timings — it cuts the iteration and warmup counts while lengthening each measurement window, so total wall time drops but the run is not measurement-grade — and must be combined with `benchmark` to actually run)
 
 Use a 10-minute Bash timeout (600000ms) for build invocations. Analyze each build's TOON result: `status`, `errors[N]{file,line,message,category}`, `log_file`.
 

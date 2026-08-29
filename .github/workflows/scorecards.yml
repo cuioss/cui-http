@@ -1,4 +1,3 @@
-# Example: Copy this to your repo as .github/workflows/scorecards.yml
 name: Scorecard supply-chain security
 
 on:

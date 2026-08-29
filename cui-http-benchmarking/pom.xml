@@ -175,9 +175,10 @@
                 <skip.benchmark>false</skip.benchmark>
             </properties>
         </profile>
-        <!-- Quick benchmark profile for faster testing -->
+        <!-- Smoke benchmark profile: cuts the iteration and warmup counts while lengthening each
+             measurement window, so total wall time drops but the run is not measurement-grade. -->
         <profile>
-            <id>quick</id>
+            <id>smoke</id>
             <properties>
                 <jmh.iterations>2</jmh.iterations>
                 <jmh.warmupIterations>1</jmh.warmupIterations>
