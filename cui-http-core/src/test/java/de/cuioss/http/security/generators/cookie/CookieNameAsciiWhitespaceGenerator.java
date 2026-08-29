@@ -82,7 +82,7 @@ public class CookieNameAsciiWhitespaceGenerator implements TypedGenerator<String
         return switch (nameTypeGen.next()) {
             case 0 -> "__Host-session";
             case 1 -> "__Secure-token";
-            case 2 -> "session_id";
+            case 2 -> "__Host-token";
             default -> "__Host-session";
         };
     }

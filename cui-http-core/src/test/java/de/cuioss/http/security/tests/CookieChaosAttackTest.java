@@ -106,7 +106,7 @@ class CookieChaosAttackTest {
      *
      * <p>
      * Uses generator to produce combinations of 13 Unicode whitespace types
-     * (multibyte and single-byte) combined with __Host-, __Secure-, and regular
+     * (multibyte and single-byte) combined with __Host- and __Secure- prefixed
      * cookie names in leading, trailing, and both positions.
      * </p>
      */
@@ -114,6 +114,8 @@ class CookieChaosAttackTest {
     @TypeGeneratorSource(value = CookieNameUnicodeWhitespaceGenerator.class, count = 50)
     @DisplayName("Attack #1: Unicode whitespace injection in cookie names must be rejected")
     void shouldRejectUnicodeWhitespaceInCookieName(String maliciousName) {
+        assertCarriesCookiePrefix(maliciousName);
+
         var exception = assertThrows(UrlSecurityException.class,
                 () -> cookieNameValidator.validate(maliciousName),
                 "Unicode space in cookie name should be rejected: " + getDisplayableString(maliciousName));
@@ -174,6 +176,8 @@ class CookieChaosAttackTest {
     @TypeGeneratorSource(value = CookieNameAsciiWhitespaceGenerator.class, count = 40)
     @DisplayName("Attack #3: Leading/trailing ASCII whitespace must be rejected")
     void shouldRejectLeadingTrailingWhitespaceInCookieName(String invalidName) {
+        assertCarriesCookiePrefix(invalidName);
+
         var exception = assertThrows(UrlSecurityException.class,
                 () -> cookieNameValidator.validate(invalidName),
                 "Whitespace in cookie name should be rejected: '" + invalidName + "'");
@@ -425,6 +429,22 @@ class CookieChaosAttackTest {
      * @param input The string that may contain control/Unicode characters
      * @return A displayable representation showing special characters as Unicode escapes
      */
+    /**
+     * Asserts the prefix-bypass contract both whitespace generators declare: the name they
+     * decorate is always a {@code __Host-} or {@code __Secure-} prefixed one, so every emitted
+     * value exercises a prefix bypass rather than an ordinary cookie name. The decoration is
+     * stripped first because the generators wrap the name in leading and trailing whitespace,
+     * including non-breaking forms that {@link String#strip()} leaves in place.
+     *
+     * @param generatedName a name drawn from either whitespace generator
+     */
+    private void assertCarriesCookiePrefix(String generatedName) {
+        String undecorated = generatedName.replaceAll("^[\\s\\p{Z}\\p{Cc}]+|[\\s\\p{Z}\\p{Cc}]+$", "");
+        assertTrue(undecorated.startsWith("__Host-") || undecorated.startsWith("__Secure-"),
+                () -> "A prefix-bypass generator must decorate a __Host- or __Secure- prefixed name, but was: "
+                        + getDisplayableString(generatedName));
+    }
+
     private String getDisplayableString(String input) {
         if (input == null) {
             return "null";
