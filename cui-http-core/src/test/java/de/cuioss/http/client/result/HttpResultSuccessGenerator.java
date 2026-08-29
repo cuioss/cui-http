@@ -19,8 +19,14 @@ import de.cuioss.test.generator.Generators;
 import de.cuioss.test.generator.TypedGenerator;
 
 /**
- * Generator for HttpResult.Success instances with random content.
- * Used in parameterized tests with @TypeGeneratorSource.
+ * Generator for {@link HttpResult} success instances with random content, ETag and 2xx status.
+ * <p>
+ * Instantiated directly as a test field and driven via {@link #next()}, for example:
+ * <pre>{@code
+ * private final HttpResultSuccessGenerator successGen = new HttpResultSuccessGenerator();
+ *
+ * HttpResult<String> result = successGen.next();
+ * }</pre>
  */
 public class HttpResultSuccessGenerator implements TypedGenerator<HttpResult<String>> {
 
@@ -35,5 +41,19 @@ public class HttpResultSuccessGenerator implements TypedGenerator<HttpResult<Str
         int httpStatus = status.next();
 
         return HttpResult.success(content, etag, httpStatus);
+    }
+
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Generic type arguments are erased at runtime, so the only class token available is the raw
+     * {@code HttpResult} one. The double cast re-attaches the {@code String} type argument the
+     * declared return type carries; it is safe because {@link #next()} only ever produces
+     * {@code HttpResult<String>} instances.
+     */
+    @SuppressWarnings("unchecked")
+    @Override
+    public Class<HttpResult<String>> getType() {
+        return (Class<HttpResult<String>>) (Class<?>) HttpResult.class;
     }
 }
