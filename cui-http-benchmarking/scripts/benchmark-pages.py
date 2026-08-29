@@ -23,6 +23,7 @@ Usage in CI:
 
 import argparse
 import json
+import re
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -47,13 +48,21 @@ _DEFAULT_MAX_HISTORY = 10
 # {timestamp}-{sha8}.json history entry: yyyy-MM-dd-THHmmZ.
 _HISTORY_PURGE_BEFORE = "2026-08-29-T0000Z"
 
+# Exact shape of a deployed history entry: {yyyy-MM-dd-THHmmZ}-{sha8}.json. Matching the whole
+# name — not just splitting on the last hyphen — is what makes the cutoff comparison fail-closed:
+# a name like "zz-bad.json" sorts after the cutoff string but is not a history entry at all.
+_HISTORY_ENTRY_PATTERN = re.compile(
+    r"(?P<timestamp>\d{4}-\d{2}-\d{2}-T\d{4}Z)-(?P<sha8>[0-9a-fA-F]{8})\.json"
+)
+
 
 def _is_post_cutoff(filename: str) -> bool:
     """Report whether a history entry was recorded at or after the purge cutoff.
 
-    The comparison is purely lexicographic over the ``{timestamp}-{sha8}.json`` file name —
-    no JSON is parsed. Fail-closed: a name that does not split into a timestamp prefix and a
-    trailing sha segment is treated as pre-cutoff and therefore purged.
+    The comparison is lexicographic over the timestamp prefix of a ``{timestamp}-{sha8}.json``
+    file name — no JSON is parsed. Fail-closed: a name that does not match that exact shape is
+    treated as pre-cutoff and therefore purged, so a malformed entry can never be merged
+    forward on the strength of sorting after the cutoff string.
 
     Args:
         filename: History file name, e.g. ``2026-08-29-T1200Z-a1b2c3d4.json``.
@@ -61,11 +70,10 @@ def _is_post_cutoff(filename: str) -> bool:
     Returns:
         True when the entry should be merged forward, False when it should be purged.
     """
-    stem = filename[: -len(".json")] if filename.endswith(".json") else filename
-    prefix, separator, _ = stem.rpartition("-")
-    if not separator or not prefix:
+    match = _HISTORY_ENTRY_PATTERN.fullmatch(filename)
+    if match is None:
         return False
-    return prefix >= _HISTORY_PURGE_BEFORE
+    return match.group("timestamp") >= _HISTORY_PURGE_BEFORE
 
 
 def _copy_json_files(

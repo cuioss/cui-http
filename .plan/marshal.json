@@ -1,6 +1,6 @@
 {
   "extension_defaults": {
-    "build.maven.profiles.map.canonical": "quick:benchmark"
+    "build.maven.profiles.map.canonical": "smoke:benchmark"
   },
   "plan": {
     "effort": "level-3",
