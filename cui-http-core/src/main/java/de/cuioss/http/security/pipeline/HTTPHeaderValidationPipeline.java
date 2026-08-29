@@ -22,6 +22,7 @@ import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.http.security.validation.AllowBlockListStage;
 import de.cuioss.http.security.validation.CharacterValidationStage;
 import de.cuioss.http.security.validation.LengthValidationStage;
+import lombok.AccessLevel;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.ToString;
@@ -74,16 +75,34 @@ import java.util.Objects;
  * }
  * </pre>
  *
+ * <h3>Value Equality</h3>
+ * <p>Two {@code HTTPHeaderValidationPipeline} instances are equal when both their
+ * {@link ValidationType} and their {@link SecurityConfiguration} are equal, so a header-name
+ * pipeline never equals a header-value one and a strict-configured pipeline never equals a
+ * lenient-configured one. The configuration is retained solely to give
+ * {@code equals}/{@code hashCode} a value basis and is deliberately <strong>not</strong> exposed
+ * via an accessor, so this class's public API is unaffected by holding it; the pre-existing
+ * {@code getValidationType()} accessor is unchanged.</p>
+ *
+ * <p>Two fields are deliberately excluded from the basis. The {@link SecurityEventCounter} is
+ * mutable shared monitoring state, so including it would make {@code hashCode} change as events
+ * are counted and break the {@code hashCode} contract for an instance already used as a hash key.
+ * The {@code stages} list is derived deterministically from the configuration and the validation
+ * type, so including it would be redundant with them and would reintroduce identity semantics.</p>
+ *
  * Implements: Task P3 from HTTP verification specification
  *
  * @since 1.0
  */
-@EqualsAndHashCode(callSuper = false, of = {"validationType"})
+@EqualsAndHashCode(callSuper = false, of = {"validationType", "config"})
 @ToString(callSuper = true)
 @Getter
 public final class HTTPHeaderValidationPipeline extends AbstractValidationPipeline {
 
     private final ValidationType validationType;
+
+    @Getter(AccessLevel.NONE)
+    private final SecurityConfiguration config;
 
     /**
      * Creates a new HTTP header validation pipeline with the specified configuration.
@@ -106,6 +125,7 @@ public final class HTTPHeaderValidationPipeline extends AbstractValidationPipeli
         }
 
         this.validationType = validationType;
+        this.config = config;
     }
 
     private static List<HttpSecurityValidator> createStages(SecurityConfiguration config, ValidationType validationType) {
