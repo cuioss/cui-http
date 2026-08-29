@@ -138,9 +138,14 @@ String attributes) {
      * response.setHeader("Set-Cookie", sessionCookie.toCookieString());
      * </pre>
      *
-     * @param suffix The cookie name suffix (will be prefixed with __Host-)
+     * @param suffix The cookie name suffix (will be prefixed with __Host-). The suffix is
+     *               validated against the RFC 3986 unreserved set ({@code ALPHA} / {@code DIGIT} /
+     *               {@code -} / {@code .} / {@code _} / {@code ~}).
      * @param value The cookie value
      * @return A Cookie with __Host- prefix and compliant attributes
+     * @throws de.cuioss.http.security.exceptions.UrlSecurityException if the suffix contains any
+     *         character outside the RFC 3986 unreserved set ({@code ALPHA} / {@code DIGIT} /
+     *         {@code -} / {@code .} / {@code _} / {@code ~})
      * @see <a href="https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-rfc6265bis">RFC 6265bis</a>
      * @since 1.0
      */
@@ -181,9 +186,14 @@ String attributes) {
      * response.setHeader("Set-Cookie", tokenCookie.toCookieString());
      * </pre>
      *
-     * @param suffix The cookie name suffix (will be prefixed with __Secure-)
+     * @param suffix The cookie name suffix (will be prefixed with __Secure-). The suffix is
+     *               validated against the RFC 3986 unreserved set ({@code ALPHA} / {@code DIGIT} /
+     *               {@code -} / {@code .} / {@code _} / {@code ~}).
      * @param value The cookie value
      * @return A Cookie with __Secure- prefix and compliant attributes
+     * @throws de.cuioss.http.security.exceptions.UrlSecurityException if the suffix contains any
+     *         character outside the RFC 3986 unreserved set ({@code ALPHA} / {@code DIGIT} /
+     *         {@code -} / {@code .} / {@code _} / {@code ~})
      * @see <a href="https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-rfc6265bis">RFC 6265bis</a>
      * @since 1.0
      */

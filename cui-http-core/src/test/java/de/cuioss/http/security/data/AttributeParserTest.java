@@ -17,6 +17,7 @@ package de.cuioss.http.security.data;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
@@ -141,7 +142,11 @@ class AttributeParserTest {
 
         @ParameterizedTest
         @CsvSource({
-                "'name=\"quoted value\"; other=unquoted', 'name', '\"quoted value\"'",
+                "'name=\"quoted value\"; other=unquoted', 'name', 'quoted value'",
+                "'name=\"say \\\"hi\\\"\"', 'name', 'say \"hi\"'",
+                "'name=\"\"; other=value', 'name', ''",
+                "'name=\"abc; other=value', 'name', '\"abc'",
+                "'name=abc\"; other=value', 'name', 'abc\"'",
                 "'Name=CaseSensitiveValue', 'name', 'CaseSensitiveValue'",
                 "'session_id=123; id=456', 'id', '456'",
                 "'user-id=abc; id=xyz', 'id', 'xyz'",
@@ -154,6 +159,28 @@ class AttributeParserTest {
 
             assertTrue(result.isPresent());
             assertEquals(expected, result.get());
+        }
+
+        @Test
+        @DisplayName("Should return value unchanged when the trailing quote is itself escaped")
+        void shouldReturnValueUnchangedWhenTrailingQuoteIsEscaped() {
+            // name="abc\"  — the final quote is escaped by a single backslash, so it closes
+            // nothing and the value is unbalanced rather than a quoted-string.
+            Optional<String> result = AttributeParser.extractAttributeValue("name=\"abc\\\"", "name");
+
+            assertTrue(result.isPresent());
+            assertEquals("\"abc\\\"", result.get());
+        }
+
+        @Test
+        @DisplayName("Should unwrap when the trailing quote follows an even number of backslashes")
+        void shouldUnwrapWhenTrailingQuoteFollowsEvenBackslashes() {
+            // name="abc\\" — two backslashes escape each other, so the final quote IS the
+            // closing delimiter and the quoted-pair \\ resolves to a single backslash.
+            Optional<String> result = AttributeParser.extractAttributeValue("name=\"abc\\\\\"", "name");
+
+            assertTrue(result.isPresent());
+            assertEquals("abc\\", result.get());
         }
     }
 }

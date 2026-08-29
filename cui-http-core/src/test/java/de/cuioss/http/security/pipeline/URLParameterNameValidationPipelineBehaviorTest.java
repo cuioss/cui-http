@@ -76,4 +76,38 @@ class URLParameterNameValidationPipelineBehaviorTest {
     void nullInput() {
         assertEquals(Optional.empty(), pipeline.validate(null));
     }
+
+    @Test
+    @DisplayName("instances built from the same configuration are equal")
+    void shouldHaveCorrectEqualsAndHashCode() {
+        SecurityConfiguration config = SecurityConfiguration.defaults();
+        URLParameterNameValidationPipeline pipeline1 =
+                new URLParameterNameValidationPipeline(config, eventCounter);
+        URLParameterNameValidationPipeline pipeline2 =
+                new URLParameterNameValidationPipeline(config, eventCounter);
+
+        assertEquals(pipeline1, pipeline2, "Pipelines with same configuration should be equal");
+        assertEquals(pipeline1.hashCode(), pipeline2.hashCode(),
+                "Equal pipelines should have same hash code");
+    }
+
+    @Test
+    @DisplayName("instances built from different configurations are not equal")
+    void shouldNotBeEqualWhenConfigurationDiffers() {
+        URLParameterNameValidationPipeline strict = new URLParameterNameValidationPipeline(
+                SecurityConfiguration.strict(), eventCounter);
+        URLParameterNameValidationPipeline lenient = new URLParameterNameValidationPipeline(
+                SecurityConfiguration.lenient(), eventCounter);
+
+        assertNotEquals(strict, lenient,
+                "Pipelines with different security configurations must not compare equal");
+    }
+
+    @Test
+    @DisplayName("the retained configuration is not exposed as a public accessor")
+    void shouldNotExposeConfigAccessor() {
+        assertThrows(NoSuchMethodException.class,
+                () -> URLParameterNameValidationPipeline.class.getMethod("getConfig"),
+                "The retained config must not become part of the exported public API");
+    }
 }

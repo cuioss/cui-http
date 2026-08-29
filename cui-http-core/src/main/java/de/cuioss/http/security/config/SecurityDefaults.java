@@ -353,6 +353,23 @@ public final class SecurityDefaults {
      * {@link SecurityConfiguration#lenient()} delegates to this constant.
      * Even this preset never permits null bytes; path traversal is always
      * blocked by the validation stages regardless of configuration.</p>
+     *
+     * <p><strong>Security callout - this preset disables two independent detection
+     * gates.</strong> A single {@link SecurityConfiguration#lenient()} selection turns
+     * both of the following off together, so a caller choosing this preset gives up
+     * both detections at once:</p>
+     * <ul>
+     *   <li>{@code allowDoubleEncoding = true} disables the double-encoding gate, so an
+     *       input that hides an attack behind a second layer of percent-encoding (for
+     *       example {@code %252e%252e%252f}) is no longer rejected on that basis.</li>
+     *   <li>{@code normalizeUnicode = false} disables Unicode normalization, and with it
+     *       the homoglyph/confusable detection that depends on normalization - so
+     *       visually-identical characters from different scripts are no longer folded
+     *       together before the input is compared against the pattern sets.</li>
+     * </ul>
+     *
+     * <p>Choose this preset only where maximum compatibility genuinely outweighs both
+     * of those detections; prefer {@link #DEFAULT_CONFIGURATION} when it does not.</p>
      */
     public static final SecurityConfiguration LENIENT_CONFIGURATION = new SecurityConfiguration(
             MAX_PATH_LENGTH_LENIENT, true,

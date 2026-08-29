@@ -254,6 +254,24 @@ class URLParameterValidationPipelineTest {
         }
 
         @Test
+        void shouldNotBeEqualWhenConfigurationDiffers() {
+            URLParameterValidationPipeline strict = new URLParameterValidationPipeline(
+                    SecurityConfiguration.strict(), eventCounter);
+            URLParameterValidationPipeline lenient = new URLParameterValidationPipeline(
+                    SecurityConfiguration.lenient(), eventCounter);
+
+            assertNotEquals(strict, lenient,
+                    "Pipelines with different security configurations must not compare equal");
+        }
+
+        @Test
+        void shouldNotExposeConfigAccessor() {
+            assertThrows(NoSuchMethodException.class,
+                    () -> URLParameterValidationPipeline.class.getMethod("getConfig"),
+                    "The retained config must not become part of the exported public API");
+        }
+
+        @Test
         void shouldHaveCorrectToString() {
             String toString = pipeline.toString();
             assertTrue(toString.contains("URLParameterValidationPipeline"), "toString should contain pipeline class name");

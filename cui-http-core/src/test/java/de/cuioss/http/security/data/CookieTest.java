@@ -15,6 +15,7 @@
  */
 package de.cuioss.http.security.data;
 
+import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.generators.cookie.ValidCookieGenerator;
 import de.cuioss.http.security.validation.CookiePrefixValidationStage;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
@@ -492,6 +493,42 @@ class CookieTest {
         assertTrue(cookie.isSecure(), "securePrefix() cookie should have Secure attribute");
         assertTrue(cookie.isHttpOnly(), "securePrefix() cookie should have HttpOnly attribute");
         assertEquals("Lax", cookie.getSameSite().orElse(null), "securePrefix() cookie should have SameSite=Lax");
+    }
+
+    @Test
+    void shouldRejectHostPrefixSuffixOutsideUnreservedSet() {
+        // Space, '/' and '%' are all outside the RFC 3986 unreserved set
+        // (ALPHA / DIGIT / - / . / _ / ~).
+        assertThrows(UrlSecurityException.class, () -> Cookie.hostPrefix("a b", "value"),
+                "hostPrefix must reject a suffix containing a space");
+        assertThrows(UrlSecurityException.class, () -> Cookie.hostPrefix("a/b", "value"),
+                "hostPrefix must reject a suffix containing a slash");
+        assertThrows(UrlSecurityException.class, () -> Cookie.hostPrefix("a%b", "value"),
+                "hostPrefix must reject a suffix containing a percent sign");
+
+        // Positive control: a suffix drawn only from the unreserved set is accepted, so the
+        // rejections above cannot be passing vacuously.
+        Cookie accepted = Cookie.hostPrefix("a-b.c_d~e1", "value");
+        assertEquals("__Host-a-b.c_d~e1", accepted.name(),
+                "A suffix within the unreserved set must produce the __Host- prefixed cookie");
+    }
+
+    @Test
+    void shouldRejectSecurePrefixSuffixOutsideUnreservedSet() {
+        // Space, '/' and '%' are all outside the RFC 3986 unreserved set
+        // (ALPHA / DIGIT / - / . / _ / ~).
+        assertThrows(UrlSecurityException.class, () -> Cookie.securePrefix("a b", "value"),
+                "securePrefix must reject a suffix containing a space");
+        assertThrows(UrlSecurityException.class, () -> Cookie.securePrefix("a/b", "value"),
+                "securePrefix must reject a suffix containing a slash");
+        assertThrows(UrlSecurityException.class, () -> Cookie.securePrefix("a%b", "value"),
+                "securePrefix must reject a suffix containing a percent sign");
+
+        // Positive control: a suffix drawn only from the unreserved set is accepted, so the
+        // rejections above cannot be passing vacuously.
+        Cookie accepted = Cookie.securePrefix("a-b.c_d~e1", "value");
+        assertEquals("__Secure-a-b.c_d~e1", accepted.name(),
+                "A suffix within the unreserved set must produce the __Secure- prefixed cookie");
     }
 
     @Test

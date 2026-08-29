@@ -54,6 +54,15 @@ import java.util.Optional;
  * Optional&lt;String&gt; charset = AttributeParser.extractAttributeValue(contentType, "charset");
  * // Returns: Optional.of("UTF-8")
  *
+ * // Extract a quoted charset - the surrounding quotes are stripped
+ * String quotedContentType = "text/html; charset=\"UTF-8\"";
+ * Optional&lt;String&gt; quotedCharset = AttributeParser.extractAttributeValue(quotedContentType, "charset");
+ * // Returns: Optional.of("UTF-8")
+ *
+ * // An unbalanced quote is not a quoted-string and is preserved verbatim
+ * Optional&lt;String&gt; unbalanced = AttributeParser.extractAttributeValue("name=\"abc", "name");
+ * // Returns: Optional.of("\"abc")
+ *
  * // Missing attribute
  * Optional&lt;String&gt; missing = AttributeParser.extractAttributeValue(cookieAttrs, "MaxAge");
  * // Returns: Optional.empty()
@@ -78,6 +87,17 @@ final class AttributeParser {
      * <p>This method performs case-insensitive matching for the attribute name and handles
      * common edge cases like missing values, trailing/leading whitespace, and attributes
      * at the end of the string.</p>
+     *
+     * <p><strong>Quoted values:</strong> RFC 6265 and RFC 7231 both permit an attribute value
+     * to be a {@code quoted-string}. After whitespace trimming, a value that is at least two
+     * characters long and both starts and ends with a double quote has that surrounding pair
+     * stripped, and the RFC 7230 {@code quoted-pair} escapes {@code \"} and {@code \\} within
+     * the remainder are resolved to {@code "} and {@code \} respectively. So
+     * {@code charset="UTF-8"} yields {@code UTF-8}, and {@code name="say \"hi\""} yields
+     * {@code say "hi"}. A value with an unbalanced quote is not a quoted-string and is returned
+     * unchanged: this covers a value carrying only a leading quote, only a trailing one, or one
+     * whose trailing quote is itself escaped by an odd number of preceding backslashes (so
+     * {@code name="abc\"} is returned verbatim rather than partially stripped).</p>
      *
      * <p><strong>Implementation Note:</strong> This method uses simple semicolon splitting
      * which is sufficient for the current use cases (cookie attributes per RFC 6265 and
@@ -121,12 +141,67 @@ final class AttributeParser {
                     // RFC 6265 allows trimming whitespace from attribute values
                     String trimmedValue = value.trim();
 
-                    // Return the trimmed value (which may be empty for "name=")
-                    return Optional.of(trimmedValue);
+                    // Unwrap a well-formed quoted-string (which may be empty for "name=")
+                    return Optional.of(unquote(trimmedValue));
                 }
             }
         }
 
         return Optional.empty();
+    }
+
+    /**
+     * Unwraps a well-formed RFC 7230 {@code quoted-string}, returning any other value unchanged.
+     *
+     * <p>A value qualifies as a quoted-string only when it is at least two characters long, both
+     * starts and ends with a double quote, and its trailing quote is a real delimiter rather than
+     * an escaped one. For such a value the surrounding quote pair is removed and every
+     * {@code quoted-pair} escape within the remainder is resolved: {@code \"} becomes {@code "}
+     * and {@code \\} becomes {@code \}. A backslash followed by any other character is not an
+     * escape this parser recognises and is preserved verbatim.</p>
+     *
+     * <p>A value is unbalanced — and is therefore NOT a quoted-string, and is returned unchanged
+     * rather than being silently corrupted by a partial strip — in any of three cases: it carries
+     * only a leading quote, only a trailing quote, or a trailing quote preceded by an odd number
+     * of backslashes. In the third case the final quote is itself escaped and so closes nothing,
+     * which is why {@code "abc\"} is returned verbatim.</p>
+     *
+     * @param value The trimmed attribute value to unwrap, never null
+     * @return The unquoted and unescaped value when {@code value} is a well-formed quoted-string,
+     * otherwise {@code value} itself
+     */
+    private static String unquote(String value) {
+        if (value.length() < 2 || value.charAt(0) != '"' || value.charAt(value.length() - 1) != '"') {
+            return value;
+        }
+
+        // A trailing quote preceded by an odd number of backslashes is itself escaped, so it is
+        // not a closing delimiter and the value is unbalanced rather than a quoted-string.
+        int precedingBackslashes = 0;
+        for (int index = value.length() - 2; index >= 0 && value.charAt(index) == '\\'; index--) {
+            precedingBackslashes++;
+        }
+        if (precedingBackslashes % 2 != 0) {
+            return value;
+        }
+
+        String inner = value.substring(1, value.length() - 1);
+        StringBuilder unescaped = new StringBuilder(inner.length());
+        int index = 0;
+        while (index < inner.length()) {
+            char current = inner.charAt(index);
+            if (current == '\\' && index + 1 < inner.length()) {
+                char next = inner.charAt(index + 1);
+                if (next == '"' || next == '\\') {
+                    // Consume both the backslash and the character it escapes.
+                    unescaped.append(next);
+                    index += 2;
+                    continue;
+                }
+            }
+            unescaped.append(current);
+            index++;
+        }
+        return unescaped.toString();
     }
 }

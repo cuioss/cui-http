@@ -269,6 +269,24 @@ class HTTPHeaderValidationPipelineTest {
         }
 
         @Test
+        void shouldNotBeEqualWhenConfigurationDiffers() {
+            HTTPHeaderValidationPipeline strict = new HTTPHeaderValidationPipeline(
+                    SecurityConfiguration.strict(), eventCounter, ValidationType.HEADER_VALUE);
+            HTTPHeaderValidationPipeline lenient = new HTTPHeaderValidationPipeline(
+                    SecurityConfiguration.lenient(), eventCounter, ValidationType.HEADER_VALUE);
+
+            assertNotEquals(strict, lenient,
+                    "Pipelines with the same validation type but different security configurations must not compare equal");
+        }
+
+        @Test
+        void shouldNotExposeConfigAccessor() {
+            assertThrows(NoSuchMethodException.class,
+                    () -> HTTPHeaderValidationPipeline.class.getMethod("getConfig"),
+                    "The retained config must not become part of the exported public API");
+        }
+
+        @Test
         void shouldHaveCorrectToString() {
             HTTPHeaderValidationPipeline pipeline = new HTTPHeaderValidationPipeline(config, eventCounter, ValidationType.HEADER_VALUE);
 

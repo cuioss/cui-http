@@ -20,6 +20,7 @@ import de.cuioss.http.security.core.HttpSecurityValidator;
 import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.http.security.validation.*;
+import lombok.AccessLevel;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.ToString;
@@ -63,16 +64,34 @@ import java.util.Objects;
  * }
  * </pre>
  *
+ * <h3>Value Equality</h3>
+ * <p>Two {@code URLPathValidationPipeline} instances are equal when their
+ * {@link SecurityConfiguration} is equal. The configuration is retained solely to give
+ * {@code equals}/{@code hashCode} a value basis and is deliberately <strong>not</strong> exposed
+ * via an accessor, nor included in the generated {@code toString()}, so this class's public
+ * API and rendered form are both unaffected by holding it.</p>
+ *
+ * <p>Two fields are deliberately excluded from the basis. The {@link SecurityEventCounter} is
+ * mutable shared monitoring state, so including it would make {@code hashCode} change as events
+ * are counted and break the {@code hashCode} contract for an instance already used as a hash key.
+ * The {@code stages} list is derived deterministically from the configuration and most stages have
+ * no value equality of their own, so including it would be redundant with the configuration and
+ * would reintroduce identity semantics.</p>
+ *
  * Implements: Task P1 from HTTP verification specification
  *
  * @since 1.0
  */
-@EqualsAndHashCode(callSuper = false, of = {})
+@EqualsAndHashCode(callSuper = false, of = {"config"})
 @ToString(callSuper = true)
 @Getter
 public final class URLPathValidationPipeline extends AbstractValidationPipeline {
 
     private static final ValidationType VALIDATION_TYPE = ValidationType.URL_PATH;
+
+    @Getter(AccessLevel.NONE)
+    @ToString.Exclude
+    private final SecurityConfiguration config;
 
     /**
      * Creates a new URL path validation pipeline with the specified configuration.
@@ -84,6 +103,7 @@ public final class URLPathValidationPipeline extends AbstractValidationPipeline 
     public URLPathValidationPipeline(SecurityConfiguration config,
             SecurityEventCounter eventCounter) {
         super(createStages(config), Objects.requireNonNull(eventCounter, "EventCounter must not be null"));
+        this.config = config;
     }
 
     private static List<HttpSecurityValidator> createStages(SecurityConfiguration config) {

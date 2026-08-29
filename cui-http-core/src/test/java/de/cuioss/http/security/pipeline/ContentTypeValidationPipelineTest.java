@@ -222,4 +222,50 @@ class ContentTypeValidationPipelineTest {
             assertEquals(Optional.of(""), pipeline.validate(""));
         }
     }
+
+    @Nested
+    @DisplayName("value equality")
+    class ValueEquality {
+
+        @Test
+        @DisplayName("instances built from the same configuration are equal")
+        void shouldHaveCorrectEqualsAndHashCode() {
+            SecurityConfiguration config = SecurityConfiguration.defaults();
+
+            ContentTypeValidationPipeline pipeline1 = pipeline(config);
+            ContentTypeValidationPipeline pipeline2 = pipeline(config);
+
+            assertEquals(pipeline1, pipeline2, "Pipelines with same configuration should be equal");
+            assertEquals(pipeline1.hashCode(), pipeline2.hashCode(),
+                    "Equal pipelines should have same hash code");
+        }
+
+        @Test
+        @DisplayName("instances built from different configurations are not equal")
+        void shouldNotBeEqualWhenConfigurationDiffers() {
+            ContentTypeValidationPipeline strict = pipeline(SecurityConfiguration.strict());
+            ContentTypeValidationPipeline lenient = pipeline(SecurityConfiguration.lenient());
+
+            assertNotEquals(strict, lenient,
+                    "Pipelines with different security configurations must not compare equal");
+        }
+
+        @Test
+        @DisplayName("the retained configuration is not exposed as a public accessor")
+        void shouldNotExposeConfigAccessor() {
+            assertThrows(NoSuchMethodException.class,
+                    () -> ContentTypeValidationPipeline.class.getMethod("getConfig"),
+                    "The retained config must not become part of the exported public API");
+        }
+
+        @Test
+        @DisplayName("the retained configuration is excluded from toString()")
+        void shouldNotExposeConfigInToString() {
+            String rendered = pipeline(SecurityConfiguration.strict()).toString();
+
+            assertFalse(rendered.contains("config="),
+                    "The retained config is held for the equality basis only and must not leak "
+                            + "into the generated toString(): " + rendered);
+        }
+    }
 }

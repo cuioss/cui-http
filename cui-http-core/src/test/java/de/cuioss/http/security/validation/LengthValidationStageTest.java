@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
+import java.lang.reflect.Method;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -323,11 +324,33 @@ class LengthValidationStageTest {
                 .build();
         LengthValidationStage stage = new LengthValidationStage(config, ValidationType.BODY);
 
-        // Should use Integer.MAX_VALUE as the effective limit for string length
+        // The full configured Long.MAX_VALUE limit is honoured - it is no longer capped at
+        // Integer.MAX_VALUE, so any body a String can hold is within the limit.
         String reasonableBody = Generators.letterStrings(950, 1000).next();
         var result = stage.validate(reasonableBody);
         assertTrue(result.isPresent());
         assertEquals(reasonableBody, result.get());
+    }
+
+    @Test
+    void shouldHonourBodySizeLimitAboveIntegerMaxValue() throws Exception {
+        long configuredLimit = Integer.MAX_VALUE + 1L;
+        SecurityConfiguration config = SecurityConfiguration.builder()
+                .maxBodySize(configuredLimit)
+                .build();
+        LengthValidationStage stage = new LengthValidationStage(config, ValidationType.BODY);
+
+        // The effective limit is resolved directly rather than by submitting an over-limit body:
+        // exceeding Integer.MAX_VALUE UTF-8 bytes would require a ~700M-character String, which is
+        // far too costly to allocate in a unit test. Asserting the resolved limit distinguishes the
+        // configured value from the previously-truncated Integer.MAX_VALUE just as precisely.
+        Method getMaxLength = LengthValidationStage.class.getDeclaredMethod("getMaxLength");
+        getMaxLength.setAccessible(true);
+
+        assertEquals(long.class, getMaxLength.getReturnType(),
+                "The BODY limit must not be narrowed back to int");
+        assertEquals(configuredLimit, getMaxLength.invoke(stage),
+                "A configured maxBodySize above Integer.MAX_VALUE must be honoured, not capped");
     }
 
     @Test

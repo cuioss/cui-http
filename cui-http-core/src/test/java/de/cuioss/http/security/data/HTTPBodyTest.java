@@ -229,6 +229,7 @@ class HTTPBodyTest {
     void shouldExtractCharset() {
         HTTPBody bodyWithCharset = new HTTPBody("content", "text/html; charset=utf-8", "");
         HTTPBody bodyWithCharsetUpper = new HTTPBody("content", "text/html; CHARSET=ISO-8859-1", "");
+        HTTPBody bodyWithQuotedCharset = new HTTPBody("content", "text/html; charset=\"UTF-8\"", "");
         HTTPBody bodyWithoutCharset = new HTTPBody("content", "text/html", "");
         HTTPBody bodyWithNullContentType = new HTTPBody("content", null, "");
 
@@ -238,6 +239,9 @@ class HTTPBodyTest {
         Optional<String> charset2 = bodyWithCharsetUpper.getCharset();
         assertTrue(charset2.isPresent());
         assertEquals("ISO-8859-1", charset2.get());
+        Optional<String> quotedCharset = bodyWithQuotedCharset.getCharset();
+        assertTrue(quotedCharset.isPresent());
+        assertEquals("UTF-8", quotedCharset.get(), "A quoted-string charset must be returned unquoted");
         assertTrue(bodyWithoutCharset.getCharset().isEmpty());
         assertTrue(bodyWithNullContentType.getCharset().isEmpty());
     }
