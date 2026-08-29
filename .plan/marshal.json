@@ -150,7 +150,7 @@
           "lane": "off"
         },
         "default:emit-landing": {
-          "lane": "off"
+          "lane": "minimal"
         },
         "default:archive-plan": {
           "lane": "minimal"
