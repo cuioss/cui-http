@@ -26,9 +26,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 
-import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 
 import static de.cuioss.http.security.generators.GeneratorContractAssertions.assertPipelineRejects;
@@ -60,10 +58,18 @@ class URLLengthLimitAttackGeneratorTest {
     private static final int AGGREGATE_DRAWS = 2000;
 
     /**
-     * The number of attack families {@code AttackTypeSelector} cycles through, sourced from the
-     * generator itself so the count cannot desync when a family is added or removed.
+     * The number of attack families {@code next()} selects among via {@code hashBasedSelection},
+     * sourced from the generator itself so the count cannot desync when a family is added or
+     * removed.
      */
     private static final int ATTACK_FAMILY_COUNT = URLLengthLimitAttackGenerator.ATTACK_FAMILY_COUNT;
+
+    /**
+     * Number of freshly constructed generators whose first draw is sampled. Sized so that a family
+     * reachable on any single draw is missed across the whole sample with negligible probability
+     * ({@code (1 - 1/ATTACK_FAMILY_COUNT)} raised to this power).
+     */
+    private static final int FIRST_DRAW_INSTANCES = 200;
 
     /**
      * Observable shapes that are each reachable only through a distinct branch family, so that
@@ -93,23 +99,29 @@ class URLLengthLimitAttackGeneratorTest {
     }
 
     @Test
-    @DisplayName("Should cycle through every attack family, each emitting overlong URLs")
-    void shouldReachAllAttackFamilies() {
+    @DisplayName("Every draw is an overlong rooted URL and the attack family is selected by seed")
+    void shouldSelectAttackFamilyBySeed() {
         URLLengthLimitAttackGenerator generator = new URLLengthLimitAttackGenerator();
-        List<List<String>> valuesByFamily = new ArrayList<>();
-        for (int family = 0; family < ATTACK_FAMILY_COUNT; family++) {
-            valuesByFamily.add(new ArrayList<>());
-        }
-
         for (int draw = 0; draw < AGGREGATE_DRAWS; draw++) {
-            valuesByFamily.get(draw % ATTACK_FAMILY_COUNT).add(generator.next());
+            assertOverlongRootedUrl(generator.next());
         }
 
-        for (int family = 0; family < ATTACK_FAMILY_COUNT; family++) {
-            List<String> values = valuesByFamily.get(family);
-            assertFalse(values.isEmpty(), "Attack family " + family + " must be reached");
-            values.forEach(this::assertOverlongRootedUrl);
+        Set<String> firstDrawShapes = new HashSet<>();
+        for (int instance = 0; instance < FIRST_DRAW_INSTANCES; instance++) {
+            firstDrawShapes.addAll(shapesOf(new URLLengthLimitAttackGenerator().next()));
         }
+
+        assertAll("A fresh generator's first draw must be seed-selected, not pinned to one family",
+                () -> assertTrue(firstDrawShapes.contains(FRAGMENT_SHAPE),
+                        () -> "No fragment-shaped value appeared among the first draws of "
+                                + FIRST_DRAW_INSTANCES + " fresh generators, so the first draw is not "
+                                + "seed-selected across all " + ATTACK_FAMILY_COUNT
+                                + " families. Reached shapes: " + firstDrawShapes),
+                () -> assertTrue(firstDrawShapes.contains(HOSTNAME_SHAPE),
+                        () -> "No authority-rooted value appeared among the first draws of "
+                                + FIRST_DRAW_INSTANCES + " fresh generators, so the first draw is not "
+                                + "seed-selected across all " + ATTACK_FAMILY_COUNT
+                                + " families. Reached shapes: " + firstDrawShapes));
     }
 
     @Test

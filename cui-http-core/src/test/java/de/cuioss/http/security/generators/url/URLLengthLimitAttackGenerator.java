@@ -91,13 +91,14 @@ import java.util.List;
 public class URLLengthLimitAttackGenerator implements TypedGenerator<String> {
 
     /**
-     * The number of attack families {@link #next()} cycles through, that is the number of
+     * The number of attack families {@link #next()} selects among, that is the number of
      * {@code case} branches its switch declares.
      *
      * <p>The former cases 13 and 14 (encoding attacks) were removed because they exercise encoding
      * validation rather than length validation. This constant is the single source of that count:
-     * it drives the {@link AttackTypeSelector} below, and the contract test references it instead
-     * of duplicating the literal, so adding or removing a family cannot silently desync the two.</p>
+     * it is the bound handed to the {@link #hashBasedSelection(int)} call that picks the family in
+     * {@link #next()}, and the contract test references it instead of duplicating the literal, so
+     * adding or removing a family cannot silently desync the two.</p>
      */
     public static final int ATTACK_FAMILY_COUNT = 13;
 
@@ -114,13 +115,11 @@ public class URLLengthLimitAttackGenerator implements TypedGenerator<String> {
             "/request"
     );
 
-    private final AttackTypeSelector attackTypeSelector = new AttackTypeSelector(ATTACK_FAMILY_COUNT);
-
     @Override
     public String next() {
         String basePattern = BASE_PATTERNS.get(hashBasedSelection(BASE_PATTERNS.size()));
 
-        return switch (attackTypeSelector.nextAttackType()) {
+        return switch (hashBasedSelection(ATTACK_FAMILY_COUNT)) {
             case 0 -> createBasicLengthOverflow(basePattern);
             case 1 -> createPathComponentOverflow(basePattern);
             case 2 -> createQueryParameterOverflow(basePattern);
@@ -410,23 +409,5 @@ public class URLLengthLimitAttackGenerator implements TypedGenerator<String> {
      */
     private String repeat(String token, int minCount, int maxCount) {
         return token.repeat(Generators.integers(minCount, maxCount).next());
-    }
-
-    /**
-     * Helper class to cycle through attack types systematically.
-     */
-    private static class AttackTypeSelector {
-        private final int maxTypes;
-        private int currentType = 0;
-
-        AttackTypeSelector(int maxTypes) {
-            this.maxTypes = maxTypes;
-        }
-
-        int nextAttackType() {
-            int type = currentType;
-            currentType = (currentType + 1) % maxTypes;
-            return type;
-        }
     }
 }
