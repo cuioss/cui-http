@@ -161,9 +161,21 @@ def assemble(args: argparse.Namespace) -> None:
         print("Error: --micro-results is required", file=sys.stderr)
         sys.exit(1)
 
+    # 0. Establish the per-module results-directory verdict ONCE, before any directory-creating
+    # work runs. The step-1 history merge below calls mkdir(parents=True) on {results_dir}/history,
+    # which would materialize a missing results directory and make the step-3 existence guard
+    # always pass. Deciding here keeps the guard authoritative and keeps the warning to one line
+    # per missing module rather than one per phase.
+    present_modules: list[tuple[str, Path]] = []
+    for name, results_dir in modules:
+        if results_dir.is_dir():
+            present_modules.append((name, results_dir))
+        else:
+            print(f"Warning: {name} results not found at {results_dir}, skipping")
+
     # 1. Merge previous history (skip files that already exist to avoid overwriting current run)
     if previous_dir and previous_dir.is_dir():
-        for name, results_dir in modules:
+        for name, results_dir in present_modules:
             prev_history = previous_dir / name / "history"
             if not prev_history.is_dir():
                 continue
@@ -179,7 +191,7 @@ def assemble(args: argparse.Namespace) -> None:
                 )
 
     # 2. Enforce retention policy per module
-    for name, results_dir in modules:
+    for name, results_dir in present_modules:
         removed = _enforce_retention(results_dir / "history", max_history)
         if removed:
             print(f"Removed {removed} old {name} history files (retention: {max_history})")
@@ -189,11 +201,7 @@ def assemble(args: argparse.Namespace) -> None:
     badges_dir = output_dir / "badges"
     badges_dir.mkdir(exist_ok=True)
 
-    for name, results_dir in modules:
-        if not results_dir.is_dir():
-            print(f"Warning: {name} results not found at {results_dir}, skipping")
-            continue
-
+    for name, results_dir in present_modules:
         # Copy full module output into type subdirectory
         shutil.copytree(results_dir, output_dir / name, dirs_exist_ok=True)
         print(f"Copied {name} benchmark artifacts to {output_dir / name}")
