@@ -104,6 +104,37 @@ boolean idempotentOnly
 ) {
 
     /**
+     * Validates the retry invariants on every construction path.
+     * <p>
+     * The {@link Builder} setters validate each parameter eagerly for immediate feedback; this
+     * compact constructor is the backstop that additionally covers the canonical-constructor path
+     * (direct {@code new RetryConfig(...)} calls), so an invariant-violating instance can never
+     * be created.
+     *
+     * @throws IllegalArgumentException if {@code maxAttempts < 1}, {@code initialDelay} is null,
+     *         negative or zero, {@code maxDelay} is null, negative or zero, {@code jitter} is
+     *         outside {@code [0.0, 1.0]}, or {@code multiplier < 1.0}
+     */
+    @SuppressWarnings("java:S2589") // False positive: @NonNull doesn't enforce runtime null checks
+    public RetryConfig {
+        if (maxAttempts < 1) {
+            throw new IllegalArgumentException("maxAttempts must be >= 1, but was: " + maxAttempts);
+        }
+        if (initialDelay == null || initialDelay.isNegative() || initialDelay.isZero()) {
+            throw new IllegalArgumentException("initialDelay must be positive");
+        }
+        if (maxDelay == null || maxDelay.isNegative() || maxDelay.isZero()) {
+            throw new IllegalArgumentException("maxDelay must be positive");
+        }
+        if (jitter < 0.0 || jitter > 1.0) {
+            throw new IllegalArgumentException("jitter must be between 0.0 and 1.0, but was: " + jitter);
+        }
+        if (multiplier < 1.0) {
+            throw new IllegalArgumentException("multiplier must be >= 1.0, but was: " + multiplier);
+        }
+    }
+
+    /**
      * Creates a builder with sensible defaults based on industry best practices.
      *
      * @return new builder with default values

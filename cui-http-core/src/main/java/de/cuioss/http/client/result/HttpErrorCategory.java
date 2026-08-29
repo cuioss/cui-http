@@ -17,6 +17,10 @@ package de.cuioss.http.client.result;
 
 import org.jspecify.annotations.NonNull;
 
+import javax.net.ssl.SSLHandshakeException;
+import javax.net.ssl.SSLKeyException;
+import javax.net.ssl.SSLPeerUnverifiedException;
+import javax.net.ssl.SSLProtocolException;
 import java.io.IOException;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
@@ -96,6 +100,23 @@ public enum HttpErrorCategory {
      * {@link IllegalArgumentException} / {@link IllegalStateException} from request building, or a
      * misconfiguration) maps to the non-retryable {@link #CONFIGURATION_ERROR}.
      *
+     * <h3>TLS carve-out</h3>
+     * <p>A TLS failure is an {@code IOException} by inheritance, but the non-transient TLS
+     * subtypes describe a trust, certificate, key, or protocol mismatch that retrying cannot
+     * resolve — retrying them only multiplies the handshake cost before the same failure. The
+     * following subtypes are therefore carved out ahead of the generic {@code IOException} test
+     * and map to the non-retryable {@link #CONFIGURATION_ERROR}:</p>
+     * <ul>
+     *   <li>{@link SSLHandshakeException} — handshake failed (untrusted or invalid certificate)</li>
+     *   <li>{@link SSLKeyException} — the local key material is unusable</li>
+     *   <li>{@link SSLPeerUnverifiedException} — the peer identity could not be verified</li>
+     *   <li>{@link SSLProtocolException} — a protocol-level TLS error</li>
+     * </ul>
+     * <p>The bare {@link javax.net.ssl.SSLException} base type deliberately stays on the retryable
+     * {@link #NETWORK_ERROR} path: it also covers genuinely transient conditions such as a
+     * connection reset mid-handshake. Likewise {@link java.net.http.HttpTimeoutException} and
+     * {@link java.net.http.HttpConnectTimeoutException} keep the retryable classification.</p>
+     *
      * <p>Asynchronous pipelines ({@link java.util.concurrent.CompletableFuture}) deliver failures
      * wrapped in {@link CompletionException} / {@link ExecutionException}. Such wrappers are
      * unwrapped to their cause before classification, so an {@code IOException} surfaced through a
@@ -125,6 +146,12 @@ public enum HttpErrorCategory {
         while ((unwrapped instanceof CompletionException || unwrapped instanceof ExecutionException)
                 && unwrapped.getCause() != null && unwrapped.getCause() != unwrapped) {
             unwrapped = unwrapped.getCause();
+        }
+        if (unwrapped instanceof SSLHandshakeException
+                || unwrapped instanceof SSLKeyException
+                || unwrapped instanceof SSLPeerUnverifiedException
+                || unwrapped instanceof SSLProtocolException) {
+            return CONFIGURATION_ERROR;
         }
         return unwrapped instanceof IOException ? NETWORK_ERROR : CONFIGURATION_ERROR;
     }

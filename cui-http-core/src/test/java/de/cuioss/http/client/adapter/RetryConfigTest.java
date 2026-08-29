@@ -15,6 +15,7 @@
  */
 package de.cuioss.http.client.adapter;
 
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -397,5 +398,116 @@ class RetryConfigTest {
 
         // Attempt 7: 1s * 2^6 = 64s, but capped at maxDelay (60s)
         assertEquals(60000, config.calculateDelay(7).toMillis());
+    }
+
+    /**
+     * Verifies the compact constructor enforces every invariant on the canonical-constructor
+     * path, which bypasses the {@link RetryConfig.Builder} setters entirely.
+     */
+    @Nested
+    class CanonicalConstructorValidation {
+
+        private static final int VALID_MAX_ATTEMPTS = 5;
+        private static final Duration VALID_INITIAL_DELAY = Duration.ofSeconds(1);
+        private static final double VALID_MULTIPLIER = 2.0;
+        private static final Duration VALID_MAX_DELAY = Duration.ofMinutes(1);
+        private static final double VALID_JITTER = 0.1;
+
+        @Test
+        void shouldConstructValidConfiguration() {
+            RetryConfig config = new RetryConfig(VALID_MAX_ATTEMPTS, VALID_INITIAL_DELAY,
+                    VALID_MULTIPLIER, VALID_MAX_DELAY, VALID_JITTER, true);
+
+            assertAll("Valid canonical construction",
+                    () -> assertEquals(VALID_MAX_ATTEMPTS, config.maxAttempts()),
+                    () -> assertEquals(VALID_INITIAL_DELAY, config.initialDelay()),
+                    () -> assertEquals(VALID_MULTIPLIER, config.multiplier()),
+                    () -> assertEquals(VALID_MAX_DELAY, config.maxDelay()),
+                    () -> assertEquals(VALID_JITTER, config.jitter()),
+                    () -> assertTrue(config.idempotentOnly()));
+        }
+
+        @Test
+        void shouldRejectMaxAttemptsBelowOne() {
+            IllegalArgumentException zero = assertThrows(IllegalArgumentException.class,
+                    () -> new RetryConfig(0, VALID_INITIAL_DELAY, VALID_MULTIPLIER,
+                            VALID_MAX_DELAY, VALID_JITTER, true));
+            assertEquals("maxAttempts must be >= 1, but was: 0", zero.getMessage());
+
+            assertThrows(IllegalArgumentException.class,
+                    () -> new RetryConfig(-1, VALID_INITIAL_DELAY, VALID_MULTIPLIER,
+                            VALID_MAX_DELAY, VALID_JITTER, true));
+        }
+
+        @Test
+        void shouldRejectNonPositiveInitialDelay() {
+            IllegalArgumentException zero = assertThrows(IllegalArgumentException.class,
+                    () -> new RetryConfig(VALID_MAX_ATTEMPTS, Duration.ZERO, VALID_MULTIPLIER,
+                            VALID_MAX_DELAY, VALID_JITTER, true));
+            assertEquals("initialDelay must be positive", zero.getMessage());
+
+            assertThrows(IllegalArgumentException.class,
+                    () -> new RetryConfig(VALID_MAX_ATTEMPTS, Duration.ofSeconds(-1),
+                            VALID_MULTIPLIER, VALID_MAX_DELAY, VALID_JITTER, true));
+
+            assertThrows(IllegalArgumentException.class,
+                    () -> new RetryConfig(VALID_MAX_ATTEMPTS, null, VALID_MULTIPLIER,
+                            VALID_MAX_DELAY, VALID_JITTER, true));
+        }
+
+        @Test
+        void shouldRejectNonPositiveMaxDelay() {
+            IllegalArgumentException zero = assertThrows(IllegalArgumentException.class,
+                    () -> new RetryConfig(VALID_MAX_ATTEMPTS, VALID_INITIAL_DELAY, VALID_MULTIPLIER,
+                            Duration.ZERO, VALID_JITTER, true));
+            assertEquals("maxDelay must be positive", zero.getMessage());
+
+            assertThrows(IllegalArgumentException.class,
+                    () -> new RetryConfig(VALID_MAX_ATTEMPTS, VALID_INITIAL_DELAY, VALID_MULTIPLIER,
+                            Duration.ofSeconds(-1), VALID_JITTER, true));
+
+            assertThrows(IllegalArgumentException.class,
+                    () -> new RetryConfig(VALID_MAX_ATTEMPTS, VALID_INITIAL_DELAY, VALID_MULTIPLIER,
+                            null, VALID_JITTER, true));
+        }
+
+        @Test
+        void shouldRejectJitterOutsideUnitRange() {
+            IllegalArgumentException negative = assertThrows(IllegalArgumentException.class,
+                    () -> new RetryConfig(VALID_MAX_ATTEMPTS, VALID_INITIAL_DELAY, VALID_MULTIPLIER,
+                            VALID_MAX_DELAY, -0.1, true));
+            assertEquals("jitter must be between 0.0 and 1.0, but was: -0.1", negative.getMessage());
+
+            assertThrows(IllegalArgumentException.class,
+                    () -> new RetryConfig(VALID_MAX_ATTEMPTS, VALID_INITIAL_DELAY, VALID_MULTIPLIER,
+                            VALID_MAX_DELAY, 1.1, true));
+        }
+
+        @Test
+        void shouldAcceptJitterAtBothBounds() {
+            assertAll("Jitter boundary values are inclusive",
+                    () -> assertDoesNotThrow(() -> new RetryConfig(VALID_MAX_ATTEMPTS,
+                            VALID_INITIAL_DELAY, VALID_MULTIPLIER, VALID_MAX_DELAY, 0.0, true)),
+                    () -> assertDoesNotThrow(() -> new RetryConfig(VALID_MAX_ATTEMPTS,
+                            VALID_INITIAL_DELAY, VALID_MULTIPLIER, VALID_MAX_DELAY, 1.0, true)));
+        }
+
+        @Test
+        void shouldRejectMultiplierBelowOne() {
+            IllegalArgumentException fractional = assertThrows(IllegalArgumentException.class,
+                    () -> new RetryConfig(VALID_MAX_ATTEMPTS, VALID_INITIAL_DELAY, 0.5,
+                            VALID_MAX_DELAY, VALID_JITTER, true));
+            assertEquals("multiplier must be >= 1.0, but was: 0.5", fractional.getMessage());
+
+            assertThrows(IllegalArgumentException.class,
+                    () -> new RetryConfig(VALID_MAX_ATTEMPTS, VALID_INITIAL_DELAY, -2.0,
+                            VALID_MAX_DELAY, VALID_JITTER, true));
+        }
+
+        @Test
+        void shouldAcceptMinimumValidBoundaryValues() {
+            assertDoesNotThrow(() -> new RetryConfig(1, Duration.ofMillis(1), 1.0,
+                    Duration.ofMillis(1), 0.0, false));
+        }
     }
 }
