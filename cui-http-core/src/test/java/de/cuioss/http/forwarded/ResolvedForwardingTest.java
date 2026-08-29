@@ -233,6 +233,30 @@ class ResolvedForwardingTest {
         void emptySerializesToNothing() {
             assertTrue(ResolvedForwarding.empty().toForwardedHeader().isEmpty());
         }
+
+        @Test
+        @DisplayName("omits a host-less port (RFC 7239 has no standalone port directive)")
+        void omitsHostLessPort() {
+            var forwarding = new ResolvedForwarding(Optional.empty(), Optional.empty(),
+                    OptionalInt.of(8443), "", Optional.empty());
+
+            assertAll("a port is expressible only folded into host=\"name:port\"",
+                    () -> assertTrue(forwarding.toForwardedHeader().isEmpty(),
+                            "emitting host=\":8443\" would compose an invalid authority"),
+                    () -> assertEquals("8443",
+                            forwarding.toXForwardedHeaders().get("X-Forwarded-Port"),
+                            "X-Forwarded-Port is emitted independently of the host, so it survives"));
+        }
+
+        @Test
+        @DisplayName("drops a host-less port while still emitting the accompanying proto")
+        void dropsHostLessPortAlongsideProto() {
+            var forwarding = new ResolvedForwarding(Optional.of("https"), Optional.empty(),
+                    OptionalInt.of(8443), "", Optional.empty());
+
+            assertEquals(Optional.of("proto=https"), forwarding.toForwardedHeader(),
+                    "the port has no host to fold into, so it is omitted rather than emitted alone");
+        }
     }
 
     @Nested
