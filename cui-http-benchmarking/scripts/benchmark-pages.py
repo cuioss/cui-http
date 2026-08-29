@@ -73,26 +73,23 @@ def _copy_json_files(
     dst_dir: Path,
     *,
     skip_existing: bool = False,
-    purge_pre_cutoff: bool = False,
 ) -> tuple[int, int]:
-    """Copy all .json files from src to dst.
+    """Copy post-cutoff .json files from src to dst, purging older entries.
 
     Args:
         src_dir: Source directory scanned for ``*.json`` entries.
         dst_dir: Destination directory, created when missing.
         skip_existing: When True, an already-present destination file is left untouched.
-        purge_pre_cutoff: When True, entries failing :func:`_is_post_cutoff` are dropped
-            instead of copied.
 
     Returns:
         ``(copied, purged)`` — the number of files copied and the number dropped by the
-        cutoff predicate (always 0 when ``purge_pre_cutoff`` is False).
+        :func:`_is_post_cutoff` predicate.
     """
     dst_dir.mkdir(parents=True, exist_ok=True)
     copied = 0
     purged = 0
     for f in src_dir.glob("*.json"):
-        if purge_pre_cutoff and not _is_post_cutoff(f.name):
+        if not _is_post_cutoff(f.name):
             purged += 1
             continue
         dst = dst_dir / f.name
@@ -128,9 +125,7 @@ def prepare_history(args: argparse.Namespace) -> None:
         history_src = previous_dir / benchmark_type / "history"
         if not history_src.is_dir():
             continue
-        count, purged = _copy_json_files(
-            history_src, output_dir / benchmark_type, purge_pre_cutoff=True,
-        )
+        count, purged = _copy_json_files(history_src, output_dir / benchmark_type)
         print(f"Prepared {count} {benchmark_type} history files")
         if purged:
             print(
@@ -180,9 +175,7 @@ def assemble(args: argparse.Namespace) -> None:
             if not prev_history.is_dir():
                 continue
             history_dir = results_dir / "history"
-            count, purged = _copy_json_files(
-                prev_history, history_dir, skip_existing=True, purge_pre_cutoff=True,
-            )
+            count, purged = _copy_json_files(prev_history, history_dir, skip_existing=True)
             print(f"Merged {count} previous {name} history files")
             if purged:
                 print(
