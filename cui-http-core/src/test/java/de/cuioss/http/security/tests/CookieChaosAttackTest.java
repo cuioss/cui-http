@@ -424,12 +424,6 @@ class CookieChaosAttackTest {
     }
 
     /**
-     * Helper: Convert string with control characters to displayable format.
-     *
-     * @param input The string that may contain control/Unicode characters
-     * @return A displayable representation showing special characters as Unicode escapes
-     */
-    /**
      * Asserts the prefix-bypass contract both whitespace generators declare: the name they
      * decorate is always a {@code __Host-} or {@code __Secure-} prefixed one, so every emitted
      * value exercises a prefix bypass rather than an ordinary cookie name. The decoration is
@@ -445,6 +439,12 @@ class CookieChaosAttackTest {
                         + getDisplayableString(generatedName));
     }
 
+    /**
+     * Helper: Convert string with control characters to displayable format.
+     *
+     * @param input The string that may contain control/Unicode characters
+     * @return A displayable representation showing special characters as Unicode escapes
+     */
     private String getDisplayableString(String input) {
         if (input == null) {
             return "null";

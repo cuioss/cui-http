@@ -18,6 +18,8 @@ package de.cuioss.http.security.generators.encoding;
 import de.cuioss.test.generator.Generators;
 import de.cuioss.test.generator.TypedGenerator;
 
+import static de.cuioss.http.security.generators.GeneratorContractAssertions.fromCodePoints;
+
 /**
  * Generates Unicode normalization attack patterns for security testing.
  *
@@ -397,20 +399,5 @@ public class UnicodeNormalizationAttackGenerator implements TypedGenerator<Strin
     @Override
     public Class<String> getType() {
         return String.class;
-    }
-
-    /**
-     * Builds a string from explicit code points, so the substitution tables above can be declared
-     * without embedding non-ASCII characters in this source file.
-     *
-     * @param codePoints the code points to append, in order
-     * @return the string formed by appending every given code point
-     */
-    private static String fromCodePoints(int... codePoints) {
-        StringBuilder builder = new StringBuilder(codePoints.length);
-        for (int codePoint : codePoints) {
-            builder.appendCodePoint(codePoint);
-        }
-        return builder.toString();
     }
 }
