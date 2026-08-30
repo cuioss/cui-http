@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import javax.net.ssl.SSLContext;
 import java.net.URI;
 import java.net.URL;
+import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.time.Duration;
 
@@ -42,6 +43,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>SSL context management</li>
  *   <li>URL/URI conversion and validation</li>
  *   <li>Builder cloning (asBuilder)</li>
+ *   <li>Handler lifecycle (try-with-resources, idempotent close)</li>
  * </ul>
  * <p>
  * HTTP integration tests with MockWebServer are in {@link HttpHandlerIntegrationTest}.
@@ -805,6 +807,161 @@ class HttpHandlerTest {
 
             assertNotEquals(base, differentUri, "Different URI must not be equal");
             assertNotEquals(base, differentTimeout, "Different timeout must not be equal");
+        }
+    }
+
+    /**
+     * Regression cases for reusing a builder after {@link HttpHandler.HttpHandlerBuilder#build()}.
+     * <p>
+     * URI resolution must be recomputed from the builder's current inputs on every build, so a
+     * second, different URI set on an already-built builder is honored instead of being silently
+     * ignored in favor of the URI the first build resolved.
+     */
+    @Nested
+    @DisplayName("Builder Reuse Tests")
+    class BuilderReuseTests {
+
+        private static final String SECOND_URL = "https://second.example.com";
+
+        @Test
+        @DisplayName("Reused builder honors a new uri(String) after build()")
+        void shouldHonorNewStringUriOnReusedBuilder() {
+            HttpHandler.HttpHandlerBuilder builder = HttpHandler.builder().uri(VALID_URL);
+
+            HttpHandler first = builder.build();
+            HttpHandler second = builder.uri(SECOND_URL).build();
+
+            assertAll("Second build must resolve the second URI",
+                    () -> assertEquals(URI.create(VALID_URL), first.getUri()),
+                    () -> assertEquals(URI.create(SECOND_URL), second.getUri()),
+                    () -> assertEquals(URI.create(SECOND_URL), second.getUrl().toURI(),
+                            "The derived URL must track the re-resolved URI"));
+        }
+
+        @Test
+        @DisplayName("Reused builder honors a new url(String) after build()")
+        void shouldHonorNewStringUrlOnReusedBuilder() {
+            HttpHandler.HttpHandlerBuilder builder = HttpHandler.builder().url(VALID_URL);
+
+            HttpHandler first = builder.build();
+            HttpHandler second = builder.url(SECOND_URL).build();
+
+            assertAll("Second build must resolve the second URL",
+                    () -> assertEquals(URI.create(VALID_URL), first.getUri()),
+                    () -> assertEquals(URI.create(SECOND_URL), second.getUri()));
+        }
+
+        @Test
+        @DisplayName("Typed uri(URI) set on a reused builder still outranks the string slot")
+        void shouldKeepTypedUriPrecedenceOnReusedBuilder() {
+            HttpHandler.HttpHandlerBuilder builder = HttpHandler.builder().uri(VALID_URL);
+
+            HttpHandler fromStringSlot = builder.build();
+            HttpHandler fromTypedUri = builder.uri(URI.create(SECOND_URL)).build();
+
+            assertAll("Typed URI wins over the string slot on the rebuild",
+                    () -> assertEquals(URI.create(VALID_URL), fromStringSlot.getUri()),
+                    () -> assertEquals(URI.create(SECOND_URL), fromTypedUri.getUri()));
+        }
+    }
+
+    /**
+     * Resolution cases for schemeless string input, including the {@code host:port} shorthand that
+     * is syntactically indistinguishable from {@code scheme:remainder}.
+     */
+    @Nested
+    @DisplayName("Schemeless URI Resolution Tests")
+    class SchemelessUriResolutionTests {
+
+        @Test
+        @DisplayName("host:port shorthand resolves to https")
+        void shouldResolveHostPortShorthandToHttps() {
+            HttpHandler handler = HttpHandler.builder().uri("localhost:8080").build();
+
+            assertEquals(URI.create("https://localhost:8080"), handler.getUri());
+        }
+
+        @Test
+        @DisplayName("host:port shorthand with a path resolves to https")
+        void shouldResolveHostPortShorthandWithPathToHttps() {
+            HttpHandler handler = HttpHandler.builder().uri("localhost:8080/api").build();
+
+            assertEquals(URI.create("https://localhost:8080/api"), handler.getUri());
+        }
+
+        @Test
+        @DisplayName("Schemeless host without a port still resolves to https")
+        void shouldResolveSchemelessHostToHttps() {
+            HttpHandler handler = HttpHandler.builder().uri("example.com").build();
+
+            assertEquals(URI.create("https://example.com"), handler.getUri());
+        }
+
+        @Test
+        @DisplayName("An explicit scheme is never double-prefixed")
+        void shouldNotDoublePrefixExplicitSchemes() {
+            HttpHandler https = HttpHandler.builder().uri("https://example.com").build();
+            HttpHandler http = HttpHandler.builder()
+                    .uri("http://localhost:8080")
+                    .allowInsecureHttp(true)
+                    .build();
+
+            assertAll("Explicit schemes are preserved verbatim",
+                    () -> assertEquals(URI.create("https://example.com"), https.getUri()),
+                    () -> assertEquals(URI.create("http://localhost:8080"), http.getUri()));
+        }
+    }
+
+    /**
+     * A handler owns the {@link java.net.http.HttpClient} it creates, so it must offer a
+     * deterministic way to release that client's connection pool and executor rather than leaving
+     * them to the garbage collector.
+     */
+    @Nested
+    @DisplayName("Lifecycle")
+    class LifecycleTests {
+
+        @Test
+        @DisplayName("Handler is usable in try-with-resources and releases its client on exit")
+        void shouldReleaseClientWhenUsedInTryWithResources() {
+            HttpClient client;
+
+            try (HttpHandler handler = HttpHandler.builder().uri(VALID_URL).build()) {
+                client = handler.createHttpClient();
+                assertFalse(client.isTerminated(), "Client must be live inside the resource block");
+            }
+
+            assertTrue(client.isTerminated(), "Leaving the resource block must release the client");
+        }
+
+        @Test
+        @DisplayName("close() is idempotent")
+        void shouldTolerateRepeatedClose() {
+            HttpHandler handler = HttpHandler.builder().uri(VALID_URL).build();
+            HttpClient client = handler.createHttpClient();
+
+            handler.close();
+            assertDoesNotThrow(handler::close, "A second close() must not throw");
+
+            assertTrue(client.isTerminated(), "Client stays terminated across repeated close() calls");
+        }
+
+        @Test
+        @DisplayName("Closing one handler leaves another handler's client untouched")
+        void shouldNotAffectAnotherHandlersClient() {
+            HttpHandler closed = HttpHandler.builder().uri(VALID_URL).build();
+            HttpHandler live = HttpHandler.builder().uri(VALID_URL).build();
+            HttpClient liveClient = live.createHttpClient();
+
+            closed.close();
+
+            assertAll("Each handler owns a distinct client",
+                    () -> assertTrue(closed.createHttpClient().isTerminated(),
+                            "The closed handler's client is terminated"),
+                    () -> assertFalse(liveClient.isTerminated(),
+                            "An equally-configured sibling handler is unaffected"));
+
+            live.close();
         }
     }
 }

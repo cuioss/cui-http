@@ -20,13 +20,16 @@ import de.cuioss.http.client.result.HttpErrorCategory;
 import de.cuioss.http.client.result.HttpResult;
 import org.junit.jupiter.api.Test;
 
+import javax.net.ssl.SSLHandshakeException;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -541,8 +544,132 @@ class ResilientHttpAdapterTest {
     }
 
     /**
-     * Mock adapter for testing. Supports normal completion (failureResult/successResult) and, via
-     * the {@code exceptionalCause} constructor, exceptionally-completed futures.
+     * A TLS handshake failure is an {@code IOException} by inheritance, so the retry chain would
+     * treat it as a transient network error unless the classifier carves it out. Retrying it only
+     * multiplies the handshake cost against a trust problem that will not resolve, so the adapter
+     * must stop after exactly one attempt and report a non-retryable {@code CONFIGURATION_ERROR}.
+     * <p>
+     * The handshake is injected at the delegate rather than driven against a real TLS server:
+     * {@code @EnableMockWebServer(useHttps = true)} cannot accept a connection in this project (see
+     * the class comment on {@link ResilientHttpAdapterIntegrationTest}), and a genuine handshake
+     * failure would in any case surface here as exactly this exception.
+     */
+    @Test
+    void handshakeFailureIsNotRetried() {
+        AtomicInteger attemptCount = new AtomicInteger(0);
+        HttpAdapter<String> mockAdapter = MockAdapter.exceptional(attemptCount, 5,
+                new SSLHandshakeException("PKIX path building failed"),
+                HttpResult.success("Should not reach", null, 200));
+
+        RetryConfig config = RetryConfig.builder()
+                .maxAttempts(5)
+                .initialDelay(Duration.ofMillis(10))
+                .build();
+
+        HttpAdapter<String> resilient = ResilientHttpAdapter.wrap(mockAdapter, config);
+
+        CompletionException thrown = assertThrows(CompletionException.class, resilient::getBlocking);
+
+        assertAll("A handshake failure is a configuration problem, not a transient one",
+                () -> assertInstanceOf(SSLHandshakeException.class, thrown.getCause(),
+                        "The original failure is re-propagated, not swallowed"),
+                () -> assertEquals(HttpErrorCategory.CONFIGURATION_ERROR,
+                        HttpErrorCategory.fromException(thrown),
+                        "The chain classified it as non-retryable"),
+                () -> assertEquals(1, attemptCount.get(), "Exactly one attempt, no retries"));
+    }
+
+    /**
+     * Cancelling the returned future must reach the request underneath it. A retry chain built from
+     * derived stages would swallow the cancellation, leaving the delegate call running with nobody
+     * waiting for it.
+     */
+    @Test
+    void cancellingReturnedFutureCancelsInFlightDelegateCall() {
+        AtomicInteger attemptCount = new AtomicInteger(0);
+        AtomicReference<CompletableFuture<HttpResult<String>>> inFlight = new AtomicReference<>();
+        HttpAdapter<String> resilient = ResilientHttpAdapter.wrap(
+                MockAdapter.pending(attemptCount, inFlight), RetryConfig.defaults());
+
+        CompletableFuture<HttpResult<String>> controller = resilient.get();
+        CompletableFuture<HttpResult<String>> delegateCall = inFlight.get();
+
+        assertAll("The delegate call is in flight before cancellation",
+                () -> assertEquals(1, attemptCount.get()),
+                () -> assertFalse(delegateCall.isDone()));
+
+        assertTrue(controller.cancel(true), "The returned future must be cancellable");
+
+        assertAll("Cancellation propagates to the in-flight call",
+                () -> assertTrue(delegateCall.isCancelled(), "Delegate call is cancelled"),
+                () -> assertEquals(1, attemptCount.get(), "No further attempt is started"));
+    }
+
+    /**
+     * Cancelling while the chain is waiting out its backoff must abandon the scheduled attempt, not
+     * merely detach the caller from a chain that keeps retrying in the background.
+     */
+    @Test
+    void cancellingDuringBackoffPreventsFurtherAttempts() {
+        AtomicInteger attemptCount = new AtomicInteger(0);
+        HttpAdapter<String> alwaysFailing = new MockAdapter<>(attemptCount, Integer.MAX_VALUE,
+                HttpResult.failure("Network timeout", null, HttpErrorCategory.NETWORK_ERROR),
+                HttpResult.success("Should not reach", null, 200));
+
+        RetryConfig config = RetryConfig.builder()
+                .maxAttempts(5)
+                .initialDelay(Duration.ofMillis(150))
+                .multiplier(1.0)
+                .jitter(0.0)
+                .build();
+
+        CompletableFuture<HttpResult<String>> controller =
+                ResilientHttpAdapter.wrap(alwaysFailing, config).get();
+
+        assertEquals(1, attemptCount.get(),
+                "The first attempt completes synchronously, leaving the chain in backoff");
+        assertTrue(controller.cancel(true), "The returned future must be cancellable during backoff");
+
+        // Hold past several backoff windows: a cancelled chain must never fire a second attempt.
+        await().during(Duration.ofMillis(600))
+                .atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> assertEquals(1, attemptCount.get(),
+                        "No attempt may be scheduled after cancellation"));
+    }
+
+    /**
+     * A {@code *Blocking()} call must be interruptible: {@code join()} would neither observe nor
+     * restore the interrupt flag and would leave the request running after the caller gave up.
+     */
+    @Test
+    void blockingCallOnInterruptedThreadRestoresFlagAndCancelsRequest() {
+        AtomicInteger attemptCount = new AtomicInteger(0);
+        AtomicReference<CompletableFuture<HttpResult<String>>> inFlight = new AtomicReference<>();
+        HttpAdapter<String> resilient = ResilientHttpAdapter.wrap(
+                MockAdapter.pending(attemptCount, inFlight), RetryConfig.defaults());
+
+        try {
+            Thread.currentThread().interrupt();
+
+            CompletionException thrown = assertThrows(CompletionException.class, resilient::getBlocking);
+
+            assertAll("Interruption is reported, the flag restored, and the request abandoned",
+                    () -> assertInstanceOf(InterruptedException.class, thrown.getCause(),
+                            "Interruption surfaces as the cause rather than being swallowed"),
+                    () -> assertTrue(Thread.currentThread().isInterrupted(),
+                            "The interrupt flag is restored for the caller"),
+                    () -> assertTrue(inFlight.get().isCancelled(),
+                            "Giving up on the wait cancels the in-flight request"));
+        } finally {
+            // Clear the flag so it cannot leak into sibling tests on this thread.
+            Thread.interrupted();
+        }
+    }
+
+    /**
+     * Mock adapter for testing. Supports normal completion (failureResult/successResult), pending
+     * futures via {@link MockAdapter#pending}, and, via the {@code exceptionalCause} constructor,
+     * exceptionally-completed futures.
      */
     private static class MockAdapter<T> implements HttpAdapter<T> {
         private final AtomicInteger attemptCount;
@@ -550,19 +677,22 @@ class ResilientHttpAdapterTest {
         private final HttpResult<T> failureResult;
         private final HttpResult<T> successResult;
         private final Throwable exceptionalCause;
+        private final AtomicReference<CompletableFuture<HttpResult<T>>> pendingSink;
 
         MockAdapter(AtomicInteger attemptCount, int failuresBeforeSuccess,
                 HttpResult<T> failureResult, HttpResult<T> successResult) {
-            this(attemptCount, failuresBeforeSuccess, failureResult, successResult, null);
+            this(attemptCount, failuresBeforeSuccess, failureResult, successResult, null, null);
         }
 
         private MockAdapter(AtomicInteger attemptCount, int failuresBeforeSuccess,
-                HttpResult<T> failureResult, HttpResult<T> successResult, Throwable exceptionalCause) {
+                HttpResult<T> failureResult, HttpResult<T> successResult, Throwable exceptionalCause,
+                AtomicReference<CompletableFuture<HttpResult<T>>> pendingSink) {
             this.attemptCount = attemptCount;
             this.failuresBeforeSuccess = failuresBeforeSuccess;
             this.failureResult = failureResult;
             this.successResult = successResult;
             this.exceptionalCause = exceptionalCause;
+            this.pendingSink = pendingSink;
         }
 
         /**
@@ -571,11 +701,26 @@ class ResilientHttpAdapterTest {
          */
         static <T> MockAdapter<T> exceptional(AtomicInteger attemptCount, int failuresBeforeSuccess,
                 Throwable cause, HttpResult<T> successResult) {
-            return new MockAdapter<>(attemptCount, failuresBeforeSuccess, null, successResult, cause);
+            return new MockAdapter<>(attemptCount, failuresBeforeSuccess, null, successResult, cause, null);
+        }
+
+        /**
+         * Creates a mock whose every call returns a fresh future that never completes on its own,
+         * publishing it into {@code pendingSink} so a test can inspect what the adapter did to the
+         * call that was in flight.
+         */
+        static <T> MockAdapter<T> pending(AtomicInteger attemptCount,
+                AtomicReference<CompletableFuture<HttpResult<T>>> pendingSink) {
+            return new MockAdapter<>(attemptCount, 0, null, null, null, pendingSink);
         }
 
         private CompletableFuture<HttpResult<T>> executeRequest() {
             int attempt = attemptCount.incrementAndGet();
+            if (pendingSink != null) {
+                CompletableFuture<HttpResult<T>> pending = new CompletableFuture<>();
+                pendingSink.set(pending);
+                return pending;
+            }
             if (attempt <= failuresBeforeSuccess) {
                 if (exceptionalCause != null) {
                     return CompletableFuture.failedFuture(exceptionalCause);

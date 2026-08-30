@@ -29,10 +29,13 @@ import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.net.http.HttpClient;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -44,7 +47,18 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>Retry on server errors (5xx)</li>
  *   <li>No retry on client errors (4xx)</li>
  *   <li>Composition with ETagAwareHttpAdapter</li>
+ *   <li>Cancellation propagation through the retry chain</li>
+ *   <li>Handler lifecycle across the full adapter stack</li>
  * </ul>
+ * <p>
+ * TLS-dependent cases are <strong>not</strong> covered here. An {@code @EnableMockWebServer(useHttps
+ * = true)} server cannot currently accept a connection in this project: the mockwebserver3 build on
+ * the test classpath calls {@code okhttp3.internal.platform.Platform.configureTlsExtensions}, which
+ * the resolved okhttp version no longer declares, so every TLS connection attempt dies with a
+ * {@code NoSuchMethodError} on the server's task-runner thread and the client sees only a connect
+ * timeout. TLS behaviour is therefore asserted where it can be driven deterministically:
+ * classification in {@code HttpErrorCategoryTest}, and the adapter-level no-retry consequence in
+ * {@link ResilientHttpAdapterTest}.
  *
  * @author Oliver Wolff
  * @since 1.0
@@ -275,6 +289,82 @@ class ResilientHttpAdapterIntegrationTest {
         assertTrue(result.isSuccess(), "Should succeed after retry");
         assertEquals("{\"created\":true}", result.getContent().orElse(null));
         assertTrue(dispatcher.getCallCounter() >= 2, "POST should retry with idempotentOnly=false");
+    }
+
+    /**
+     * Cancelling the future returned by {@code get()} while the chain waits out its backoff must
+     * stop the retry chain, not merely detach the caller from a chain that keeps hitting the server.
+     */
+    @Test
+    @DisplayName("Cancelling mid-backoff issues no further server request")
+    @ModuleDispatcher
+    void cancellingMidBackoffShouldIssueNoFurtherRequest(URIBuilder uriBuilder) {
+        dispatcher.withServerError();
+
+        String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
+
+        HttpAdapter<String> baseAdapter = ETagAwareHttpAdapter.<String>builder()
+                .httpHandler(handler)
+                .responseConverter(new StringResponseConverter())
+                .build();
+
+        RetryConfig config = RetryConfig.builder()
+                .maxAttempts(5)
+                .initialDelay(Duration.ofMillis(300))
+                .multiplier(1.0)
+                .jitter(0.0)
+                .build();
+
+        CompletableFuture<HttpResult<String>> pending =
+                ResilientHttpAdapter.wrap(baseAdapter, config).get();
+
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> dispatcher.getCallCounter() >= 1);
+        pending.cancel(true);
+
+        // Hold well past several backoff windows: the cancelled chain must never call again.
+        await().during(Duration.ofSeconds(1))
+                .atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> assertEquals(1, dispatcher.getCallCounter(),
+                        "Cancellation must stop the retry chain from calling the server again"));
+
+        handler.close();
+    }
+
+    /**
+     * The full {@code HttpHandler -> ETagAwareHttpAdapter -> ResilientHttpAdapter} stack must work
+     * with the handler managed as a resource, and leaving the block must release the client the
+     * handler owns without disturbing the completed request.
+     */
+    @Test
+    @DisplayName("Full adapter stack works with the handler closed in try-with-resources")
+    @ModuleDispatcher
+    void fullStackShouldWorkWithHandlerAsResource(URIBuilder uriBuilder) {
+        dispatcher.withSuccessAndETag("{\"data\":\"stacked\"}", "\"etag-stacked\"");
+
+        String serverUrl = uriBuilder.addPathSegments("api", "data").build().toString();
+        HttpClient borrowedClient;
+        HttpResult<String> result;
+
+        try (HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build()) {
+            borrowedClient = handler.createHttpClient();
+
+            HttpAdapter<String> stack = ResilientHttpAdapter.wrap(
+                    ETagAwareHttpAdapter.<String>builder()
+                            .httpHandler(handler)
+                            .responseConverter(new StringResponseConverter())
+                            .build());
+
+            result = stack.getBlocking();
+            assertTrue(result.isSuccess(), "The stacked request must succeed inside the block");
+        }
+
+        assertAll("The result survives the block; the borrowed client is released with the handler",
+                () -> assertEquals("{\"data\":\"stacked\"}", result.getContent().orElse(null)),
+                () -> assertEquals("\"etag-stacked\"", result.getETag().orElse(null)),
+                () -> assertTrue(borrowedClient.isTerminated(),
+                        "Closing the handler releases the client the adapters borrowed"));
     }
 
     // === Helper Converters ===

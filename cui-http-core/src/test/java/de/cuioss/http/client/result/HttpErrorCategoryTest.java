@@ -15,10 +15,14 @@
  */
 package de.cuioss.http.client.result;
 
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import javax.net.ssl.*;
 import java.io.IOException;
 import java.net.SocketTimeoutException;
+import java.net.http.HttpConnectTimeoutException;
+import java.net.http.HttpTimeoutException;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.concurrent.CompletionException;
@@ -128,5 +132,75 @@ class HttpErrorCategoryTest {
                 HttpErrorCategory.fromException(new IllegalStateException("bad state")));
         assertEquals(HttpErrorCategory.CONFIGURATION_ERROR,
                 HttpErrorCategory.fromException(new RuntimeException("other")));
+    }
+
+    /**
+     * Verifies the TLS carve-out: non-transient TLS subtypes are non-retryable configuration
+     * errors even though they inherit from {@link IOException}, while the {@link SSLException}
+     * base type and the HTTP timeout types stay on the retryable network-error path.
+     */
+    @Nested
+    class TlsClassification {
+
+        @Test
+        void shouldMapHandshakeFailureToConfigurationError() {
+            assertNonRetryableTlsFailure(new SSLHandshakeException("untrusted certificate"));
+        }
+
+        @Test
+        void shouldMapKeyFailureToConfigurationError() {
+            assertNonRetryableTlsFailure(new SSLKeyException("bad key material"));
+        }
+
+        @Test
+        void shouldMapPeerUnverifiedFailureToConfigurationError() {
+            assertNonRetryableTlsFailure(new SSLPeerUnverifiedException("peer not verified"));
+        }
+
+        @Test
+        void shouldMapProtocolFailureToConfigurationError() {
+            assertNonRetryableTlsFailure(new SSLProtocolException("protocol violation"));
+        }
+
+        @Test
+        void shouldKeepBareSslExceptionRetryable() {
+            assertAll("Bare SSLException also covers transient conditions",
+                    () -> assertEquals(HttpErrorCategory.NETWORK_ERROR,
+                            HttpErrorCategory.fromException(new SSLException("connection reset during handshake"))),
+                    () -> assertEquals(HttpErrorCategory.NETWORK_ERROR,
+                            HttpErrorCategory.fromException(
+                                    new CompletionException(new SSLException("connection reset")))));
+        }
+
+        @Test
+        void shouldKeepHttpTimeoutsRetryable() {
+            assertAll("HTTP timeouts remain transient network errors",
+                    () -> assertEquals(HttpErrorCategory.NETWORK_ERROR,
+                            HttpErrorCategory.fromException(new HttpTimeoutException("request timed out"))),
+                    () -> assertEquals(HttpErrorCategory.NETWORK_ERROR,
+                            HttpErrorCategory.fromException(new HttpConnectTimeoutException("connect timed out"))),
+                    () -> assertEquals(HttpErrorCategory.NETWORK_ERROR,
+                            HttpErrorCategory.fromException(
+                                    new CompletionException(new HttpConnectTimeoutException("connect timed out")))));
+        }
+
+        /**
+         * Asserts the given TLS failure classifies as {@code CONFIGURATION_ERROR} bare and through
+         * both async wrappers, exercising the unwrap loop in
+         * {@link HttpErrorCategory#fromException(Throwable)}.
+         */
+        private void assertNonRetryableTlsFailure(SSLException tlsFailure) {
+            assertAll(tlsFailure.getClass().getSimpleName() + " is a non-retryable TLS failure",
+                    () -> assertEquals(HttpErrorCategory.CONFIGURATION_ERROR,
+                            HttpErrorCategory.fromException(tlsFailure), "bare"),
+                    () -> assertEquals(HttpErrorCategory.CONFIGURATION_ERROR,
+                            HttpErrorCategory.fromException(new CompletionException(tlsFailure)),
+                            "wrapped in CompletionException"),
+                    () -> assertEquals(HttpErrorCategory.CONFIGURATION_ERROR,
+                            HttpErrorCategory.fromException(new ExecutionException(tlsFailure)),
+                            "wrapped in ExecutionException"),
+                    () -> assertFalse(HttpErrorCategory.fromException(tlsFailure).isRetryable(),
+                            "must not be retried"));
+        }
     }
 }

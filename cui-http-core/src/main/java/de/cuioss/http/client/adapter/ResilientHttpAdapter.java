@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import static de.cuioss.http.client.HttpLogMessages.WARN;
@@ -39,15 +40,25 @@ import static java.util.Objects.requireNonNull;
  *
  * <h2>Async Retry Pattern</h2>
  * <p>
- * This implementation uses non-blocking delays via {@link CompletableFuture#delayedExecutor}
- * and tail recursion via {@code .thenCompose()} to avoid thread blocking and stack overflow.
- * Each retry attempt is scheduled after a delay, but no threads are blocked during the wait.
+ * This implementation uses non-blocking delays via {@link CompletableFuture#delayedExecutor} and
+ * schedules each subsequent attempt from the previous one's completion callback, avoiding both
+ * thread blocking and the stack growth of a synchronous retry loop. Each retry attempt is scheduled
+ * after a delay, but no threads are blocked during the wait. Attempts drive a single caller-facing
+ * controller future rather than a chain of derived stages — see <a href="#cancellation">
+ * Cancellation</a> for why that distinction matters.
  *
  * <h2>Idempotency Safety</h2>
  * <p>
  * By default, only idempotent methods (GET, PUT, DELETE, HEAD, OPTIONS) are retried.
  * POST and PATCH are skipped unless {@code idempotentOnly=false} is explicitly configured.
  * This prevents duplicate resource creation or repeated non-idempotent operations.
+ *
+ * <h2 id="cancellation">Cancellation</h2>
+ * <p>
+ * The future returned by every operation is cancellable, and cancellation reaches the whole retry
+ * chain: the in-flight delegate call is cancelled, a pending backoff delay is abandoned, and no
+ * further attempt is scheduled. Cancelling therefore genuinely stops the work rather than merely
+ * detaching the caller from a chain that keeps retrying in the background.
  *
  * <h2>Usage Examples</h2>
  *
@@ -255,48 +266,138 @@ public class ResilientHttpAdapter<T> implements HttpAdapter<T> {
      * idempotency and max-attempts checks); if it is not retried, the original exception is
      * re-propagated so callers still observe the failure.
      *
+     * <h3>Cancellation</h3>
+     * <p>The future returned here is a dedicated <em>controller</em>, not the delegate's future and
+     * not a derived stage of it. Cancelling it propagates: the stage currently in flight — either the
+     * delegate call or the pending backoff delay — is tracked in an {@link AtomicReference} and
+     * cancelled as soon as the controller completes, and no further attempt is scheduled afterwards.
+     * Returning a {@code thenCompose} stage instead would leave cancellation inert, because
+     * cancelling a derived stage never reaches the upstream request and never stops the retry chain.
+     *
      * @param operation Supplier that returns CompletableFuture of the HTTP operation
      * @param method HTTP method for logging and idempotency checking
      * @param attempt Current attempt number (1-based)
-     * @return CompletableFuture containing the result or recursive retry
+     * @return a cancellable controller future carrying the final result
      */
     private CompletableFuture<HttpResult<T>> executeWithRetry(
             Supplier<CompletableFuture<HttpResult<T>>> operation,
             HttpMethod method,
             int attempt) {
 
-        LOGGER.debug("Attempt %s/%s for %s request", attempt, config.maxAttempts(), method.methodName());
+        CompletableFuture<HttpResult<T>> controller = new CompletableFuture<>();
+        AtomicReference<CompletableFuture<?>> inFlight = new AtomicReference<>();
 
-        // Delegate is already async - no supplyAsync needed! handle(...) captures both normal
-        // completions and exceptional completions so the latter also go through the retry path.
-        return operation.get()
-                .handle((result, throwable) -> decideNextStep(operation, method, attempt, result, throwable))
-                .thenCompose(next -> next);
+        // Cancelling (or otherwise completing) the controller tears down whatever stage is running
+        // underneath it. On a normal completion the tracked stage is already done, so the cancel is
+        // a no-op; on a cancellation it is what actually stops the in-flight request or the pending
+        // backoff delay.
+        controller.whenComplete((ignoredResult, ignoredThrowable) -> {
+            CompletableFuture<?> stage = inFlight.getAndSet(null);
+            if (stage != null) {
+                stage.cancel(true);
+            }
+        });
+
+        runAttempt(controller, inFlight, operation, method, attempt);
+        return controller;
     }
 
     /**
-     * Decides whether to return the current outcome or schedule a retry.
+     * Runs one attempt against the delegate and routes its outcome into
+     * {@link #decideNextStep}.
      *
+     * @param controller the caller-facing controller future to complete
+     * @param inFlight tracks the stage a controller cancellation must tear down
+     * @param operation Supplier that returns CompletableFuture of the HTTP operation
+     * @param method HTTP method for logging and idempotency checking
+     * @param attempt current attempt number (1-based)
+     */
+    private void runAttempt(
+            CompletableFuture<HttpResult<T>> controller,
+            AtomicReference<CompletableFuture<?>> inFlight,
+            Supplier<CompletableFuture<HttpResult<T>>> operation,
+            HttpMethod method,
+            int attempt) {
+
+        if (controller.isDone()) {
+            return;
+        }
+
+        LOGGER.debug("Attempt %s/%s for %s request", attempt, config.maxAttempts(), method.methodName());
+
+        // Delegate is already async - no supplyAsync needed! whenComplete(...) captures both normal
+        // completions and exceptional completions so the latter also go through the retry path.
+        CompletableFuture<HttpResult<T>> delegateFuture = operation.get();
+        publishInFlight(controller, inFlight, delegateFuture);
+
+        delegateFuture.whenComplete((result, throwable) -> {
+            try {
+                decideNextStep(controller, inFlight, operation, method, attempt, result, throwable);
+            }
+            /*TODO: Catch specific not RuntimeException. Suppress: // cui-rewrite:disable InvalidExceptionUsageRecipe*/
+            catch (RuntimeException e) {
+                // The stage this callback returns is discarded, so an escaping exception would
+                // otherwise leave the controller uncompleted and the caller blocked forever.
+                controller.completeExceptionally(e);
+            }
+        });
+    }
+
+    /**
+     * Publishes the stage a controller cancellation must tear down, closing the check-then-act
+     * window against a concurrent cancellation.
+     * <p>
+     * The controller may complete between the {@code isDone()} check that admitted this stage and
+     * this publication. In that window the controller's cancellation callback has already run and
+     * seen a stale (or absent) reference, so it cannot cancel the stage published afterwards. The
+     * re-check below is what closes it: whoever observes the completion last performs the cancel.
+     *
+     * @param controller the controller future whose completion cancels the stage
+     * @param inFlight the tracking reference to publish into
+     * @param stage the newly started stage
+     */
+    private static void publishInFlight(CompletableFuture<?> controller,
+            AtomicReference<CompletableFuture<?>> inFlight,
+            CompletableFuture<?> stage) {
+        inFlight.set(stage);
+        if (controller.isDone()) {
+            stage.cancel(true);
+        }
+    }
+
+    /**
+     * Decides whether to complete the controller with the current outcome or schedule a retry.
+     *
+     * @param controller the caller-facing controller future to complete
+     * @param inFlight tracks the stage a controller cancellation must tear down
      * @param operation the operation supplier for a possible retry
      * @param method HTTP method for logging and idempotency checking
      * @param attempt current attempt number (1-based)
      * @param result the normal completion result, or {@code null} if the future completed exceptionally
      * @param throwable the exceptional completion cause, or {@code null} on normal completion
-     * @return a future with the final result, a re-propagated failure, or a scheduled retry
      */
-    private CompletableFuture<HttpResult<T>> decideNextStep(
+    private void decideNextStep(
+            CompletableFuture<HttpResult<T>> controller,
+            AtomicReference<CompletableFuture<?>> inFlight,
             Supplier<CompletableFuture<HttpResult<T>>> operation,
             HttpMethod method,
             int attempt,
             @Nullable HttpResult<T> result,
             @Nullable Throwable throwable) {
 
-        // Success - return immediately
+        // The caller may have cancelled while this attempt was in flight. Abandon the chain rather
+        // than completing or rescheduling behind a controller that is already done.
+        if (controller.isDone()) {
+            return;
+        }
+
+        // Success - complete immediately
         if (throwable == null && result != null && result.isSuccess()) {
             if (attempt > 1) {
                 LOGGER.debug("%s request succeeded on attempt %s", method.methodName(), attempt);
             }
-            return CompletableFuture.completedFuture(result);
+            controller.complete(result);
+            return;
         }
 
         // An exceptionally-completed future is retryable only when its root cause classifies as a
@@ -309,27 +410,30 @@ public class ResilientHttpAdapter<T> implements HttpAdapter<T> {
                 ? HttpErrorCategory.fromException(throwable).isRetryable()
                 : (result != null && result.isRetryable());
 
-        // Non-retryable failure - return immediately. Checked before the idempotency check (CLI-5)
+        // Non-retryable failure - complete immediately. Checked before the idempotency check (CLI-5)
         // so failures that would never be retried do not emit the non-idempotent-skip warning.
         if (!retryable) {
             LOGGER.debug("%s request failed with non-retryable error: %s",
                     method.methodName(), result != null ? result.getErrorCategory().orElse(null) : null);
-            // finalOutcome re-propagates the throwable for an exceptionally-completed future and
-            // returns the failing result for a normal completion; returning the null result here
-            // would swallow a non-retryable exception into a null outcome.
-            return finalOutcome(result, throwable);
+            // completeFinalOutcome re-propagates the throwable for an exceptionally-completed future
+            // and completes with the failing result for a normal completion; completing with the
+            // null result here would swallow a non-retryable exception into a null outcome.
+            completeFinalOutcome(controller, result, throwable);
+            return;
         }
 
         // Idempotency check - skip retry for non-idempotent methods if configured
         if (config.idempotentOnly() && !method.isIdempotent()) {
             LOGGER.warn(WARN.RETRY_SKIPPED_NON_IDEMPOTENT, method.methodName());
-            return finalOutcome(result, throwable);
+            completeFinalOutcome(controller, result, throwable);
+            return;
         }
 
         // Max attempts reached
         if (attempt >= config.maxAttempts()) {
             LOGGER.warn(WARN.REQUEST_FAILED_MAX_ATTEMPTS, method.methodName(), config.maxAttempts());
-            return finalOutcome(result, throwable);
+            completeFinalOutcome(controller, result, throwable);
+            return;
         }
 
         // Retryable failure - calculate delay and schedule retry
@@ -345,20 +449,38 @@ public class ResilientHttpAdapter<T> implements HttpAdapter<T> {
                 delay.toMillis(), TimeUnit.MILLISECONDS
         );
 
-        // Schedule next attempt after delay - no nested futures
-        return CompletableFuture
-                .supplyAsync(() -> null, delayedExecutor)
-                .thenCompose(ignored -> executeWithRetry(operation, method, nextAttempt));
+        // The pending delay is itself the in-flight stage: cancelling the controller during backoff
+        // completes it exceptionally, so the thenRun below never fires and no further attempt starts.
+        CompletableFuture<Void> scheduled = CompletableFuture.runAsync(() -> {
+            // Intentionally empty: the delayed executor supplies the backoff, and completing this
+            // stage is the signal that the delay has elapsed.
+        }, delayedExecutor);
+        publishInFlight(controller, inFlight, scheduled);
+
+        scheduled.thenRun(() -> {
+            try {
+                runAttempt(controller, inFlight, operation, method, nextAttempt);
+            }
+            /*TODO: Catch specific not RuntimeException. Suppress: // cui-rewrite:disable InvalidExceptionUsageRecipe*/
+            catch (RuntimeException e) {
+                // Mirrors the previous thenCompose behaviour: a supplier that throws synchronously
+                // on a retry surfaces through the returned future rather than stranding the caller.
+                controller.completeExceptionally(e);
+            }
+        });
     }
 
     /**
-     * Produces the terminal outcome when no further retry is performed: the failing result for a
-     * normal completion, or a re-propagated exception for an exceptionally-completed future.
+     * Completes the controller with the terminal outcome when no further retry is performed: the
+     * failing result for a normal completion, or a re-propagated exception for an
+     * exceptionally-completed future.
      */
-    private CompletableFuture<HttpResult<T>> finalOutcome(@Nullable HttpResult<T> result, @Nullable Throwable throwable) {
+    private void completeFinalOutcome(CompletableFuture<HttpResult<T>> controller,
+            @Nullable HttpResult<T> result, @Nullable Throwable throwable) {
         if (throwable != null) {
-            return CompletableFuture.failedFuture(throwable);
+            controller.completeExceptionally(throwable);
+        } else {
+            controller.complete(result);
         }
-        return CompletableFuture.completedFuture(result);
     }
 }

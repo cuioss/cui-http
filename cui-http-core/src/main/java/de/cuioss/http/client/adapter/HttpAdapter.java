@@ -21,14 +21,16 @@ import org.jspecify.annotations.Nullable;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 
 /**
  * Adapter for sending HTTP requests and receiving structured results.
  * Provides method-specific operations following HTTP semantics.
  *
  * <p><b>Async-First Design:</b> All methods return {@code CompletableFuture<HttpResult<T>>}
- * for non-blocking operation. Use {@code .join()} or blocking convenience methods for
- * synchronous usage.
+ * for non-blocking operation. For synchronous usage prefer the {@code *Blocking()} convenience
+ * methods, which are interrupt-aware — see <a href="#blocking">Blocking and interruption</a>.
  *
  * <p>The adapter is configured with a HttpResponseConverter&lt;T&gt; for responses.
  * Request bodies can be sent using:
@@ -84,8 +86,22 @@ import java.util.concurrent.CompletableFuture;
  *
  * <p><b>Important:</b> Always check return types. If you see {@code CompletableFuture<T>},
  * you're working with async code and must handle it appropriately ({@code .thenAccept()},
- * {@code .thenApply()}, {@code .exceptionally()}, etc.). Never call {@code .get()} or
- * {@code .join()} on a CompletableFuture unless you specifically need blocking behavior.
+ * {@code .thenApply()}, {@code .exceptionally()}, etc.). Do not await a returned future by hand
+ * unless you specifically need blocking behavior — when you do, use the {@code *Blocking()}
+ * convenience methods below rather than an ad-hoc wait, so interruption is handled correctly.
+ *
+ * <h3 id="blocking">Blocking and interruption</h3>
+ *
+ * <p>Every {@code *Blocking()} method waits on the underlying future in an interrupt-aware way:
+ *
+ * <ul>
+ *   <li>If the request fails, the failure is reported as a {@link CompletionException} wrapping the
+ *       original cause — the same shape a caller awaiting the future by hand would observe.</li>
+ *   <li>If the <em>calling</em> thread is interrupted while waiting, the thread's interrupt flag is
+ *       restored, the in-flight request is cancelled, and a {@link CompletionException} wrapping the
+ *       {@link InterruptedException} is thrown. Interruption is therefore neither swallowed nor left
+ *       to leak an orphaned request — which is precisely what a bare wait would do.</li>
+ * </ul>
  *
  * @param <T> Response body type
  * @since 1.0
@@ -371,155 +387,190 @@ public interface HttpAdapter<T> {
     // ========== BLOCKING CONVENIENCE METHODS ==========
 
     /**
+     * Awaits {@code future} on the calling thread, preserving interrupt semantics.
+     * <p>
+     * This is the single wait primitive behind every {@code *Blocking()} method. It exists because
+     * {@link CompletableFuture#join()} — the obvious implementation — is <em>not</em> interruptible:
+     * it neither observes nor restores the calling thread's interrupt status, and it leaves the
+     * in-flight request running after the caller has given up on it. This method uses
+     * {@link CompletableFuture#get()} instead and, on {@link InterruptedException}, restores the
+     * interrupt flag and cancels {@code future} before reporting the failure.
+     * </p>
+     * <p>
+     * Failures are reported as {@link CompletionException}, matching {@code join()}'s contract so
+     * the observable exception shape is unchanged: an execution failure surfaces the original cause,
+     * and an interruption surfaces the {@link InterruptedException}.
+     * </p>
+     *
+     * @param <T>    Response body type
+     * @param future the future to await; cancelled if the calling thread is interrupted
+     * @return the completed {@link HttpResult}
+     * @throws CompletionException if the future completed exceptionally, or if the calling thread was
+     *                             interrupted while waiting
+     */
+    private static <T> HttpResult<T> await(CompletableFuture<HttpResult<T>> future) {
+        try {
+            return future.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            future.cancel(true);
+            throw new CompletionException(e);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            throw new CompletionException(cause != null ? cause : e);
+        }
+    }
+
+    /**
      * Blocking convenience method for GET.
-     * Equivalent to {@code get().join()}.
+     * Blocks until the GET completes; see <a href="#blocking">Blocking and interruption</a>.
      *
      * @param additionalHeaders Additional HTTP headers
      * @return Result containing response or error information
      */
     default HttpResult<T> getBlocking(Map<String, String> additionalHeaders) {
-        return get(additionalHeaders).join();
+        return await(get(additionalHeaders));
     }
 
     /**
      * Blocking convenience method for GET.
-     * Equivalent to {@code get().join()}.
+     * Blocks until the GET completes; see <a href="#blocking">Blocking and interruption</a>.
      *
      * @return Result containing response or error information
      */
     default HttpResult<T> getBlocking() {
-        return get().join();
+        return await(get());
     }
 
     /**
      * Blocking convenience method for POST.
-     * Equivalent to {@code post(requestBody).join()}.
+     * Blocks until the POST completes; see <a href="#blocking">Blocking and interruption</a>.
      *
      * @param requestBody Request body content, may be null
      * @param additionalHeaders Additional HTTP headers
      * @return Result containing created resource or error
      */
     default HttpResult<T> postBlocking(@Nullable T requestBody, Map<String, String> additionalHeaders) {
-        return post(requestBody, additionalHeaders).join();
+        return await(post(requestBody, additionalHeaders));
     }
 
     /**
      * Blocking convenience method for POST.
-     * Equivalent to {@code post(requestBody).join()}.
+     * Blocks until the POST completes; see <a href="#blocking">Blocking and interruption</a>.
      *
      * @param requestBody Request body content, may be null
      * @return Result containing created resource or error
      */
     default HttpResult<T> postBlocking(@Nullable T requestBody) {
-        return post(requestBody).join();
+        return await(post(requestBody));
     }
 
     /**
      * Blocking convenience method for PUT.
-     * Equivalent to {@code put(requestBody).join()}.
+     * Blocks until the PUT completes; see <a href="#blocking">Blocking and interruption</a>.
      *
      * @param requestBody Request body content, may be null
      * @param additionalHeaders Additional HTTP headers
      * @return Result containing updated resource or error
      */
     default HttpResult<T> putBlocking(@Nullable T requestBody, Map<String, String> additionalHeaders) {
-        return put(requestBody, additionalHeaders).join();
+        return await(put(requestBody, additionalHeaders));
     }
 
     /**
      * Blocking convenience method for PUT.
-     * Equivalent to {@code put(requestBody).join()}.
+     * Blocks until the PUT completes; see <a href="#blocking">Blocking and interruption</a>.
      *
      * @param requestBody Request body content, may be null
      * @return Result containing updated resource or error
      */
     default HttpResult<T> putBlocking(@Nullable T requestBody) {
-        return put(requestBody).join();
+        return await(put(requestBody));
     }
 
     /**
      * Blocking convenience method for PATCH.
-     * Equivalent to {@code patch(requestBody).join()}.
+     * Blocks until the PATCH completes; see <a href="#blocking">Blocking and interruption</a>.
      *
      * @param requestBody Request body content, may be null
      * @param additionalHeaders Additional HTTP headers
      * @return Result containing updated resource or error
      */
     default HttpResult<T> patchBlocking(@Nullable T requestBody, Map<String, String> additionalHeaders) {
-        return patch(requestBody, additionalHeaders).join();
+        return await(patch(requestBody, additionalHeaders));
     }
 
     /**
      * Blocking convenience method for PATCH.
-     * Equivalent to {@code patch(requestBody).join()}.
+     * Blocks until the PATCH completes; see <a href="#blocking">Blocking and interruption</a>.
      *
      * @param requestBody Request body content, may be null
      * @return Result containing updated resource or error
      */
     default HttpResult<T> patchBlocking(@Nullable T requestBody) {
-        return patch(requestBody).join();
+        return await(patch(requestBody));
     }
 
     /**
      * Blocking convenience method for DELETE.
-     * Equivalent to {@code delete().join()}.
+     * Blocks until the DELETE completes; see <a href="#blocking">Blocking and interruption</a>.
      *
      * @param additionalHeaders Additional HTTP headers
      * @return Result containing response or error information
      */
     default HttpResult<T> deleteBlocking(Map<String, String> additionalHeaders) {
-        return delete(additionalHeaders).join();
+        return await(delete(additionalHeaders));
     }
 
     /**
      * Blocking convenience method for DELETE.
-     * Equivalent to {@code delete().join()}.
+     * Blocks until the DELETE completes; see <a href="#blocking">Blocking and interruption</a>.
      *
      * @return Result containing response or error information
      */
     default HttpResult<T> deleteBlocking() {
-        return delete().join();
+        return await(delete());
     }
 
     /**
      * Blocking convenience method for HEAD.
-     * Equivalent to {@code head().join()}.
+     * Blocks until the HEAD completes; see <a href="#blocking">Blocking and interruption</a>.
      *
      * @param additionalHeaders Additional HTTP headers
      * @return Result containing response metadata
      */
     default HttpResult<T> headBlocking(Map<String, String> additionalHeaders) {
-        return head(additionalHeaders).join();
+        return await(head(additionalHeaders));
     }
 
     /**
      * Blocking convenience method for HEAD.
-     * Equivalent to {@code head().join()}.
+     * Blocks until the HEAD completes; see <a href="#blocking">Blocking and interruption</a>.
      *
      * @return Result containing response metadata
      */
     default HttpResult<T> headBlocking() {
-        return head().join();
+        return await(head());
     }
 
     /**
      * Blocking convenience method for OPTIONS.
-     * Equivalent to {@code options().join()}.
+     * Blocks until the OPTIONS completes; see <a href="#blocking">Blocking and interruption</a>.
      *
      * @param additionalHeaders Additional HTTP headers
      * @return Result containing server capabilities
      */
     default HttpResult<T> optionsBlocking(Map<String, String> additionalHeaders) {
-        return options(additionalHeaders).join();
+        return await(options(additionalHeaders));
     }
 
     /**
      * Blocking convenience method for OPTIONS.
-     * Equivalent to {@code options().join()}.
+     * Blocks until the OPTIONS completes; see <a href="#blocking">Blocking and interruption</a>.
      *
      * @return Result containing server capabilities
      */
     default HttpResult<T> optionsBlocking() {
-        return options().join();
+        return await(options());
     }
 }
