@@ -74,7 +74,7 @@ import java.util.regex.Pattern;
  * HttpStatusFamily status = handler.pingGet();
  *
  * // Custom SSL context
- * SSLContext customSSL = mySecureSSLProvider.getSSLContext();
+ * SSLContext customSSL = new SecureSSLContextProvider().getOrCreateSecureSSLContext(null);
  * HttpHandler secureHandler = HttpHandler.builder()
  *     .uri("https://secure.example.com/api")
  *     .sslContext(customSSL)
@@ -370,7 +370,7 @@ public final class HttpHandler implements AutoCloseable {
     }
 
     /**
-     * Pings the URI using the HEAD method and returns the HTTP status code.
+     * Pings the URI using the HEAD method and returns the HTTP status code family.
      *
      * @return The HTTP status code family, or {@link HttpStatusFamily#UNKNOWN} if an error occurred
      */
@@ -382,7 +382,7 @@ public final class HttpHandler implements AutoCloseable {
     }
 
     /**
-     * Pings the URI using the GET method and returns the HTTP status code.
+     * Pings the URI using the GET method and returns the HTTP status code family.
      *
      * @return The HTTP status code family, or {@link HttpStatusFamily#UNKNOWN} if an error occurred
      */
@@ -394,7 +394,7 @@ public final class HttpHandler implements AutoCloseable {
     }
 
     /**
-     * Pings the URI using the specified HTTP method and returns the HTTP status code.
+     * Pings the URI using the specified HTTP method and returns the HTTP status code family.
      *
      * @param method The HTTP method to use (e.g., "HEAD", "GET")
      * @param bodyPublisher The body publisher to use for the request
@@ -715,6 +715,9 @@ public final class HttpHandler implements AutoCloseable {
          * @throws IllegalArgumentException If any parameter is invalid, or if
          *                                  {@code verifyHostname(false)} is combined with a
          *                                  caller-supplied {@link #sslContext(SSLContext)}.
+         * @throws IllegalStateException    If the resolved URI cannot be converted to a
+         *                                  {@link URL} — the URI is syntactically valid but names
+         *                                  no protocol handler this JVM can resolve.
          */
         public HttpHandler build() {
             // The relaxation only applies to the default-trust-store context this class derives
@@ -747,9 +750,10 @@ public final class HttpHandler implements AutoCloseable {
                 throw new IllegalArgumentException("Read timeout must be positive");
             }
 
-            // Convert the URI to a URL
-            // Note: URI.toURL() is deprecated but all alternatives (URL constructors) are also deprecated.
-            // We suppress the warning since we need to create a URL for backward compatibility.
+            // Materialise the URL eagerly so build() is the single place a URI that names no
+            // resolvable protocol handler is rejected; the handler then exposes url() without any
+            // later failure path. URI.toURL() is the non-deprecated route (the URL constructors are
+            // the deprecated ones).
             // At this point, resolvedUri is guaranteed to be non-null because resolveUri() either
             // returns a non-null URI or throws.
             URL verifiedUrl;
