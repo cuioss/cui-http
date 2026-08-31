@@ -47,17 +47,20 @@ import java.util.List;
  *       bypass extension or prefix checks</li>
  *   <li><strong>Excessive Encoding Layers</strong>: multiply-encoded input used to evade
  *       single-decoding filters</li>
- *   <li><strong>CRLF Injection</strong>: encoded CR/LF in the request line, the response-splitting
- *       vector</li>
+ *   <li><strong>Encoded Control Characters</strong>: percent-encoded CR/LF smuggled into a path
+ *       segment, rejected as control characters once decoded. The entry verifies that rejection
+ *       at the path layer only - it does not exercise response splitting, which needs a header
+ *       or {@code Set-Cookie} sink this pipeline never reaches</li>
  *   <li><strong>Invalid Path Characters</strong>: characters that RFC 3986 does not permit in a
  *       URL path, such as the backslash</li>
  * </ul>
  *
  * <p><strong>Deliberately absent.</strong> CRS categories that have no URL-path expression are not
  * represented here, because this database is only ever driven through the URL-path pipeline:
- * request smuggling and chunked-transfer framing are message-framing attacks, header injection is
- * owned by the header pipeline, and session fixation is a cookie/session-management concern. No
- * entry claims them.</p>
+ * request smuggling and chunked-transfer framing are message-framing attacks; header injection and
+ * response splitting are owned by the header pipeline, which is the only place a CR/LF can reach a
+ * response-header sink; and session fixation is a cookie/session-management concern. No entry
+ * claims them.</p>
  *
  * @since 1.0
  */
@@ -195,7 +198,8 @@ public class ModSecurityCRSAttackDatabase implements AttackDatabase {
             "PATH_TRAVERSAL_DETECTED is expected because this uses traversal patterns to access network paths."
     );
 
-    // CRS Rule 932100: Unix Command Injection (Path Context Only)
+    // CRS Rule 932100 payload, kept for its path-traversal expression only: traversal disguised
+    // behind a path parameter. The command-injection half of that rule has no URL-path expression.
     public static final AttackTestCase CRS_932100_PATH_SEMICOLON = new AttackTestCase(
             "/admin;jsessionid=abc123/../../../etc/passwd",
             UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
@@ -211,7 +215,8 @@ public class ModSecurityCRSAttackDatabase implements AttackDatabase {
             "PATH_TRAVERSAL_DETECTED is expected because mixed dot segments with traversal indicate path manipulation."
     );
 
-    // CRS Rule 941100: Session Fixation
+    // CRS Rule 941100 payload, kept for its path-traversal expression only: traversal aimed at a
+    // session-file path. The session-fixation half of that rule has no URL-path expression.
     public static final AttackTestCase CRS_941100_DOTDOT_COOKIE = new AttackTestCase(
             "/../../../tmp/sess_123",
             UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
