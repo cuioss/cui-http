@@ -26,6 +26,8 @@ A prior attempt at executable verification existed but was local and partial: on
 
 Every NFKC-fold claim made anywhere in the security test tree — in a comment, in Javadoc, or in an existing test — is represented as a row in one shared, parameterized invariant test. A positive row names a code point and its claimed ASCII fold target and asserts `Normalizer.normalize(cp, Form.NFKC)` equals that target. A negative row names a code point a comment elsewhere claims does *not* fold, and asserts it normalizes to itself. Each row records the source of the claim (the file and construct it came from), so a failure traces directly back to the comment or Javadoc it is verifying.
 
+This is an **authoring obligation, not a statically enforced one**. The registry's rows are an explicit list, so the invariant test verifies every claim entered into it and cannot detect a claim that was never entered. What the decision buys is that a claim, once registered, can no longer be wrong without failing a test — it does not buy automatic discovery of an unregistered claim. Registering a new fold claim alongside the comment that makes it is therefore part of authoring that comment.
+
 No second, parallel fold-verification mechanism is kept alongside the shared registry. Where a local, per-class fold assertion already existed, its claims are absorbed into the shared registry as rows and the local assertion is removed — the registry is the single executable source of truth for what folds to what in this codebase's security test tree, in both directions.
 
 == Consequences
