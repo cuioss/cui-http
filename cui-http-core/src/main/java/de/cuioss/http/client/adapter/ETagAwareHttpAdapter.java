@@ -79,6 +79,26 @@ import static de.cuioss.http.client.HttpLogMessages.WARN;
  * return and is reported as an {@code INVALID_CONTENT} failure. Let the adapter drive revalidation
  * instead.</p>
  *
+ * <h3>ETag caching is optional</h3>
+ * <p>
+ * Despite the name, caching is a switchable feature rather than a precondition for using this
+ * adapter. Building with {@code etagCachingEnabled(false)} yields a straight pass-through: no
+ * {@code If-None-Match} header is ever sent, no response is cached, and every request goes to the
+ * origin. {@link #statusCodeOnly(de.cuioss.http.client.handler.HttpHandler)} uses exactly that
+ * configuration. ETags are still extracted from responses in either mode.
+ * </p>
+ *
+ * <h3>Role in the adapter stack</h3>
+ * <p>
+ * This is the only {@link HttpAdapter} implementation that <em>originates</em> requests — it owns
+ * the {@link de.cuioss.http.client.handler.HttpHandler} and performs the actual HTTP exchange.
+ * {@link ResilientHttpAdapter} is <strong>not</strong> an alternative to it: it is a decorator that
+ * wraps another {@code HttpAdapter} via {@link ResilientHttpAdapter#wrap} to add retry behaviour,
+ * and delegates the exchange to the adapter it wraps. The two compose rather than compete — a
+ * resilient, ETag-caching client is a {@code ResilientHttpAdapter} wrapping an
+ * {@code ETagAwareHttpAdapter}.
+ * </p>
+ *
  * <h2>Example: Basic Usage</h2>
  * <pre>{@code
  * HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
@@ -306,6 +326,13 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         LOGGER.debug("Cleared ETag cache: %s entries removed", sizeBefore);
     }
 
+    // The no-argument and no-converter overloads below re-implement the HttpAdapter interface
+    // defaults verbatim: each simply forwards to its Map/converter-taking sibling exactly as the
+    // default does. Inspection surfaced no behavioural reason for the duplication — no override
+    // adds caching, header, or dispatch logic of its own — so it is recorded here as deliberate
+    // redundancy rather than removed, since deleting it would change no behaviour but would churn a
+    // published class's method table for no gain. Any future divergence belongs in send(...), which
+    // is the single point every overload funnels through.
     @Override
     public CompletableFuture<HttpResult<T>> get() {
         return get(Map.of());
