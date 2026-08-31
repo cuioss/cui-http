@@ -93,7 +93,18 @@ import java.util.regex.Pattern;
  *   <li>SSL context created automatically for HTTPS if not provided</li>
  *   <li>Default timeout: 10 seconds for both connection and read</li>
  *   <li>Schemeless string URLs default to HTTPS</li>
+ *   <li>Redirect policy: {@link HttpClient.Redirect#NORMAL} on both the HTTP and the HTTPS client.
+ *       Redirects are followed, <em>except</em> a redirect from HTTPS to HTTP — the JDK refuses that
+ *       downgrade rather than following it, so a downgrade attempt still surfaces to the caller as a
+ *       3xx response. A 3xx that reaches the caller therefore means the redirect was not followed:
+ *       an HTTPS&#8594;HTTP downgrade, an exhausted redirect chain, or a 3xx with no usable
+ *       {@code Location} header.</li>
  * </ul>
+ * <p>
+ * <strong>Security note on redirects:</strong> following a redirect means the effective request
+ * target may differ from the URI the caller configured and validated. A caller who validated the
+ * original URI through a {@code de.cuioss.http.security} pipeline has <em>not</em> thereby validated
+ * the redirect target.
  *
  * <h3 id="lifecycle">Lifecycle</h3>
  * <p>A handler creates exactly one {@link HttpClient} during construction and shares it across every
@@ -272,6 +283,7 @@ public final class HttpHandler implements AutoCloseable {
         // Create the HttpClient for HTTP
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(connectionTimeoutSeconds))
+                .followRedirects(HttpClient.Redirect.NORMAL)
                 .build();
     }
 
@@ -301,6 +313,7 @@ public final class HttpHandler implements AutoCloseable {
         sslParameters.setProtocols(secureSSLContextProvider.getEnabledProtocols());
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(connectionTimeoutSeconds))
+                .followRedirects(HttpClient.Redirect.NORMAL)
                 .sslContext(sslContext)
                 .sslParameters(sslParameters)
                 .build();

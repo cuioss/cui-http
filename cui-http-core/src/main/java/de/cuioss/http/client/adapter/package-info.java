@@ -243,6 +243,25 @@
  *     .build();
  * }</pre>
  *
+ * <h3>Redirect Behavior (Validated URI Is Not the Validated Target)</h3>
+ *
+ * <p>{@link de.cuioss.http.client.handler.HttpHandler HttpHandler} configures both its HTTP and its
+ * HTTPS client with {@code HttpClient.Redirect.NORMAL}, so redirects <strong>are</strong> followed.
+ * The one exception is a redirect from HTTPS to HTTP: the JDK refuses that downgrade rather than
+ * following it, so a downgrade attempt still surfaces to the caller as a 3xx response.
+ *
+ * <p><b>IMPORTANT:</b> because redirects are followed, the effective request target may differ from
+ * the URI the caller configured. A caller who validated the original URI through a
+ * {@code de.cuioss.http.security} pipeline has <strong>not</strong> thereby validated the redirect
+ * target — the server chooses that target, and it is never passed through a validation pipeline.
+ * Treat a redirect-following request to an untrusted origin accordingly: prefer origins you control,
+ * and do not rely on the pre-request URL validation as a guarantee about which host was ultimately
+ * contacted.
+ *
+ * <p>A 3xx status that reaches the caller means the redirect was <em>not</em> followed — an
+ * HTTPS&#8594;HTTP downgrade, an exhausted redirect chain, or a 3xx with no usable {@code Location}
+ * header — and is classified as {@code INVALID_CONTENT}.
+ *
  * <h3>Header Validation (Manual, Before Request)</h3>
  *
  * <p>Custom headers must be validated BEFORE passing to the adapter using {@code HTTPHeaderValidationPipeline}.
