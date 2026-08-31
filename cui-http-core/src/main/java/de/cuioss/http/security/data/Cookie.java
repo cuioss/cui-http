@@ -337,10 +337,34 @@ String attributes) {
         return List.copyOf(result);
     }
 
+    /**
+     * Returns the cookie name, substituting a default when the name is null.
+     *
+     * <p>The substitution is triggered by {@code null} <strong>only</strong>. An empty name
+     * is returned as-is, so this method is not equivalent to a {@link #hasName()} check -
+     * use {@code hasName()} when empty must also be treated as absent.</p>
+     *
+     * @param defaultName The value to return when the name is null; returned verbatim,
+     *                    including when it is itself null
+     * @return The cookie name, or {@code defaultName} when the name is null
+     */
     public String nameOrDefault(String defaultName) {
         return name != null ? name : defaultName;
     }
 
+    /**
+     * Returns the cookie value, substituting a default when the value is null.
+     *
+     * <p>The substitution is triggered by {@code null} <strong>only</strong>. An empty value
+     * is returned as-is, so this method is not equivalent to a {@link #hasValue()} check -
+     * use {@code hasValue()} when empty must also be treated as absent. An empty cookie
+     * value is legitimate in HTTP (a {@code name=} pair), which is why it is preserved
+     * rather than defaulted.</p>
+     *
+     * @param defaultValue The value to return when the value is null; returned verbatim,
+     *                     including when it is itself null
+     * @return The cookie value, or {@code defaultValue} when the value is null
+     */
     public String valueOrDefault(String defaultValue) {
         return value != null ? value : defaultValue;
     }

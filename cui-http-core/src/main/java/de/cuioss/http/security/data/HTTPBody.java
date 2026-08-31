@@ -120,42 +120,112 @@ String content, @Nullable
 String contentType, @Nullable
 String encoding) {
 
+    /**
+     * Creates a body with the given content and content type and no content encoding.
+     *
+     * <p>No validation is performed on either argument; both are stored verbatim.</p>
+     *
+     * @param content The body content, stored as-is
+     * @param contentType The MIME content type, stored as-is
+     * @return A new HTTPBody with the given content and content type, and encoding {@code ""}
+     */
     public static HTTPBody of(String content, String contentType) {
         return new HTTPBody(content, contentType, "");
     }
 
+    /**
+     * Creates a {@code text/plain} body with no content encoding.
+     *
+     * @param content The body content, stored as-is
+     * @return A new HTTPBody with content type {@code "text/plain"} and encoding {@code ""}
+     */
     public static HTTPBody text(String content) {
         return new HTTPBody(content, "text/plain", "");
     }
 
+    /**
+     * Creates an {@code application/json} body with no content encoding.
+     *
+     * <p>The content is not parsed or checked for well-formed JSON - only the declared
+     * content type is set.</p>
+     *
+     * @param jsonContent The body content, stored as-is
+     * @return A new HTTPBody with content type {@code "application/json"} and encoding {@code ""}
+     */
     public static HTTPBody json(String jsonContent) {
         return new HTTPBody(jsonContent, "application/json", "");
     }
 
+    /**
+     * Creates a {@code text/html} body with no content encoding.
+     *
+     * @param htmlContent The body content, stored as-is
+     * @return A new HTTPBody with content type {@code "text/html"} and encoding {@code ""}
+     */
     public static HTTPBody html(String htmlContent) {
         return new HTTPBody(htmlContent, "text/html", "");
     }
 
+    /**
+     * Creates an {@code application/x-www-form-urlencoded} body with no content encoding.
+     *
+     * @param formContent The body content, stored as-is
+     * @return A new HTTPBody with content type {@code "application/x-www-form-urlencoded"}
+     *         and encoding {@code ""}
+     */
     public static HTTPBody form(String formContent) {
         return new HTTPBody(formContent, "application/x-www-form-urlencoded", "");
     }
 
+    /**
+     * Checks whether this body carries any content.
+     *
+     * @return true if content is neither null nor the empty string
+     */
     public boolean hasContent() {
         return content != null && !content.isEmpty();
     }
 
+    /**
+     * Checks whether a content type is declared.
+     *
+     * @return true if contentType is neither null nor the empty string
+     */
     public boolean hasContentType() {
         return contentType != null && !contentType.isEmpty();
     }
 
+    /**
+     * Checks whether a content encoding is declared.
+     *
+     * @return true if encoding is neither null nor the empty string
+     */
     public boolean hasEncoding() {
         return encoding != null && !encoding.isEmpty();
     }
 
+    /**
+     * Checks whether the content is encoded.
+     *
+     * <p>This is a declaration-based check that is exactly equivalent to
+     * {@link #hasEncoding()}: the encoding string is not inspected, so any non-empty value
+     * (including one that names no compression, such as {@code "identity"}) reports
+     * {@code true}. The content itself is never examined.</p>
+     *
+     * @return true if a non-empty content encoding is declared
+     */
     public boolean isCompressed() {
         return hasEncoding();
     }
 
+    /**
+     * Checks if the content type indicates JSON content.
+     *
+     * <p>Matches case-insensitively on the substring {@code "json"}, so subtypes such as
+     * {@code application/problem+json} also report {@code true}.</p>
+     *
+     * @return true if a content type is declared and contains "json"
+     */
     @SuppressWarnings("ConstantConditions")
     public boolean isJson() {
         return hasContentType() && contentType.toLowerCase().contains("json");

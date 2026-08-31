@@ -148,10 +148,28 @@ String value) {
         return name + "=" + value;
     }
 
+    /**
+     * Returns a copy of this parameter with a different name.
+     *
+     * <p>This record is immutable, so this method never mutates the receiver - it returns a
+     * new instance carrying {@code newName} and this parameter's existing value.</p>
+     *
+     * @param newName The name for the returned parameter, stored as-is
+     * @return A new URLParameter with the specified name and this parameter's value
+     */
     public URLParameter withName(String newName) {
         return new URLParameter(newName, value);
     }
 
+    /**
+     * Returns a copy of this parameter with a different value.
+     *
+     * <p>This record is immutable, so this method never mutates the receiver - it returns a
+     * new instance carrying this parameter's existing name and {@code newValue}.</p>
+     *
+     * @param newValue The value for the returned parameter, stored as-is
+     * @return A new URLParameter with this parameter's name and the specified value
+     */
     public URLParameter withValue(String newValue) {
         return new URLParameter(name, newValue);
     }
