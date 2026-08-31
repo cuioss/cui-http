@@ -23,6 +23,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.util.Locale;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -45,6 +46,7 @@ class AttributeParserTest {
                 "'first=value1; second=value2', 'second', 'value2'",
                 "'Domain=example.com; Path=/', 'domain', 'example.com'",
                 "'Domain=example.com; Path=/', 'DOMAIN', 'example.com'",
+                "'Domain=example.com; Path=/', 'dOmAiN', 'example.com'",
                 "'name=  value with spaces  ', 'name', 'value with spaces'",
                 "'first=value1; last=finalvalue', 'last', 'finalvalue'",
                 "'name=; other=value', 'name', ''"
@@ -181,6 +183,25 @@ class AttributeParserTest {
 
             assertTrue(result.isPresent());
             assertEquals("abc\\", result.get());
+        }
+
+        @Test
+        @DisplayName("Should match a case-differing attribute name under a locale with non-ASCII case folding")
+        void shouldMatchCaseDifferingNameUnderTurkishLocale() {
+            // Regression guard: name matching must rest on equalsIgnoreCase alone, which folds case
+            // locale-independently. Reintroducing a default-locale toLowerCase() on both the key and
+            // the sought name would break this under a Turkish locale, where "ID".toLowerCase()
+            // yields the dotless "ıd" rather than the ASCII "id".
+            Locale originalDefault = Locale.getDefault();
+            Locale.setDefault(Locale.forLanguageTag("tr"));
+            try {
+                Optional<String> result = AttributeParser.extractAttributeValue("id=abc; other=x", "ID");
+
+                assertTrue(result.isPresent(), "ASCII attribute name must match regardless of default locale");
+                assertEquals("abc", result.get());
+            } finally {
+                Locale.setDefault(originalDefault);
+            }
         }
     }
 }
