@@ -24,7 +24,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 
-import java.text.Normalizer;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -39,7 +38,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * marker and is rejected by the URL path validation pipeline. The Unicode arms contribute real
  * homoglyph characters — ONE DOT LEADER and FULLWIDTH SOLIDUS or FULLWIDTH REVERSE SOLIDUS — which
  * NFKC-fold to the ASCII traversal, so they are genuine attacks and carry the same round-trip
- * obligation as the encoded arms.</p>
+ * obligation as the encoded arms. That fold claim is asserted centrally by
+ * {@code NfkcFoldClaimInvariantTest}, which holds every such claim made in this tree in one
+ * registry - including the negative rows for U+2044 FRACTION SLASH and U+2215 DIVISION SLASH, which
+ * are confusable with {@code '/'} but normalize to themselves.</p>
  *
  * <p>The generator's seven attack types deliberately share encodings — the mixed arm re-emits
  * the basic, encoded and Unicode forms — so the aggregate test asserts reachability of one
@@ -102,19 +104,6 @@ class PathTraversalGeneratorTest {
         assertEquals(Set.of("basic", "encoded", "double-encoded", "unicode",
                         "mixed", "null-byte", "advanced"), attackTypes,
                 "Every documented attack type must be reachable within " + AGGREGATE_DRAWS + " draws");
-    }
-
-    @Test
-    @DisplayName("Every Unicode signature NFKC-folds to the ASCII traversal it claims to encode")
-    void shouldNfkcFoldUnicodeSignaturesToAsciiTraversal() {
-        assertEquals(List.of("../", "..\\"),
-                UNICODE_SIGNATURES.stream()
-                        .map(signature -> Normalizer.normalize(signature, Normalizer.Form.NFKC))
-                        .toList(),
-                "Each UNICODE_SIGNATURES entry must NFKC-fold to the ASCII traversal the class Javadoc "
-                        + "claims for it. A homoglyph that normalizes to itself (U+2215 DIVISION SLASH and "
-                        + "U+2044 FRACTION SLASH both do) silently turns the normalization attack into a "
-                        + "value no normalizing validator ever resolves to a traversal");
     }
 
     @Test

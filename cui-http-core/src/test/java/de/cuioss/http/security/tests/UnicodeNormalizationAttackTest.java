@@ -151,10 +151,10 @@ class UnicodeNormalizationAttackTest {
                 "..\u0301\u0302/",                     // ../ with multiple combining characters
                 ".\u0300.\u0301/",                     // ./ with combining characters
 
-                // Fullwidth character attacks (NFKC normalization)
-                "\uFF0E\uFF0E\uFF0F",                  // Fullwidth ../
-                "\uFF0E\uFF0E\uFF3C",                  // Fullwidth ..\
-                "\uFF1C\uFF53\uFF43\uFF52\uFF49\uFF50\uFF54\uFF1E", // Fullwidth <script>
+                // Fullwidth character attacks - all three NFKC-fold to their ASCII forms
+                "\uFF0E\uFF0E\uFF0F",                  // Fullwidth ..  and solidus -> "../"
+                "\uFF0E\uFF0E\uFF3C",                  // Fullwidth ..  and reverse solidus -> "..\"
+                "\uFF1C\uFF53\uFF43\uFF52\uFF49\uFF50\uFF54\uFF1E", // Fullwidth -> "<script>"
 
                 // Homograph attacks
                 "\u0430dmin",                          // Cyrillic a + latin dmin (admin lookalike)
@@ -178,11 +178,15 @@ class UnicodeNormalizationAttackTest {
                 "j\u0430v\u0430script:",               // Mixed Latin/Cyrillic "javascript:"
 
                 // Compatibility character attacks
-                "\u2024\u2024\u2044",                  // Dot leaders + fraction slash (../)
-                "\u2215config",                        // Division slash + config
+                // U+2024 ONE DOT LEADER NFKC-folds to '.'; U+2044 FRACTION SLASH does NOT fold -
+                // it normalizes to itself and is merely confusable with '/'. So this folds to
+                // ".." followed by an unchanged fraction slash, NOT to "../".
+                "\u2024\u2024\u2044",                  // Two dot leaders + fraction slash
+                "\u2215config",                        // Division slash (NFKC-invariant) + config
 
                 // Overlong-style Unicode sequences
-                "\uFF0E\uFF0E\u2044",                  // Fullwidth full stops (NFKC-fold to '.') + fraction slash
+                // Fullwidth full stops NFKC-fold to '.'; the fraction slash again does not fold.
+                "\uFF0E\uFF0E\u2044",                  // Fullwidth full stops + fraction slash
 
                 // Complex normalization bypass attempts
                 ".\u0300.\u0301/\u0302.\u0303.\u0304/\u0305etc\u0306/\u0307passwd\u0308",
@@ -219,10 +223,10 @@ class UnicodeNormalizationAttackTest {
                 ".\u0301/",                // . + combining acute (changes after NFC)
                 "admin\u0302",             // admin + combining circumflex
 
-                // Compatibility normalization changes
-                "\uFF0E\uFF0E",            // Fullwidth dots (change after NFKC)
-                "\uFF0F",                  // Fullwidth solidus (changes after NFKC)
-                "\uFF1C",                  // Fullwidth < (changes after NFKC)
+                // Compatibility normalization changes - each folds under NFKC (not under NFC)
+                "\uFF0E\uFF0E",            // Fullwidth full stops -> ".."
+                "\uFF0F",                  // Fullwidth solidus -> "/"
+                "\uFF1C",                  // Fullwidth less-than -> "<"
 
                 // Multiple combining characters
                 "a\u0300\u0301\u0302",     // a with multiple combining characters
@@ -414,8 +418,8 @@ class UnicodeNormalizationAttackTest {
     @DisplayName("Should reject normalization-changing forms")
     void shouldRejectNormalizationChangingForms() {
         String[] normalizationChangingCases = {
-                ".\u0301/",       // Should change under NFC normalization
-                "\uFF0E\uFF0E",   // Should change under NFKC normalization
+                ".\u0301/",       // Combining acute - composes under NFC
+                "\uFF0E\uFF0E",   // Fullwidth full stops - fold to ".." under NFKC, unchanged under NFC
         };
 
         for (String testCase : normalizationChangingCases) {
