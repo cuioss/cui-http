@@ -32,6 +32,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 
+import java.util.EnumSet;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -81,7 +82,23 @@ class URLPathValidationPipelineTest {
         void shouldValidateValidPaths(String validPath) throws Exception {
             Optional<String> result = pipeline.validate(validPath);
             assertTrue(result.isPresent());
-            assertNotNull(result.get());
+            // ValidURLPathGenerator emits plain canonical ASCII paths - no percent-encoding, no
+            // dot segments, no non-ASCII - so no stage may rewrite them and the pipeline must
+            // return the input verbatim.
+            assertEquals(validPath, result.get(),
+                    "A canonical valid path must be returned unchanged");
+        }
+
+        @Test
+        void shouldAcceptPathExactlyAtMaxLength() throws Exception {
+            String path = validPathOfLength(config.maxPathLength());
+            assertEquals(config.maxPathLength(), path.length(),
+                    "Test fixture must sit exactly on the boundary");
+
+            Optional<String> result = pipeline.validate(path);
+
+            assertTrue(result.isPresent(), "A path exactly at maxPathLength must be accepted");
+            assertEquals(path, result.get(), "The boundary path must be returned unchanged");
         }
 
         @Test
@@ -102,13 +119,6 @@ class URLPathValidationPipelineTest {
     class SecurityValidation {
 
         @ParameterizedTest
-        @TypeGeneratorSource(value = PathTraversalURLGenerator.class, count = 5)
-        void shouldRejectPathTraversalAttacks(String traversalPath) {
-            assertThrows(UrlSecurityException.class, () ->
-                    pipeline.validate(traversalPath));
-        }
-
-        @ParameterizedTest
         @TypeGeneratorSource(value = NullByteURLGenerator.class, count = 5)
         void shouldRejectNullByteInjection(String maliciousPath) {
             UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
@@ -127,27 +137,68 @@ class URLPathValidationPipelineTest {
 
             assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, exception.getFailureType());
             assertEquals(ValidationType.URL_PATH, exception.getValidationType());
+            assertEquals(traversalPath, exception.getOriginalInput());
         }
 
+        /**
+         * Every value this generator emits is a traversal pattern wrapped in one to three
+         * percent-encoding layers, optionally with a backslash separator. Which stage rejects it
+         * therefore depends on the sample: a raw or singly-encoded backslash form is stopped by the
+         * character set, a singly- or doubly-encoded forward-slash form matches a traversal pattern,
+         * and a triply-encoded form is caught as double encoding. The verdict is asserted as
+         * membership in that explicit set rather than a single value, because the generator
+         * legitimately spans all three.
+         */
         @ParameterizedTest
         @TypeGeneratorSource(value = EncodingCombinationGenerator.class, count = 5)
         void shouldRejectEncodingBypassAttacks(String encodedPath) {
-            assertThrows(UrlSecurityException.class, () ->
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
                     pipeline.validate(encodedPath));
+
+            EnumSet<UrlSecurityFailureType> expected = EnumSet.of(
+                    UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
+                    UrlSecurityFailureType.INVALID_CHARACTER,
+                    UrlSecurityFailureType.DOUBLE_ENCODING);
+            assertTrue(expected.contains(exception.getFailureType()),
+                    "Encoding-bypass attack %s produced unexpected failure type %s, expected one of %s"
+                            .formatted(encodedPath, exception.getFailureType(), expected));
+            assertEquals(ValidationType.URL_PATH, exception.getValidationType());
+            assertEquals(encodedPath, exception.getOriginalInput());
         }
 
+        /**
+         * The Unicode attack generator mixes non-ASCII homoglyphs, encoded null bytes and encoded
+         * traversal sequences, so it spans three verdicts: a non-ASCII code point is rejected by the
+         * character set, an encoded null byte as a null-byte injection, and an encoded traversal
+         * sequence as traversal. Membership in that explicit set is asserted for the same reason.
+         */
         @ParameterizedTest
         @TypeGeneratorSource(value = UnicodeAttackGenerator.class, count = 5)
         void shouldRejectUnicodeAttacks(String unicodePath) {
-            assertThrows(UrlSecurityException.class, () ->
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
                     pipeline.validate(unicodePath));
+
+            EnumSet<UrlSecurityFailureType> expected = EnumSet.of(
+                    UrlSecurityFailureType.INVALID_CHARACTER,
+                    UrlSecurityFailureType.NULL_BYTE_INJECTION,
+                    UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED);
+            assertTrue(expected.contains(exception.getFailureType()),
+                    "Unicode attack %s produced unexpected failure type %s, expected one of %s"
+                            .formatted(unicodePath, exception.getFailureType(), expected));
+            assertEquals(ValidationType.URL_PATH, exception.getValidationType());
+            assertEquals(unicodePath, exception.getOriginalInput());
         }
 
         @Test
         void shouldRejectOversizedPath() {
             String oversizedPath = "/" + generatePathContent(config.maxPathLength());
-            assertThrows(UrlSecurityException.class, () ->
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
                     pipeline.validate(oversizedPath));
+
+            assertEquals(UrlSecurityFailureType.PATH_TOO_LONG, exception.getFailureType());
+            assertEquals(ValidationType.URL_PATH, exception.getValidationType());
+            assertEquals(oversizedPath, exception.getOriginalInput());
         }
     }
 
@@ -230,6 +281,21 @@ class URLPathValidationPipelineTest {
             assertTrue(stages.get(4).getClass().getSimpleName().contains("Normalization"));
             assertTrue(stages.get(5).getClass().getSimpleName().contains("Pattern"));
         }
+    }
+
+    /**
+     * Builds a valid URL path of exactly {@code totalLength} characters: a leading slash followed
+     * by unreserved ASCII letters. Deliberately free of dot segments, percent-encoding and
+     * separators beyond the leading slash, so length is the only property under test at the
+     * boundary.
+     */
+    private String validPathOfLength(int totalLength) {
+        StringBuilder path = new StringBuilder(totalLength);
+        path.append('/');
+        while (path.length() < totalLength) {
+            path.append((char) ('a' + (path.length() % 26)));
+        }
+        return path.toString();
     }
 
     /**

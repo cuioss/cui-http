@@ -32,12 +32,28 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.text.Normalizer;
+import java.util.EnumSet;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 @EnableGeneratorController
 class URLParameterValidationPipelineTest {
+
+    /**
+     * The verdicts {@code PathTraversalParameterGenerator} legitimately spans. A raw traversal
+     * sequence matches a traversal pattern; a singly-encoded one is caught after decoding; a
+     * multiply-encoded one trips the double-encoding gate; and a truncated or malformed escape
+     * trips encoding validation. The exact verdict depends on which spelling the generator emitted,
+     * so membership in this explicit set is asserted rather than a single value.
+     */
+    private static final EnumSet<UrlSecurityFailureType> TRAVERSAL_PARAMETER_FAILURES = EnumSet.of(
+            UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
+            UrlSecurityFailureType.DOUBLE_ENCODING,
+            UrlSecurityFailureType.INVALID_ENCODING);
 
     private SecurityConfiguration config;
     private SecurityEventCounter eventCounter;
@@ -81,7 +97,8 @@ class URLParameterValidationPipelineTest {
         void shouldValidateValidParameters(String validParam) throws Exception {
             Optional<String> result = pipeline.validate(validParam);
             assertTrue(result.isPresent());
-            assertNotNull(result.get(), "Valid parameter should not return null result");
+            assertEquals(canonicalParameterForm(validParam), result.get(),
+                    "Valid parameter should be returned in its decoded, NFC-canonical form");
         }
 
         @Test
@@ -106,7 +123,8 @@ class URLParameterValidationPipelineTest {
         void shouldValidateParameterVariations(String param) throws Exception {
             Optional<String> result = pipeline.validate(param);
             assertTrue(result.isPresent());
-            assertNotNull(result.get(), "Valid parameter variation should not return null result");
+            assertEquals(canonicalParameterForm(param), result.get(),
+                    "Parameter variation should be returned in its decoded, NFC-canonical form");
         }
 
         @ParameterizedTest
@@ -120,52 +138,89 @@ class URLParameterValidationPipelineTest {
             assertEquals(maliciousParam, exception.getOriginalInput(), "Exception should preserve original malicious input");
         }
 
+        /**
+         * The two spellings are rejected by <em>different</em> stages, and the assertions record
+         * which. The percent-encoded values survive the query character set and are caught as
+         * traversal once decoded. The unencoded values never reach traversal detection at all: a
+         * literal {@code /} is not a member of the RFC 3986 query character set, so the character
+         * stage rejects them first as an invalid character. Both are rejected, but only the encoded
+         * pair exercises traversal detection.
+         */
         @Test
         void shouldRejectSpecificPathTraversalValues() {
-            // Test parameter values (correct usage for URLParameterValidationPipeline)
-            String valueOnly1 = "..%2F..%2Fetc%2Fpasswd";
-            String valueOnly2 = "%2E%2E%2F%2E%2E%2Fconfig";
+            String encoded1 = "..%2F..%2Fetc%2Fpasswd";
+            String encoded2 = "%2E%2E%2F%2E%2E%2Fconfig";
 
-            assertThrows(UrlSecurityException.class, () ->
-                            pipeline.validate(valueOnly1),
-                    "Pipeline should reject encoded path traversal pattern: " + valueOnly1);
+            assertAll("Percent-encoded traversal is caught as traversal after decoding",
+                    () -> assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
+                            assertThrows(UrlSecurityException.class,
+                                    () -> pipeline.validate(encoded1)).getFailureType(),
+                            "Encoded traversal pattern: " + encoded1),
+                    () -> assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
+                            assertThrows(UrlSecurityException.class,
+                                    () -> pipeline.validate(encoded2)).getFailureType(),
+                            "Encoded traversal pattern: " + encoded2));
 
-            assertThrows(UrlSecurityException.class, () ->
-                            pipeline.validate(valueOnly2),
-                    "Pipeline should reject encoded path traversal pattern: " + valueOnly2);
+            String unencoded1 = "../../../etc/passwd";
+            String unencoded2 = "../../config";
 
-            // Test decoded patterns (should also be detected)
-            String decoded1 = "../../../etc/passwd";
-            String decoded2 = "../../config";
-
-            assertThrows(UrlSecurityException.class, () ->
-                            pipeline.validate(decoded1),
-                    "Pipeline should reject decoded path traversal pattern: " + decoded1);
-
-            assertThrows(UrlSecurityException.class, () ->
-                            pipeline.validate(decoded2),
-                    "Pipeline should reject decoded path traversal pattern: " + decoded2);
+            assertAll("An unencoded slash is not a query character, so it is rejected earlier",
+                    () -> assertEquals(UrlSecurityFailureType.INVALID_CHARACTER,
+                            assertThrows(UrlSecurityException.class,
+                                    () -> pipeline.validate(unencoded1)).getFailureType(),
+                            "Unencoded traversal pattern: " + unencoded1),
+                    () -> assertEquals(UrlSecurityFailureType.INVALID_CHARACTER,
+                            assertThrows(UrlSecurityException.class,
+                                    () -> pipeline.validate(unencoded2)).getFailureType(),
+                            "Unencoded traversal pattern: " + unencoded2));
         }
 
         @ParameterizedTest
         @TypeGeneratorSource(value = PathTraversalParameterGenerator.class, count = 5)
         void shouldRejectPathTraversalVariants(String maliciousParam) {
-            assertThrows(UrlSecurityException.class, () ->
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
                     pipeline.validate(maliciousParam));
+
+            assertTrue(TRAVERSAL_PARAMETER_FAILURES.contains(exception.getFailureType()),
+                    "Traversal parameter %s produced unexpected failure type %s, expected one of %s"
+                            .formatted(maliciousParam, exception.getFailureType(),
+                                    TRAVERSAL_PARAMETER_FAILURES));
+            assertEquals(ValidationType.PARAMETER_VALUE, exception.getValidationType());
+            assertEquals(maliciousParam, exception.getOriginalInput());
         }
 
+        /**
+         * Spans three verdicts for the same reason as its URL-path counterpart: a backslash form is
+         * stopped by the query character set, a singly- or doubly-encoded forward-slash form matches
+         * a traversal pattern, and a triply-encoded form is caught as double encoding.
+         */
         @ParameterizedTest
         @TypeGeneratorSource(value = EncodingCombinationGenerator.class, count = 5)
         void shouldRejectEncodingBypassAttacks(String encodedParam) {
-            assertThrows(UrlSecurityException.class, () ->
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
                     pipeline.validate(encodedParam));
+
+            EnumSet<UrlSecurityFailureType> expected = EnumSet.of(
+                    UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
+                    UrlSecurityFailureType.INVALID_CHARACTER,
+                    UrlSecurityFailureType.DOUBLE_ENCODING);
+            assertTrue(expected.contains(exception.getFailureType()),
+                    "Encoding-bypass attack %s produced unexpected failure type %s, expected one of %s"
+                            .formatted(encodedParam, exception.getFailureType(), expected));
+            assertEquals(ValidationType.PARAMETER_VALUE, exception.getValidationType());
+            assertEquals(encodedParam, exception.getOriginalInput());
         }
 
         @Test
         void shouldRejectOversizedParameter() {
             String oversizedParam = generateParameterValue(config.maxParameterValueLength() + 100);
-            assertThrows(UrlSecurityException.class, () ->
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
                     pipeline.validate(oversizedParam));
+
+            assertEquals(UrlSecurityFailureType.INPUT_TOO_LONG, exception.getFailureType());
+            assertEquals(ValidationType.PARAMETER_VALUE, exception.getValidationType());
+            assertEquals(oversizedParam, exception.getOriginalInput());
         }
 
         /**
@@ -198,6 +253,8 @@ class URLParameterValidationPipelineTest {
             // introduced and the value is accepted (normalize-and-continue).
             Optional<String> result = pipeline.validate("path%EF%BC%8F%EF%BC%8Fadmin");
             assertTrue(result.isPresent(), "Fullwidth content in a parameter value should be preserved, not rejected");
+            assertEquals("path／／admin", result.get(),
+                    "The fullwidth solidus must survive as U+FF0F, not fold to an ASCII '/'");
         }
     }
 
@@ -209,14 +266,22 @@ class URLParameterValidationPipelineTest {
         void shouldValidateParameterSpecificScenarios(String validParam) throws Exception {
             Optional<String> result = pipeline.validate(validParam);
             assertTrue(result.isPresent());
-            assertNotNull(result.get(), "Valid parameter in specific scenarios should not return null result");
+            assertEquals(canonicalParameterForm(validParam), result.get(),
+                    "Valid parameter should be returned in its decoded, NFC-canonical form");
         }
 
         @ParameterizedTest
         @TypeGeneratorSource(value = PathTraversalParameterGenerator.class, count = 3)
         void shouldRejectPathTraversalInParameters(String traversalParam) {
-            assertThrows(UrlSecurityException.class, () ->
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
                     pipeline.validate(traversalParam));
+
+            assertTrue(TRAVERSAL_PARAMETER_FAILURES.contains(exception.getFailureType()),
+                    "Traversal parameter %s produced unexpected failure type %s, expected one of %s"
+                            .formatted(traversalParam, exception.getFailureType(),
+                                    TRAVERSAL_PARAMETER_FAILURES));
+            assertEquals(ValidationType.PARAMETER_VALUE, exception.getValidationType());
+            assertEquals(traversalParam, exception.getOriginalInput());
         }
     }
 
@@ -288,6 +353,22 @@ class URLParameterValidationPipelineTest {
             assertTrue(stages.get(3).getClass().getSimpleName().contains("Normalization"), "Fourth stage should be normalization validation");
             assertTrue(stages.get(4).getClass().getSimpleName().contains("Pattern"), "Fifth stage should be pattern validation");
         }
+    }
+
+    /**
+     * The canonical form the parameter pipeline is documented to return for an accepted value:
+     * percent-decoded (form semantics, so {@code +} maps to a space) and then NFC-normalized.
+     * <p>
+     * Unlike the URL-path pipeline, this pipeline does <em>not</em> return an accepted value
+     * verbatim - {@code DecodingStage} decodes it, so {@code jane%40demo.net} comes back as
+     * {@code jane@demo.net}. Asserting this canonical form is what makes the valid-input tests
+     * check the returned value rather than merely its presence. NFC (not NFKC) is asserted because
+     * parameter values are canonicalized losslessly; see
+     * {@link #shouldPreserveEncodedFullwidthContentInParameters()}.
+     */
+    private static String canonicalParameterForm(String rawValue) {
+        return Normalizer.normalize(
+                URLDecoder.decode(rawValue, StandardCharsets.UTF_8), Normalizer.Form.NFC);
     }
 
     /**
