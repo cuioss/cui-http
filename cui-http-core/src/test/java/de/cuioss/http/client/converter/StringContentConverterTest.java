@@ -20,6 +20,9 @@ import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.net.http.HttpClient;
 import java.net.http.HttpHeaders;
@@ -32,6 +35,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -148,92 +152,46 @@ class StringContentConverterTest {
     @DisplayName("Charset precedence: response-declared wins, constructor charset is the fallback")
     class CharsetPrecedence {
 
-        @Test
-        @DisplayName("Response-declared ISO-8859-1 wins over a UTF-8 constructor charset")
-        void responseDeclaredCharsetWinsOverConstructorCharset() throws Exception {
-            StringContentConverter<String> converter = identityConverter(StandardCharsets.UTF_8);
+        @ParameterizedTest(name = "{0}")
+        @MethodSource("charsetPrecedenceCases")
+        void shouldResolveDecodingCharset(String scenario, @Nullable Charset constructorCharset,
+                @Nullable String contentTypeHeader, Charset bodyCharset) throws Exception {
+            StringContentConverter<String> converter = identityConverter(constructorCharset);
 
-            String decoded = decodeBody(converter, "text/plain; charset=ISO-8859-1",
-                    NON_ASCII_TEXT.getBytes(StandardCharsets.ISO_8859_1));
+            String decoded = decodeBody(converter, contentTypeHeader, NON_ASCII_TEXT.getBytes(bodyCharset));
 
-            assertEquals(NON_ASCII_TEXT, decoded);
+            assertEquals(NON_ASCII_TEXT, decoded, scenario);
         }
 
-        @Test
-        @DisplayName("Response-declared UTF-8 leaves the default converter's behaviour unchanged")
-        void responseDeclaredUtf8LeavesDefaultBehaviourUnchanged() throws Exception {
-            StringContentConverter<String> converter = identityConverter(null);
-
-            String decoded = decodeBody(converter, ContentType.TEXT_PLAIN.toHeaderValue(),
-                    NON_ASCII_TEXT.getBytes(StandardCharsets.UTF_8));
-
-            assertEquals(NON_ASCII_TEXT, decoded);
-        }
-
-        @Test
-        @DisplayName("A quoted charset parameter is honoured")
-        void quotedCharsetParameterIsHonoured() throws Exception {
-            StringContentConverter<String> converter = identityConverter(StandardCharsets.UTF_8);
-
-            String decoded = decodeBody(converter, "text/plain; charset=\"ISO-8859-1\"",
-                    NON_ASCII_TEXT.getBytes(StandardCharsets.ISO_8859_1));
-
-            assertEquals(NON_ASCII_TEXT, decoded);
-        }
-
-        @Test
-        @DisplayName("The charset parameter name is matched case-insensitively")
-        void charsetParameterNameIsMatchedCaseInsensitively() throws Exception {
-            StringContentConverter<String> converter = identityConverter(StandardCharsets.UTF_8);
-
-            String decoded = decodeBody(converter, "text/plain; Charset=ISO-8859-1",
-                    NON_ASCII_TEXT.getBytes(StandardCharsets.ISO_8859_1));
-
-            assertEquals(NON_ASCII_TEXT, decoded);
-        }
-
-        @Test
-        @DisplayName("A Content-Type without a charset parameter uses the constructor charset")
-        void missingCharsetParameterUsesConstructorCharset() throws Exception {
-            StringContentConverter<String> converter = identityConverter(StandardCharsets.ISO_8859_1);
-
-            String decoded = decodeBody(converter, "text/plain",
-                    NON_ASCII_TEXT.getBytes(StandardCharsets.ISO_8859_1));
-
-            assertEquals(NON_ASCII_TEXT, decoded);
-        }
-
-        @Test
-        @DisplayName("An absent Content-Type header uses the constructor charset")
-        void absentContentTypeHeaderUsesConstructorCharset() throws Exception {
-            StringContentConverter<String> converter = identityConverter(StandardCharsets.ISO_8859_1);
-
-            String decoded = decodeBody(converter, null,
-                    NON_ASCII_TEXT.getBytes(StandardCharsets.ISO_8859_1));
-
-            assertEquals(NON_ASCII_TEXT, decoded);
-        }
-
-        @Test
-        @DisplayName("An unsupported charset name falls back to the constructor charset without throwing")
-        void unsupportedCharsetFallsBackWithoutThrowing() throws Exception {
-            StringContentConverter<String> converter = identityConverter(StandardCharsets.ISO_8859_1);
-
-            String decoded = decodeBody(converter, "text/plain; charset=X-NO-SUCH-CHARSET",
-                    NON_ASCII_TEXT.getBytes(StandardCharsets.ISO_8859_1));
-
-            assertEquals(NON_ASCII_TEXT, decoded);
-        }
-
-        @Test
-        @DisplayName("A malformed charset token falls back to the constructor charset without throwing")
-        void malformedCharsetFallsBackWithoutThrowing() throws Exception {
-            StringContentConverter<String> converter = identityConverter(StandardCharsets.ISO_8859_1);
-
-            String decoded = decodeBody(converter, "text/plain; charset=\"\"",
-                    NON_ASCII_TEXT.getBytes(StandardCharsets.ISO_8859_1));
-
-            assertEquals(NON_ASCII_TEXT, decoded);
+        /**
+         * One tuple per charset-precedence scenario: {@code (scenario, constructorCharset,
+         * contentTypeHeader, bodyCharset)}. A {@code null} constructor charset exercises the no-arg
+         * constructor's UTF-8 default; a {@code null} Content-Type header omits the header entirely.
+         * Every case decodes {@link #NON_ASCII_TEXT} and expects it back unchanged — the body is
+         * encoded with the charset the converter is expected to select, so picking the wrong one
+         * mangles the two non-ASCII code points and fails the assertion.
+         *
+         * @return the scenario tuples
+         */
+        static Stream<Arguments> charsetPrecedenceCases() {
+            return Stream.of(
+                    Arguments.of("Response-declared ISO-8859-1 wins over a UTF-8 constructor charset",
+                            StandardCharsets.UTF_8, "text/plain; charset=ISO-8859-1", StandardCharsets.ISO_8859_1),
+                    Arguments.of("Response-declared UTF-8 leaves the default converter's behaviour unchanged",
+                            null, ContentType.TEXT_PLAIN.toHeaderValue(), StandardCharsets.UTF_8),
+                    Arguments.of("A quoted charset parameter is honoured",
+                            StandardCharsets.UTF_8, "text/plain; charset=\"ISO-8859-1\"", StandardCharsets.ISO_8859_1),
+                    Arguments.of("The charset parameter name is matched case-insensitively",
+                            StandardCharsets.UTF_8, "text/plain; Charset=ISO-8859-1", StandardCharsets.ISO_8859_1),
+                    Arguments.of("A Content-Type without a charset parameter uses the constructor charset",
+                            StandardCharsets.ISO_8859_1, "text/plain", StandardCharsets.ISO_8859_1),
+                    Arguments.of("An absent Content-Type header uses the constructor charset",
+                            StandardCharsets.ISO_8859_1, null, StandardCharsets.ISO_8859_1),
+                    Arguments.of("An unsupported charset name falls back to the constructor charset without throwing",
+                            StandardCharsets.ISO_8859_1, "text/plain; charset=X-NO-SUCH-CHARSET",
+                            StandardCharsets.ISO_8859_1),
+                    Arguments.of("A malformed charset token falls back to the constructor charset without throwing",
+                            StandardCharsets.ISO_8859_1, "text/plain; charset=\"\"", StandardCharsets.ISO_8859_1));
         }
     }
 
