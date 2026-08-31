@@ -26,21 +26,26 @@ import java.security.*;
 import java.util.Set;
 
 /**
- * Provider for secure SSL contexts used in HTTPS communications.
+ * Declares the minimum TLS version for HTTPS communications and supplies the concrete protocol
+ * list that makes it a hard floor.
  * <p>
- * This class enforces secure TLS versions when establishing HTTPS connections.
- * It ensures that only modern, secure TLS protocols are used:
+ * This record is the <em>policy</em> half of the TLS floor, not the enforcement half. It:
  * <ul>
- *   <li>TLS 1.2 - Minimum recommended version</li>
- *   <li>TLS 1.3 - Preferred when available</li>
+ *   <li>declares a minimum TLS version ({@link #TLS_V1_2}, {@link #TLS_V1_3}, or the generic
+ *       {@link #TLS}), defaulting to {@link #DEFAULT_TLS_VERSION};</li>
+ *   <li>validates that version against {@link #ALLOWED_TLS_VERSIONS} in its constructor, rejecting
+ *       anything else with an {@link IllegalArgumentException}; and</li>
+ *   <li>resolves it to the concrete protocol versions to enable, via
+ *       {@link #getEnabledProtocols()}.</li>
  * </ul>
  * <p>
- * The class prevents the use of insecure, deprecated protocols:
- * <ul>
- *   <li>TLS 1.0 - Deprecated due to security vulnerabilities</li>
- *   <li>TLS 1.1 - Deprecated due to security vulnerabilities</li>
- *   <li>SSL 3.0 - Deprecated due to security vulnerabilities (POODLE attack)</li>
- * </ul>
+ * <strong>Enforcement happens downstream.</strong> {@link HttpHandler} applies
+ * {@link #getEnabledProtocols()} through {@code SSLParameters.setProtocols(...)} when it builds its
+ * client, and <em>that</em> pinning is what makes the floor real on the wire. This class does not
+ * itself police connections: {@link #getOrCreateSecureSSLContext(SSLContext)} returns a
+ * caller-supplied {@link SSLContext} unchanged (so the caller's trust material survives), and an
+ * {@link SSLContext}'s protocol string does not by itself constrain what gets negotiated. A
+ * provider used <em>without</em> the downstream pinning therefore constrains nothing.
  * <p>
  * For more details on the security aspects, see the
  * <a href="https://github.com/cuioss/cui-jwt-validation/tree/main/doc/specification/security.adoc">Security Specification</a>
@@ -74,34 +79,9 @@ public record SecureSSLContextProvider(String minimumTlsVersion) {
     public static final String DEFAULT_TLS_VERSION = TLS_V1_2;
 
     /**
-     * TLS version 1.0 - Insecure, deprecated.
-     * <p>
-     * Uses the canonical JSSE protocol name {@code "TLSv1"} (not {@code "TLSv1.0"}), so that
-     * {@link #FORBIDDEN_TLS_VERSIONS} can match the protocol string reported by a real TLS 1.0
-     * {@link SSLContext}.
-     * </p>
-     */
-    public static final String TLS_V1_0 = "TLSv1";
-
-    /**
-     * TLS version 1.1 - Insecure, deprecated
-     */
-    public static final String TLS_V1_1 = "TLSv1.1";
-
-    /**
-     * SSL version 3 - Insecure, deprecated
-     */
-    public static final String SSL_V3 = "SSLv3";
-
-    /**
      * Set of allowed (secure) TLS versions
      */
     public static final Set<String> ALLOWED_TLS_VERSIONS = CollectionLiterals.immutableSet(TLS_V1_2, TLS_V1_3, TLS);
-
-    /**
-     * Set of forbidden (insecure) TLS versions
-     */
-    public static final Set<String> FORBIDDEN_TLS_VERSIONS = CollectionLiterals.immutableSet(TLS_V1_0, TLS_V1_1, SSL_V3);
 
     /**
      * Creates a new SecureSSLContextProvider instance with the default minimum TLS version (TLS 1.2).
@@ -120,33 +100,6 @@ public record SecureSSLContextProvider(String minimumTlsVersion) {
         if (!ALLOWED_TLS_VERSIONS.contains(minimumTlsVersion)) {
             throw new IllegalArgumentException("Minimum TLS version must be one of the allowed versions: " + ALLOWED_TLS_VERSIONS);
         }
-    }
-
-    /**
-     * Checks if the given protocol is a secure TLS version according to the minimum version set for this instance.
-     * <p>
-     * For TLS_V1_2 and TLS_V1_3, the comparison is based on the version number.
-     * For TLS (generic), it's considered secure if it's in the allowed versions set.
-     *
-     * @param protocol the protocol to check
-     * @return true if the protocol is a secure TLS version, false otherwise
-     */
-    public boolean isSecureTlsVersion(@Nullable String protocol) {
-        if (protocol == null) {
-            return false;
-        }
-
-        if (!ALLOWED_TLS_VERSIONS.contains(protocol)) {
-            return false;
-        }
-
-        // If the minimum is TLS_V1_3, only TLS_V1_3 and TLS are considered secure
-        if (TLS_V1_3.equals(minimumTlsVersion)) {
-            return TLS_V1_3.equals(protocol) || TLS.equals(protocol);
-        }
-
-        // If the minimum is TLS_V1_2, all allowed versions are secure
-        return true;
     }
 
     /**
