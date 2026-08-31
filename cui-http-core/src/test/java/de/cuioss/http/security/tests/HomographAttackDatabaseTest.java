@@ -209,13 +209,13 @@ class HomographAttackDatabaseTest {
             assertTrue(containsCodePointInRange(payload, MATH_ALPHANUMERIC_START, MATH_ALPHANUMERIC_END),
                     "%s claims a mathematical homograph but its payload carries no code point in the "
                             + "Mathematical Alphanumeric Symbols block (U+1D400-U+1D7FF): %s"
-                                    .formatted(name, payload));
+                            .formatted(name, payload));
         }
         if (name.startsWith("FULLWIDTH")) {
             assertTrue(containsCodePointInRange(payload, FULLWIDTH_FORMS_START, FULLWIDTH_FORMS_END),
                     "%s claims a fullwidth homograph but its payload carries no code point in the "
                             + "Halfwidth and Fullwidth Forms block (U+FF00-U+FFEF): %s"
-                                    .formatted(name, payload));
+                            .formatted(name, payload));
         }
         if (name.startsWith("MIXED_SCRIPT")) {
             assertTrue(nonLatinScripts.size() >= 2,

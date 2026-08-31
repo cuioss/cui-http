@@ -104,7 +104,7 @@ class NfkcFoldClaimInvariantTest {
                 () -> assertNotEquals(input, folded,
                         "U+%04X %s is claimed to fold but normalizes to itself, so the payload that "
                                 + "relies on it never resolves to the ASCII form it claims to encode"
-                                        .formatted(codePoint, characterName)));
+                                .formatted(codePoint, characterName)));
     }
 
     @ParameterizedTest(name = "U+{0} {1} is NFKC-invariant")
@@ -118,6 +118,6 @@ class NfkcFoldClaimInvariantTest {
         assertEquals(input, folded,
                 "U+%04X %s (%s) is documented as NFKC-invariant, but it folded to '%s'. If Unicode "
                         + "changed, the comments describing it as non-folding must be revisited."
-                                .formatted(codePoint, characterName, rationale, folded));
+                        .formatted(codePoint, characterName, rationale, folded));
     }
 }
