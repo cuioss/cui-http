@@ -69,8 +69,6 @@ import java.util.Objects;
  * concurrently from multiple threads. The created pipelines are also thread-safe and
  * immutable.</p>
  *
- * Implements: Task P5 from HTTP verification specification
- *
  * @since 1.0
  */
 public final class PipelineFactory {

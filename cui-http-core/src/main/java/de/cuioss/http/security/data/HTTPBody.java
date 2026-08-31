@@ -68,8 +68,12 @@ import java.util.Optional;
  * boolean hasContent = body.hasContent();   // true if content is not empty
  * boolean isCompressed = body.isCompressed(); // true if encoding is specified
  *
- * // Use in validation
- * validator.validate(body.content(), ValidationType.BODY);
+ * // Use in validation: there is no body-content pipeline. Validate the declared
+ * // content type through the content-type pipeline and enforce the body-size limit
+ * // (SecurityConfiguration.maxBodySize()) before handing the content to the application.
+ * HttpSecurityValidator contentTypeValidator =
+ *     PipelineFactory.createContentTypePipeline(config, counter);
+ * contentTypeValidator.validate(body.contentType());
  * </pre>
  *
  * <h3>Content Types</h3>
@@ -82,9 +86,25 @@ import java.util.Optional;
  * specified in the Content-Type header.</p>
  *
  * <h3>Security Considerations</h3>
- * <p>This record is a simple data container. Security validation should be applied to
- * the content using appropriate validators for {@link ValidationType#BODY}, taking into
- * account the content type and encoding when determining validation strategies.</p>
+ * <p>This record is a simple data container and performs no validation of its own.</p>
+ *
+ * <p><strong>There is no body-content validation pipeline.</strong>
+ * {@code PipelineFactory.createPipeline(ValidationType.BODY, config, counter)} throws
+ * {@link IllegalArgumentException} - the BODY pipeline was removed because meaningful body
+ * validation depends on the payload format (JSON, XML, multipart) and therefore belongs to
+ * the application layer. {@link ValidationType#BODY} survives only as a failure-reporting
+ * discriminator on {@code UrlSecurityException}, not as a factory key.</p>
+ *
+ * <p>The supported route for body content is:</p>
+ * <ul>
+ *   <li>Validate the declared content type with
+ *       {@code PipelineFactory.createContentTypePipeline(config, counter)}, which applies the
+ *       configured {@code blockedContentTypes} / {@code allowedContentTypes} lists.</li>
+ *   <li>Enforce {@code SecurityConfiguration.maxBodySize()} against the raw byte count before
+ *       the body is buffered or parsed.</li>
+ *   <li>Parse and validate the decoded payload with a format-aware validator owned by the
+ *       application.</li>
+ * </ul>
  *
  * Implements: Task B3 from HTTP verification specification
  *

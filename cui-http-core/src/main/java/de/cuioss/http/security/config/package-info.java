@@ -31,7 +31,6 @@
  * <ul>
  *   <li><strong>Length Limits</strong> - Maximum input lengths for different component types</li>
  *   <li><strong>Character Sets</strong> - Allowed characters for validation types</li>
- *   <li><strong>Security Levels</strong> - Predefined security strictness levels (STRICT, DEFAULT, LENIENT)</li>
  *   <li><strong>Feature Toggles</strong> - Enable/disable specific validation features</li>
  *   <li><strong>Pattern Configuration</strong> - Custom attack pattern definitions</li>
  * </ul>
@@ -45,9 +44,9 @@
  * SecurityConfiguration customConfig = SecurityConfiguration.builder()
  *     .maxPathLength(2048)
  *     .maxParameterValueLength(8192)
- *     .securityLevel(SecurityLevel.STRICT)
- *     .pathTraversalDetectionEnabled(true)
- *     .doubleEncodingDetectionEnabled(true)
+ *     .allowDoubleEncoding(false)
+ *     .normalizeUnicode(true)
+ *     .failOnSuspiciousPatterns(true)
  *     .build();
  *
  * // Configuration is immutable after creation
@@ -55,12 +54,23 @@
  * </code></pre>
  *
  * <h3>Secure Defaults</h3>
- * <p>All default values are based on security best practices:</p>
+ * <p>{@link de.cuioss.http.security.config.SecurityConfiguration#defaults()} is a balanced
+ * baseline rather than a maximum-strictness profile. What it actually enables:</p>
  * <ul>
- *   <li>Conservative length limits to prevent DoS attacks</li>
- *   <li>Strict character validation based on RFC specifications</li>
- *   <li>All security features enabled by default</li>
- *   <li>Maximum security level as the default</li>
+ *   <li>Conservative length and count limits to prevent DoS attacks (path 4096, parameter
+ *       name/value 128/2048, header name/value 128/2048, cookie name/value 128/2048, body 5 MB)</li>
+ *   <li>Null bytes, control characters and double encoding are rejected</li>
+ *   <li>Unicode normalization is on, and comparisons are case-insensitive - which broadens,
+ *       not narrows, attack-pattern matching</li>
+ * </ul>
+ * <p>What it deliberately leaves off, so it must be opted into when required:</p>
+ * <ul>
+ *   <li>{@code failOnSuspiciousPatterns} is {@code false} - a suspicious-pattern match is
+ *       allowed through silently</li>
+ *   <li>{@code allowExtendedAscii} is {@code true} - characters 128-255 are permitted</li>
+ *   <li>{@code requireSecureCookies} and {@code requireHttpOnlyCookies} are {@code false}</li>
+ *   <li>The header-name and content-type allow/block lists are empty, which means
+ *       allow-all / block-none</li>
  * </ul>
  *
  * <h3>Package Nullability</h3>
