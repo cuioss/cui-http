@@ -72,7 +72,11 @@ public abstract class StringContentConverter<T> implements HttpResponseConverter
     // S1452: False positive - wildcard type required for flexible body handler API
     // JDK BodyHandler design requires type flexibility (String, byte[], Void, etc.)
     // Callers use the handler to read response bodies, not to access type-specific operations
-    @SuppressWarnings("java:S1452")
+    // S1488: False positive - the typed local is structurally required. Returning the lambda
+    // directly against the wildcard-typed BodyHandler<?> target fails to compile: a lambda
+    // expression cannot be assigned to a wildcard-parameterized functional interface type
+    // without first going through a concretely-typed variable (capture-conversion mismatch).
+    @SuppressWarnings({"java:S1452", "java:S1488"})
     @Override
     public HttpResponse.BodyHandler<?> getBodyHandler() {
         HttpResponse.BodyHandler<String> handler =
