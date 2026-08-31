@@ -102,8 +102,8 @@ class NfkcFoldClaimInvariantTest {
                         "U+%04X %s is claimed to NFKC-fold to '%s' but folds to '%s'"
                                 .formatted(codePoint, characterName, claimedTarget, folded)),
                 () -> assertNotEquals(input, folded,
-                        "U+%04X %s is claimed to fold but normalizes to itself, so the payload that "
-                                + "relies on it never resolves to the ASCII form it claims to encode"
+                        ("U+%04X %s is claimed to fold but normalizes to itself, so the payload that "
+                                + "relies on it never resolves to the ASCII form it claims to encode")
                                 .formatted(codePoint, characterName)));
     }
 
@@ -116,8 +116,8 @@ class NfkcFoldClaimInvariantTest {
         String folded = Normalizer.normalize(input, Normalizer.Form.NFKC);
 
         assertEquals(input, folded,
-                "U+%04X %s (%s) is documented as NFKC-invariant, but it folded to '%s'. If Unicode "
-                        + "changed, the comments describing it as non-folding must be revisited."
+                ("U+%04X %s (%s) is documented as NFKC-invariant, but it folded to '%s'. If Unicode "
+                        + "changed, the comments describing it as non-folding must be revisited.")
                         .formatted(codePoint, characterName, rationale, folded));
     }
 }

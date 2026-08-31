@@ -234,7 +234,7 @@ class UnicodeNormalizationAttackTest {
         };
 
         for (String test : normalizationTests) {
-            String normalized = Normalizer.normalize(test, Normalizer.Form.NFC);
+            String normalized = Normalizer.normalize(test, Normalizer.Form.NFKC);
 
             // Only test cases where normalization actually changes the string
             if (!test.equals(normalized)) {
