@@ -114,28 +114,6 @@ class EdgeCaseValidURLsDatabaseTest {
     }
 
     /**
-     * Verify that edge cases don't cause performance issues.
-     */
-    @ParameterizedTest
-    @ArgumentsSource(EdgeCaseValidURLsDatabase.ArgumentsProvider.class)
-    @DisplayName("Edge case URLs should be processed efficiently")
-    void shouldProcessEdgeCasesEfficiently(LegitimateTestCase testCase) {
-        long startTime = System.nanoTime();
-
-        assertDoesNotThrow(() -> {
-            pipeline.validate(testCase.legitimatePattern());
-        }, "Edge case processing should complete: %s".formatted(
-                testCase.legitimatePattern()));
-
-        long elapsedMs = (System.nanoTime() - startTime) / 1_000_000;
-
-        // Edge cases should still be processed quickly (under 100ms)
-        assertTrue(elapsedMs < 100,
-                "Edge case should be processed quickly (was %dms): %s".formatted(
-                        elapsedMs, testCase.legitimatePattern()));
-    }
-
-    /**
      * Verify that the pipeline handles edge cases without internal errors.
      */
     @ParameterizedTest

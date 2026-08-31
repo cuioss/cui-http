@@ -254,10 +254,16 @@ class ResilientHttpAdapterTest {
     }
 
     /**
-     * Test async delays are non-blocking.
+     * Test that the configured retry delay is actually applied between attempts.
+     *
+     * <p>The retry itself is asserted through the attempt count, which is independent of
+     * wall-clock timing. The elapsed-time check is a lower bound only: a monotonic clock cannot
+     * under-report a real sleep, so a 50 ms configured delay can never elapse in under 40 ms.
+     * An upper bound would be a flaky assertion on a shared CI machine and is deliberately
+     * absent.</p>
      */
     @Test
-    void asyncDelaysNonBlocking() {
+    void appliesConfiguredRetryDelay() {
         AtomicInteger attemptCount = new AtomicInteger(0);
 
         // Mock adapter that fails once with NETWORK_ERROR
@@ -278,6 +284,8 @@ class ResilientHttpAdapterTest {
 
         // Should succeed after delay
         assertTrue(result.isSuccess());
+        // The retry actually happened - time-independent observable
+        assertEquals(2, attemptCount.get(), "Expected exactly one retry after the initial failure");
         // Should take at least 40ms due to delay (allowing for CI timing variations)
         assertTrue(elapsedTime >= 40, "Expected delay of at least 40ms, but took " + elapsedTime + "ms");
     }
