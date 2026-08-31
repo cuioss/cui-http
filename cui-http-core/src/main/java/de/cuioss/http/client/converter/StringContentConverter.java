@@ -113,12 +113,6 @@ public abstract class StringContentConverter<T> implements HttpResponseConverter
         return Optional.empty();
     }
 
-    /**
-     * Strips a surrounding pair of double quotes from a header parameter value.
-     *
-     * @param value the raw parameter value
-     * @return the value without its enclosing quotes, or the value unchanged when it is not quoted
-     */
     private static String unquote(String value) {
         if (value.length() >= 2 && value.charAt(0) == '"' && value.charAt(value.length() - 1) == '"') {
             return value.substring(1, value.length() - 1);
