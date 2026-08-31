@@ -46,14 +46,17 @@ class URLParameterValidationPipelineTest {
     /**
      * The verdicts {@code PathTraversalParameterGenerator} legitimately spans. A raw traversal
      * sequence matches a traversal pattern; a singly-encoded one is caught after decoding; a
-     * multiply-encoded one trips the double-encoding gate; and a truncated or malformed escape
-     * trips encoding validation. The exact verdict depends on which spelling the generator emitted,
+     * multiply-encoded one trips the double-encoding gate; a truncated or malformed escape trips
+     * encoding validation; and a Windows-style {@code %5c} variant decodes to a raw backslash,
+     * which RFC 3986 does not permit in a query, so character validation rejects it before
+     * traversal detection runs. The exact verdict depends on which spelling the generator emitted,
      * so membership in this explicit set is asserted rather than a single value.
      */
     private static final EnumSet<UrlSecurityFailureType> TRAVERSAL_PARAMETER_FAILURES = EnumSet.of(
             UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
             UrlSecurityFailureType.DOUBLE_ENCODING,
-            UrlSecurityFailureType.INVALID_ENCODING);
+            UrlSecurityFailureType.INVALID_ENCODING,
+            UrlSecurityFailureType.INVALID_CHARACTER);
 
     private SecurityConfiguration config;
     private SecurityEventCounter eventCounter;
