@@ -28,6 +28,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.ArgumentsSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import java.util.Set;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -134,33 +135,111 @@ class IPv6AttackDatabaseTest {
     @MethodSource("declaredEntries")
     @DisplayName("Each entry's payload carries the structural feature its name claims")
     void shouldCarryTheStructuralFeatureItsNameClaims(String name, String payload) {
+        boolean matched = false;
         if (name.startsWith("IPV4_MAPPED")) {
             // RFC 4291 maps IPv4 as ::ffff:a.b.c.d; RFC 6052 embeds it after the well-known
             // prefix 64:ff9b::. Both are IPv4-embedding forms, so either satisfies the claim.
+            matched = true;
             assertTrue(payload.contains("::ffff:") || payload.contains("64:ff9b::"),
-                    "%s claims an IPv4-mapped address but its payload carries neither the RFC 4291 "
-                            + "'::ffff:' prefix nor the RFC 6052 '64:ff9b::' prefix: %s"
+                    ("%s claims an IPv4-mapped address but its payload carries neither the RFC 4291 "
+                            + "'::ffff:' prefix nor the RFC 6052 '64:ff9b::' prefix: %s")
                             .formatted(name, payload));
         }
         if (name.startsWith("ZONE_")) {
+            matched = true;
             assertTrue(payload.contains("%"),
                     "%s claims a zone identifier but its payload carries no '%%' scope separator: %s"
                             .formatted(name, payload));
         }
         if (name.contains("COMPRESSION")) {
+            matched = true;
             assertTrue(payload.contains("::"),
                     "%s claims IPv6 zero compression but its payload carries no '::' sequence: %s"
                             .formatted(name, payload));
         }
         if (name.startsWith("BRACKET")) {
+            matched = true;
             assertTrue(payload.contains("[") || payload.contains("]"),
                     "%s claims a bracket manipulation but its payload carries no bracket: %s"
                             .formatted(name, payload));
         }
         if (name.contains("PORT")) {
+            matched = true;
             assertTrue(payload.contains("]:"),
                     "%s claims a port specification but its payload carries no ']:' port suffix: %s"
                             .formatted(name, payload));
         }
+        if (name.startsWith("IPV6_LOCALHOST")) {
+            matched = true;
+            assertTrue(LOOPBACK_SPELLINGS.contains(bracketedHost(payload)),
+                    ("%s claims the IPv6 loopback address but its bracketed host '%s' is none of the "
+                            + "loopback spellings %s: %s")
+                            .formatted(name, bracketedHost(payload), LOOPBACK_SPELLINGS, payload));
+        }
+        if (name.contains("EXPANDED") || name.contains("EXPANSION")) {
+            // A fully expanded address is the uncompressed form: eight colon-separated groups
+            // and no '::' run. Compressing it would defeat the parser-inconsistency the entry probes.
+            matched = true;
+            String host = bracketedHost(payload);
+            assertFalse(host.contains("::"),
+                    "%s claims a fully expanded address but its bracketed host '%s' is compressed: %s"
+                            .formatted(name, host, payload));
+            assertEquals(IPV6_GROUP_COUNT, host.split(":", -1).length,
+                    ("%s claims a fully expanded address but its bracketed host '%s' does not carry "
+                            + "all eight groups: %s")
+                            .formatted(name, host, payload));
+        }
+        if (name.startsWith("MALFORMED")) {
+            matched = true;
+            assertTrue(bracketedHost(payload).contains(":::"),
+                    ("%s claims a malformed address but its bracketed host '%s' carries no ':::' run, "
+                            + "so it is well-formed per RFC 4291: %s")
+                            .formatted(name, bracketedHost(payload), payload));
+        }
+        if (name.startsWith("INVALID_HEX")) {
+            matched = true;
+            String host = bracketedHost(payload);
+            assertTrue(host.chars().anyMatch(IPv6AttackDatabaseTest::isNonAddressCharacter),
+                    ("%s claims a non-hexadecimal character but its bracketed host '%s' contains only "
+                            + "hex digits and address separators: %s")
+                            .formatted(name, host, payload));
+        }
+
+        // Fail closed: an entry whose name matches no branch above is asserted by nothing at all,
+        // so its structural claim is unverified. Adding such an entry must force a decision.
+        assertTrue(matched,
+                "%s matched no structural-feature handler — add a branch or rename the entry: %s"
+                        .formatted(name, payload));
+    }
+
+    /** Number of colon-separated groups in a fully expanded IPv6 address. */
+    private static final int IPV6_GROUP_COUNT = 8;
+
+    /** The loopback spellings the {@code IPV6_LOCALHOST_*} entries are allowed to use. */
+    private static final Set<String> LOOPBACK_SPELLINGS =
+            Set.of("::1", "::0001", "0:0:0:0:0:0:0:1");
+
+    /**
+     * Extracts the host between the first bracket pair, which is where every bracketed IPv6
+     * literal in this database carries its address.
+     *
+     * @param payload the entry payload
+     * @return the bracketed host, or the empty string when the payload carries no bracket pair
+     */
+    private static String bracketedHost(String payload) {
+        int open = payload.indexOf('[');
+        int close = payload.indexOf(']', open + 1);
+        return open >= 0 && close > open ? payload.substring(open + 1, close) : "";
+    }
+
+    /**
+     * Reports whether a character can appear in neither an IPv6 address nor its IPv4-mapped tail -
+     * i.e. it is not a hex digit, a group separator, or a dotted-quad separator.
+     *
+     * @param character the code point to classify
+     * @return {@code true} when the character belongs in no valid address position
+     */
+    private static boolean isNonAddressCharacter(int character) {
+        return Character.digit(character, 16) < 0 && character != ':' && character != '.';
     }
 }

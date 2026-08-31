@@ -180,32 +180,54 @@ class HomographAttackDatabaseTest {
                 .filter(script -> !NON_CLAIMING_SCRIPTS.contains(script))
                 .collect(Collectors.toCollection(() -> EnumSet.noneOf(UnicodeScript.class)));
 
+        boolean matched = false;
         if (name.startsWith("CYRILLIC")) {
+            matched = true;
             assertTrue(containsScript(payload, UnicodeScript.CYRILLIC),
                     "%s claims a Cyrillic homograph but its payload carries no Cyrillic code point: %s"
                             .formatted(name, payload));
         }
         if (name.startsWith("GREEK")) {
+            matched = true;
             assertTrue(containsScript(payload, UnicodeScript.GREEK),
                     "%s claims a Greek homograph but its payload carries no Greek code point: %s"
                             .formatted(name, payload));
         }
         if (name.startsWith("MATHEMATICAL")) {
+            matched = true;
             assertTrue(containsCodePointInRange(payload, MATH_ALPHANUMERIC_START, MATH_ALPHANUMERIC_END),
-                    "%s claims a mathematical homograph but its payload carries no code point in the "
-                            + "Mathematical Alphanumeric Symbols block (U+1D400-U+1D7FF): %s"
+                    ("%s claims a mathematical homograph but its payload carries no code point in the "
+                            + "Mathematical Alphanumeric Symbols block (U+1D400-U+1D7FF): %s")
                             .formatted(name, payload));
         }
         if (name.startsWith("FULLWIDTH")) {
+            matched = true;
             assertTrue(containsCodePointInRange(payload, FULLWIDTH_FORMS_START, FULLWIDTH_FORMS_END),
-                    "%s claims a fullwidth homograph but its payload carries no code point in the "
-                            + "Halfwidth and Fullwidth Forms block (U+FF00-U+FFEF): %s"
+                    ("%s claims a fullwidth homograph but its payload carries no code point in the "
+                            + "Halfwidth and Fullwidth Forms block (U+FF00-U+FFEF): %s")
                             .formatted(name, payload));
         }
         if (name.startsWith("MIXED_SCRIPT")) {
+            matched = true;
             assertTrue(nonLatinScripts.size() >= 2,
                     "%s claims a mixed-script homograph but its payload draws on only %s: %s"
                             .formatted(name, nonLatinScripts, payload));
         }
+        if (name.endsWith("_SPOOFING")) {
+            // The domain- and protocol-spoofing entries all substitute Cyrillic look-alikes into an
+            // otherwise-Latin brand or URI scheme; their documentation names the Cyrillic code point.
+            matched = true;
+            assertTrue(containsScript(payload, UnicodeScript.CYRILLIC),
+                    ("%s claims a spoof built from Cyrillic look-alikes but its payload carries no "
+                            + "Cyrillic code point: %s")
+                            .formatted(name, payload));
+        }
+
+        // Fail closed: an entry whose name matches no branch above is carried by the shared
+        // baseline alone, so its per-script claim is never verified. Adding such an entry must
+        // force a decision rather than pass silently.
+        assertTrue(matched,
+                "%s matched no script-claim handler — add a branch for its family or rename the entry: %s"
+                        .formatted(name, payload));
     }
 }
