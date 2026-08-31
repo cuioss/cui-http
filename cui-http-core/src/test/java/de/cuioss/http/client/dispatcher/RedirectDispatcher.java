@@ -26,19 +26,20 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Test dispatcher serving a small redirect topology under {@value #BASE_PATH}, used to verify the
- * {@code Redirect.NORMAL} policy {@code HttpHandler} configures on its clients.
+ * Test dispatcher serving a 302 with a {@code Location} header under {@value #BASE_PATH}, used to
+ * verify that {@code HttpHandler} does <em>not</em> follow redirects — it configures no redirect
+ * policy, so the JDK default {@code Redirect.NEVER} applies.
  * <p>
  * Routes:
  * <ul>
- *   <li>{@value #PATH_REDIRECT} — 302 to {@value #PATH_TARGET} (single hop)</li>
- *   <li>{@value #PATH_CHAIN_START} — 302 to {@value #PATH_CHAIN_MIDDLE}</li>
- *   <li>{@value #PATH_CHAIN_MIDDLE} — 302 to {@value #PATH_TARGET}</li>
+ *   <li>{@value #PATH_REDIRECT} — 302 with {@code Location} pointing at {@value #PATH_TARGET}</li>
  *   <li>{@value #PATH_TARGET} — 200 with body {@value #TARGET_BODY}</li>
  * </ul>
- * The dispatcher is stateless: tests assert that the hops were walked by unwinding the client's own
- * {@code HttpResponse.previousResponse()} chain, because the dispatcher resolver serves requests
- * from its own instance rather than the one held by the test.
+ * {@value #PATH_TARGET} exists so the {@code Location} header names a route that would in fact
+ * answer: a test asserting the redirect was not followed is only meaningful if following it could
+ * have succeeded. The dispatcher is stateless; tests read the client's own record of the exchange
+ * ({@code HttpResponse.previousResponse()}) rather than server-side counters, because the dispatcher
+ * resolver serves requests from its own instance rather than the one held by the test.
  *
  * @author Oliver Wolff
  */
@@ -47,16 +48,10 @@ public class RedirectDispatcher implements ModuleDispatcherElement {
     /** Base path this dispatcher claims. */
     public static final String BASE_PATH = "/redirect";
 
-    /** Single-hop redirect source. */
+    /** Redirect source answering 302. */
     public static final String PATH_REDIRECT = BASE_PATH + "/start";
 
-    /** First hop of the two-hop chain. */
-    public static final String PATH_CHAIN_START = BASE_PATH + "/chain-1";
-
-    /** Second hop of the two-hop chain. */
-    public static final String PATH_CHAIN_MIDDLE = BASE_PATH + "/chain-2";
-
-    /** Terminal path that answers 200. */
+    /** Terminal path that answers 200; the {@code Location} target that is never fetched. */
     public static final String PATH_TARGET = BASE_PATH + "/target";
 
     /** Body served by {@value #PATH_TARGET}. */
@@ -75,8 +70,7 @@ public class RedirectDispatcher implements ModuleDispatcherElement {
     private Optional<MockResponse> handle(RecordedRequest request) {
         String path = request.getUrl().encodedPath();
         return switch (path) {
-            case PATH_REDIRECT, PATH_CHAIN_MIDDLE -> Optional.of(redirectTo(absolute(request, PATH_TARGET)));
-            case PATH_CHAIN_START -> Optional.of(redirectTo(absolute(request, PATH_CHAIN_MIDDLE)));
+            case PATH_REDIRECT -> Optional.of(redirectTo(absolute(request, PATH_TARGET)));
             case PATH_TARGET -> Optional.of(new MockResponse(200,
                     new Headers.Builder().add("Content-Type", "text/plain").build(), TARGET_BODY));
             default -> Optional.empty();

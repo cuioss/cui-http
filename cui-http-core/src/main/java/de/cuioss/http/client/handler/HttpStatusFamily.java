@@ -214,7 +214,7 @@ public enum HttpStatusFamily {
      * <ul>
      *   <li><strong>CLIENT_ERROR (4xx)</strong> → {@link HttpErrorCategory#CLIENT_ERROR} - Client request errors (non-retryable)</li>
      *   <li><strong>SERVER_ERROR (5xx)</strong> → {@link HttpErrorCategory#SERVER_ERROR} - Server errors (retryable)</li>
-     *   <li><strong>REDIRECTION (3xx)</strong> → {@link HttpErrorCategory#INVALID_CONTENT} - the redirect was not followed (see below)</li>
+     *   <li><strong>REDIRECTION (3xx)</strong> → {@link HttpErrorCategory#INVALID_CONTENT} - redirects are never followed (see below)</li>
      *   <li><strong>INFORMATIONAL (1xx)</strong> → {@link HttpErrorCategory#INVALID_CONTENT} - Unexpected in response processing</li>
      *   <li><strong>UNKNOWN</strong> → {@link HttpErrorCategory#INVALID_CONTENT} - Invalid status codes</li>
      *   <li><strong>SUCCESS (2xx)</strong> → Throws IllegalStateException (not an error)</li>
@@ -230,16 +230,15 @@ public enum HttpStatusFamily {
      * </pre>
      *
      * <h3>Note on 3xx Redirects</h3>
-     * Redirects are followed because {@code HttpHandler} configures its clients with
-     * {@code HttpClient.Redirect.NORMAL}, but only the statuses 301, 302, 303, 307 and 308 are ever
-     * follow-candidates. A 3xx status that nonetheless reaches error handling therefore means the
-     * redirect was <em>not</em> followed. Under {@code NORMAL} that happens in three cases: the
-     * status is not a followable redirect code — 300, 304&#8211;306 and 309&#8211;399 are returned
-     * to the caller without any redirect being attempted; an HTTPS&#8594;HTTP downgrade, which the
-     * JDK refuses to follow; or an exhausted redirect chain. None of these yields a usable response
-     * body, which is why the classification is {@link HttpErrorCategory#INVALID_CONTENT}. A
-     * followable status carrying no usable {@code Location} header never reaches this classification
-     * at all — the JDK throws rather than returning the response.
+     * Redirects are never followed. {@code HttpHandler} configures no redirect policy on its clients,
+     * so the JDK default {@code HttpClient.Redirect.NEVER} applies and every 3xx — followable status
+     * or not — is returned to the caller unfollowed. Such a response carries no usable payload for the
+     * requested resource, only a {@code Location} pointer, which is why the classification is the
+     * non-retryable {@link HttpErrorCategory#INVALID_CONTENT}: retrying the same request would
+     * reproduce the same redirect. A caller that wants to act on the redirect must read
+     * {@code Location}, validate the target itself, and issue the follow-up request explicitly.
+     * Validated redirect following — same-origin by default, with an opt-in host allowlist — is
+     * planned as follow-up work.
      *
      * @return the corresponding HttpErrorCategory for this status family
      * @throws IllegalStateException if called on SUCCESS family (which is not an error)
@@ -251,8 +250,8 @@ public enum HttpStatusFamily {
             case CLIENT_ERROR -> HttpErrorCategory.CLIENT_ERROR;
             case SERVER_ERROR -> HttpErrorCategory.SERVER_ERROR;
             case SUCCESS -> throw new IllegalStateException("SUCCESS is not an error");
-            // Redirect.NORMAL already followed what it could; a 3xx here is either not a
-            // follow-candidate code at all (300, 304-306, 309-399) or was refused / chain-exhausted
+            // Redirects are never followed (JDK default Redirect.NEVER), so every 3xx lands here with
+            // only a Location pointer and no usable payload; retrying would reproduce the redirect
             case REDIRECTION -> HttpErrorCategory.INVALID_CONTENT;
             case INFORMATIONAL, UNKNOWN -> HttpErrorCategory.INVALID_CONTENT;
         };

@@ -17,6 +17,7 @@ package de.cuioss.http.client.handler;
 
 import de.cuioss.http.client.dispatcher.RedirectDispatcher;
 import de.cuioss.http.client.dispatcher.TestContentDispatcher;
+import de.cuioss.http.client.result.HttpErrorCategory;
 import de.cuioss.test.juli.junit5.EnableTestLogger;
 import de.cuioss.test.mockwebserver.EnableMockWebServer;
 import de.cuioss.test.mockwebserver.URIBuilder;
@@ -29,8 +30,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpResponse;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Integration tests for {@link HttpHandler} using MockWebServer.
@@ -39,17 +39,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <ul>
  *   <li>Ping operations (HEAD/GET) with various HTTP status codes</li>
  *   <li>Success (2xx), client error (4xx), and server error (5xx) handling</li>
- *   <li>The {@link HttpClient.Redirect#NORMAL} redirect policy configured on both client paths</li>
+ *   <li>That redirects are <strong>not</strong> followed on either client path</li>
  * </ul>
  * <p>
- * The HTTPS&#8594;HTTP downgrade that {@code NORMAL} refuses to follow is <strong>not</strong>
- * driven end-to-end here, because that needs a real TLS origin and an
- * {@code @EnableMockWebServer(useHttps = true)} server cannot accept a connection in this project
- * (see the class comment on {@code ResilientHttpAdapterIntegrationTest} for the
- * {@code NoSuchMethodError} root cause). The downgrade refusal is a property of
- * {@link HttpClient.Redirect#NORMAL} itself — it is precisely what separates {@code NORMAL} from
- * {@code ALWAYS} — so it is asserted at the policy level instead: both client paths are verified to
- * be configured with {@code NORMAL} rather than {@code ALWAYS} or the JDK's {@code NEVER} default.
+ * {@code HttpHandler} configures no redirect policy, so the JDK default
+ * {@link HttpClient.Redirect#NEVER} applies. That is asserted on two levels: at the policy level, by
+ * reading back {@link HttpClient#followRedirects()} on both the HTTP-only and the HTTPS constructor
+ * path, and end-to-end against MockWebServer, by showing that a 302 with a {@code Location} header
+ * surfaces to the caller unfollowed and classifies as the non-retryable
+ * {@link HttpErrorCategory#INVALID_CONTENT}.
+ * <p>
+ * Validated redirect following — same-origin by default, with an opt-in host allowlist — is planned
+ * as follow-up work; these tests pin the current fail-secure baseline, not a permanent end state.
  *
  * @author Oliver Wolff
  * @since 1.0
@@ -140,75 +141,59 @@ class HttpHandlerIntegrationTest {
     }
 
     @Test
-    @DisplayName("The HTTP client path is configured with Redirect.NORMAL")
-    void httpClientPathUsesRedirectNormal() {
+    @DisplayName("The HTTP client path leaves redirects unfollowed")
+    void httpClientPathDoesNotFollowRedirects() {
         HttpHandler handler = HttpHandler.builder()
                 .url("http://example.com/api")
                 .allowInsecureHttp(true)
                 .build();
 
-        assertEquals(HttpClient.Redirect.NORMAL, handler.createHttpClient().followRedirects(),
-                "the HTTP-only constructor must not leave the JDK's NEVER default in place");
+        assertEquals(HttpClient.Redirect.NEVER, handler.createHttpClient().followRedirects(),
+                "the HTTP-only constructor must configure no follow policy, leaving the JDK's NEVER default");
     }
 
     @Test
-    @DisplayName("The HTTPS client path is configured with Redirect.NORMAL")
-    void httpsClientPathUsesRedirectNormal() {
+    @DisplayName("The HTTPS client path leaves redirects unfollowed")
+    void httpsClientPathDoesNotFollowRedirects() {
         HttpHandler handler = HttpHandler.builder()
                 .url("https://example.com/api")
                 .build();
 
-        assertEquals(HttpClient.Redirect.NORMAL, handler.createHttpClient().followRedirects(),
-                "the HTTPS constructor must not leave the JDK's NEVER default in place");
+        assertEquals(HttpClient.Redirect.NEVER, handler.createHttpClient().followRedirects(),
+                "the HTTPS constructor must configure no follow policy, leaving the JDK's NEVER default");
     }
 
     @Test
-    @DisplayName("A 302 to a same-server path is followed and the caller observes the final 200")
+    @DisplayName("A 302 surfaces to the caller unfollowed, with its Location header intact")
     @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
-    void singleHopRedirectIsFollowed(URIBuilder uriBuilder) throws Exception {
-        HttpResponse<String> response = getFollowingRedirects(uriBuilder, RedirectDispatcher.PATH_REDIRECT);
+    void redirectIsNotFollowedButSurfacesToCaller(URIBuilder uriBuilder) throws Exception {
+        HttpResponse<String> response = get(uriBuilder, RedirectDispatcher.PATH_REDIRECT);
 
-        assertEquals(200, response.statusCode(), "the caller must observe the redirect target's status");
-        assertEquals(RedirectDispatcher.TARGET_BODY, response.body(),
-                "the caller must observe the redirect target's body");
-        assertTrue(response.uri().getPath().endsWith(RedirectDispatcher.PATH_TARGET),
-                "the final response URI must be the redirect target, not the original request URI");
-        assertEquals(1, redirectHops(response), "exactly one redirect hop must have been walked");
+        assertEquals(302, response.statusCode(), "the caller must observe the redirect itself, not its target");
+        assertTrue(response.uri().getPath().endsWith(RedirectDispatcher.PATH_REDIRECT),
+                "the response URI must still be the original request URI");
+        assertTrue(response.previousResponse().isEmpty(), "no redirect hop may have been walked");
+        assertTrue(response.headers().firstValue("Location")
+                        .orElse("").endsWith(RedirectDispatcher.PATH_TARGET),
+                "the Location header must reach the caller so it can validate the target itself");
     }
 
     @Test
-    @DisplayName("A two-hop redirect chain terminates at the target")
+    @DisplayName("An unfollowed 3xx classifies as non-retryable INVALID_CONTENT")
     @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
-    void redirectChainTerminatesAtTarget(URIBuilder uriBuilder) throws Exception {
-        HttpResponse<String> response = getFollowingRedirects(uriBuilder, RedirectDispatcher.PATH_CHAIN_START);
+    void unfollowedRedirectClassifiesAsInvalidContent(URIBuilder uriBuilder) throws Exception {
+        HttpResponse<String> response = get(uriBuilder, RedirectDispatcher.PATH_REDIRECT);
 
-        assertEquals(200, response.statusCode(), "the chain must resolve to the terminal 200");
-        assertEquals(RedirectDispatcher.TARGET_BODY, response.body());
-        assertTrue(response.uri().getPath().endsWith(RedirectDispatcher.PATH_TARGET),
-                "the chain must end at the target, not at an intermediate hop");
-        assertEquals(2, redirectHops(response), "both hops of the chain must be walked");
+        HttpStatusFamily family = HttpStatusFamily.fromStatusCode(response.statusCode());
+
+        assertEquals(HttpStatusFamily.REDIRECTION, family, "a 302 must classify as REDIRECTION");
+        assertEquals(HttpErrorCategory.INVALID_CONTENT, family.toErrorCategory(),
+                "an unfollowed redirect carries no usable representation");
+        assertFalse(family.toErrorCategory().isRetryable(),
+                "retrying would only reproduce the same redirect");
     }
 
-    /**
-     * Counts the redirect responses the client walked to reach {@code response}, by unwinding the
-     * {@link HttpResponse#previousResponse()} chain. This reads the client's own record of the
-     * exchange rather than server-side counters, which the dispatcher resolver does not share with
-     * the test instance.
-     *
-     * @param response the final response
-     * @return the number of redirect hops that preceded it
-     */
-    private static int redirectHops(HttpResponse<String> response) {
-        int hops = 0;
-        for (HttpResponse<String> current = response;
-             current.previousResponse().isPresent();
-             current = current.previousResponse().get()) {
-            hops++;
-        }
-        return hops;
-    }
-
-    private HttpResponse<String> getFollowingRedirects(URIBuilder uriBuilder, String path) throws Exception {
+    private HttpResponse<String> get(URIBuilder uriBuilder, String path) throws Exception {
         URI target = URI.create(uriBuilder.build().toString().replaceAll("/$", "") + path);
         HttpHandler handler = HttpHandler.builder()
                 .uri(target)

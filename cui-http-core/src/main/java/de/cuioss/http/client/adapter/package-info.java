@@ -243,28 +243,27 @@
  *     .build();
  * }</pre>
  *
- * <h3>Redirect Behavior (Validated URI Is Not the Validated Target)</h3>
+ * <h3>Redirect Behavior (Redirects Are Not Followed)</h3>
  *
- * <p>{@link de.cuioss.http.client.handler.HttpHandler HttpHandler} configures both its HTTP and its
- * HTTPS client with {@code HttpClient.Redirect.NORMAL}, so redirects <strong>are</strong> followed —
- * but only for the follow-candidate statuses 301, 302, 303, 307 and 308. The one exception among
- * those is a redirect from HTTPS to HTTP: the JDK refuses that downgrade rather than following it, so
- * a downgrade attempt still surfaces to the caller as a 3xx response.
+ * <p>{@link de.cuioss.http.client.handler.HttpHandler HttpHandler} configures <em>no</em> redirect
+ * policy on either its HTTP or its HTTPS client, so the JDK default {@code HttpClient.Redirect.NEVER}
+ * applies: redirects are <strong>not</strong> followed. Every 3xx response — followable status or not
+ * — is returned to the adapter unfollowed, with its {@code Location} header intact and no further
+ * request issued.
  *
- * <p><b>IMPORTANT:</b> because redirects are followed, the effective request target may differ from
- * the URI the caller configured. A caller who validated the original URI through a
- * {@code de.cuioss.http.security} pipeline has <strong>not</strong> thereby validated the redirect
- * target — the server chooses that target, and it is never passed through a validation pipeline.
- * Treat a redirect-following request to an untrusted origin accordingly: prefer origins you control,
- * and do not rely on the pre-request URL validation as a guarantee about which host was ultimately
- * contacted.
+ * <p>The adapters classify such a response as a non-retryable {@code INVALID_CONTENT} failure: it
+ * carries only a {@code Location} pointer rather than the requested representation, and retrying the
+ * same request would reproduce the same redirect. A caller that wants to act on the redirect must read
+ * {@code Location}, validate the target itself — for example through a
+ * {@code de.cuioss.http.security} pipeline — and issue the follow-up request explicitly.
  *
- * <p>A 3xx status that reaches the caller means the redirect was <em>not</em> followed, for one of
- * three reasons: the status is not a followable redirect code (300, 304&#8211;306 and
- * 309&#8211;399 are never follow-candidates, so no redirect is attempted at all), an
- * HTTPS&#8594;HTTP downgrade was refused, or the redirect chain hit the JDK's maximum. Either way it
- * is classified as {@code INVALID_CONTENT}. A followable status that carries no usable
- * {@code Location} header does <em>not</em> reach the caller — the JDK throws instead.
+ * <p><b>Why:</b> a followed redirect would make the effective request target differ from the URI the
+ * caller configured and validated. Nothing in this package re-validates a server-chosen redirect
+ * destination, so an auto-follow would silently honour a same-scheme redirect to an attacker-chosen
+ * host or port. Leaving the JDK default in place keeps the caller-validated URI the only request
+ * target. Validated redirect following — same-origin by default, with an opt-in host allowlist — is
+ * planned as follow-up work; the current behaviour is a fail-secure baseline, not the intended
+ * permanent end state.
  *
  * <h3>Header Validation (Manual, Before Request)</h3>
  *

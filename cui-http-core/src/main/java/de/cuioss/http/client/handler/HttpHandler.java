@@ -93,21 +93,23 @@ import java.util.regex.Pattern;
  *   <li>SSL context created automatically for HTTPS if not provided</li>
  *   <li>Default timeout: 10 seconds for both connection and read</li>
  *   <li>Schemeless string URLs default to HTTPS</li>
- *   <li>Redirect policy: {@link HttpClient.Redirect#NORMAL} on both the HTTP and the HTTPS client.
- *       Only 301, 302, 303, 307 and 308 are follow-candidates; a redirect to those is followed
- *       <em>except</em> from HTTPS to HTTP — the JDK refuses that downgrade rather than following it.
- *       A 3xx that reaches the caller therefore means the redirect was not followed, for one of three
- *       reasons: the status is not a followable redirect code (300, 304&#8211;306 and 309&#8211;399
- *       are never follow-candidates, so no redirect is attempted at all), an HTTPS&#8594;HTTP
- *       downgrade was refused, or the redirect chain hit the JDK's maximum. A followable status that
- *       carries no usable {@code Location} header does <em>not</em> reach the caller — the JDK throws
- *       instead.</li>
+ *   <li>Redirects are <strong>not followed</strong>: no redirect policy is configured on either the
+ *       HTTP or the HTTPS client, so the JDK default {@link HttpClient.Redirect#NEVER} applies. Every
+ *       3xx response — followable status or not — reaches the caller verbatim, with its
+ *       {@code Location} header intact and no further request issued. Adapters classify such a
+ *       response as a non-retryable {@code INVALID_CONTENT} failure; see
+ *       {@link HttpStatusFamily#toErrorCategory()}. A caller that wants to act on a redirect must
+ *       read the {@code Location} header, validate the target itself, and issue the follow-up
+ *       request explicitly.</li>
  * </ul>
  * <p>
- * <strong>Security note on redirects:</strong> following a redirect means the effective request
- * target may differ from the URI the caller configured and validated. A caller who validated the
- * original URI through a {@code de.cuioss.http.security} pipeline has <em>not</em> thereby validated
- * the redirect target.
+ * <strong>Why redirects are not followed:</strong> a followed redirect would send the request to a
+ * target the caller never validated. This class runs no {@code de.cuioss.http.security} pipeline over
+ * a redirect destination, so a same-scheme redirect to an attacker-chosen host or port would be
+ * honoured silently. Leaving the JDK default in place keeps the caller-validated URI the only request
+ * target. Validated redirect following — same-origin by default, with an opt-in host allowlist — is
+ * planned as follow-up work; the current behaviour is a fail-secure baseline, not the intended
+ * permanent end state.
  *
  * <h3 id="lifecycle">Lifecycle</h3>
  * <p>A handler creates exactly one {@link HttpClient} during construction and shares it across every
@@ -283,10 +285,14 @@ public final class HttpHandler implements AutoCloseable {
         this.verifyHostname = true;
         this.sslContextCallerSupplied = false;
 
-        // Create the HttpClient for HTTP
+        // Create the HttpClient for HTTP.
+        // No redirect policy is configured: the JDK default is Redirect.NEVER, so no 3xx is ever
+        // followed and every redirect response surfaces to the caller. Auto-following would send the
+        // request to a target the caller never validated — this class runs no de.cuioss.http.security
+        // pipeline over a redirect destination. Validated redirect following (same-origin by default,
+        // with an opt-in host allowlist) is planned as follow-up work.
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(connectionTimeoutSeconds))
-                .followRedirects(HttpClient.Redirect.NORMAL)
                 .build();
     }
 
@@ -314,9 +320,10 @@ public final class HttpHandler implements AutoCloseable {
         // floor on the wire, not merely the context's default protocol object.
         SSLParameters sslParameters = new SSLParameters();
         sslParameters.setProtocols(secureSSLContextProvider.getEnabledProtocols());
+        // No redirect policy is configured here either — see the HTTP constructor above for why the
+        // JDK default (Redirect.NEVER) is deliberately left in place.
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(connectionTimeoutSeconds))
-                .followRedirects(HttpClient.Redirect.NORMAL)
                 .sslContext(sslContext)
                 .sslParameters(sslParameters)
                 .build();
