@@ -37,12 +37,30 @@ import java.util.List;
  * JavaScript escapes, or Base64).</p>
  *
  * <h3>CRS Rule Categories Covered</h3>
+ * <p>Every entry below is driven through {@code URLPathValidationPipeline}, so this list names
+ * only categories that an entry in {@link #getAttackTestCases()} actually exercises at the URL-path
+ * layer:</p>
  * <ul>
- *   <li><strong>Protocol Violations</strong>: HTTP protocol anomalies and violations</li>
- *   <li><strong>Path Traversal</strong>: Directory traversal and file access attempts</li>
- *   <li><strong>Request Anomalies</strong>: Malformed requests and encoding attacks</li>
- *   <li><strong>Session Fixation</strong>: Session manipulation attempts</li>
+ *   <li><strong>Path Traversal</strong>: parent-reference traversal in its plain, percent-encoded,
+ *       double-encoded, overlong-UTF-8 and mixed dot-segment spellings</li>
+ *   <li><strong>Null Byte Injection</strong>: encoded {@code %00} used to truncate a path and
+ *       bypass extension or prefix checks</li>
+ *   <li><strong>Excessive Encoding Layers</strong>: multiply-encoded input used to evade
+ *       single-decoding filters</li>
+ *   <li><strong>Encoded Control Characters</strong>: percent-encoded CR/LF smuggled into a path
+ *       segment, rejected as control characters once decoded. The entry verifies that rejection
+ *       at the path layer only - it does not exercise response splitting, which needs a header
+ *       or {@code Set-Cookie} sink this pipeline never reaches</li>
+ *   <li><strong>Invalid Path Characters</strong>: characters that RFC 3986 does not permit in a
+ *       URL path, such as the backslash</li>
  * </ul>
+ *
+ * <p><strong>Deliberately absent.</strong> CRS categories that have no URL-path expression are not
+ * represented here, because this database is only ever driven through the URL-path pipeline:
+ * request smuggling and chunked-transfer framing are message-framing attacks; header injection and
+ * response splitting are owned by the header pipeline, which is the only place a CR/LF can reach a
+ * response-header sink; and session fixation is a cookie/session-management concern. No entry
+ * claims them.</p>
  *
  * @since 1.0
  */
@@ -102,10 +120,10 @@ public class ModSecurityCRSAttackDatabase implements AttackDatabase {
     );
 
     public static final AttackTestCase CRS_920100_CRLF_INJECTION = new AttackTestCase(
-            "/page%00attack",
-            UrlSecurityFailureType.NULL_BYTE_INJECTION,
-            "ModSecurity CRS 920100: Null byte injection attack. This rule prevents null byte attacks that can terminate string processing.",
-            "NULL_BYTE_INJECTION is expected because %00 represents null byte injection attempts."
+            "/page%0d%0aSet-Cookie:evil=1",
+            UrlSecurityFailureType.CONTROL_CHARACTERS,
+            "ModSecurity CRS 920100: CRLF injection in the request line. The encoded CR/LF pair smuggles a Set-Cookie header into the response, the classic HTTP response-splitting vector.",
+            "CONTROL_CHARACTERS is expected because %0d%0a survives the wire-form character check as valid percent-encoding and only reveals the carriage return once DecodingStage decodes it, where control characters are forbidden for URL paths."
     );
 
     // CRS Rule 920170: Multiple URL Encoding
@@ -124,12 +142,12 @@ public class ModSecurityCRSAttackDatabase implements AttackDatabase {
             "PATH_TRAVERSAL_DETECTED is expected because overlong UTF-8 sequences (%c0%ae) decode to traversal patterns."
     );
 
-    // CRS Rule 920240: Request Containing Content but Missing Content-Type
-    public static final AttackTestCase CRS_920240_SMUGGLING_PREFIX = new AttackTestCase(
+    // CRS Rule 920240: Null byte truncating an administrative path
+    public static final AttackTestCase CRS_920240_ADMIN_PATH_NULL_BYTE = new AttackTestCase(
             "/admin%00HTTP",
             UrlSecurityFailureType.NULL_BYTE_INJECTION,
-            "ModSecurity CRS 920240: HTTP request smuggling via null byte. This rule detects null bytes that could lead to request smuggling vulnerabilities.",
-            "NULL_BYTE_INJECTION is expected because null bytes can be used in request smuggling attempts."
+            "ModSecurity CRS 920240: Encoded null byte appended to an administrative path. The trailing text after the null byte is intended to be discarded by a C-style consumer so that only '/admin' survives.",
+            "NULL_BYTE_INJECTION is expected because CharacterValidationStage rejects the encoded %00 spelling in the wire form before any decoding occurs."
     );
 
     // CRS Rule 920440: URL File Extension Bypass
@@ -140,28 +158,28 @@ public class ModSecurityCRSAttackDatabase implements AttackDatabase {
             "NULL_BYTE_INJECTION is expected because null bytes truncate strings to bypass extension checks."
     );
 
-    // CRS Rule 921110: HTTP Request Smuggling Attack
-    public static final AttackTestCase CRS_921110_CHUNKED_SMUGGLING = new AttackTestCase(
+    // CRS Rule 921110: Traversal escaping an API endpoint prefix
+    public static final AttackTestCase CRS_921110_API_PATH_TRAVERSAL = new AttackTestCase(
             "/api/../../../etc/passwd",
             UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
-            "ModSecurity CRS 921110: Path traversal in API endpoint. This pattern is commonly used in request smuggling attacks to access unauthorized resources.",
-            "PATH_TRAVERSAL_DETECTED is expected because the path contains directory traversal sequences."
+            "ModSecurity CRS 921110: Directory traversal escaping an API endpoint prefix. A legitimate-looking '/api' prefix is followed by parent references that climb out of the API namespace.",
+            "PATH_TRAVERSAL_DETECTED is expected because the path contains literal '../' sequences that PatternMatchingStage matches on the raw wire form."
     );
 
-    // CRS Rule 921150: HTTP Header Injection
-    public static final AttackTestCase CRS_921150_HEADER_INJECTION = new AttackTestCase(
+    // CRS Rule 921150: Null byte truncating a redirect target
+    public static final AttackTestCase CRS_921150_REDIRECT_NULL_BYTE = new AttackTestCase(
             "/redirect%00malicious",
             UrlSecurityFailureType.NULL_BYTE_INJECTION,
-            "ModSecurity CRS 921150: Injection via null byte. This rule prevents injection attacks through null byte manipulation.",
-            "NULL_BYTE_INJECTION is expected because null bytes enable various injection attacks."
+            "ModSecurity CRS 921150: Encoded null byte in a redirect path. The null byte is intended to truncate the redirect target so a consumer sees only '/redirect'.",
+            "NULL_BYTE_INJECTION is expected because CharacterValidationStage rejects the encoded %00 spelling in the wire form before any decoding occurs."
     );
 
-    // CRS Rule 931100: Possible Remote File Inclusion Attack
-    public static final AttackTestCase CRS_931100_PROTOCOL_HANDLER = new AttackTestCase(
+    // CRS Rule 931100: Traversal reaching a path segment literally named "file"
+    public static final AttackTestCase CRS_931100_TRAVERSAL_TO_FILE_SEGMENT = new AttackTestCase(
             "/../../../file/etc/passwd",
             UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
-            "ModSecurity CRS 931100: File access via path traversal. CRS blocks attempts to access local files through directory traversal.",
-            "PATH_TRAVERSAL_DETECTED is expected because this uses traversal patterns to access files."
+            "ModSecurity CRS 931100: Directory traversal reaching a path segment literally named 'file'. This is ordinary parent-reference traversal, not a protocol-handler (file://) inclusion attempt.",
+            "PATH_TRAVERSAL_DETECTED is expected because the leading '../' sequences are matched on the raw wire form; the 'file' segment here is an ordinary path segment and contributes nothing to the verdict."
     );
 
     // CRS Rule 931110: PHP Wrapper Attack
@@ -180,12 +198,13 @@ public class ModSecurityCRSAttackDatabase implements AttackDatabase {
             "PATH_TRAVERSAL_DETECTED is expected because this uses traversal patterns to access network paths."
     );
 
-    // CRS Rule 932100: Unix Command Injection (Path Context Only)
+    // CRS Rule 932100 payload, kept for its path-traversal expression only: traversal disguised
+    // behind a path parameter. The command-injection half of that rule has no URL-path expression.
     public static final AttackTestCase CRS_932100_PATH_SEMICOLON = new AttackTestCase(
-            "/../cgi-bin/../../etc/passwd",
+            "/admin;jsessionid=abc123/../../../etc/passwd",
             UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
-            "ModSecurity CRS 932100: CGI directory escape via traversal. This rule detects attempts to escape CGI directories.",
-            "PATH_TRAVERSAL_DETECTED is expected because this uses traversal to escape from CGI directories."
+            "ModSecurity CRS 932100: Traversal hidden behind a path parameter. The ';jsessionid=abc123' path parameter is a legitimate RFC 3986 path segment suffix, used here to disguise the traversal that follows it.",
+            "PATH_TRAVERSAL_DETECTED is expected because the semicolon path parameter is an allowed path character that does not mask the '../' sequences, which PatternMatchingStage matches on the raw wire form."
     );
 
     // CRS Rule 933100: Path Normalization Attack
@@ -196,7 +215,8 @@ public class ModSecurityCRSAttackDatabase implements AttackDatabase {
             "PATH_TRAVERSAL_DETECTED is expected because mixed dot segments with traversal indicate path manipulation."
     );
 
-    // CRS Rule 941100: Session Fixation
+    // CRS Rule 941100 payload, kept for its path-traversal expression only: traversal aimed at a
+    // session-file path. The session-fixation half of that rule has no URL-path expression.
     public static final AttackTestCase CRS_941100_DOTDOT_COOKIE = new AttackTestCase(
             "/../../../tmp/sess_123",
             UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
@@ -215,11 +235,11 @@ public class ModSecurityCRSAttackDatabase implements AttackDatabase {
             CRS_920100_CRLF_INJECTION,
             CRS_920170_TRIPLE_ENCODING,
             CRS_920180_OVERLONG_UTF8,
-            CRS_920240_SMUGGLING_PREFIX,
+            CRS_920240_ADMIN_PATH_NULL_BYTE,
             CRS_920440_DOUBLE_EXTENSION,
-            CRS_921110_CHUNKED_SMUGGLING,
-            CRS_921150_HEADER_INJECTION,
-            CRS_931100_PROTOCOL_HANDLER,
+            CRS_921110_API_PATH_TRAVERSAL,
+            CRS_921150_REDIRECT_NULL_BYTE,
+            CRS_931100_TRAVERSAL_TO_FILE_SEGMENT,
             CRS_931110_PHP_WRAPPER,
             CRS_931120_UNC_PATH,
             CRS_932100_PATH_SEMICOLON,
@@ -239,7 +259,7 @@ public class ModSecurityCRSAttackDatabase implements AttackDatabase {
 
     @Override
     public String getDescription() {
-        return "Comprehensive database of ModSecurity CRS patterns focusing on HTTP protocol layer attacks including path traversal, protocol violations, and request anomalies";
+        return "Database of ModSecurity CRS patterns expressible at the URL-path layer: path traversal, null byte injection, excessive encoding layers, CRLF injection, and invalid path characters";
     }
 
     /**

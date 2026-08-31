@@ -300,13 +300,17 @@ public class UnicodeNormalizationAttackGenerator implements TypedGenerator<Strin
         for (char c : pattern.toCharArray()) {
             switch (c) {
                 case '.' ->
-                    // Use a character that might be interpreted as dot after normalization
+                    // U+2024 ONE DOT LEADER NFKC-folds to '.', so this substitution is a genuine
+                    // normalization attack: a normalizing validator resolves it to a real dot.
                     result.append('\u2024'); // One dot leader
                 case '/' ->
-                    // Use fraction slash which might normalize to regular slash
+                    // U+2044 FRACTION SLASH normalizes to itself under every form - it never
+                    // folds to '/'. This substitution exercises VISUAL CONFUSABILITY only, not
+                    // normalization; a normalizing validator will not resolve it to a separator.
                     result.append('\u2044'); // Fraction slash
                 case '\\' ->
-                    // Use set minus which might be confused with backslash
+                    // U+2216 SET MINUS is likewise NFKC-invariant. Confusability with '\' only,
+                    // no normalization is involved.
                     result.append('\u2216'); // Set minus
                 default -> result.append(c);
             }
@@ -315,7 +319,8 @@ public class UnicodeNormalizationAttackGenerator implements TypedGenerator<Strin
         // Ensure we always create an attack by adding overlong-style characters if no substitutions
         String resultStr = result.toString();
         if (resultStr.equals(pattern)) {
-            result.append('\u2024').append('\u2044'); // Add dot leader and fraction slash
+            // Dot leader (folds to '.') plus fraction slash (confusable only, does not fold).
+            result.append('\u2024').append('\u2044');
         }
         return result.toString();
     }

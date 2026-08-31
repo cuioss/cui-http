@@ -49,6 +49,28 @@ import java.util.List;
  *   <li><strong>CWE-178</strong> - Case sensitivity bypass through character substitution</li>
  * </ul>
  *
+ * <h3>What the declared failure type means here</h3>
+ *
+ * <p><strong>Every entry in this database declares {@code INVALID_CHARACTER}, and that is the
+ * pipeline's real first verdict - not a claim that a homograph was recognised as such.</strong> RFC
+ * 3986 restricts URL paths to ASCII, so {@code CharacterValidationStage} rejects each payload on its
+ * first non-ASCII code point, before any script analysis, confusable mapping or mixed-script
+ * detection is reached. The pipeline never determines that the character is a <em>homograph</em>; it
+ * determines only that it is not ASCII.</p>
+ *
+ * <p>The per-script categories above therefore describe the <em>payload's</em> composition, not a
+ * detection the pipeline performed. That claim is what
+ * {@code HomographAttackDatabaseTest.shouldCarryTheScriptItsNameClaims} verifies: it asserts each
+ * payload really contains a code point in the script its constant name advertises. Do not read a
+ * passing pipeline-verdict test as evidence that homograph detection exists.</p>
+ *
+ * <p><strong>A note on the category names above.</strong> "Mathematical Script" and "Fullwidth
+ * Characters" name Unicode <em>blocks</em>, not scripts: the mathematical-bold and fullwidth Latin
+ * letters are {@code Character.UnicodeScript.LATIN} code points that merely live in compatibility
+ * blocks. Only the Cyrillic, Greek, Armenian and Georgian families are non-Latin by script. The
+ * claim test reflects that split - it verifies the first two families by code-point block and the
+ * rest by script.</p>
+ *
  * @since 1.0
  */
 public class HomographAttackDatabase implements AttackDatabase {

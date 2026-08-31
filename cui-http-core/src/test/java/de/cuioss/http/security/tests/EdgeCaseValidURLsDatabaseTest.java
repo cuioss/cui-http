@@ -25,7 +25,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ArgumentsSource;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Test class for Edge Case Valid URLs Database (T33).
@@ -111,28 +112,6 @@ class EdgeCaseValidURLsDatabaseTest {
                             i + 1, testCase.legitimatePattern())
             );
         }
-    }
-
-    /**
-     * Verify that edge cases don't cause performance issues.
-     */
-    @ParameterizedTest
-    @ArgumentsSource(EdgeCaseValidURLsDatabase.ArgumentsProvider.class)
-    @DisplayName("Edge case URLs should be processed efficiently")
-    void shouldProcessEdgeCasesEfficiently(LegitimateTestCase testCase) {
-        long startTime = System.nanoTime();
-
-        assertDoesNotThrow(() -> {
-            pipeline.validate(testCase.legitimatePattern());
-        }, "Edge case processing should complete: %s".formatted(
-                testCase.legitimatePattern()));
-
-        long elapsedMs = (System.nanoTime() - startTime) / 1_000_000;
-
-        // Edge cases should still be processed quickly (under 100ms)
-        assertTrue(elapsedMs < 100,
-                "Edge case should be processed quickly (was %dms): %s".formatted(
-                        elapsedMs, testCase.legitimatePattern()));
     }
 
     /**

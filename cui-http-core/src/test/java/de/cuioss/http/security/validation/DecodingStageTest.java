@@ -265,12 +265,12 @@ class DecodingStageTest {
 
         // With normalization disabled the compatibility character passes through unchanged
         String compatibility = "ＡBC"; // fullwidth A + BC
-        assertDoesNotThrow(() -> {
-            Optional<String> result = noUnicodeDecoder.validate(compatibility);
-            assertTrue(result.isPresent());
-            assertEquals(compatibility, result.get());
-            return result.get();
-        });
+
+        Optional<String> result = noUnicodeDecoder.validate(compatibility);
+
+        assertTrue(result.isPresent());
+        assertEquals(compatibility, result.get(),
+                "With normalizeUnicode disabled the fullwidth letter must not fold to ASCII");
     }
 
     @Test

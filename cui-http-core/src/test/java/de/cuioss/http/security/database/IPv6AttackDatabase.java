@@ -49,6 +49,22 @@ import java.util.List;
  *   <li><strong>CWE-182</strong> - Collapse of Data into Unsafe Value</li>
  * </ul>
  *
+ * <h3>What the declared failure type means here</h3>
+ *
+ * <p><strong>Every entry in this database declares {@code INVALID_CHARACTER}, and that is the
+ * pipeline's real first verdict - not a claim that the IPv6 mechanism was detected.</strong> The
+ * bracket characters {@code [} and {@code ]} are not members of the RFC 3986 path character set, so
+ * {@code CharacterValidationStage} rejects every one of these payloads before any IPv6 address
+ * parsing, zone-identifier handling, or compression analysis is reached. The pipeline never forms an
+ * opinion about the IPv6 semantics at all.</p>
+ *
+ * <p>The category names above therefore describe the <em>payload's</em> structure, not a detection
+ * the pipeline performed. That structural claim is what
+ * {@code IPv6AttackDatabaseTest.shouldCarryTheStructuralFeatureItsNameClaims} verifies: it asserts
+ * each payload really carries the IPv4-embedding prefix, zone identifier, compression sequence,
+ * bracket or port suffix its constant name advertises. Do not read a passing pipeline-verdict test
+ * as evidence that IPv6 parsing was exercised.</p>
+ *
  * @since 1.0
  */
 public class IPv6AttackDatabase implements AttackDatabase {
