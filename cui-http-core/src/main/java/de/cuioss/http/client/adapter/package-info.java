@@ -246,9 +246,10 @@
  * <h3>Redirect Behavior (Validated URI Is Not the Validated Target)</h3>
  *
  * <p>{@link de.cuioss.http.client.handler.HttpHandler HttpHandler} configures both its HTTP and its
- * HTTPS client with {@code HttpClient.Redirect.NORMAL}, so redirects <strong>are</strong> followed.
- * The one exception is a redirect from HTTPS to HTTP: the JDK refuses that downgrade rather than
- * following it, so a downgrade attempt still surfaces to the caller as a 3xx response.
+ * HTTPS client with {@code HttpClient.Redirect.NORMAL}, so redirects <strong>are</strong> followed —
+ * but only for the follow-candidate statuses 301, 302, 303, 307 and 308. The one exception among
+ * those is a redirect from HTTPS to HTTP: the JDK refuses that downgrade rather than following it, so
+ * a downgrade attempt still surfaces to the caller as a 3xx response.
  *
  * <p><b>IMPORTANT:</b> because redirects are followed, the effective request target may differ from
  * the URI the caller configured. A caller who validated the original URI through a
@@ -258,9 +259,12 @@
  * and do not rely on the pre-request URL validation as a guarantee about which host was ultimately
  * contacted.
  *
- * <p>A 3xx status that reaches the caller means the redirect was <em>not</em> followed — an
- * HTTPS&#8594;HTTP downgrade, an exhausted redirect chain, or a 3xx with no usable {@code Location}
- * header — and is classified as {@code INVALID_CONTENT}.
+ * <p>A 3xx status that reaches the caller means the redirect was <em>not</em> followed, for one of
+ * three reasons: the status is not a followable redirect code (300, 304&#8211;306 and
+ * 309&#8211;399 are never follow-candidates, so no redirect is attempted at all), an
+ * HTTPS&#8594;HTTP downgrade was refused, or the redirect chain hit the JDK's maximum. Either way it
+ * is classified as {@code INVALID_CONTENT}. A followable status that carries no usable
+ * {@code Location} header does <em>not</em> reach the caller — the JDK throws instead.
  *
  * <h3>Header Validation (Manual, Before Request)</h3>
  *

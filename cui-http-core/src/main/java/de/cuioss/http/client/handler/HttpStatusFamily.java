@@ -231,12 +231,15 @@ public enum HttpStatusFamily {
      *
      * <h3>Note on 3xx Redirects</h3>
      * Redirects are followed because {@code HttpHandler} configures its clients with
-     * {@code HttpClient.Redirect.NORMAL}. A 3xx status that nonetheless reaches error handling
-     * therefore means the redirect was <em>not</em> followed. Under {@code NORMAL} that happens
-     * in three cases: an HTTPS&#8594;HTTP downgrade, which the JDK refuses to follow; an exhausted
-     * redirect chain; or a 3xx carrying no usable {@code Location} header. None of these yields a
-     * usable response body, which is why the classification is
-     * {@link HttpErrorCategory#INVALID_CONTENT}.
+     * {@code HttpClient.Redirect.NORMAL}, but only the statuses 301, 302, 303, 307 and 308 are ever
+     * follow-candidates. A 3xx status that nonetheless reaches error handling therefore means the
+     * redirect was <em>not</em> followed. Under {@code NORMAL} that happens in three cases: the
+     * status is not a followable redirect code — 300, 304&#8211;306 and 309&#8211;399 are returned
+     * to the caller without any redirect being attempted; an HTTPS&#8594;HTTP downgrade, which the
+     * JDK refuses to follow; or an exhausted redirect chain. None of these yields a usable response
+     * body, which is why the classification is {@link HttpErrorCategory#INVALID_CONTENT}. A
+     * followable status carrying no usable {@code Location} header never reaches this classification
+     * at all — the JDK throws rather than returning the response.
      *
      * @return the corresponding HttpErrorCategory for this status family
      * @throws IllegalStateException if called on SUCCESS family (which is not an error)
@@ -248,7 +251,8 @@ public enum HttpStatusFamily {
             case CLIENT_ERROR -> HttpErrorCategory.CLIENT_ERROR;
             case SERVER_ERROR -> HttpErrorCategory.SERVER_ERROR;
             case SUCCESS -> throw new IllegalStateException("SUCCESS is not an error");
-            // Redirect.NORMAL already followed what it could; a 3xx here was refused or unusable
+            // Redirect.NORMAL already followed what it could; a 3xx here is either not a
+            // follow-candidate code at all (300, 304-306, 309-399) or was refused / chain-exhausted
             case REDIRECTION -> HttpErrorCategory.INVALID_CONTENT;
             case INFORMATIONAL, UNKNOWN -> HttpErrorCategory.INVALID_CONTENT;
         };

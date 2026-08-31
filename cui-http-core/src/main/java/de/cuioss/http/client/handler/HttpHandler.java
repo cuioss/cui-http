@@ -94,11 +94,14 @@ import java.util.regex.Pattern;
  *   <li>Default timeout: 10 seconds for both connection and read</li>
  *   <li>Schemeless string URLs default to HTTPS</li>
  *   <li>Redirect policy: {@link HttpClient.Redirect#NORMAL} on both the HTTP and the HTTPS client.
- *       Redirects are followed, <em>except</em> a redirect from HTTPS to HTTP — the JDK refuses that
- *       downgrade rather than following it, so a downgrade attempt still surfaces to the caller as a
- *       3xx response. A 3xx that reaches the caller therefore means the redirect was not followed:
- *       an HTTPS&#8594;HTTP downgrade, an exhausted redirect chain, or a 3xx with no usable
- *       {@code Location} header.</li>
+ *       Only 301, 302, 303, 307 and 308 are follow-candidates; a redirect to those is followed
+ *       <em>except</em> from HTTPS to HTTP — the JDK refuses that downgrade rather than following it.
+ *       A 3xx that reaches the caller therefore means the redirect was not followed, for one of three
+ *       reasons: the status is not a followable redirect code (300, 304&#8211;306 and 309&#8211;399
+ *       are never follow-candidates, so no redirect is attempted at all), an HTTPS&#8594;HTTP
+ *       downgrade was refused, or the redirect chain hit the JDK's maximum. A followable status that
+ *       carries no usable {@code Location} header does <em>not</em> reach the caller — the JDK throws
+ *       instead.</li>
  * </ul>
  * <p>
  * <strong>Security note on redirects:</strong> following a redirect means the effective request
