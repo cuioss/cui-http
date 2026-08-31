@@ -21,6 +21,7 @@ import de.cuioss.http.client.converter.HttpResponseConverter;
 import de.cuioss.http.client.handler.HttpHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
 import java.net.URI;
 import java.net.http.HttpRequest;
@@ -758,6 +759,116 @@ class ETagAwareHttpAdapterTest {
 
         assertNotEquals(key1, key2,
                 "Cache keys must differ when header value injects forged key-value pairs");
+    }
+
+    // === Request-Converter Guard Tests ===
+
+    /**
+     * First half of the {@code send(...)} guard: a non-null body with no configured request
+     * converter is rejected with {@link IllegalStateException} rather than silently sending an empty
+     * body. Asserted for every body-carrying method, since all of them funnel through that one
+     * guard.
+     */
+    @Test
+    void bodyWithoutRequestConverterShouldThrow() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .build();
+
+        assertAll("A body with no configured request converter is rejected",
+                () -> assertGuardRejects(() -> adapter.post("body"), "POST"),
+                () -> assertGuardRejects(() -> adapter.put("body"), "PUT"),
+                () -> assertGuardRejects(() -> adapter.patch("body"), "PATCH"),
+                () -> assertGuardRejects(() -> adapter.delete("body"), "DELETE"));
+    }
+
+    /**
+     * Second half of the same guard: once the guard has passed, the configured converter is the one
+     * the request is built from — it serializes the body <em>and</em> supplies the Content-Type. The
+     * Content-Type is resolved from the converter the guard bound, not from a second null test the
+     * guard already made always true.
+     */
+    @Test
+    void bodyWithRequestConverterShouldReachConverter() {
+        var requestConverter = new RecordingRequestConverter();
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .requestConverter(requestConverter)
+                .build();
+
+        adapter.post("payload");
+
+        assertAll("A body with a configured converter reaches that converter",
+                () -> assertEquals("payload", requestConverter.lastBody(),
+                        "The body should be handed to the converter for serialization"),
+                () -> assertEquals(1, requestConverter.contentTypeCalls(),
+                        "The request Content-Type should be resolved from the converter"));
+    }
+
+    /**
+     * Negative control for the test above: with no body there is nothing to serialize, so the
+     * converter is never consulted and no Content-Type is derived from it. Without this control the
+     * assertion above would also pass against an adapter that resolved the content type
+     * unconditionally.
+     */
+    @Test
+    void nullBodyShouldNotResolveContentTypeFromRequestConverter() {
+        var requestConverter = new RecordingRequestConverter();
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .requestConverter(requestConverter)
+                .build();
+
+        adapter.post((String) null);
+
+        assertAll("A null body never reaches the converter",
+                () -> assertNull(requestConverter.lastBody(),
+                        "A null body should not be handed to the converter"),
+                () -> assertEquals(0, requestConverter.contentTypeCalls(),
+                        "No Content-Type should be resolved when there is no body"));
+    }
+
+    private static void assertGuardRejects(Executable call, String methodName) {
+        var thrown = assertThrows(IllegalStateException.class, call,
+                methodName + " with a body but no request converter must be rejected");
+        assertTrue(thrown.getMessage().contains(methodName),
+                "The failure should name the rejected method, but was: " + thrown.getMessage());
+    }
+
+    /**
+     * Records what the adapter asked of the request converter: the body handed over for
+     * serialization, and how often the content type was resolved.
+     */
+    private static final class RecordingRequestConverter implements HttpRequestConverter<String> {
+
+        private final AtomicInteger contentTypeCalls = new AtomicInteger();
+        private String lastBody;
+
+        @Override
+        public HttpRequest.BodyPublisher toBodyPublisher(String content) {
+            lastBody = content;
+            if (content == null) {
+                return HttpRequest.BodyPublishers.noBody();
+            }
+            return HttpRequest.BodyPublishers.ofString(content);
+        }
+
+        @Override
+        public ContentType contentType() {
+            contentTypeCalls.incrementAndGet();
+            return ContentType.TEXT_PLAIN;
+        }
+
+        int contentTypeCalls() {
+            return contentTypeCalls.get();
+        }
+
+        String lastBody() {
+            return lastBody;
+        }
     }
 
     /**

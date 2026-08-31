@@ -557,11 +557,17 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
         // Enforce the documented contract: a request body requires a configured request converter.
         // Thrown (not returned as a failure) so callers see the promised IllegalStateException rather
-        // than an empty body being sent silently.
-        if (body != null && requestConverter == null) {
-            throw new IllegalStateException(
-                    "No request converter configured: cannot send a %s request body. Configure a requestConverter on the adapter, or use the explicit-converter method overload."
-                            .formatted(method.methodName()));
+        // than an empty body being sent silently. The converter is bound to a local inside this
+        // branch so its non-null-ness is established exactly once: the Content-Type resolution below
+        // reads that local instead of re-testing a condition this guard already made always true.
+        HttpRequestConverter<T> bodyConverter = null;
+        if (body != null) {
+            if (requestConverter == null) {
+                throw new IllegalStateException(
+                        "No request converter configured: cannot send a %s request body. Configure a requestConverter on the adapter, or use the explicit-converter method overload."
+                                .formatted(method.methodName()));
+            }
+            bodyConverter = requestConverter;
         }
 
         // Serialize the body via the adapter's converter. Serialization failures map to
@@ -573,9 +579,9 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             return serializationFailure(method, e);
         }
 
-        // Content-Type only applies when a body is serialized via the request converter.
-        ContentType requestContentType = body != null && requestConverter != null
-                ? requestConverter.contentType() : null;
+        // Content-Type only applies when a body is serialized via the request converter, which is
+        // exactly when bodyConverter was bound above.
+        ContentType requestContentType = bodyConverter != null ? bodyConverter.contentType() : null;
         return buildAndExecute(method, bodyPublisher, requestContentType, headers, cacheContext);
     }
 
