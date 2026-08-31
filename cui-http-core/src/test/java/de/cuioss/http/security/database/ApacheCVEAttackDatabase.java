@@ -51,6 +51,21 @@ import java.util.List;
  *       <a href="https://nvd.nist.gov/vuln/detail/CVE-2018-1336">CVE-2018-1336</a></li>
  * </ul>
  *
+ * <h3>What the declared failure type means for the {@code INVALID_CHARACTER} entries</h3>
+ *
+ * <p><strong>6 of the 15 entries here declare {@code INVALID_CHARACTER}. For those entries the
+ * declared type is the pipeline's real first verdict, not a claim that the CVE-specific mechanism
+ * was detected.</strong> Their payloads contain a character outside the RFC 3986 path character set
+ * - a backslash, a null byte, a space, or a similar non-member - so
+ * {@code CharacterValidationStage} rejects them on that character before the encoding, traversal or
+ * protocol behaviour the CVE actually describes is ever reached.</p>
+ *
+ * <p>The distinction matters when reading a green test run: a passing verdict for one of those
+ * entries shows the payload was rejected, and nothing more specific. It is NOT evidence that this
+ * library detects, or is even reached by, the named CVE's exploitation mechanism. The remaining
+ * entries - those declaring {@code PATH_TRAVERSAL_DETECTED}, {@code DOUBLE_ENCODING} and the like -
+ * do reach and exercise the stage their failure type names.</p>
+ *
  * @since 1.0
  */
 public class ApacheCVEAttackDatabase implements AttackDatabase {

@@ -24,7 +24,13 @@ import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.ArgumentsSource;
+import org.junit.jupiter.params.provider.MethodSource;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -39,13 +45,24 @@ import static org.junit.jupiter.api.Assertions.*;
  * dual-stack configurations, and abuse IPv6 address parsing inconsistencies across
  * different systems and libraries.</p>
  *
- * <h3>Attack Categories Tested</h3>
+ * <h3>What each test in this class actually verifies</h3>
+ *
+ * <p>The two tests here verify different things, and the distinction matters because every entry in
+ * the database declares {@code INVALID_CHARACTER}:</p>
+ *
  * <ul>
- *   <li><strong>IPv4-Mapped Bypass</strong> - Using IPv4-mapped addresses to bypass filters</li>
- *   <li><strong>Scope Injection</strong> - Zone ID and scope identifier abuse</li>
- *   <li><strong>Address Compression</strong> - Zero compression parsing exploits</li>
- *   <li><strong>Embedded IPv4</strong> - Mixed IPv4/IPv6 notation abuse</li>
- *   <li><strong>Malformed Addresses</strong> - Invalid but parseable IPv6 formats</li>
+ *   <li><strong>{@link #shouldRejectIPv6AttacksWithCorrectFailureTypes}</strong> verifies only that
+ *       the pipeline rejects the payload with the declared failure type. Because the bracket
+ *       characters {@code [} and {@code ]} are not members of the RFC 3986 path character set, every
+ *       entry is rejected by character validation <em>before</em> any IPv6 address parsing happens.
+ *       This test therefore does NOT distinguish an IPv4-mapped bypass from a zone-ID injection from
+ *       a compression abuse - the pipeline reaches the same verdict by the same route for all of
+ *       them.</li>
+ *   <li><strong>{@link #shouldCarryTheStructuralFeatureItsNameClaims}</strong> supplies that missing
+ *       distinction structurally, by asserting that each entry's payload actually contains the
+ *       feature its constant name advertises: an IPv4-embedding prefix, a zone-identifier
+ *       {@code %}, a {@code ::} compression sequence, a bracket, or a port suffix. It is a claim
+ *       test over the database's own naming, not a pipeline-behaviour test.</li>
  * </ul>
  *
  * @author Claude Code Generator
@@ -97,5 +114,68 @@ class IPv6AttackDatabaseTest {
         // And: Security event should be recorded
         assertTrue(eventCounter.getTotalCount() > initialEventCount,
                 "Security event should be recorded for IPv6 attack: %s".formatted(testCase.getCompactSummary()));
+    }
+
+    /**
+     * Every declared {@code AttackTestCase} constant on the database, as (name, payload) pairs.
+     * Reflection is used deliberately: the constant NAME is the claim under test here, and the
+     * {@code AttackTestCase} record does not carry it.
+     */
+    static Stream<Arguments> declaredEntries() {
+        return Stream.of(IPv6AttackDatabase.class.getDeclaredFields())
+                .filter(field -> Modifier.isPublic(field.getModifiers()))
+                .filter(field -> Modifier.isStatic(field.getModifiers()))
+                .filter(field -> field.getType() == AttackTestCase.class)
+                .map(IPv6AttackDatabaseTest::toNameAndPayload);
+    }
+
+    private static Arguments toNameAndPayload(Field field) {
+        try {
+            return Arguments.of(field.getName(), ((AttackTestCase) field.get(null)).attackString());
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException("Cannot read " + field.getName(), e);
+        }
+    }
+
+    /**
+     * Asserts that each entry's payload carries the structural IPv6 feature its constant name
+     * claims. This is what makes the names verifiable: the pipeline verdict cannot distinguish these
+     * categories, because every payload is rejected at character validation for its brackets before
+     * any IPv6 parsing occurs.
+     *
+     * <p>An entry whose payload is edited to drop the feature its name advertises fails here.</p>
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("declaredEntries")
+    @DisplayName("Each entry's payload carries the structural feature its name claims")
+    void shouldCarryTheStructuralFeatureItsNameClaims(String name, String payload) {
+        if (name.startsWith("IPV4_MAPPED")) {
+            // RFC 4291 maps IPv4 as ::ffff:a.b.c.d; RFC 6052 embeds it after the well-known
+            // prefix 64:ff9b::. Both are IPv4-embedding forms, so either satisfies the claim.
+            assertTrue(payload.contains("::ffff:") || payload.contains("64:ff9b::"),
+                    "%s claims an IPv4-mapped address but its payload carries neither the RFC 4291 "
+                            + "'::ffff:' prefix nor the RFC 6052 '64:ff9b::' prefix: %s"
+                            .formatted(name, payload));
+        }
+        if (name.startsWith("ZONE_")) {
+            assertTrue(payload.contains("%"),
+                    "%s claims a zone identifier but its payload carries no '%%' scope separator: %s"
+                            .formatted(name, payload));
+        }
+        if (name.contains("COMPRESSION")) {
+            assertTrue(payload.contains("::"),
+                    "%s claims IPv6 zero compression but its payload carries no '::' sequence: %s"
+                            .formatted(name, payload));
+        }
+        if (name.startsWith("BRACKET")) {
+            assertTrue(payload.contains("[") || payload.contains("]"),
+                    "%s claims a bracket manipulation but its payload carries no bracket: %s"
+                            .formatted(name, payload));
+        }
+        if (name.contains("PORT")) {
+            assertTrue(payload.contains("]:"),
+                    "%s claims a port specification but its payload carries no ']:' port suffix: %s"
+                            .formatted(name, payload));
+        }
     }
 }

@@ -39,6 +39,22 @@ import java.util.List;
  *   <li><strong>Module Attacks</strong>: FastCGI, proxy_pass, SSL/TLS, authentication modules</li>
  * </ul>
  *
+ * <h3>What the declared failure type means for the {@code INVALID_CHARACTER} entries</h3>
+ *
+ * <p><strong>10 of the 22 entries here declare {@code INVALID_CHARACTER}. For those entries the
+ * declared type is the pipeline's real first verdict, not a claim that the CVE-specific mechanism
+ * was detected.</strong> Their payloads contain a character outside the RFC 3986 path character set
+ * - most often the embedded space that is itself the CVE-2013-4547 parser-confusion trigger, or a
+ * backslash or null byte - so {@code CharacterValidationStage} rejects them on that character before
+ * the traversal, header-injection or request-framing behaviour the CVE describes is ever reached.
+ * The per-entry {@code detectionRationale} strings state this individually; this note records it for
+ * the class as a whole.</p>
+ *
+ * <p>The distinction matters when reading a green test run: a passing verdict for one of those
+ * entries shows the payload was rejected, and nothing more specific. It is NOT evidence that this
+ * library detects, or is even reached by, the named CVE's exploitation mechanism. The remaining
+ * entries do reach and exercise the stage their failure type names.</p>
+ *
  * @since 1.0
  */
 public class NginxCVEAttackDatabase implements AttackDatabase {

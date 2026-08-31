@@ -24,7 +24,17 @@ import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.ArgumentsSource;
+import org.junit.jupiter.params.provider.MethodSource;
+
+import java.lang.Character.UnicodeScript;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.util.EnumSet;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -39,13 +49,22 @@ import static org.junit.jupiter.api.Assertions.*;
  * and Georgian scripts that are visually identical or nearly identical to Latin characters
  * but have different Unicode code points.</p>
  *
- * <h3>Attack Categories Tested</h3>
+ * <h3>What each test in this class actually verifies</h3>
+ *
+ * <p>Every entry in the database declares {@code INVALID_CHARACTER}, so the two tests here verify
+ * different things:</p>
+ *
  * <ul>
- *   <li><strong>Cyrillic Homographs</strong> - а, о, р, с, е, х → a, o, p, c, e, x</li>
- *   <li><strong>Greek Homographs</strong> - α, ο, ρ, υ → a, o, p, u</li>
- *   <li><strong>Mathematical Script</strong> - Unicode Mathematical Bold variants</li>
- *   <li><strong>Fullwidth Characters</strong> - East Asian typography variants</li>
- *   <li><strong>Mixed Script Attacks</strong> - Combinations across character sets</li>
+ *   <li><strong>{@link #shouldRejectHomographAttacksWithCorrectFailureTypes}</strong> verifies only
+ *       that the pipeline rejects the payload with the declared failure type. Every payload contains
+ *       a non-ASCII code point, and RFC 3986 restricts URL paths to ASCII, so all of them are
+ *       rejected by character validation on the first non-ASCII code point - before any script or
+ *       confusable analysis. This test therefore does NOT distinguish a Cyrillic homograph from a
+ *       Greek one from a fullwidth one.</li>
+ *   <li><strong>{@link #shouldCarryTheScriptItsNameClaims}</strong> supplies that missing
+ *       distinction structurally, by asserting each payload actually contains a code point in the
+ *       script its constant name advertises. It is a claim test over the database's own naming, not
+ *       a pipeline-behaviour test.</li>
  * </ul>
  *
  * @author Claude Code Generator
@@ -100,5 +119,108 @@ class HomographAttackDatabaseTest {
         // And: Security event should be recorded
         assertTrue(eventCounter.getTotalCount() > initialEventCount,
                 "Security event should be recorded for homograph attack: %s".formatted(testCase.getCompactSummary()));
+    }
+
+    /** Unicode Mathematical Alphanumeric Symbols block. */
+    private static final int MATH_ALPHANUMERIC_START = 0x1D400;
+    private static final int MATH_ALPHANUMERIC_END = 0x1D7FF;
+
+    /** Unicode Halfwidth and Fullwidth Forms block. */
+    private static final int FULLWIDTH_FORMS_START = 0xFF00;
+    private static final int FULLWIDTH_FORMS_END = 0xFFEF;
+
+    /**
+     * Scripts that carry no homograph claim of their own: {@code COMMON} covers punctuation and
+     * digits, {@code LATIN} is the script being imitated, and {@code UNKNOWN} is not a script.
+     */
+    private static final Set<UnicodeScript> NON_CLAIMING_SCRIPTS =
+            EnumSet.of(UnicodeScript.COMMON, UnicodeScript.LATIN, UnicodeScript.UNKNOWN);
+
+    /**
+     * Every declared {@code AttackTestCase} constant on the database, as (name, payload) pairs.
+     * Reflection is used deliberately: the constant NAME is the claim under test here, and the
+     * {@code AttackTestCase} record does not carry it.
+     */
+    static Stream<Arguments> declaredEntries() {
+        return Stream.of(HomographAttackDatabase.class.getDeclaredFields())
+                .filter(field -> Modifier.isPublic(field.getModifiers()))
+                .filter(field -> Modifier.isStatic(field.getModifiers()))
+                .filter(field -> field.getType() == AttackTestCase.class)
+                .map(HomographAttackDatabaseTest::toNameAndPayload);
+    }
+
+    private static Arguments toNameAndPayload(Field field) {
+        try {
+            return Arguments.of(field.getName(), ((AttackTestCase) field.get(null)).attackString());
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException("Cannot read " + field.getName(), e);
+        }
+    }
+
+    private static boolean containsScript(String payload, UnicodeScript script) {
+        return payload.codePoints().anyMatch(cp -> UnicodeScript.of(cp) == script);
+    }
+
+    private static boolean containsCodePointInRange(String payload, int startInclusive, int endInclusive) {
+        return payload.codePoints().anyMatch(cp -> cp >= startInclusive && cp <= endInclusive);
+    }
+
+    /**
+     * Asserts that each entry's payload actually contains a code point in the script its constant
+     * name claims. This is what makes the per-script names verifiable: the pipeline verdict is
+     * {@code INVALID_CHARACTER} for every entry, reached on the first non-ASCII code point, so it
+     * cannot distinguish Cyrillic from Greek from a mathematical or fullwidth variant.
+     *
+     * <p>An entry whose payload is edited to drop the script its name advertises - or to drop its
+     * homograph character entirely - fails here.</p>
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("declaredEntries")
+    @DisplayName("Each entry's payload carries a code point in the script its name claims")
+    void shouldCarryTheScriptItsNameClaims(String name, String payload) {
+        // Baseline claim, binding on every entry: a homograph payload must carry at least one
+        // non-ASCII code point. Without this, an entry could be silently reduced to plain ASCII
+        // and still pass every other assertion.
+        //
+        // The baseline is deliberately "non-ASCII" rather than "non-Latin script": the
+        // mathematical-bold and fullwidth families are Latin-script code points living in
+        // compatibility blocks, so Character.UnicodeScript.of returns LATIN for them. Those two
+        // families are therefore claimed by code-point block below, not by script.
+        assertTrue(payload.codePoints().anyMatch(cp -> cp > 0x7F),
+                "%s is a homograph entry but its payload is pure ASCII, so it substitutes nothing: %s"
+                        .formatted(name, payload));
+
+        Set<UnicodeScript> nonLatinScripts = payload.codePoints()
+                .mapToObj(UnicodeScript::of)
+                .filter(script -> !NON_CLAIMING_SCRIPTS.contains(script))
+                .collect(Collectors.toCollection(() -> EnumSet.noneOf(UnicodeScript.class)));
+
+        if (name.startsWith("CYRILLIC")) {
+            assertTrue(containsScript(payload, UnicodeScript.CYRILLIC),
+                    "%s claims a Cyrillic homograph but its payload carries no Cyrillic code point: %s"
+                            .formatted(name, payload));
+        }
+        if (name.startsWith("GREEK")) {
+            assertTrue(containsScript(payload, UnicodeScript.GREEK),
+                    "%s claims a Greek homograph but its payload carries no Greek code point: %s"
+                            .formatted(name, payload));
+        }
+        if (name.startsWith("MATHEMATICAL")) {
+            assertTrue(containsCodePointInRange(payload, MATH_ALPHANUMERIC_START, MATH_ALPHANUMERIC_END),
+                    "%s claims a mathematical homograph but its payload carries no code point in the "
+                            + "Mathematical Alphanumeric Symbols block (U+1D400-U+1D7FF): %s"
+                                    .formatted(name, payload));
+        }
+        if (name.startsWith("FULLWIDTH")) {
+            assertTrue(containsCodePointInRange(payload, FULLWIDTH_FORMS_START, FULLWIDTH_FORMS_END),
+                    "%s claims a fullwidth homograph but its payload carries no code point in the "
+                            + "Halfwidth and Fullwidth Forms block (U+FF00-U+FFEF): %s"
+                                    .formatted(name, payload));
+        }
+        if (name.startsWith("MIXED_SCRIPT")) {
+            assertTrue(nonLatinScripts.size() >= 2,
+                    "%s claims a mixed-script homograph but its payload draws on only %s: %s"
+                            .formatted(name, nonLatinScripts, payload));
+        }
     }
 }
