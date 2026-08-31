@@ -29,7 +29,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpResponse;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Integration tests for {@link HttpHandler} using MockWebServer.
@@ -200,8 +201,8 @@ class HttpHandlerIntegrationTest {
     private static int redirectHops(HttpResponse<String> response) {
         int hops = 0;
         for (HttpResponse<String> current = response;
-                current.previousResponse().isPresent();
-                current = current.previousResponse().get()) {
+             current.previousResponse().isPresent();
+             current = current.previousResponse().get()) {
             hops++;
         }
         return hops;
