@@ -129,6 +129,34 @@ import java.util.stream.Collectors;
  *       </ul>
  *   </li>
  * </ul>
+ *
+ * <h3>Traversal detection is duplicated across three sites</h3>
+ * <p>Path-traversal detection is <strong>not</strong> owned by this stage alone. Three sites
+ * participate, and they do not all raise the same failure type - so a caller that matches on a
+ * specific {@link UrlSecurityFailureType} needs the whole set:</p>
+ * <ul>
+ *   <li><strong>{@code validation/PatternMatchingStage}</strong> (this class) - matches raw and
+ *       encoded traversal literals via {@link SecurityDefaults#PATH_TRAVERSAL_PATTERNS}, the
+ *       {@code ENCODED_TRAVERSAL_PATTERN} regex, and the dot-plus-separator regex. All three
+ *       checks raise {@link UrlSecurityFailureType#PATH_TRAVERSAL_DETECTED}, always - they are
+ *       not gated by {@code failOnSuspiciousPatterns}. This stage <em>never</em> raises
+ *       {@code DIRECTORY_ESCAPE_ATTEMPT}.</li>
+ *   <li><strong>{@code validation/NormalizationStage}</strong> - detects traversal in two layers
+ *       around RFC 3986 dot-segment resolution. Both its intent check (before normalization) and
+ *       its residual-segment check (after) raise
+ *       {@link UrlSecurityFailureType#PATH_TRAVERSAL_DETECTED}, while its root-escape check
+ *       raises {@link UrlSecurityFailureType#DIRECTORY_ESCAPE_ATTEMPT}. It is the <em>only</em>
+ *       site that produces the latter.</li>
+ *   <li><strong>{@code core/UrlSecurityFailureType#isPathTraversalAttack()}</strong> - the
+ *       classification predicate that defines the traversal set as exactly
+ *       {@code PATH_TRAVERSAL_DETECTED} and {@code DIRECTORY_ESCAPE_ATTEMPT}. Callers should
+ *       branch on this predicate rather than on a single constant, precisely because the two
+ *       producing sites above disagree on which constant they raise.</li>
+ * </ul>
+ * <p>In {@code pipeline/URLPathValidationPipeline} the duplication is deliberate and composed:
+ * this stage runs <em>twice</em>, once before decoding/normalization to catch raw literals and
+ * once after, to catch what decoding and dot-segment resolution reveal. Neither pass subsumes
+ * the other.</p>
  * <p>
  * Implements: Task V3 from HTTP verification specification
  *

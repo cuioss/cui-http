@@ -39,27 +39,47 @@ import java.util.function.Predicate;
  *
  * <h3>Usage Examples</h3>
  * <pre>
- * // Simple validation
+ * // Simple validation — the lambda returns Optional&lt;String&gt;, not String
  * HttpSecurityValidator pathValidator = input -> {
- *     if (input.contains("../")) {
+ *     if (input != null &amp;&amp; input.contains("../")) {
  *         throw UrlSecurityException.builder()
  *             .failureType(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED)
  *             .validationType(ValidationType.URL_PATH)
  *             .originalInput(input)
  *             .build();
  *     }
- *     return input;
+ *     return Optional.ofNullable(input);
  * };
  *
- * // Using with streams
+ * // Using with streams — validate returns Optional, so flatten it
  * List&lt;String&gt; validPaths = paths.stream()
  *     .map(pathValidator::validate)
- *     .collect(Collectors.toList());
+ *     .flatMap(Optional::stream)
+ *     .toList();
  *
- * // Composing validators
- * HttpSecurityValidator compositeValidator = input ->
- *     secondValidator.validate(firstValidator.validate(input));
+ * // Composing validators — andThen flat-maps the Optional for you
+ * HttpSecurityValidator compositeValidator = firstValidator.andThen(secondValidator);
+ *
+ * // The same composition written out by hand
+ * HttpSecurityValidator equivalent = input ->
+ *     firstValidator.validate(input).flatMap(secondValidator::validate);
  * </pre>
+ *
+ * <h3>Fail-open combinators</h3>
+ * <p><strong>{@link #when(Predicate)} and {@link #identity()} are intentional fail-open
+ * building blocks.</strong> Unlike the validators themselves, which are fail-secure, these two
+ * combinators return the input unchanged instead of throwing:</p>
+ * <ul>
+ *   <li>{@code when(predicate)} skips validation entirely whenever the predicate returns
+ *       {@code false} (or the input is null). A misapplied or inverted predicate therefore
+ *       <em>silently disables</em> validation for every input it does not select — no
+ *       exception, no event counted, no log line.</li>
+ *   <li>{@code identity()} performs no validation at all. A stray {@code identity()} left in a
+ *       composition chain is indistinguishable at runtime from a validator that passed.</li>
+ * </ul>
+ * <p>Both are legitimate composition primitives, but neither is a safe default. Review any
+ * chain that contains them: a validator that never runs looks exactly like a validator that
+ * found nothing.</p>
  *
  * <h3>Implementation Guidelines</h3>
  * <ul>
@@ -169,6 +189,12 @@ public interface HttpSecurityValidator {
      * HttpSecurityValidator urlValidator = validator.when(s -> s.startsWith("http"));
      * </pre>
      *
+     * <p><strong>Fail-open by design.</strong> When the predicate returns {@code false} - or
+     * the input is null - this validator returns the input unchanged: no exception, no event
+     * counted, no log line. A misapplied or inverted predicate therefore silently disables
+     * validation for every input it does not select, and the caller cannot distinguish that
+     * from a validator that ran and found nothing. Review the predicate accordingly.</p>
+     *
      * @param predicate The condition under which to apply this validator
      * @return A conditional validator that only applies this validator when the predicate is true
      * @throws NullPointerException if {@code predicate} is null
@@ -191,6 +217,11 @@ public interface HttpSecurityValidator {
     /**
      * Creates an identity validator that always returns the input unchanged.
      * This is useful as a no-op validator or as a starting point for composition.
+     *
+     * <p><strong>Fail-open by design.</strong> This validator performs no validation at all
+     * and never throws. A stray {@code identity()} left in a composition chain is
+     * indistinguishable at runtime from a validator that ran and passed the input, so it
+     * silently disables validation for that path. Use it deliberately, never as a default.</p>
      *
      * @return An identity validator that performs no validation
      * @since 1.0
