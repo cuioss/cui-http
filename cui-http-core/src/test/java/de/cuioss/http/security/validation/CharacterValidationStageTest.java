@@ -201,19 +201,17 @@ class CharacterValidationStageTest {
     }
 
     @Test
-    void shouldNotAllowPercentEncodingInHeaders() {
+    void shouldNotAllowPercentEncodingInHeaders() throws Exception {
         CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.HEADER_NAME);
 
         // Headers should allow % character, but percent sequences are not decoded
         // So %20 should be treated as literal characters, which is allowed
         String headerWithEncoding = "Header%20Name";
 
-        // This should actually pass since % is allowed in headers
-        assertDoesNotThrow(() -> {
-            var result = stage.validate(headerWithEncoding);
-            assertTrue(result.isPresent());
-            return result.get();
-        });
+        var result = stage.validate(headerWithEncoding);
+        assertTrue(result.isPresent());
+        assertEquals(headerWithEncoding, result.get(),
+                "A percent sequence in a header name is literal text and must pass through unchanged");
 
         // Test with a character that's actually not allowed in headers (control character)
         String headerWithControlChar = "Header\u0001Name";
@@ -227,18 +225,73 @@ class CharacterValidationStageTest {
 
     @ParameterizedTest
     @EnumSource(ValidationType.class)
-    void shouldHandleAllValidationTypes(ValidationType type) {
+    void shouldHandleAllValidationTypes(ValidationType type) throws Exception {
         CharacterValidationStage stage = new CharacterValidationStage(config, type);
 
-        // Should not throw for basic alphanumeric
-        assertDoesNotThrow(() -> {
-            var result = stage.validate("abc123");
-            assertTrue(result.isPresent());
-            return result.get();
-        });
+        // Basic alphanumeric is valid for every validation type
+        var result = stage.validate("abc123");
+        assertTrue(result.isPresent());
+        assertEquals("abc123", result.get(),
+                "Alphanumeric input must pass through unchanged for " + type);
 
         // Should reject null byte for all types
         assertThrows(UrlSecurityException.class, () -> stage.validate("test\0null"));
+    }
+
+    /**
+     * The stage classifies by full code point ({@code codePointAt} plus {@code charCount}), not by
+     * individual {@code char}. A supplementary-plane character therefore reaches
+     * {@code isCharacterAllowed} as one code point above 255 and is rejected for a URL path, which
+     * is ASCII-only per RFC 3986.
+     * <p>
+     * The detail assertions are what make this test sensitive to the iteration strategy: under
+     * naive {@code charAt} iteration the reported character would be the {@code D835} high-surrogate
+     * half rather than the {@code 1D400} code point, so this test fails if that regression is
+     * introduced.
+     */
+    @Test
+    void shouldRejectSupplementaryPlaneCharacterByCodePoint() {
+        CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.URL_PATH);
+
+        // U+1D400 MATHEMATICAL BOLD CAPITAL A, encoded as the surrogate pair D835 DC00.
+        String path = "/api/𝐀/next";
+
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                stage.validate(path));
+
+        assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
+        assertEquals(ValidationType.URL_PATH, exception.getValidationType());
+        assertTrue(exception.getDetail().isPresent());
+        String detail = exception.getDetail().get();
+        assertAll("The whole code point is reported, not a surrogate half",
+                () -> assertTrue(detail.contains("0x1D400"),
+                        "expected the full code point U+1D400 in: " + detail),
+                () -> assertFalse(detail.contains("0xD835"),
+                        "a surrogate half must not be reported as the offending character: " + detail));
+    }
+
+    /**
+     * An unpaired surrogate is not a valid code point, but it is a reachable input: a caller can
+     * hand the stage a {@code String} containing a high surrogate with no low surrogate following.
+     * {@code codePointAt} yields the surrogate value itself, which is above 255 and so is rejected
+     * for a URL path. This pins the behaviour as a clean rejection rather than an exception escaping
+     * from the code-point machinery.
+     */
+    @Test
+    void shouldRejectUnpairedSurrogate() {
+        CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.URL_PATH);
+
+        // High surrogate with no low surrogate following it.
+        String path = "/api/\uD800/next";
+
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                stage.validate(path));
+
+        assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
+        assertEquals(ValidationType.URL_PATH, exception.getValidationType());
+        assertTrue(exception.getDetail().isPresent());
+        assertTrue(exception.getDetail().get().contains("0xD800"),
+                "expected the unpaired surrogate to be reported: " + exception.getDetail().get());
     }
 
     @Test
