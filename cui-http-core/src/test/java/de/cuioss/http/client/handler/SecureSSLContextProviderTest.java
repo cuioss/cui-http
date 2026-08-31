@@ -19,10 +19,11 @@ import de.cuioss.test.juli.junit5.EnableTestLogger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import javax.net.ssl.SSLContext;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -52,12 +53,23 @@ class SecureSSLContextProviderTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"TLSv1.2", "TLSv1.3", "TLS"})
+    @MethodSource("allowedTlsVersions")
     @DisplayName("Every allowed version is accepted as a minimum and reported back verbatim")
     void shouldAcceptEveryAllowedVersionAsMinimum(String minimum) {
         SecureSSLContextProvider secureSSLContextProvider = new SecureSSLContextProvider(minimum);
 
         assertEquals(minimum, secureSSLContextProvider.minimumTlsVersion());
+    }
+
+    /**
+     * Derived from the production constant rather than restated as a literal, so a version added to
+     * {@link SecureSSLContextProvider#ALLOWED_TLS_VERSIONS} is covered automatically instead of
+     * silently escaping this test.
+     *
+     * @return every allowed minimum-TLS-version token
+     */
+    static Stream<String> allowedTlsVersions() {
+        return SecureSSLContextProvider.ALLOWED_TLS_VERSIONS.stream();
     }
 
     @Test
