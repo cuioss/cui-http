@@ -29,8 +29,6 @@ import org.junit.jupiter.params.provider.ArgumentsSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.lang.Character.UnicodeScript;
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -138,23 +136,10 @@ class HomographAttackDatabaseTest {
 
     /**
      * Every declared {@code AttackTestCase} constant on the database, as (name, payload) pairs.
-     * Reflection is used deliberately: the constant NAME is the claim under test here, and the
-     * {@code AttackTestCase} record does not carry it.
+     * See {@link AttackDatabaseEntries} for why reflection is used here.
      */
     static Stream<Arguments> declaredEntries() {
-        return Stream.of(HomographAttackDatabase.class.getDeclaredFields())
-                .filter(field -> Modifier.isPublic(field.getModifiers()))
-                .filter(field -> Modifier.isStatic(field.getModifiers()))
-                .filter(field -> field.getType() == AttackTestCase.class)
-                .map(HomographAttackDatabaseTest::toNameAndPayload);
-    }
-
-    private static Arguments toNameAndPayload(Field field) {
-        try {
-            return Arguments.of(field.getName(), ((AttackTestCase) field.get(null)).attackString());
-        } catch (IllegalAccessException e) {
-            throw new IllegalStateException("Cannot read " + field.getName(), e);
-        }
+        return AttackDatabaseEntries.declaredEntries(HomographAttackDatabase.class);
     }
 
     private static boolean containsScript(String payload, UnicodeScript script) {

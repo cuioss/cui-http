@@ -28,8 +28,6 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.ArgumentsSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -118,23 +116,10 @@ class IPv6AttackDatabaseTest {
 
     /**
      * Every declared {@code AttackTestCase} constant on the database, as (name, payload) pairs.
-     * Reflection is used deliberately: the constant NAME is the claim under test here, and the
-     * {@code AttackTestCase} record does not carry it.
+     * See {@link AttackDatabaseEntries} for why reflection is used here.
      */
     static Stream<Arguments> declaredEntries() {
-        return Stream.of(IPv6AttackDatabase.class.getDeclaredFields())
-                .filter(field -> Modifier.isPublic(field.getModifiers()))
-                .filter(field -> Modifier.isStatic(field.getModifiers()))
-                .filter(field -> field.getType() == AttackTestCase.class)
-                .map(IPv6AttackDatabaseTest::toNameAndPayload);
-    }
-
-    private static Arguments toNameAndPayload(Field field) {
-        try {
-            return Arguments.of(field.getName(), ((AttackTestCase) field.get(null)).attackString());
-        } catch (IllegalAccessException e) {
-            throw new IllegalStateException("Cannot read " + field.getName(), e);
-        }
+        return AttackDatabaseEntries.declaredEntries(IPv6AttackDatabase.class);
     }
 
     /**
