@@ -360,7 +360,8 @@ ValidationType validationType) implements HttpSecurityValidator {
         // Iterate by Unicode code point (not char) so that supplementary-plane combining marks,
         // which arrive as surrogate pairs, are classified against their real code point rather
         // than an individual surrogate half.
-        for (int i = 0; i < decoded.length(); ) {
+        int i = 0;
+        while (i < decoded.length()) {
             int cp = decoded.codePointAt(i);
 
             if (cp == '\0' && !config.allowNullBytes()) {

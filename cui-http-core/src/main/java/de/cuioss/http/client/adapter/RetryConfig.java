@@ -194,7 +194,7 @@ boolean idempotentOnly
         // Cap the base exponential delay at maxDelay BEFORE applying jitter, so that once the
         // exponential growth reaches the cap the retries still spread out (± jitter around the cap)
         // instead of all firing in lockstep at exactly maxDelay (the thundering herd jitter prevents).
-        double cappedDelay = Math.min(exponentialDelay, (double) maxDelay.toMillis());
+        double cappedDelay = Math.min(exponentialDelay, maxDelay.toMillis());
 
         // Apply jitter: delay * (1 ± jitter)
         // Random value between -1.0 and 1.0

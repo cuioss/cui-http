@@ -185,8 +185,12 @@ ValidationType validationType) implements HttpSecurityValidator {
      */
     private static long utf8ByteLength(String value) {
         long count = 0;
-        for (int i = 0, len = value.length(); i < len; i++) {
+        int len = value.length();
+        int i = 0;
+        while (i < len) {
             char ch = value.charAt(i);
+            // Chars consumed by this iteration: 2 only for a well-formed surrogate pair.
+            int step = 1;
             if (ch <= 0x7F) {
                 count += 1;
             } else if (ch <= 0x7FF) {
@@ -195,11 +199,12 @@ ValidationType validationType) implements HttpSecurityValidator {
                     && i + 1 < len && Character.isLowSurrogate(value.charAt(i + 1))) {
                 // Well-formed surrogate pair encodes one supplementary code point as 4 bytes.
                 count += 4;
-                i++;
+                step = 2;
             } else {
                 // BMP character or an unpaired surrogate (which UTF-8 encoders replace).
                 count += 3;
             }
+            i += step;
         }
         return count;
     }

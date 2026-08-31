@@ -505,14 +505,14 @@ public final class ForwardedHeaderResolver {
         // and disagrees with any de-facto sibling that resolves (fail closed).
         Optional<String> sanitized = sanitize(FORWARDED, raw);
         if (sanitized.isEmpty()) {
-            return ForwardedResult.UNRESOLVABLE;
+            return ForwardedResult.UNRESOLVABLE_RESULT;
         }
         // A grammar-violating forwarded-pair rejects the whole header with the same severity as a
         // sanitization failure — the directives it could have carried are all unresolvable.
         RfcForwardedParser.Parsed parsed = RfcForwardedParser.parse(sanitized.get());
         if (parsed.malformed()) {
             LOGGER.warn(ForwardedLogMessages.WARN.FORWARDED_DIRECTIVE_MALFORMED, sanitizeForLog(raw));
-            return ForwardedResult.UNRESOLVABLE;
+            return ForwardedResult.UNRESOLVABLE_RESULT;
         }
         return new ForwardedResult(true, false, parsed);
     }
@@ -661,7 +661,7 @@ public final class ForwardedHeaderResolver {
      * <ol>
      *   <li>{@link #ABSENT} — no {@code Forwarded} header was sent; the RFC source contributes
      *       nothing and the de-facto family is honored on its own.</li>
-     *   <li>{@link #UNRESOLVABLE} — the header WAS sent but its raw value failed sanitization
+     *   <li>{@link #UNRESOLVABLE_RESULT} — the header WAS sent but its raw value failed sanitization
      *       (over-length, NUL, other control characters including CR/LF) or violated the RFC 7239
      *       grammar with a malformed {@code forwarded-pair}. The source counts as present for
      *       <em>every</em> field, so it disagrees with any de-facto sibling that resolves and the
@@ -683,7 +683,7 @@ public final class ForwardedHeaderResolver {
 
         private static final ForwardedResult ABSENT = new ForwardedResult(false, false, NO_DIRECTIVES);
 
-        private static final ForwardedResult UNRESOLVABLE = new ForwardedResult(true, true, NO_DIRECTIVES);
+        private static final ForwardedResult UNRESOLVABLE_RESULT = new ForwardedResult(true, true, NO_DIRECTIVES);
 
         /**
          * Whether the RFC 7239 source counts as present for a field whose directive presence is
