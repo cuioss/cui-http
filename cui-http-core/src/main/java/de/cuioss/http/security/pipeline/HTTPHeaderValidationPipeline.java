@@ -67,8 +67,10 @@ import java.util.Objects;
  * HTTPHeaderValidationPipeline pipeline = new HTTPHeaderValidationPipeline(config, counter);
  *
  * try {
- *     String safeHeader = pipeline.validate("Bearer eyJhbGciOiJIUzI1NiJ9...");
- *     // Use safeHeader for processing
+ *     Optional&lt;String&gt; safeHeader = pipeline.validate("Bearer eyJhbGciOiJIUzI1NiJ9...");
+ *     safeHeader.ifPresent(header -&gt; {
+ *         // Use the validated header for processing
+ *     });
  * } catch (UrlSecurityException e) {
  *     // Handle security violation
  *     log.warn("Header validation failed: {}", e.getMessage());

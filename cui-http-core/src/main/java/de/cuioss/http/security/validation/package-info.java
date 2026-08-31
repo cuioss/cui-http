@@ -46,8 +46,11 @@
  *
  * String input = "/api/../../../etc/passwd";
  * try {
- *     String checked = lengthStage.validate(input);
- *     String validated = charStage.validate(checked);
+ *     Optional&lt;String&gt; checked = lengthStage.validate(input);
+ *     Optional&lt;String&gt; validated = checked.flatMap(charStage::validate);
+ *     validated.ifPresent(value -&gt; {
+ *         // Process validated input
+ *     });
  * } catch (UrlSecurityException e) {
  *     // Handle security violation
  * }

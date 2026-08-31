@@ -77,8 +77,9 @@ import java.util.regex.Pattern;
  * NormalizationStage normalizer = new NormalizationStage(config, ValidationType.URL_PATH);
  *
  * // Normalize legitimate path
- * String normalized = normalizer.validate("/api/users/./123/../456");
- * // Returns: "/api/users/456"
+ * String normalized = normalizer.validate("/api/users/./123/../456")
+ *         .orElseThrow(() -&gt; new IllegalArgumentException("input must not be null"));
+ * // normalized is: "/api/users/456"
  *
  * // Detect path traversal attack
  * try {

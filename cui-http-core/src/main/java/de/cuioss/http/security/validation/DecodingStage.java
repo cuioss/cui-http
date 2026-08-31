@@ -72,8 +72,9 @@ import java.util.regex.Pattern;
  *
  * // Validate and decode input
  * try {
- *     String decoded = pathDecoder.validate("/api/users%2F123");
- *     // Returns: "/api/users/123"
+ *     String decoded = pathDecoder.validate("/api/users%2F123")
+ *             .orElseThrow(() -&gt; new IllegalArgumentException("input must not be null"));
+ *     // decoded is: "/api/users/123"
  * } catch (UrlSecurityException e) {
  *     // Handle security violation
  *     logger.warn("Encoding attack detected: {}", e.getFailureType());

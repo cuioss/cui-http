@@ -56,8 +56,10 @@ import java.util.Objects;
  * URLPathValidationPipeline pipeline = new URLPathValidationPipeline(config, counter);
  *
  * try {
- *     String safePath = pipeline.validate("/api/users/123");
- *     // Use safePath for processing
+ *     Optional&lt;String&gt; safePath = pipeline.validate("/api/users/123");
+ *     safePath.ifPresent(path -&gt; {
+ *         // Use the validated path for processing
+ *     });
  * } catch (UrlSecurityException e) {
  *     // Handle security violation
  *     log.warn("Path validation failed: {}", e.getMessage());

@@ -28,15 +28,23 @@ package de.cuioss.http.security.core;
  * </ul>
  *
  * <h3>Usage Example</h3>
+ * <p>The validation type is supplied when the pipeline is built, not on each
+ * {@link HttpSecurityValidator#validate(String)} call:</p>
  * <pre>
  * // Validate URL path component
- * validator.validate("/api/users", ValidationType.URL_PATH);
+ * HttpSecurityValidator pathValidator =
+ *         PipelineFactory.createPipeline(ValidationType.URL_PATH, config, counter);
+ * pathValidator.validate("/api/users");
  *
  * // Validate query parameter name
- * validator.validate("userId", ValidationType.PARAMETER_NAME);
+ * HttpSecurityValidator nameValidator =
+ *         PipelineFactory.createPipeline(ValidationType.PARAMETER_NAME, config, counter);
+ * nameValidator.validate("userId");
  *
  * // Validate HTTP header value
- * validator.validate("Bearer token123", ValidationType.HEADER_VALUE);
+ * HttpSecurityValidator headerValidator =
+ *         PipelineFactory.createPipeline(ValidationType.HEADER_VALUE, config, counter);
+ * headerValidator.validate("Bearer token123");
  * </pre>
  *
  * Supports: Task B2 from HTTP verification specification

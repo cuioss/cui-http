@@ -30,8 +30,10 @@
  * <pre><code>
  * HttpSecurityValidator validator = new MyValidator();
  * try {
- *     String sanitized = validator.validate(userInput);
- *     // Process sanitized input
+ *     Optional&lt;String&gt; sanitized = validator.validate(userInput);
+ *     if (sanitized.isPresent()) {
+ *         // Process sanitized input
+ *     }
  * } catch (UrlSecurityException e) {
  *     // Handle security violation
  *     log.warn("Security violation: {}", e.getFailureType());

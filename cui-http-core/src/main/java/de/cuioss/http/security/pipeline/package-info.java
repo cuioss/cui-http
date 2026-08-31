@@ -48,8 +48,14 @@
  *
  * // Validate different HTTP components
  * try {
- *     String safePath = pathValidator.validate("/api/users/123");
- *     String safeParam = paramValidator.validate("search=test&amp;page=1");
+ *     Optional&lt;String&gt; safePath = pathValidator.validate("/api/users/123");
+ *     Optional&lt;String&gt; safeParam = paramValidator.validate("search=test&amp;page=1");
+ *     safePath.ifPresent(path -&gt; {
+ *         // Process the validated path
+ *     });
+ *     safeParam.ifPresent(param -&gt; {
+ *         // Process the validated parameter
+ *     });
  * } catch (UrlSecurityException e) {
  *     log.warn("Security violation: {}", e.getFailureType());
  * }
