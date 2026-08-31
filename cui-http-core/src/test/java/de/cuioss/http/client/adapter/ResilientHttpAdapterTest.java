@@ -278,16 +278,19 @@ class ResilientHttpAdapterTest {
 
         HttpAdapter<String> resilient = ResilientHttpAdapter.wrap(mockAdapter, config);
 
-        long startTime = System.currentTimeMillis();
+        // System.nanoTime is monotonic: unlike System.currentTimeMillis it cannot be moved
+        // backwards by an NTP adjustment mid-test, which would make the lower bound below fail
+        // even though the delay was genuinely applied.
+        long startNanos = System.nanoTime();
         HttpResult<String> result = resilient.getBlocking();
-        long elapsedTime = System.currentTimeMillis() - startTime;
+        long elapsedMillis = Duration.ofNanos(System.nanoTime() - startNanos).toMillis();
 
         // Should succeed after delay
         assertTrue(result.isSuccess());
         // The retry actually happened - time-independent observable
         assertEquals(2, attemptCount.get(), "Expected exactly one retry after the initial failure");
         // Should take at least 40ms due to delay (allowing for CI timing variations)
-        assertTrue(elapsedTime >= 40, "Expected delay of at least 40ms, but took " + elapsedTime + "ms");
+        assertTrue(elapsedMillis >= 40, "Expected delay of at least 40ms, but took " + elapsedMillis + "ms");
     }
 
     /**
