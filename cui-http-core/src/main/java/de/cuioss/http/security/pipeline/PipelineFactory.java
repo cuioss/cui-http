@@ -42,7 +42,11 @@ import java.util.Objects;
  * <ul>
  *   <li><strong>URL Path Validation</strong> - For URL path segments and components</li>
  *   <li><strong>URL Parameter Validation</strong> - For query parameter values</li>
+ *   <li><strong>URL Parameter Name Validation</strong> - For query parameter names (query keys),
+ *       with name-only rules that reject decoded delimiters and CR/LF</li>
  *   <li><strong>HTTP Header Validation</strong> - For header names and values</li>
+ *   <li><strong>Content-Type Validation</strong> - Allow/block-list enforcement for
+ *       {@code Content-Type} values</li>
  * </ul>
  *
  * <h3>Usage Examples</h3>
@@ -222,6 +226,7 @@ public final class PipelineFactory {
      * <h3>Supported Validation Types</h3>
      * <ul>
      *   <li><strong>URL_PATH</strong> - Creates URLPathValidationPipeline</li>
+     *   <li><strong>PARAMETER_NAME</strong> - Creates URLParameterNameValidationPipeline</li>
      *   <li><strong>PARAMETER_VALUE</strong> - Creates URLParameterValidationPipeline</li>
      *   <li><strong>HEADER_NAME</strong> - Creates HTTPHeaderValidationPipeline for names</li>
      *   <li><strong>HEADER_VALUE</strong> - Creates HTTPHeaderValidationPipeline for values</li>
@@ -252,7 +257,7 @@ public final class PipelineFactory {
             case COOKIE_NAME, COOKIE_VALUE -> throw new IllegalArgumentException(
                     """
                             Cookie validation pipelines are not yet implemented. \
-                            Supported types: URL_PATH, PARAMETER_VALUE, HEADER_NAME, HEADER_VALUE""");
+                            Supported types: URL_PATH, PARAMETER_NAME, PARAMETER_VALUE, HEADER_NAME, HEADER_VALUE""");
         };
     }
 
