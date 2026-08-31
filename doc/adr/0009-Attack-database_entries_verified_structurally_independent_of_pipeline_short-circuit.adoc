@@ -1,0 +1,61 @@
+= ADR-0009: Attack-database entries verified structurally, independent of pipeline short-circuit
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: An attack-database entry's name/Javadoc claim is verified structurally, independent of a short-circuiting pipeline verdict, or renamed to what it actually exercises
+// tags: security-testing, attack-database, structural-assertion, test-quality
+// affects: cui-http-core
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+The security test tree documents attack coverage through named database entries (`ModSecurityCRSAttackDatabase`, `IPv6AttackDatabase`, `HomographAttackDatabase`, the Apache/Nginx CVE databases) whose constant names and class-level Javadoc claim a specific attack category or mechanism — CRLF injection, chunked-transfer smuggling, IPv4-mapped bypass, zone-ID injection, a named CVE's traversal technique, a homograph script family.
+
+The validation pipeline is layered, and an early stage can short-circuit before the mechanism a claimed category actually depends on is ever reached. Character validation rejects many payloads as `INVALID_CHARACTER` before any IPv6 parsing, homograph script analysis, or CVE-specific encoding logic executes. When every entry in a database converges on the same early-stage verdict, that verdict cannot distinguish the categories the entries claim to represent — an entry whose payload lost the very feature its name describes (a stripped zone identifier, a dropped compression marker) would still pass, because the passing verdict was never conditioned on that feature being present.
+
+The class of failure this produces is a database whose names and documentation assert more than the passing test suite actually establishes: the tests are green, but the specific claim in the name is unverified.
+
+== Decision
+
+An attack-database entry's claimed category is verified independently of the pipeline verdict whenever the pipeline can short-circuit before reaching the mechanism the name describes. The verification is structural: an assertion over the payload itself (its structural features — a scope-identifier `%`, a `::` compression marker, a `Character.UnicodeScript` classification, a CVE-specific encoding form) rather than a re-assertion of the pipeline's rejection reason.
+
+Where the claimed category cannot be genuinely expressed at the layer under test at all, the entry is renamed to name the payload's actual shape rather than kept under a name it does not exercise. A category name is never preserved by supplying a payload engineered solely to make the pipeline's verdict match — the payload must be a genuine instance of the named attack, or the name changes.
+
+Where a pipeline short-circuit is architecturally unavoidable (a database's payloads are, by construction, mostly non-ASCII or otherwise malformed at the character layer before the deeper mechanism is reached), the class-level Javadoc states that short-circuit explicitly: which failure type the pipeline actually returns, and that the returned failure type is the pipeline's real first verdict rather than confirmation that the named deeper mechanism was exercised.
+
+== Consequences
+
+=== Positive
+
+* A database entry's name and Javadoc claim is backed by an assertion that fails if the payload's claimed distinguishing feature is edited away, regardless of which pipeline stage happens to reject it.
+* A reviewer reading an attack-database class's Javadoc gets an accurate statement of what the pipeline actually verifies for that database, rather than an implied claim the verdict cannot support.
+
+=== Negative
+
+* Every attack database that claims category-specific distinctions carries a structural-claim test in addition to its pipeline-verdict test — the verification surface for a database grows by one test dimension.
+
+=== Risks
+
+* A new entry added to a database without an accompanying structural-claim update can silently regress to the unverified-claim state this decision closes; the decision constrains authoring discipline, not the compiler.
+
+== Alternatives Considered
+
+Trust the pipeline verdict alone as proof of the claimed category:: Rejected. Multiple genuinely distinct claimed categories (IPv4-mapped bypass, zone-ID injection, compression abuse) collapse to the identical early-stage verdict once the pipeline short-circuits, so the verdict carries no information that distinguishes them.
+
+Leave a misleading entry name or Javadoc claim as-is:: Rejected. An attack database exists to document coverage; a name or claim the tests do not actually establish erodes the database's value as documentation and risks a reader trusting a distinction that was never checked.
+
+Fabricate a payload engineered to make the pipeline reject it under the claimed category, regardless of whether that category is genuinely expressible at this layer:: Rejected. A payload constructed only to satisfy a verdict is not a genuine instance of the named attack; it manufactures a pass that says nothing about real-world exposure, and risks masking an actual production gap (a genuinely unhandled attack form) behind an artificial one that happens to trip an unrelated pipeline stage.
+
+The alternatives fall in one class: each preserves a green suite by weakening what "green" means. The decision instead binds the claim to an assertion that can fail.
+
+== References
+
+* `doc/http-security/specification/pipeline-architecture-standards.adoc` — the pipeline selection matrix each database's payloads are validated against.
+* ADR-0004, "CharacterValidationStage validates the wire form; DecodingStage owns decoded-character safety" — the stage boundary that explains why many attack-database entries short-circuit at character validation before a deeper mechanism is reached.

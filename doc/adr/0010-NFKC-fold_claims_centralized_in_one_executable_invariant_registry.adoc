@@ -1,0 +1,58 @@
+= ADR-0010: NFKC-fold claims centralized in one executable invariant registry
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: Every NFKC-fold claim made in the security test tree is asserted by one shared, executable invariant registry rather than left in prose or duplicated per test class
+// tags: security-testing, unicode-normalization, test-quality, single-source-of-truth
+// affects: cui-http-core
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+The security test tree contains code that reasons about Unicode normalization-based evasion: a payload substitutes a visually similar or NFKC-foldable code point for an ASCII delimiter, hoping the substitution survives decoding and later folds back into the delimiter's meaning. Comments and Javadoc throughout the test and generator sources assert which specific code points fold to which ASCII targets under NFKC, to explain why a given payload is a real attack instance.
+
+These fold claims live only in prose. Nothing executes them. A claim can be wrong — a code point genuinely normalizes to itself rather than folding to the delimiter the comment describes — and the surrounding test still passes, because the test's actual assertion is about the pipeline's rejection of the payload, not about the normalization property the comment uses to justify it. This defect class recurred across separate, independent changes: the same kind of false fold claim was introduced, and each fix corrected only the specific instance found, without closing the underlying gap that no test runs the codepoints' actual normalization behavior.
+
+A prior attempt at executable verification existed but was local and partial: one generator's own test class asserted NFKC folding for its private set of code points, and separately mentioned two non-folding code points by name only inside a failure-message string — a claim inside prose text, not an assertion the test framework evaluates.
+
+== Decision
+
+Every NFKC-fold claim made anywhere in the security test tree — in a comment, in Javadoc, or in an existing test — is represented as a row in one shared, parameterized invariant test. A positive row names a code point and its claimed ASCII fold target and asserts `Normalizer.normalize(cp, Form.NFKC)` equals that target. A negative row names a code point a comment elsewhere claims does *not* fold, and asserts it normalizes to itself. Each row records the source of the claim (the file and construct it came from), so a failure traces directly back to the comment or Javadoc it is verifying.
+
+No second, parallel fold-verification mechanism is kept alongside the shared registry. Where a local, per-class fold assertion already existed, its claims are absorbed into the shared registry as rows and the local assertion is removed — the registry is the single executable source of truth for what folds to what in this codebase's security test tree, in both directions.
+
+== Consequences
+
+=== Positive
+
+* A false or drifted fold claim fails a test rather than shipping silently, closing the recurrence path that let the same defect class through multiple times.
+* Every claim's provenance is recorded in one place, so verifying "does this comment's fold claim still hold" is a single registry lookup rather than a tree-wide prose search.
+* Negative claims (a code point that does *not* fold) are asserted the same way positive claims are, so a "this looks confusable but does not normalize" comment carries the same executable weight as a "this folds" comment.
+
+=== Negative
+
+* Centralizing the registry couples every fold-claiming file to one shared test class for verification purposes; a change to how a claim is phrased in its origin file does not itself update the registry row, so the two must be kept in sync by the author making the change.
+
+=== Risks
+
+* A new fold claim introduced anywhere in the tree must be added to the shared registry to be covered; the registry protects only the claims entered into it, and does not statically prevent a future comment from being written without a corresponding row.
+
+== Alternatives Considered
+
+Fix each false fold-claim comment where it is found, without adding a structural test:: Rejected. This is exactly the fix each of the prior escapes already applied. It closes the individual instance and leaves the general gap — that no test runs any codepoint's actual normalization behavior — open for the next payload authored with a plausible-sounding but wrong fold claim.
+
+Keep a fold assertion local to each generator's own test class, one mechanism per class:: Rejected. Produces multiple duplicated, parallel fold-verification mechanisms scattered across the tree instead of one; a local, positive-only assertion also has nowhere natural to place a negative claim, so a "does not fold" statement stays confined to prose (a failure-message string) even when the surrounding positive claims are executable.
+
+Add an inline fold assertion directly at each individual test method that relies on a folding code point:: Rejected. Duplicates the same code-point-to-target mapping across every call site that happens to use it, with no single place recording which code points are known to fold to what, and no natural home for the negative (self-normalizing) rows at all.
+
+== References
+
+* `cui-http-core/src/test/java/de/cuioss/http/security/tests/NfkcFoldClaimInvariantTest.java` — the shared invariant registry this decision establishes.
+* `de.cuioss.http.security.validation.DecodingStage` — the production component whose Unicode-normalization behavior (NFKC for URL paths, NFC for parameter values) the registry's claims describe.
