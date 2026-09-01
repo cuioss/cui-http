@@ -1,4 +1,4 @@
-= ADR-0009: HttpSecurityValidator's when() and identity() composition primitives are deliberately fail-open
+= ADR-0013: HttpSecurityValidator's when() and identity() composition primitives are deliberately fail-open
 :toc: left
 :toclevels: 2
 :sectnums:

@@ -1,4 +1,4 @@
-= ADR-0005: A security preset must never set caseSensitiveComparison to true
+= ADR-0012: A security preset must never set caseSensitiveComparison to true
 :toc: left
 :toclevels: 2
 :sectnums:

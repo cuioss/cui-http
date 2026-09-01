@@ -58,4 +58,4 @@ The alternatives fall in one class: each preserves a green suite by weakening wh
 == References
 
 * `doc/http-security/specification/pipeline-architecture-standards.adoc` — the pipeline selection matrix each database's payloads are validated against.
-* ADR-0004, "CharacterValidationStage validates the wire form; DecodingStage owns decoded-character safety" — the stage boundary that explains why many attack-database entries short-circuit at character validation before a deeper mechanism is reached.
+* ADR-0011, "CharacterValidationStage validates the wire form; DecodingStage owns decoded-character safety" — the stage boundary that explains why many attack-database entries short-circuit at character validation before a deeper mechanism is reached.

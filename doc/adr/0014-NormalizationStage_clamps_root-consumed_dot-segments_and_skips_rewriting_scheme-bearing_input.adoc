@@ -1,4 +1,4 @@
-= ADR-0010: NormalizationStage clamps root-consumed dot-segments and skips rewriting scheme-bearing input
+= ADR-0014: NormalizationStage clamps root-consumed dot-segments and skips rewriting scheme-bearing input
 :toc: left
 :toclevels: 2
 :sectnums:
