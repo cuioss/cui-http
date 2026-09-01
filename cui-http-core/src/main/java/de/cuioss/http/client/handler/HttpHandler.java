@@ -36,6 +36,10 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.BiPredicate;
 import java.util.regex.Pattern;
 
 /**
@@ -205,6 +209,21 @@ public final class HttpHandler implements AutoCloseable {
 
     public static final int DEFAULT_CONNECTION_TIMEOUT_SECONDS = 10;
     public static final int DEFAULT_READ_TIMEOUT_SECONDS = 10;
+
+    /**
+     * The 3xx statuses this handler follows. {@code 300} (Multiple Choices), {@code 304} (Not
+     * Modified), {@code 305} (Use Proxy) and {@code 306} (unused) are deliberately absent: none of
+     * them names a single unambiguous next request, so each surfaces to the caller verbatim.
+     */
+    private static final Set<Integer> FOLLOWABLE_STATUS_CODES = Set.of(301, 302, 303, 307, 308);
+
+    private static final String HEADER_LOCATION = "Location";
+    private static final String HEADER_AUTHORIZATION = "Authorization";
+    private static final String HEADER_COOKIE = "Cookie";
+    private static final String HEADER_CONTENT_TYPE = "Content-Type";
+    private static final String HEADER_CONTENT_LENGTH = "Content-Length";
+    private static final String METHOD_GET = "GET";
+    private static final String METHOD_HEAD = "HEAD";
 
     @Getter
     private final URI uri;
@@ -396,6 +415,156 @@ public final class HttpHandler implements AutoCloseable {
     }
 
     /**
+     * Sends {@code request} through this handler's client, following redirect hops that
+     * {@link #getRedirectPolicy()} permits.
+     * <p>
+     * Each hop is revalidated <em>before</em> it is requested: the policy sees the current URI and
+     * the resolved target and either permits the hop or names why it is refused. The underlying
+     * {@link HttpClient} is always configured with {@link HttpClient.Redirect#NEVER}, so no hop is
+     * ever taken without passing through the policy first.
+     * </p>
+     * <p>
+     * Only {@code 301}, {@code 302}, {@code 303}, {@code 307} and {@code 308} are followed, and only
+     * when the response carries a non-blank {@code Location}. Every other response — including a
+     * {@code 300}, {@code 304}, {@code 305} or {@code 306}, and a followable status with no usable
+     * {@code Location} — is returned verbatim.
+     * </p>
+     *
+     * @param <R>         the response body type
+     * @param request     the request to send; its URI is the first hop's origin
+     * @param bodyHandler the body handler applied to every response, including intermediate hops
+     * @return the terminal response, never a followed redirect
+     * @throws RedirectNotAllowedException if a hop is refused by the policy, or the hop budget
+     *                                     ({@link RedirectPolicy#getMaxHops()}) is exhausted
+     * @throws IOException                 if an I/O error occurs on any hop
+     * @throws InterruptedException        if the calling thread is interrupted
+     * @since 2.2
+     */
+    public <R> HttpResponse<R> send(HttpRequest request, HttpResponse.BodyHandler<R> bodyHandler)
+            throws IOException, InterruptedException {
+        HttpRequest current = request;
+        int hopsFollowed = 0;
+        while (true) {
+            HttpResponse<R> response = httpClient.send(current, bodyHandler);
+            HttpRequest next = nextHop(current, response, hopsFollowed);
+            if (next == null) {
+                return response;
+            }
+            current = next;
+            hopsFollowed++;
+        }
+    }
+
+    /**
+     * Asynchronous counterpart of {@link #send(HttpRequest, HttpResponse.BodyHandler)}, applying the
+     * same revalidating hop policy.
+     * <p>
+     * A refused hop completes the returned future exceptionally with a
+     * {@link RedirectNotAllowedException} (wrapped in a {@link java.util.concurrent.CompletionException}
+     * by the {@link CompletableFuture} contract, which
+     * {@code HttpErrorCategory.fromException} unwraps).
+     * </p>
+     *
+     * @param <R>         the response body type
+     * @param request     the request to send; its URI is the first hop's origin
+     * @param bodyHandler the body handler applied to every response, including intermediate hops
+     * @return a future completing with the terminal response, never with a followed redirect
+     * @since 2.2
+     */
+    public <R> CompletableFuture<HttpResponse<R>> sendAsync(HttpRequest request, HttpResponse.BodyHandler<R> bodyHandler) {
+        return sendAsyncHop(request, bodyHandler, 0);
+    }
+
+    /**
+     * Recursive async hop step: send, then either complete with the terminal response or compose the
+     * next hop. Recursion via {@code thenCompose} rather than iteration keeps the whole chain
+     * non-blocking.
+     */
+    private <R> CompletableFuture<HttpResponse<R>> sendAsyncHop(HttpRequest request,
+            HttpResponse.BodyHandler<R> bodyHandler, int hopsFollowed) {
+        return httpClient.sendAsync(request, bodyHandler).thenCompose(response -> {
+            HttpRequest next = nextHop(request, response, hopsFollowed);
+            return next == null
+                    ? CompletableFuture.completedFuture(response)
+                    : sendAsyncHop(next, bodyHandler, hopsFollowed + 1);
+        });
+    }
+
+    /**
+     * Decides whether {@code response} is a hop worth following and, when it is, builds the request
+     * for it. Shared by the synchronous loop and the asynchronous recursion so both apply exactly
+     * one hop policy.
+     *
+     * @param request       the request that produced {@code response}
+     * @param response      the response to inspect
+     * @param hopsFollowed  how many hops have already been followed on this chain
+     * @return the request for the next hop, or {@code null} when {@code response} is terminal
+     * @throws RedirectNotAllowedException if the policy refuses the hop or the budget is exhausted
+     */
+    private @Nullable HttpRequest nextHop(HttpRequest request, HttpResponse<?> response, int hopsFollowed) {
+        if (!FOLLOWABLE_STATUS_CODES.contains(response.statusCode())) {
+            return null;
+        }
+        String location = response.headers().firstValue(HEADER_LOCATION).orElse(null);
+        if (MoreStrings.isBlank(location)) {
+            // A followable status is not required to carry a usable Location; without one there is
+            // no target to validate, so the response surfaces verbatim.
+            return null;
+        }
+        URI currentUri = request.uri();
+        URI target = currentUri.resolve(location);
+
+        // The policy is consulted before the hop counter: a refused target is reported as the
+        // refusal it is, never masked as an exhausted budget.
+        Optional<RedirectPolicy.RedirectRefusal> refusal = redirectPolicy.refuse(currentUri, target);
+        if (refusal.isPresent()) {
+            throw new RedirectNotAllowedException(currentUri, target, refusal.get());
+        }
+        if (hopsFollowed >= redirectPolicy.getMaxHops()) {
+            // No single target is at fault, so the refusal names none.
+            throw new RedirectNotAllowedException(currentUri, null, RedirectPolicy.RedirectRefusal.TOO_MANY_HOPS);
+        }
+        return rebuildForHop(request, currentUri, target, response.statusCode());
+    }
+
+    /**
+     * Rebuilds {@code request} for the next hop, applying the RFC 9110 method-and-body rules and the
+     * policy's credential-forwarding verdict.
+     * <p>
+     * {@code 303} always rewrites to {@code GET} and drops the body. {@code 301} and {@code 302}
+     * preserve a {@code GET} or {@code HEAD} and otherwise rewrite to {@code GET}, dropping the body.
+     * {@code 307} and {@code 308} preserve both the method and the original body publisher. Whenever
+     * the body is dropped, {@code Content-Type} and {@code Content-Length} are dropped with it.
+     * <p>
+     * Whether {@code Authorization} and {@code Cookie} survive the hop is
+     * {@link RedirectPolicy#forwardsCredentials(URI, URI)}'s verdict alone — this class performs no
+     * origin arithmetic and holds no strategy branch of its own.
+     */
+    private HttpRequest rebuildForHop(HttpRequest request, URI currentUri, URI target, int statusCode) {
+        String method = request.method();
+        boolean preserveMethodAndBody = statusCode == 307 || statusCode == 308;
+        boolean bodylessMethod = METHOD_GET.equals(method) || METHOD_HEAD.equals(method);
+        boolean dropBody = !preserveMethodAndBody && !(statusCode != 303 && bodylessMethod);
+
+        boolean forwardCredentials = redirectPolicy.forwardsCredentials(currentUri, target);
+        BiPredicate<String, String> headerFilter = (name, value) -> {
+            if (!forwardCredentials
+                    && (HEADER_AUTHORIZATION.equalsIgnoreCase(name) || HEADER_COOKIE.equalsIgnoreCase(name))) {
+                return false;
+            }
+            return !dropBody
+                    || (!HEADER_CONTENT_TYPE.equalsIgnoreCase(name) && !HEADER_CONTENT_LENGTH.equalsIgnoreCase(name));
+        };
+
+        HttpRequest.Builder builder = HttpRequest.newBuilder(request, headerFilter).uri(target);
+        if (!preserveMethodAndBody && (statusCode == 303 || !bodylessMethod)) {
+            // GET() also clears the body publisher carried over from the original request.
+            builder.GET();
+        }
+        return builder.build();
+    }
+
+    /**
      * Pings the URI using the HEAD method and returns the HTTP status code family.
      *
      * @return The HTTP status code family, or {@link HttpStatusFamily#UNKNOWN} if an error occurred
@@ -431,13 +600,17 @@ public final class HttpHandler implements AutoCloseable {
     @SuppressWarnings("try")
     private HttpStatusFamily pingWithMethod(String method, HttpRequest.BodyPublisher bodyPublisher) {
         try {
-            HttpClient client = createHttpClient();
             HttpRequest request = requestBuilder()
                     .method(method, bodyPublisher)
                     .build();
 
-            HttpResponse<Void> response = client.send(request, HttpResponse.BodyHandlers.discarding());
+            // Routed through send(...) rather than the raw client so a ping reports the terminal
+            // status of a permitted redirect chain instead of the first 3xx on it.
+            HttpResponse<Void> response = send(request, HttpResponse.BodyHandlers.discarding());
             return HttpStatusFamily.fromStatusCode(response.statusCode());
+        } catch (RedirectNotAllowedException e) {
+            LOGGER.warn(HttpLogMessages.WARN.REDIRECT_REFUSED, e.getFrom(), e.getTo(), e.getReason());
+            return HttpStatusFamily.UNKNOWN;
         } catch (IOException e) {
             LOGGER.warn(e, HttpLogMessages.WARN.HTTP_PING_IO_ERROR, uri, e.getMessage());
             return HttpStatusFamily.UNKNOWN;

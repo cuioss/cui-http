@@ -113,6 +113,17 @@ public final class HttpLogMessages {
                 .identifier(116)
                 .template("TLS hostname verification disabled for %s (verifyHostname=false); certificate chain validation remains enforced")
                 .build();
+
+        /**
+         * Logged when a redirect hop is refused by the handler's {@code RedirectPolicy} and therefore
+         * not followed.
+         * Used in: HttpHandler.pingWithMethod (RedirectNotAllowedException from the follow loop)
+         */
+        public static final LogRecord REDIRECT_REFUSED = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(117)
+                .template("Refusing to follow redirect from %s to %s: %s")
+                .build();
     }
 
     /**
