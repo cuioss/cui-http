@@ -405,4 +405,46 @@ class NormalizationStageTest {
                 "Encoded double dot '" + input + "' should be detected regardless of hex-digit case");
         assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, exception.getFailureType());
     }
+
+    /**
+     * A {@code ..} segment carrying a {@code ;} path-parameter suffix is resolved to a bare
+     * {@code ..} by any Servlet-style container, which strips path parameters before resolving the
+     * path. The raw input therefore never contains a literal {@code ../} and slips past the
+     * dot-segment resolution, while the container still walks the parent directory — so LAYER 1
+     * must reject the family on the pre-normalization intent check.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "/..;/..;/etc/passwd",              // repeated path-parameter dot-segments
+            "/api/..;/..;/secret",              // nested under a legitimate prefix
+            "/..;foo=bar/..;baz=1/etc/passwd",  // path parameters carrying name=value pairs
+            "..;/etc/passwd",                   // no leading slash — matches at input start
+            "/..;/"                             // minimal form, trailing slash only
+    })
+    void validate_withPathParameterDotSegment_shouldBeRejected(String input) {
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> stage.validate(input),
+                "Path-parameter dot-segment '" + input + "' should be detected as traversal attempt");
+        assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, exception.getFailureType());
+        assertEquals(ValidationType.URL_PATH, exception.getValidationType());
+        assertEquals(input, exception.getOriginalInput());
+    }
+
+    /**
+     * Negative controls for the path-parameter dot-segment family. A {@code ;} is a legal RFC 3986
+     * path sub-delimiter, so its mere presence carries no traversal intent — only a segment whose
+     * <em>leading</em> characters are {@code ..} does. {@code /a/b..;/c} is the boundary case: the
+     * segment ends in {@code ..;} but does not start with {@code ..}, so it must still validate.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "/api/users;v=2/list",   // ordinary path parameter on a normal segment
+            "/matrix;a=1;b=2/next",  // multiple path parameters on a normal segment
+            "/a/b..;/c"              // segment ends in "..;" but does not start with ".."
+    })
+    void validate_withLegitimatePathParameters_shouldNotBeRejected(String input) {
+        Optional<String> result = stage.validate(input);
+        assertTrue(result.isPresent(), "Path '" + input + "' should be allowed but was rejected");
+        assertEquals(input, result.get(), "Path should remain unchanged after normalization");
+    }
 }

@@ -54,7 +54,9 @@ consumed at root — `/api/../../etc/passwd` is the canonical case — is normal
 algorithm (`..` at the top of an absolute path is discarded, not carried) and the call **returns
 normally with no throw**. This is distinct from, and does not weaken, the two throwing checks the
 stage runs on every path: LAYER 1 (`containsDirectoryTraversalIntent`, before normalization)
-rejects four literal traversal-pattern classes regardless of where they resolve to, and LAYER 2
+rejects five literal traversal-pattern classes regardless of where they resolve to — including a
+`..` segment carrying a `;` path-parameter suffix (`/..;/`, or a leading `..;`), which a
+Servlet-style container resolves to `..` once it strips path parameters — and LAYER 2
 (post-normalization) rejects any `..` that *survives* normalization plus any path that still
 escapes root after resolution. Clamping applies only to the residual case neither layer's checks
 catch: a `..` sequence long enough to walk past root, then read as ordinary (non-attack-shaped)
