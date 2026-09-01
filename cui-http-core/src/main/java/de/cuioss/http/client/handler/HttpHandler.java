@@ -725,8 +725,8 @@ public final class HttpHandler implements AutoCloseable {
         } catch (IllegalArgumentException e) {
             throw new RedirectNotAllowedException(currentUri, null,
                     RedirectPolicy.RedirectRefusal.MALFORMED_LOCATION,
-                    "Refusing to follow redirect from " + currentUri + ": malformed Location '"
-                            + sanitizeForMessage(location) + "': "
+                    "Refusing to follow redirect from " + sanitizeForMessage(currentUri.toString())
+                            + ": malformed Location '" + sanitizeForMessage(location) + "': "
                             + RedirectPolicy.RedirectRefusal.MALFORMED_LOCATION, e);
         }
     }
@@ -741,11 +741,14 @@ public final class HttpHandler implements AutoCloseable {
      * size.
      *
      * <p>
-     * Package-private (rather than {@code private}) solely so the neutralization logic is directly
-     * unit-testable: the JDK {@code HttpClient} collapses an embedded {@code TAB} in a received
-     * header value to a single space before this class ever sees it (RFC 7230 optional-whitespace
-     * folding), so a real {@code Location} header cannot carry a control character through the wire
-     * for an end-to-end assertion — see {@code HttpHandlerRedirectTest}.
+     * Package-private (rather than {@code private}) for two reasons: {@link RedirectNotAllowedException}
+     * — same package — calls it to bound the {@code from}/{@code to} values it embeds in every refusal
+     * message, not only the {@code MALFORMED_LOCATION} one this class builds directly; and the
+     * neutralization logic is directly unit-testable, which matters because the JDK {@code HttpClient}
+     * collapses an embedded {@code TAB} in a received header value to a single space before this class
+     * ever sees it (RFC 7230 optional-whitespace folding), so a real {@code Location} header cannot
+     * carry a control character through the wire for an end-to-end assertion — see
+     * {@code HttpHandlerRedirectTest}.
      *
      * @param value the untrusted, non-null value to neutralize
      * @return the sanitized value, safe to embed verbatim in a message

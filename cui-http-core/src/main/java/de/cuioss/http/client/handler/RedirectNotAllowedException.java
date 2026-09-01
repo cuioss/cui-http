@@ -76,6 +76,16 @@ public class RedirectNotAllowedException extends RuntimeException {
 
     /**
      * Creates a refusal naming the hop and its reason.
+     * <p>
+     * {@code from} and {@code to} are retained verbatim on {@link #getFrom()} / {@link #getTo()}, but
+     * the human-readable {@link #getMessage()} embeds them through
+     * {@link HttpHandler#sanitizeForMessage(String)} first: {@code to} is the resolved redirect
+     * target, i.e. the remote-controlled {@code Location} header value after resolution, and
+     * {@code from} — for every hop after the first — is itself a previously-resolved,
+     * remote-controlled target that only passed the origin/allowlist check on its host, not on its
+     * path or query. Both are therefore bounded in length before they reach a message a downstream
+     * caller (e.g. {@code ETagAwareHttpAdapter}'s {@code .exceptionally()} handler) may log or surface
+     * verbatim.
      *
      * @param from   the URI the refused redirect response was received from
      * @param to     the refused redirect target, or {@code null} for
@@ -84,7 +94,9 @@ public class RedirectNotAllowedException extends RuntimeException {
      * @param reason why the hop was refused
      */
     public RedirectNotAllowedException(URI from, @Nullable URI to, RedirectRefusal reason) {
-        this(from, to, reason, "Refusing to follow redirect from " + from + " to " + to + ": " + reason, null);
+        this(from, to, reason, "Refusing to follow redirect from " + HttpHandler.sanitizeForMessage(from.toString())
+                + " to " + (to == null ? "null" : HttpHandler.sanitizeForMessage(to.toString())) + ": " + reason,
+                null);
     }
 
     /**

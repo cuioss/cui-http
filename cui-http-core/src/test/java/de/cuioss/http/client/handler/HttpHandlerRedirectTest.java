@@ -387,6 +387,35 @@ class HttpHandlerRedirectTest {
         }
     }
 
+    /**
+     * Unit-level, mirroring {@link #overlongMalformedLocationShouldBeTruncated}: the same
+     * {@link HttpHandler#sanitizeForMessage(String)} bounding applies to every refusal reason the
+     * public 3-arg {@link RedirectNotAllowedException} constructor builds, not only
+     * {@code MALFORMED_LOCATION}. Exercised directly against the constructor — rather than end-to-end
+     * through {@link RedirectDispatcher} — because driving an overlong-but-parseable cross-origin
+     * {@code Location} through the dispatcher would need a new fixture path for no additional
+     * assertion strength over calling the (public) constructor with the same shape of value.
+     */
+    @Test
+    @DisplayName("An overlong cross-origin refusal target should be truncated in the message")
+    void overlongCrossOriginTargetShouldBeTruncatedInMessage() {
+        URI from = URI.create("http://origin.example.org/start");
+        URI to = URI.create("http://" + RedirectDispatcher.OFF_SERVER_HOST + "/" + "a".repeat(500));
+
+        RedirectNotAllowedException thrown = new RedirectNotAllowedException(from, to,
+                RedirectPolicy.RedirectRefusal.CROSS_ORIGIN);
+
+        assertEquals(from, thrown.getFrom(), "the from URI is retained verbatim on getFrom()");
+        assertEquals(to, thrown.getTo(), "the full, unbounded target is still retained verbatim on getTo()");
+        assertEquals(RedirectPolicy.RedirectRefusal.CROSS_ORIGIN, thrown.getReason());
+        assertFalse(thrown.getMessage().contains(to.toString()),
+                "the full, unbounded target must never reach the exception message verbatim");
+        assertTrue(thrown.getMessage().contains(RedirectDispatcher.OFF_SERVER_HOST),
+                "the bounded prefix of the target — well within the first 256 characters — must still be present");
+        assertTrue(thrown.getMessage().contains("...[truncated]"),
+                "the refusal must carry a visible truncation marker so a reader can tell the value was cut");
+    }
+
     @Test
     @DisplayName("An unparseable Location on the ping path should log the HTTP-117 WARN and report UNKNOWN")
     @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
