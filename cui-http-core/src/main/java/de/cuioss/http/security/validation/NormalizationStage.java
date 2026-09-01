@@ -116,11 +116,14 @@ import java.util.regex.Pattern;
  * <p><strong>What it rejects.</strong> {@code validate} runs two throwing checks:</p>
  * <ul>
  *   <li><strong>LAYER 1</strong> ({@code containsDirectoryTraversalIntent}, before
- *       normalization) raises {@link UrlSecurityFailureType#PATH_TRAVERSAL_DETECTED} for four
+ *       normalization) raises {@link UrlSecurityFailureType#PATH_TRAVERSAL_DETECTED} for five
  *       pattern classes: a single-component traversal {@code seg/../seg} (via
  *       {@code SINGLE_COMPONENT_TRAVERSAL_PATTERN}); a percent-encoded traversal
  *       ({@code ..%} or {@code %2e%2e}, matched case-folded so all hex-case permutations are
- *       covered); three or more consecutive dots followed by a separator; and
+ *       covered); three or more consecutive dots followed by a separator; a {@code ..} segment
+ *       carrying a {@code ;} path-parameter suffix ({@code /..;/} or a leading {@code ..;},
+ *       via {@code DOT_SEGMENT_WITH_PATH_PARAM_PATTERN}), which a Servlet-style container
+ *       resolves to {@code ..} once it strips path parameters; and
  *       {@code ..\}-style backslash traversal that does not itself start with {@code ..\}.</li>
  *   <li><strong>LAYER 2</strong> ({@code containsInternalPathTraversal}, after normalization)
  *       raises {@link UrlSecurityFailureType#PATH_TRAVERSAL_DETECTED} for {@code ..} segments
@@ -206,6 +209,21 @@ ValidationType validationType) implements HttpSecurityValidator {
      * Uses .find() with simple pattern to prevent ReDoS attacks.
      */
     static final Pattern MULTIPLE_DOTS_WITH_SEPARATOR_PATTERN = Pattern.compile("\\.{3,}[/\\\\]");
+
+    /**
+     * Pattern to detect a dot-segment carrying a path-parameter suffix.
+     * Matches a {@code ..} segment — at the start of the input or immediately after a
+     * forward slash or backslash — that is directly followed by the {@code ;} path-parameter
+     * separator, as in {@code /api/..;/admin} or {@code ..;/etc/passwd}.
+     * <p>
+     * Any Servlet-style container strips path parameters before resolving the path, so
+     * {@code ..;foo} is resolved to {@code ..} downstream: the segment therefore carries full
+     * traversal intent even though a literal {@code ../} never appears in the raw input.
+     * Anchoring the {@code ..} to a segment boundary keeps legitimate segments whose name
+     * merely ends in dots (for example {@code b..;}) out of scope.
+     * Uses .find() with a simple pattern to prevent ReDoS attacks.
+     */
+    static final Pattern DOT_SEGMENT_WITH_PATH_PARAM_PATTERN = Pattern.compile("(?:^|[/\\\\])\\.\\.;");
 
     /**
      * Pattern for splitting paths on forward slash or backslash separators.
@@ -513,7 +531,13 @@ ValidationType validationType) implements HttpSecurityValidator {
             return true;
         }
 
-        // Pattern 4: Windows-style backslash traversal (but not if it starts with ..)
+        // Pattern 4: Dot-segment carrying a ";" path-parameter suffix ("/..;/" or leading "..;")
+        // A Servlet-style container strips path parameters, so "..;" resolves to ".." downstream
+        if (DOT_SEGMENT_WITH_PATH_PARAM_PATTERN.matcher(input).find()) {
+            return true;
+        }
+
+        // Pattern 5: Windows-style backslash traversal (but not if it starts with ..)
         // Patterns starting with .. should be handled by escapesRoot check
         return CONTAINS_DOTDOT_BACKSLASH_PATTERN.matcher(input).find() &&
                 !STARTS_WITH_DOTDOT_BACKSLASH_PATTERN.matcher(input).matches();
