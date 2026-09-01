@@ -64,9 +64,8 @@ import java.util.regex.Pattern;
  *     .readTimeoutSeconds(10)
  *     .build();
  *
- * // Execute a GET request via the shared client and the pre-configured request builder
- * HttpClient client = handler.createHttpClient();
- * HttpResponse&lt;String&gt; response = client.send(
+ * // Execute a GET request, following any redirect the policy permits
+ * HttpResponse&lt;String&gt; response = handler.send(
  *     handler.requestBuilder().GET().build(),
  *     HttpResponse.BodyHandlers.ofString());
  * if (response.statusCode() == 200) {
@@ -74,8 +73,17 @@ import java.util.regex.Pattern;
  *     // Process response
  * }
  *
- * // Or, for a lightweight reachability check
+ * // Or, for a lightweight reachability check (also redirect-following)
  * HttpStatusFamily status = handler.pingGet();
+ *
+ * // Opt in to a host allowlist, and let credentials survive the hop to it
+ * HttpHandler allowlisted = HttpHandler.builder()
+ *     .uri("https://api.example.com/users")
+ *     .redirectPolicy(RedirectPolicy.builder()
+ *         .allowedHosts(List.of("cdn.example.net"))
+ *         .credentialForwarding(RedirectPolicy.CredentialForwarding.FORWARD_TO_ALLOWLISTED)
+ *         .build())
+ *     .build();
  *
  * // Custom SSL context
  * SSLContext customSSL = new SecureSSLContextProvider().getOrCreateSecureSSLContext(null);
@@ -97,23 +105,45 @@ import java.util.regex.Pattern;
  *   <li>SSL context created automatically for HTTPS if not provided</li>
  *   <li>Default timeout: 10 seconds for both connection and read</li>
  *   <li>Schemeless string URLs default to HTTPS</li>
- *   <li>Redirects are <strong>not followed</strong>: no redirect policy is configured on either the
- *       HTTP or the HTTPS client, so the JDK default {@link HttpClient.Redirect#NEVER} applies. Every
- *       3xx response — followable status or not — reaches the caller verbatim, with any
- *       {@code Location} header it supplies left intact and no further request issued. Adapters
- *       classify such a response as a non-retryable {@code INVALID_CONTENT} failure; see
- *       {@link HttpStatusFamily#toErrorCategory()}. A caller that wants to act on a redirect can
- *       read and validate the {@code Location} header when the response supplies one — a 3xx is not
- *       required to carry it — and issue the follow-up request explicitly.</li>
+ *   <li>Redirects are followed by {@link #send} / {@link #sendAsync}, each hop revalidated against
+ *       the configured {@link RedirectPolicy} first; same-origin only by default. See
+ *       <a href="#redirect-policy">Redirect policy</a>.</li>
  * </ul>
- * <p>
- * <strong>Why redirects are not followed:</strong> a followed redirect would send the request to a
- * target the caller never validated. This class runs no {@code de.cuioss.http.security} pipeline over
- * a redirect destination, so a same-scheme redirect to an attacker-chosen host or port would be
- * honoured silently. Leaving the JDK default in place keeps the caller-validated URI the only request
- * target. Validated redirect following — same-origin by default, with an opt-in host allowlist — is
- * planned as follow-up work; the current behaviour is a fail-secure baseline, not the intended
- * permanent end state.
+ *
+ * <h3 id="redirect-policy">Redirect policy</h3>
+ * <p>The JDK client this handler owns stays on {@link HttpClient.Redirect#NEVER} and never follows a
+ * hop of its own. Redirect following is done here, in cui-http, so that <em>every</em> hop is
+ * validated before it is requested rather than after the fact:</p>
+ * <ul>
+ *   <li>{@link #send(HttpRequest, HttpResponse.BodyHandler)} and
+ *       {@link #sendAsync(HttpRequest, HttpResponse.BodyHandler)} follow {@code 301}, {@code 302},
+ *       {@code 303}, {@code 307} and {@code 308} when the response carries a non-blank
+ *       {@code Location}. Any other 3xx — and a followable status without a usable {@code Location} —
+ *       reaches the caller verbatim and classifies as a non-retryable {@code INVALID_CONTENT} failure;
+ *       see {@link HttpStatusFamily#toErrorCategory()}.</li>
+ *   <li>Each candidate hop is passed to {@link RedirectPolicy#refuse(URI, URI)} <em>before</em> the
+ *       request is issued. The default, {@link RedirectPolicy#sameOrigin()}, permits same-origin hops
+ *       only; a host allowlist is an explicit opt-in via
+ *       {@link HttpHandlerBuilder#redirectPolicy(RedirectPolicy)}.</li>
+ *   <li>An {@code https} &rarr; {@code http} hop is <strong>always</strong> refused
+ *       ({@link RedirectPolicy.RedirectRefusal#PROTOCOL_DOWNGRADE}), allowlisted or not — an
+ *       allowlist entry never buys a downgrade off TLS.</li>
+ *   <li>The chain is bounded by {@link RedirectPolicy#getMaxHops()} (default
+ *       {@value RedirectPolicy#DEFAULT_MAX_HOPS}); exhausting it raises
+ *       {@link RedirectPolicy.RedirectRefusal#TOO_MANY_HOPS}.</li>
+ *   <li>{@code Authorization} and {@code Cookie} are governed by the policy's
+ *       {@link RedirectPolicy.CredentialForwarding} strategy: stripped across an origin boundary by
+ *       default, forwarded to an allowlisted host only on the explicit
+ *       {@link RedirectPolicy.CredentialForwarding#FORWARD_TO_ALLOWLISTED} opt-in, and never stripped
+ *       on a same-origin hop.</li>
+ *   <li>Every refusal raises {@link RedirectNotAllowedException}, which names the hop and the reason
+ *       and classifies as the non-retryable {@code CONFIGURATION_ERROR}.</li>
+ *   <li>{@link #createHttpClient()} hands out the raw, non-following client. A caller taking that
+ *       route observes the 3xx itself and owns validating the {@code Location} target.</li>
+ * </ul>
+ * <p>This is deliberately an <em>egress host policy</em> and not a {@code de.cuioss.http.security}
+ * validation pipeline: those pipelines answer an inbound path/pattern question, while a redirect
+ * target poses the outbound question "is this host an acceptable next hop?".</p>
  *
  * <h3 id="lifecycle">Lifecycle</h3>
  * <p>A handler creates exactly one {@link HttpClient} during construction and shares it across every

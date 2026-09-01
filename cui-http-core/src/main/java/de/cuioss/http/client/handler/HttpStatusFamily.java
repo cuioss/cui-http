@@ -214,7 +214,7 @@ public enum HttpStatusFamily {
      * <ul>
      *   <li><strong>CLIENT_ERROR (4xx)</strong> → {@link HttpErrorCategory#CLIENT_ERROR} - Client request errors (non-retryable)</li>
      *   <li><strong>SERVER_ERROR (5xx)</strong> → {@link HttpErrorCategory#SERVER_ERROR} - Server errors (retryable)</li>
-     *   <li><strong>REDIRECTION (3xx)</strong> → {@link HttpErrorCategory#INVALID_CONTENT} - redirects are never followed (see below)</li>
+     *   <li><strong>REDIRECTION (3xx)</strong> → {@link HttpErrorCategory#INVALID_CONTENT} - a 3xx only reaches a caller when it was not followed (see below)</li>
      *   <li><strong>INFORMATIONAL (1xx)</strong> → {@link HttpErrorCategory#INVALID_CONTENT} - Unexpected in response processing</li>
      *   <li><strong>UNKNOWN</strong> → {@link HttpErrorCategory#INVALID_CONTENT} - Invalid status codes</li>
      *   <li><strong>SUCCESS (2xx)</strong> → Throws IllegalStateException (not an error)</li>
@@ -230,16 +230,17 @@ public enum HttpStatusFamily {
      * </pre>
      *
      * <h3>Note on 3xx Redirects</h3>
-     * Redirects are never followed. {@code HttpHandler} configures no redirect policy on its clients,
-     * so the JDK default {@code HttpClient.Redirect.NEVER} applies and every 3xx — followable status
-     * or not — is returned to the caller unfollowed, with any {@code Location} header it supplies left
-     * intact. Such a response is not the representation the request asked for, which is why the
-     * classification is the non-retryable {@link HttpErrorCategory#INVALID_CONTENT}: retrying the same
-     * request would reproduce the same redirect. A caller that wants to act on the redirect can read
-     * and validate the {@code Location} header when the response supplies one — a 3xx is not required
-     * to carry it — and issue the follow-up request explicitly.
-     * Validated redirect following — same-origin by default, with an opt-in host allowlist — is
-     * planned as follow-up work.
+     * A 3xx only reaches a caller when it was <em>not</em> followed. {@code HttpHandler.send(...)}
+     * follows {@code 301}, {@code 302}, {@code 303}, {@code 307} and {@code 308} that carry a usable
+     * {@code Location} and whose target its {@code RedirectPolicy} permits, so a 3xx surfaces here in
+     * one of three cases: the status is not followable ({@code 300}, {@code 304}, {@code 305},
+     * {@code 306}), the response carries no usable {@code Location}, or the caller took the raw
+     * {@code createHttpClient()} route, which never follows. (A hop the policy <em>refuses</em> does
+     * not surface as a 3xx at all — it raises {@code RedirectNotAllowedException}, classified as
+     * {@link HttpErrorCategory#CONFIGURATION_ERROR}.) In each of those cases the response is not the
+     * representation the request asked for, which is why the classification is the non-retryable
+     * {@link HttpErrorCategory#INVALID_CONTENT}: retrying the same request would reproduce the same
+     * redirect.
      *
      * @return the corresponding HttpErrorCategory for this status family
      * @throws IllegalStateException if called on SUCCESS family (which is not an error)
@@ -251,8 +252,9 @@ public enum HttpStatusFamily {
             case CLIENT_ERROR -> HttpErrorCategory.CLIENT_ERROR;
             case SERVER_ERROR -> HttpErrorCategory.SERVER_ERROR;
             case SUCCESS -> throw new IllegalStateException("SUCCESS is not an error");
-            // Redirects are never followed (JDK default Redirect.NEVER), so every 3xx lands here
-            // unfollowed rather than as the requested representation; retrying would reproduce the redirect
+            // A 3xx lands here only when it was not followed — an unfollowable status, no usable
+            // Location, or the raw non-following client — so it is never the requested representation;
+            // retrying would reproduce the same redirect
             case REDIRECTION -> HttpErrorCategory.INVALID_CONTENT;
             case INFORMATIONAL, UNKNOWN -> HttpErrorCategory.INVALID_CONTENT;
         };
