@@ -77,25 +77,71 @@ import java.util.regex.Pattern;
  * NormalizationStage normalizer = new NormalizationStage(config, ValidationType.URL_PATH);
  *
  * // Normalize legitimate path
- * String normalized = normalizer.validate("/api/users/./123/../456");
- * // Returns: "/api/users/456"
+ * String normalized = normalizer.validate("/api/users/./123/../456")
+ *         .orElseThrow(() -&gt; new IllegalArgumentException("input must not be null"));
+ * // normalized is: "/api/users/456"
  *
- * // Detect path traversal attack
+ * // An absolute path whose .. segments are consumed at root is CLAMPED, not rejected
+ * String clamped = normalizer.validate("/api/../../etc/passwd")
+ *         .orElseThrow(() -&gt; new IllegalArgumentException("input must not be null"));
+ * // clamped is: "/etc/passwd" — this returns normally; no exception is thrown
+ *
+ * // Detect path traversal attack (LAYER 1, single-component traversal)
  * try {
- *     normalizer.validate("/api/../../etc/passwd");
- *     // Throws UrlSecurityException with DIRECTORY_ESCAPE_ATTEMPT
+ *     normalizer.validate("api/../admin");
+ *     // Throws UrlSecurityException with PATH_TRAVERSAL_DETECTED
  * } catch (UrlSecurityException e) {
  *     logger.warn("Path traversal blocked: {}", e.getFailureType());
  * }
  *
- * // Detect excessive nesting attack
+ * // Detect root escape (relative path whose .. survives normalization)
  * try {
- *     normalizer.validate("/a/../b/../c/../d/../e/../f/../g/../h/../i/../j/../k/../l/../m/../n/../o/../p/../q/../r/../s/../t");
+ *     normalizer.validate("../etc/passwd");
+ *     // Throws UrlSecurityException with DIRECTORY_ESCAPE_ATTEMPT
+ * } catch (UrlSecurityException e) {
+ *     logger.warn("Root escape blocked: {}", e.getFailureType());
+ * }
+ *
+ * // Detect excessive nesting attack (more than 100 resolved directory segments)
+ * try {
+ *     normalizer.validate("/" + "a/".repeat(101));
  *     // Throws UrlSecurityException with EXCESSIVE_NESTING
  * } catch (UrlSecurityException e) {
  *     logger.warn("DoS attack blocked: {}", e.getFailureType());
  * }
  * </pre>
+ *
+ * <h3>What this stage rejects, and what it silently clamps</h3>
+ *
+ * <p><strong>What it rejects.</strong> {@code validate} runs two throwing checks:</p>
+ * <ul>
+ *   <li><strong>LAYER 1</strong> ({@code containsDirectoryTraversalIntent}, before
+ *       normalization) raises {@link UrlSecurityFailureType#PATH_TRAVERSAL_DETECTED} for four
+ *       pattern classes: a single-component traversal {@code seg/../seg} (via
+ *       {@code SINGLE_COMPONENT_TRAVERSAL_PATTERN}); a percent-encoded traversal
+ *       ({@code ..%} or {@code %2e%2e}, matched case-folded so all hex-case permutations are
+ *       covered); three or more consecutive dots followed by a separator; and
+ *       {@code ..\}-style backslash traversal that does not itself start with {@code ..\}.</li>
+ *   <li><strong>LAYER 2</strong> ({@code containsInternalPathTraversal}, after normalization)
+ *       raises {@link UrlSecurityFailureType#PATH_TRAVERSAL_DETECTED} for {@code ..} segments
+ *       that survive normalization, and {@code escapesRoot} raises
+ *       {@link UrlSecurityFailureType#DIRECTORY_ESCAPE_ATTEMPT} for a normalized path that
+ *       escapes root.</li>
+ * </ul>
+ *
+ * <p><strong>What it silently clamps.</strong> An absolute path whose {@code ..} segments are
+ * consumed at root is clamped per RFC 3986 and <em>returns normally with no throw</em>.
+ * {@code /api/../../etc/passwd} is exactly this case: the leading {@code /} prevents
+ * {@code SINGLE_COMPONENT_TRAVERSAL_PATTERN} from matching, no encoded or multi-dot pattern
+ * fires, {@code processPathSegment} discards {@code ..} at root for an absolute path,
+ * {@code escapesRoot("/etc/passwd")} is false, and the method returns {@code /etc/passwd}.</p>
+ *
+ * <p><strong>Standalone-use caveat.</strong> Because the clamping path returns a normalized
+ * value rather than throwing, a caller MUST NOT treat a successful return from this stage
+ * alone as proof that the input carried no traversal intent. The clamped result must still be
+ * authorized against the caller's own root before it is used to resolve a resource. This is a
+ * caveat about the clamping path specifically — the stage does reject the traversal classes
+ * enumerated above.</p>
  *
  * <h3>Performance Characteristics</h3>
  * <ul>

@@ -39,7 +39,9 @@
  *
  * // Use in validation pipeline
  * try {
- *     String validated = validator.validate(input);
+ *     String validated = validator.validate(input)
+ *             .orElseThrow(() -&gt; new IllegalArgumentException("input must not be null"));
+ *     // Process validated input
  * } catch (UrlSecurityException e) {
  *     // Increment counter for this failure type
  *     eventCounter.increment(e.getFailureType());

@@ -72,8 +72,9 @@ import java.util.regex.Pattern;
  *
  * // Validate and decode input
  * try {
- *     String decoded = pathDecoder.validate("/api/users%2F123");
- *     // Returns: "/api/users/123"
+ *     String decoded = pathDecoder.validate("/api/users%2F123")
+ *             .orElseThrow(() -&gt; new IllegalArgumentException("input must not be null"));
+ *     // decoded is: "/api/users/123"
  * } catch (UrlSecurityException e) {
  *     // Handle security violation
  *     logger.warn("Encoding attack detected: {}", e.getFailureType());
@@ -359,7 +360,8 @@ ValidationType validationType) implements HttpSecurityValidator {
         // Iterate by Unicode code point (not char) so that supplementary-plane combining marks,
         // which arrive as surrogate pairs, are classified against their real code point rather
         // than an individual surrogate half.
-        for (int i = 0; i < decoded.length(); ) {
+        int i = 0;
+        while (i < decoded.length()) {
             int cp = decoded.codePointAt(i);
 
             if (cp == '\0' && !config.allowNullBytes()) {
@@ -424,6 +426,23 @@ ValidationType validationType) implements HttpSecurityValidator {
      * relax them. URL paths honour {@code allowControlCharacters}. Parameter values and bodies
      * carry form data, in which CR, LF and TAB are legitimate content; every other control
      * character is rejected there unless {@code allowControlCharacters} is set.</p>
+     *
+     * <h3>Threat model: the CR/LF carve-out for PARAMETER_VALUE and BODY</h3>
+     * <p><strong>Decoded CR and LF are deliberately allowed for
+     * {@link ValidationType#PARAMETER_VALUE} and {@link ValidationType#BODY}</strong> - this is
+     * the carve-out expressed by the {@code isFormDataWhitespace} branch above, not an
+     * oversight. Form data legitimately carries line breaks (a multi-line {@code textarea}
+     * submission is the ordinary case), so rejecting them would break correct applications.</p>
+     *
+     * <p>The consequence is a residual risk this stage does <em>not</em> close:
+     * <strong>response-splitting safety for these two types depends on the application not
+     * reflecting parameter values or body content into response headers.</strong> A value that
+     * passes this stage may contain CR/LF; writing it unescaped into a {@code Set-Cookie},
+     * {@code Location} or any other response header is a response-splitting vulnerability that
+     * no configuration here prevents. The header types are unaffected - CR/LF is rejected
+     * unconditionally for {@code HEADER_NAME}, {@code HEADER_VALUE}, {@code COOKIE_NAME},
+     * {@code COOKIE_VALUE} and {@code PARAMETER_NAME}, and {@code allowControlCharacters} does
+     * not relax them.</p>
      *
      * @param cp the decoded control code point under test
      * @return {@code true} if the code point must be rejected for this validation type

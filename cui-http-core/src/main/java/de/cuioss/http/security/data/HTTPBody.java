@@ -68,8 +68,12 @@ import java.util.Optional;
  * boolean hasContent = body.hasContent();   // true if content is not empty
  * boolean isCompressed = body.isCompressed(); // true if encoding is specified
  *
- * // Use in validation
- * validator.validate(body.content(), ValidationType.BODY);
+ * // Use in validation: there is no body-content pipeline. Validate the declared
+ * // content type through the content-type pipeline and enforce the body-size limit
+ * // (SecurityConfiguration.maxBodySize()) before handing the content to the application.
+ * HttpSecurityValidator contentTypeValidator =
+ *     PipelineFactory.createContentTypePipeline(config, counter);
+ * contentTypeValidator.validate(body.contentType());
  * </pre>
  *
  * <h3>Content Types</h3>
@@ -82,9 +86,25 @@ import java.util.Optional;
  * specified in the Content-Type header.</p>
  *
  * <h3>Security Considerations</h3>
- * <p>This record is a simple data container. Security validation should be applied to
- * the content using appropriate validators for {@link ValidationType#BODY}, taking into
- * account the content type and encoding when determining validation strategies.</p>
+ * <p>This record is a simple data container and performs no validation of its own.</p>
+ *
+ * <p><strong>There is no body-content validation pipeline.</strong>
+ * {@code PipelineFactory.createPipeline(ValidationType.BODY, config, counter)} throws
+ * {@link IllegalArgumentException} - the BODY pipeline was removed because meaningful body
+ * validation depends on the payload format (JSON, XML, multipart) and therefore belongs to
+ * the application layer. {@link ValidationType#BODY} survives only as a failure-reporting
+ * discriminator on {@code UrlSecurityException}, not as a factory key.</p>
+ *
+ * <p>The supported route for body content is:</p>
+ * <ul>
+ *   <li>Validate the declared content type with
+ *       {@code PipelineFactory.createContentTypePipeline(config, counter)}, which applies the
+ *       configured {@code blockedContentTypes} / {@code allowedContentTypes} lists.</li>
+ *   <li>Enforce {@code SecurityConfiguration.maxBodySize()} against the raw byte count before
+ *       the body is buffered or parsed.</li>
+ *   <li>Parse and validate the decoded payload with a format-aware validator owned by the
+ *       application.</li>
+ * </ul>
  *
  * Implements: Task B3 from HTTP verification specification
  *
@@ -100,42 +120,112 @@ String content, @Nullable
 String contentType, @Nullable
 String encoding) {
 
+    /**
+     * Creates a body with the given content and content type and no content encoding.
+     *
+     * <p>No validation is performed on either argument; both are stored verbatim.</p>
+     *
+     * @param content The body content, stored as-is
+     * @param contentType The MIME content type, stored as-is
+     * @return A new HTTPBody with the given content and content type, and encoding {@code ""}
+     */
     public static HTTPBody of(String content, String contentType) {
         return new HTTPBody(content, contentType, "");
     }
 
+    /**
+     * Creates a {@code text/plain} body with no content encoding.
+     *
+     * @param content The body content, stored as-is
+     * @return A new HTTPBody with content type {@code "text/plain"} and encoding {@code ""}
+     */
     public static HTTPBody text(String content) {
         return new HTTPBody(content, "text/plain", "");
     }
 
+    /**
+     * Creates an {@code application/json} body with no content encoding.
+     *
+     * <p>The content is not parsed or checked for well-formed JSON - only the declared
+     * content type is set.</p>
+     *
+     * @param jsonContent The body content, stored as-is
+     * @return A new HTTPBody with content type {@code "application/json"} and encoding {@code ""}
+     */
     public static HTTPBody json(String jsonContent) {
         return new HTTPBody(jsonContent, "application/json", "");
     }
 
+    /**
+     * Creates a {@code text/html} body with no content encoding.
+     *
+     * @param htmlContent The body content, stored as-is
+     * @return A new HTTPBody with content type {@code "text/html"} and encoding {@code ""}
+     */
     public static HTTPBody html(String htmlContent) {
         return new HTTPBody(htmlContent, "text/html", "");
     }
 
+    /**
+     * Creates an {@code application/x-www-form-urlencoded} body with no content encoding.
+     *
+     * @param formContent The body content, stored as-is
+     * @return A new HTTPBody with content type {@code "application/x-www-form-urlencoded"}
+     *         and encoding {@code ""}
+     */
     public static HTTPBody form(String formContent) {
         return new HTTPBody(formContent, "application/x-www-form-urlencoded", "");
     }
 
+    /**
+     * Checks whether this body carries any content.
+     *
+     * @return true if content is neither null nor the empty string
+     */
     public boolean hasContent() {
         return content != null && !content.isEmpty();
     }
 
+    /**
+     * Checks whether a content type is declared.
+     *
+     * @return true if contentType is neither null nor the empty string
+     */
     public boolean hasContentType() {
         return contentType != null && !contentType.isEmpty();
     }
 
+    /**
+     * Checks whether a content encoding is declared.
+     *
+     * @return true if encoding is neither null nor the empty string
+     */
     public boolean hasEncoding() {
         return encoding != null && !encoding.isEmpty();
     }
 
+    /**
+     * Checks whether the content is encoded.
+     *
+     * <p>This is a declaration-based check that is exactly equivalent to
+     * {@link #hasEncoding()}: the encoding string is not inspected, so any non-empty value
+     * (including one that names no compression, such as {@code "identity"}) reports
+     * {@code true}. The content itself is never examined.</p>
+     *
+     * @return true if a non-empty content encoding is declared
+     */
     public boolean isCompressed() {
         return hasEncoding();
     }
 
+    /**
+     * Checks if the content type indicates JSON content.
+     *
+     * <p>Matches case-insensitively on the substring {@code "json"}, so subtypes such as
+     * {@code application/problem+json} also report {@code true}.</p>
+     *
+     * @return true if a content type is declared and contains "json"
+     */
     @SuppressWarnings("ConstantConditions")
     public boolean isJson() {
         return hasContentType() && contentType.toLowerCase().contains("json");

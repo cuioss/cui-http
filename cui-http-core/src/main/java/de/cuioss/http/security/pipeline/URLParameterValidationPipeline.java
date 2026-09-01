@@ -58,8 +58,10 @@ import java.util.Objects;
  * URLParameterValidationPipeline pipeline = new URLParameterValidationPipeline(config, counter);
  *
  * try {
- *     String safeParam = pipeline.validate("user_id=123");
- *     // Use safeParam for processing
+ *     Optional&lt;String&gt; safeParam = pipeline.validate("user_id=123");
+ *     safeParam.ifPresent(param -&gt; {
+ *         // Use the validated parameter for processing
+ *     });
  * } catch (UrlSecurityException e) {
  *     // Handle security violation
  *     log.warn("Parameter validation failed: {}", e.getMessage());

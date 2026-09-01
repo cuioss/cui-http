@@ -32,13 +32,23 @@ import java.util.Objects;
  * Sequential validation pipeline specifically for URL path components.
  *
  * <h3>Validation Sequence</h3>
+ * <p>Six stages run in this order; {@code PatternMatchingStage} appears twice:</p>
  * <ol>
  *   <li><strong>Length Validation</strong> - Enforces maximum path length limits</li>
  *   <li><strong>Character Validation</strong> - Validates RFC 3986 path characters</li>
+ *   <li><strong>Pattern Matching (pre-decode)</strong> - Detects injection attacks and suspicious
+ *       patterns in the raw input</li>
  *   <li><strong>Decoding</strong> - URL decodes with security checks</li>
  *   <li><strong>Normalization</strong> - Path normalization and traversal detection</li>
- *   <li><strong>Pattern Matching</strong> - Detects injection attacks and suspicious patterns</li>
+ *   <li><strong>Pattern Matching (post-normalization)</strong> - Re-runs the same detection on the
+ *       decoded and normalized value</li>
  * </ol>
+ *
+ * <p>Pattern matching runs on both sides of decoding by design. The pre-decode pass catches raw
+ * attack literals that decoding would otherwise consume or rewrite before they could be seen; the
+ * post-normalization pass catches the patterns that only become visible once percent-decoding and
+ * RFC 3986 dot-segment resolution have been applied. Neither pass subsumes the other, so both are
+ * required for defence-in-depth against canonicalization attacks.</p>
  *
  * <h3>Design Principles</h3>
  * <ul>
@@ -56,8 +66,10 @@ import java.util.Objects;
  * URLPathValidationPipeline pipeline = new URLPathValidationPipeline(config, counter);
  *
  * try {
- *     String safePath = pipeline.validate("/api/users/123");
- *     // Use safePath for processing
+ *     Optional&lt;String&gt; safePath = pipeline.validate("/api/users/123");
+ *     safePath.ifPresent(path -&gt; {
+ *         // Use the validated path for processing
+ *     });
  * } catch (UrlSecurityException e) {
  *     // Handle security violation
  *     log.warn("Path validation failed: {}", e.getMessage());
@@ -108,8 +120,10 @@ public final class URLPathValidationPipeline extends AbstractValidationPipeline 
 
     private static List<HttpSecurityValidator> createStages(SecurityConfiguration config) {
         Objects.requireNonNull(config, "Config must not be null");
-        // Create validation stages in the correct order
-        // CRITICAL: PatternMatchingStage must run BEFORE normalization to catch all traversal patterns
+        // Create validation stages in the correct order.
+        // CRITICAL: PatternMatchingStage runs TWICE - once before decoding/normalization to catch
+        // raw traversal literals, and once after normalization to catch what decoding and
+        // dot-segment resolution reveal. Neither pass subsumes the other.
         return List.of(
                 new LengthValidationStage(config, ValidationType.URL_PATH),
                 new CharacterValidationStage(config, ValidationType.URL_PATH),

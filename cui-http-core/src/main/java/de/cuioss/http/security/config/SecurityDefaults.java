@@ -62,9 +62,13 @@ import java.util.Set;
  *     // reject request
  * }
  *
- * // Check against limits
+ * // Check against limits (UrlSecurityException is builder-constructed; its constructor is private)
  * if (path.length() > SecurityDefaults.MAX_PATH_LENGTH_STRICT) {
- *     throw new UrlSecurityException(...);
+ *     throw UrlSecurityException.builder()
+ *             .failureType(UrlSecurityFailureType.PATH_TOO_LONG)
+ *             .validationType(ValidationType.URL_PATH)
+ *             .originalInput(path)
+ *             .build();
  * }
  *
  * // Use pattern constants
@@ -72,8 +76,6 @@ import java.util.Set;
  *     // Handle path traversal attempt
  * }
  * </pre>
- *
- * Implements: Task C3 from HTTP verification specification
  *
  * @since 1.0
  * @see SecurityConfiguration

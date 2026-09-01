@@ -116,8 +116,6 @@ final class AttributeParser {
             return Optional.empty();
         }
 
-        String lowerAttrName = attributeName.toLowerCase();
-
         // Split by semicolons to process each attribute individually
         for (String trimmedAttr : Splitter.on(';').trimResults().omitEmptyStrings().splitToList(attributeString)) {
             int equalsIndex = trimmedAttr.indexOf('=');
@@ -135,7 +133,7 @@ final class AttributeParser {
                 }
 
                 // Check for exact match (case-insensitive)
-                if (trimmedKey.equalsIgnoreCase(lowerAttrName)) {
+                if (trimmedKey.equalsIgnoreCase(attributeName)) {
                     // Extract value after '=' and trim whitespace per RFC 6265
                     String value = trimmedAttr.substring(equalsIndex + 1);
                     // RFC 6265 allows trimming whitespace from attribute values

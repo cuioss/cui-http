@@ -37,8 +37,10 @@
  * <h3>Usage Example</h3>
  * <pre><code>
  * try {
- *     String validated = validator.validate(userInput);
- *     // Process validated input
+ *     Optional&lt;String&gt; validated = validator.validate(userInput);
+ *     if (validated.isPresent()) {
+ *         // Process validated input
+ *     }
  * } catch (UrlSecurityException e) {
  *     // Rich exception context
  *     UrlSecurityFailureType failureType = e.getFailureType();

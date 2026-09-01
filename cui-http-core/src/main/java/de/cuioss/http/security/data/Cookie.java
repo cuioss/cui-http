@@ -323,7 +323,26 @@ String attributes) {
     /**
      * Returns all attribute names present in this cookie.
      *
-     * @return A list of attribute names (may be empty)
+     * <p>The attribute string is split on {@code ';'}, each token is trimmed and empty tokens are
+     * dropped. For a well-formed {@code name=value} token the name is the trimmed text before the
+     * first {@code '='}; a valueless flag such as {@code Secure} is returned as-is. Names are
+     * reported with their original case - no case folding is applied.</p>
+     *
+     * <p><strong>A token whose first {@code '='} is at position 0 is returned whole.</strong> Such
+     * a token carries no name, so it is not split: {@code "=value"} is added to the result verbatim,
+     * including its leading {@code '='}. Every other token is split at its first {@code '='} and the
+     * name trimmed, so {@code "foo =bar"} yields {@code "foo"} rather than the whole token. Callers
+     * that treat every returned element as a bare attribute name must account for this.</p>
+     *
+     * <p><strong>Duplicates are preserved here, but resolve first-match elsewhere.</strong> This
+     * method reports every token in encounter order, so an attribute string that repeats a name
+     * yields that name once per occurrence. The value accessors ({@link #getDomain()},
+     * {@link #getPath()}, {@link #getSameSite()}, {@link #getMaxAge()}) instead return the value of
+     * the <em>first</em> matching occurrence and ignore the rest, so the size of this list is not a
+     * count of distinct resolvable attributes.</p>
+     *
+     * @return A list of attribute names in encounter order, including duplicates and malformed
+     * tokens; empty when this cookie has no attributes
      */
     public List<String> getAttributeNames() {
         if (!hasAttributes()) {
@@ -337,10 +356,34 @@ String attributes) {
         return List.copyOf(result);
     }
 
+    /**
+     * Returns the cookie name, substituting a default when the name is null.
+     *
+     * <p>The substitution is triggered by {@code null} <strong>only</strong>. An empty name
+     * is returned as-is, so this method is not equivalent to a {@link #hasName()} check -
+     * use {@code hasName()} when empty must also be treated as absent.</p>
+     *
+     * @param defaultName The value to return when the name is null; returned verbatim,
+     *                    including when it is itself null
+     * @return The cookie name, or {@code defaultName} when the name is null
+     */
     public String nameOrDefault(String defaultName) {
         return name != null ? name : defaultName;
     }
 
+    /**
+     * Returns the cookie value, substituting a default when the value is null.
+     *
+     * <p>The substitution is triggered by {@code null} <strong>only</strong>. An empty value
+     * is returned as-is, so this method is not equivalent to a {@link #hasValue()} check -
+     * use {@code hasValue()} when empty must also be treated as absent. An empty cookie
+     * value is legitimate in HTTP (a {@code name=} pair), which is why it is preserved
+     * rather than defaulted.</p>
+     *
+     * @param defaultValue The value to return when the value is null; returned verbatim,
+     *                     including when it is itself null
+     * @return The cookie value, or {@code defaultValue} when the value is null
+     */
     public String valueOrDefault(String defaultValue) {
         return value != null ? value : defaultValue;
     }

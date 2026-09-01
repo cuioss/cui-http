@@ -225,8 +225,10 @@ class HeaderAndContentTypeEnforcementRegressionTest {
         @Test
         @DisplayName("still rejects a media type absent from the allow-list")
         void stillEnforcesTheAllowList() {
+            HttpSecurityValidator pipeline = pipeline();
+
             UrlSecurityException exception = assertThrows(UrlSecurityException.class,
-                    () -> pipeline().validate("application/octet-stream"));
+                    () -> pipeline.validate("application/octet-stream"));
 
             assertEquals(UrlSecurityFailureType.INVALID_INPUT, exception.getFailureType());
         }
