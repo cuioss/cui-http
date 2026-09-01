@@ -485,7 +485,13 @@ public final class HttpHandler implements AutoCloseable {
      *
      * @param <R>         the response body type
      * @param request     the request to send; its URI is the first hop's origin
-     * @param bodyHandler the body handler applied to every response, including intermediate hops
+     * @param bodyHandler the body handler applied to the terminal response only. An intermediate
+     *                    hop's body is never handed to it: that body is drained and discarded before
+     *                    the next hop is issued, so a streaming handler such as
+     *                    {@link HttpResponse.BodyHandlers#ofInputStream()} cannot leak the
+     *                    intermediate hop's connection. A followable status carrying no usable
+     *                    {@code Location} is <em>not</em> an intermediate hop — it is terminal, and
+     *                    its body reaches this handler
      * @return the terminal response, never a followed redirect
      * @throws RedirectNotAllowedException if a hop is refused by the policy, if the {@code Location}
      *                                     is unparseable, or if the hop budget
@@ -497,9 +503,10 @@ public final class HttpHandler implements AutoCloseable {
     public <R> HttpResponse<R> send(HttpRequest request, HttpResponse.BodyHandler<R> bodyHandler)
             throws IOException, InterruptedException {
         HttpRequest current = request;
+        HttpResponse.BodyHandler<R> hopHandler = discardingIntermediateBodies(bodyHandler);
         int hopsFollowed = 0;
         while (true) {
-            HttpResponse<R> response = httpClient.send(current, bodyHandler);
+            HttpResponse<R> response = httpClient.send(current, hopHandler);
             HttpRequest next = nextHop(current, response, hopsFollowed);
             if (next == null) {
                 return response;
@@ -521,27 +528,87 @@ public final class HttpHandler implements AutoCloseable {
      *
      * @param <R>         the response body type
      * @param request     the request to send; its URI is the first hop's origin
-     * @param bodyHandler the body handler applied to every response, including intermediate hops
+     * @param bodyHandler the body handler applied to the terminal response only. An intermediate
+     *                    hop's body is never handed to it: that body is drained and discarded before
+     *                    the next hop is issued, so a streaming handler such as
+     *                    {@link HttpResponse.BodyHandlers#ofInputStream()} cannot leak the
+     *                    intermediate hop's connection. A followable status carrying no usable
+     *                    {@code Location} is <em>not</em> an intermediate hop — it is terminal, and
+     *                    its body reaches this handler
      * @return a future completing with the terminal response, never with a followed redirect
      * @since 2.2
      */
     public <R> CompletableFuture<HttpResponse<R>> sendAsync(HttpRequest request, HttpResponse.BodyHandler<R> bodyHandler) {
-        return sendAsyncHop(request, bodyHandler, 0);
+        return sendAsyncHop(request, discardingIntermediateBodies(bodyHandler), 0);
     }
 
     /**
      * Recursive async hop step: send, then either complete with the terminal response or compose the
      * next hop. Recursion via {@code thenCompose} rather than iteration keeps the whole chain
      * non-blocking.
+     * <p>
+     * {@code hopHandler} is the already-wrapped handler produced by
+     * {@link #discardingIntermediateBodies(HttpResponse.BodyHandler)} — wrapping happens once in
+     * {@link #sendAsync(HttpRequest, HttpResponse.BodyHandler)} and the same instance is threaded
+     * through every hop, so no recursion step re-wraps it.
      */
     private <R> CompletableFuture<HttpResponse<R>> sendAsyncHop(HttpRequest request,
-            HttpResponse.BodyHandler<R> bodyHandler, int hopsFollowed) {
-        return httpClient.sendAsync(request, bodyHandler).thenCompose(response -> {
+            HttpResponse.BodyHandler<R> hopHandler, int hopsFollowed) {
+        return httpClient.sendAsync(request, hopHandler).thenCompose(response -> {
             HttpRequest next = nextHop(request, response, hopsFollowed);
             return next == null
                     ? CompletableFuture.completedFuture(response)
-                    : sendAsyncHop(next, bodyHandler, hopsFollowed + 1);
+                    : sendAsyncHop(next, hopHandler, hopsFollowed + 1);
         });
+    }
+
+    /**
+     * Wraps a caller-supplied body handler so an <em>intermediate</em> hop's body is drained and
+     * discarded instead of being materialized through the caller's handler.
+     * <p>
+     * Without this, a streaming handler such as {@link HttpResponse.BodyHandlers#ofInputStream()}
+     * would produce an {@code InputStream} for every 3xx the loop then follows and throws away
+     * unread. Nothing ever consumes or closes those streams, so each one pins the underlying
+     * connection for as long as the client's pool holds it. Replacing the handler for intermediate
+     * hops with {@link HttpResponse.BodySubscribers#replacing(Object)} — which reads the body to
+     * completion and drops it — releases the connection at the moment the hop is left behind. The
+     * discarded response's {@code body()} is {@code null}, which is unobservable: an intermediate
+     * response is never returned to the caller.
+     * <p>
+     * The predicate is applied to the {@link HttpResponse.ResponseInfo} the JDK offers <em>before</em>
+     * the body is read, so the decision is made in time to avoid materializing it at all.
+     *
+     * @param <R>         the response body type
+     * @param bodyHandler the caller's handler, applied unchanged to the terminal response
+     * @return a handler that discards intermediate hop bodies and delegates for terminal responses
+     */
+    private static <R> HttpResponse.BodyHandler<R> discardingIntermediateBodies(
+            HttpResponse.BodyHandler<R> bodyHandler) {
+        return responseInfo -> isIntermediateHop(responseInfo)
+                ? HttpResponse.BodySubscribers.<R>replacing(null)
+                : bodyHandler.apply(responseInfo);
+    }
+
+    /**
+     * Whether {@code responseInfo} describes a hop the follow loop will leave behind — i.e. whether
+     * {@link #nextHop(HttpRequest, HttpResponse, int)} will treat it as a redirect to act on rather
+     * than as the terminal response.
+     * <p>
+     * This mirrors {@code nextHop}'s own two "is this a redirect at all?" conditions exactly: a
+     * status in {@link #FOLLOWABLE_STATUS_CODES} carrying a non-blank {@code Location}. It
+     * deliberately stops there. Whether the hop is then <em>followed</em> (permitted), or refused
+     * with a {@link RedirectNotAllowedException} (cross-origin, downgrade, malformed target,
+     * exhausted budget), makes no difference here: on both routes the response is discarded rather
+     * than returned, so its body must not reach the caller's handler either way. Conversely a
+     * followable status <em>without</em> a usable {@code Location} is terminal per {@code nextHop},
+     * so its body must still reach the caller.
+     *
+     * @param responseInfo the status and headers of the response about to be read
+     * @return {@code true} when this response is an intermediate hop whose body must be discarded
+     */
+    private static boolean isIntermediateHop(HttpResponse.ResponseInfo responseInfo) {
+        return FOLLOWABLE_STATUS_CODES.contains(responseInfo.statusCode())
+                && !MoreStrings.isBlank(responseInfo.headers().firstValue(HEADER_LOCATION).orElse(null));
     }
 
     /**
@@ -632,6 +699,10 @@ public final class HttpHandler implements AutoCloseable {
      * @param value the untrusted, non-null value to neutralize
      * @return the sanitized value, safe to embed verbatim in a message
      */
+    // NOSONAR java:S4449 - this package is @NullMarked (JSpecify), so `value` is non-null by the
+    // package-wide default and every call site passes a non-null argument; the rule's
+    // javax.annotation.Nullable vocabulary predates JSpecify and does not recognize @NullMarked as
+    // an equivalent non-null declaration.
     static String sanitizeForMessage(String value) {
         String bounded = value.length() > MAX_SANITIZED_VALUE_LENGTH
                 ? value.substring(0, MAX_SANITIZED_VALUE_LENGTH) + TRUNCATION_MARKER

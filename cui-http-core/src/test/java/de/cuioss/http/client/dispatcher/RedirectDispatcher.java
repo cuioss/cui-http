@@ -51,7 +51,11 @@ import java.util.Set;
  *   <li>{@value #PATH_CHAIN} — 302 pointing at itself, so any hop bound can be exhausted</li>
  *   <li>{@value #PATH_RELATIVE} — 302 whose {@code Location} is the relative reference
  *       {@value #RELATIVE_LOCATION}</li>
- *   <li>{@value #PATH_NO_LOCATION} — 302 with no {@code Location} header at all</li>
+ *   <li>{@value #PATH_STREAMING_REDIRECT} — 302 pointing at {@value #PATH_TARGET} that carries a
+ *       {@value #REDIRECT_HOP_BODY_SIZE}-byte body of its own, so a leaked intermediate body is
+ *       observable</li>
+ *   <li>{@value #PATH_NO_LOCATION} — 302 with no {@code Location} header at all, answering
+ *       {@value #UNFOLLOWED_BODY} as its (terminal) body</li>
  *   <li>{@value #PATH_MALFORMED_LOCATION} — 302 whose {@code Location} is the unparseable
  *       {@value #MALFORMED_LOCATION}</li>
  *   <li>{@value #PATH_MALFORMED_LOCATION_OVERLONG} — 302 whose {@code Location} is unparseable
@@ -97,6 +101,27 @@ public class RedirectDispatcher implements ModuleDispatcherElement {
 
     /** 302 carrying no {@code Location} header. */
     public static final String PATH_NO_LOCATION = BASE_PATH + "/no-location";
+
+    /**
+     * The body served by {@value #PATH_NO_LOCATION}. That response is <em>terminal</em> (a followable
+     * status without a usable {@code Location} names no target), so this body must reach the caller's
+     * own body handler — it is the negative control for the intermediate-hop discard.
+     */
+    public static final String UNFOLLOWED_BODY = "unfollowed-redirect-body";
+
+    /**
+     * 302 pointing at {@value #PATH_TARGET} whose own body is {@value #REDIRECT_HOP_BODY_SIZE} bytes
+     * of filler. Distinct from {@value #PATH_REDIRECT}, whose body is empty: a redirect that carries
+     * a real body is what makes a leaked intermediate stream observable, since an empty one is
+     * indistinguishable from a drained one.
+     */
+    public static final String PATH_STREAMING_REDIRECT = BASE_PATH + "/streaming";
+
+    /** Size of the filler body served by {@value #PATH_STREAMING_REDIRECT}. */
+    public static final int REDIRECT_HOP_BODY_SIZE = 4096;
+
+    /** The filler body served by {@value #PATH_STREAMING_REDIRECT}. */
+    public static final String REDIRECT_HOP_BODY = "x".repeat(REDIRECT_HOP_BODY_SIZE);
 
     /** 302 whose {@code Location} is present and non-blank but not a parseable URI reference. */
     public static final String PATH_MALFORMED_LOCATION = BASE_PATH + "/malformed-location";
@@ -191,7 +216,8 @@ public class RedirectDispatcher implements ModuleDispatcherElement {
                     .host(ALLOWLISTED_HOST).encodedPath(PATH_TARGET).build().toString());
             case PATH_CHAIN -> redirect(302, absolute(request, PATH_CHAIN));
             case PATH_RELATIVE -> redirect(302, RELATIVE_LOCATION);
-            case PATH_NO_LOCATION -> new MockResponse(302, Headers.of(), "");
+            case PATH_STREAMING_REDIRECT -> redirect(302, absolute(request, PATH_TARGET), REDIRECT_HOP_BODY);
+            case PATH_NO_LOCATION -> new MockResponse(302, Headers.of(), UNFOLLOWED_BODY);
             case PATH_MALFORMED_LOCATION -> redirect(302, MALFORMED_LOCATION);
             case PATH_MALFORMED_LOCATION_OVERLONG -> redirect(302, MALFORMED_LOCATION_OVERLONG);
             default -> null;
@@ -218,10 +244,14 @@ public class RedirectDispatcher implements ModuleDispatcherElement {
     }
 
     private static MockResponse redirect(int status, String location) {
+        return redirect(status, location, "");
+    }
+
+    private static MockResponse redirect(int status, String location, String body) {
         return new MockResponse(status, new Headers.Builder()
                 .add("Location", location)
                 .add("Content-Type", "text/plain")
-                .build(), "");
+                .build(), body);
     }
 
     /** A port this server does not listen on, so a cross-port hop is refused before it is attempted. */

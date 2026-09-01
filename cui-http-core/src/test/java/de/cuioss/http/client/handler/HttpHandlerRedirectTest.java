@@ -34,9 +34,13 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -175,6 +179,75 @@ class HttpHandlerRedirectTest {
             assertEquals(304, response.statusCode(), "304 is not a followable status");
             assertTrue(response.uri().getPath().endsWith(NotModifiedDispatcher.PATH_NOT_MODIFIED),
                     "no hop may have been walked");
+        }
+    }
+
+    @Test
+    @DisplayName("send should never hand an intermediate hop's streaming body to the caller's handler")
+    @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
+    void sendShouldDiscardIntermediateHopBody(URIBuilder uriBuilder) throws Exception {
+        try (HttpHandler handler = handlerFor(uriBuilder, RedirectDispatcher.PATH_STREAMING_REDIRECT)) {
+            RecordingBodyHandler<InputStream> recorder = streamRecorder();
+
+            HttpResponse<InputStream> response = handler.send(handler.requestBuilder().GET().build(), recorder);
+
+            assertEquals(List.of(200), recorder.appliedStatuses(),
+                    "only the terminal response may be materialized through the caller's handler; the 302 hop's "
+                            + "body must be drained and discarded rather than become an unread, unclosed stream");
+            assertEquals(RedirectDispatcher.TARGET_BODY, leadingToken(response.body()),
+                    "the terminal hop's streamed body must still reach the caller intact");
+        }
+    }
+
+    @Test
+    @DisplayName("sendAsync should discard the intermediate hop's streaming body too")
+    @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
+    void sendAsyncShouldDiscardIntermediateHopBody(URIBuilder uriBuilder) throws Exception {
+        try (HttpHandler handler = handlerFor(uriBuilder, RedirectDispatcher.PATH_STREAMING_REDIRECT)) {
+            RecordingBodyHandler<InputStream> recorder = streamRecorder();
+
+            HttpResponse<InputStream> response = handler
+                    .sendAsync(handler.requestBuilder().GET().build(), recorder).get();
+
+            assertEquals(List.of(200), recorder.appliedStatuses(),
+                    "the async recursion must apply the same discard, so the caller's handler sees only the "
+                            + "terminal response");
+            assertEquals(RedirectDispatcher.TARGET_BODY, leadingToken(response.body()),
+                    "the async path must still deliver the terminal hop's streamed body");
+        }
+    }
+
+    @Test
+    @DisplayName("A refused hop's body should be discarded rather than handed to the caller's handler")
+    @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
+    void refusedHopBodyShouldBeDiscarded(URIBuilder uriBuilder) {
+        try (HttpHandler handler = handlerFor(uriBuilder, RedirectDispatcher.PATH_CROSS_HOST)) {
+            RecordingBodyHandler<InputStream> recorder = streamRecorder();
+
+            assertThrows(RedirectNotAllowedException.class,
+                    () -> handler.send(handler.requestBuilder().GET().build(), recorder),
+                    "the same-origin default must refuse this hop");
+
+            assertEquals(List.of(), recorder.appliedStatuses(),
+                    "a refused hop's response is discarded rather than returned, so its body must not be "
+                            + "materialized through the caller's handler either — that stream would have no owner");
+        }
+    }
+
+    @Test
+    @DisplayName("A followable status with no Location is terminal, so its body reaches the caller's handler")
+    @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
+    void unfollowedRedirectBodyShouldReachTheCallersHandler(URIBuilder uriBuilder) throws Exception {
+        try (HttpHandler handler = handlerFor(uriBuilder, RedirectDispatcher.PATH_NO_LOCATION)) {
+            RecordingBodyHandler<InputStream> recorder = streamRecorder();
+
+            HttpResponse<InputStream> response = handler.send(handler.requestBuilder().GET().build(), recorder);
+
+            assertEquals(List.of(302), recorder.appliedStatuses(),
+                    "a followable status without a usable Location is not an intermediate hop, so the discard "
+                            + "must not swallow it");
+            assertEquals(RedirectDispatcher.UNFOLLOWED_BODY, readFully(response.body()),
+                    "the verbatim-surfaced 302 must deliver its own body to the caller");
         }
     }
 
@@ -489,6 +562,22 @@ class HttpHandlerRedirectTest {
         }
     }
 
+    private static RecordingBodyHandler<InputStream> streamRecorder() {
+        return new RecordingBodyHandler<>(HttpResponse.BodyHandlers.ofInputStream());
+    }
+
+    /** Reads the stream to exhaustion and closes it, so no test leaves a body stream open itself. */
+    private static String readFully(InputStream body) throws Exception {
+        try (InputStream stream = body) {
+            return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    /** The leading {@code ;}-delimited token of a streamed terminal echo. */
+    private static String leadingToken(InputStream body) throws Exception {
+        return readFully(body).split(";", 2)[0];
+    }
+
     private static HttpResponse<String> get(HttpHandler handler) throws Exception {
         return handler.send(handler.requestBuilder().GET().build(), HttpResponse.BodyHandlers.ofString());
     }
@@ -552,6 +641,37 @@ class HttpHandlerRedirectTest {
                         .credentialForwarding(strategy)
                         .build())
                 .build();
+    }
+
+    /**
+     * A {@link HttpResponse.BodyHandler} that records the status of every response it is applied to
+     * before delegating.
+     * <p>
+     * The recorded list is the direct evidence for the intermediate-hop discard contract: the JDK
+     * applies a body handler exactly once per response it reads a body for, so a status that never
+     * appears here is a response whose body was never materialized through the caller's handler.
+     * That is precisely what stops a streaming handler from producing an intermediate
+     * {@code InputStream} nobody ever consumes or closes.
+     */
+    private static final class RecordingBodyHandler<T> implements HttpResponse.BodyHandler<T> {
+
+        private final HttpResponse.BodyHandler<T> delegate;
+        // The async path applies the handler on an HttpClient thread, not the test thread.
+        private final List<Integer> appliedStatuses = Collections.synchronizedList(new ArrayList<>());
+
+        private RecordingBodyHandler(HttpResponse.BodyHandler<T> delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public HttpResponse.BodySubscriber<T> apply(HttpResponse.ResponseInfo responseInfo) {
+            appliedStatuses.add(responseInfo.statusCode());
+            return delegate.apply(responseInfo);
+        }
+
+        private List<Integer> appliedStatuses() {
+            return List.copyOf(appliedStatuses);
+        }
     }
 
     /**
