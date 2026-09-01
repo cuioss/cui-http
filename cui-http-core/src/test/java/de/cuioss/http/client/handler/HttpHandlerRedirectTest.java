@@ -79,6 +79,25 @@ class HttpHandlerRedirectTest {
     private static final String AUTHORIZATION_VALUE = "Bearer test-token";
     private static final String COOKIE_VALUE = "session=abc";
 
+    /**
+     * Every representation-metadata field {@link RedirectDispatcher#echo} reports, named as its echo
+     * key. A body-dropping rewrite must strip all of them, so the list is asserted as a whole rather
+     * than spot-checking {@code Content-Type} / {@code Content-Length} — the two that were already
+     * dropped before the RFC 9110 errata eid8138 field set was applied.
+     */
+    private static final List<String> REPRESENTATION_ECHO_FIELDS = List.of("contentType", "contentLength",
+            "contentEncoding", "contentLanguage", "contentLocation", "digest", "lastModified");
+
+    /**
+     * The subset of {@link #REPRESENTATION_ECHO_FIELDS} a caller can actually set on an
+     * {@link HttpRequest}: {@code Content-Length} is a restricted header the JDK derives from the
+     * body publisher rather than accepting from the caller, so it is the one field a positive
+     * "preserved verbatim" control cannot arrange.
+     */
+    private static final List<String> SETTABLE_REPRESENTATION_ECHO_FIELDS = REPRESENTATION_ECHO_FIELDS.stream()
+            .filter(field -> !"contentLength".equals(field))
+            .toList();
+
     private final RedirectDispatcher redirectDispatcher = new RedirectDispatcher();
 
     private final NotModifiedDispatcher notModifiedDispatcher = new NotModifiedDispatcher();
@@ -483,6 +502,44 @@ class HttpHandlerRedirectTest {
     }
 
     @ParameterizedTest
+    @CsvSource({"301", "302", "303"})
+    @DisplayName("A body-dropping rewrite should strip every representation-metadata header")
+    @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
+    void bodyDroppingRewriteShouldStripAllRepresentationHeaders(int status, URIBuilder uriBuilder) throws Exception {
+        try (HttpHandler handler = handlerFor(uriBuilder, RedirectDispatcher.PATH_STATUS_PREFIX + status)) {
+            String echo = echoOf(handler.send(representationHeaderedPost(handler),
+                    HttpResponse.BodyHandlers.ofString()));
+
+            assertEquals("absent", field(echo, "body"), status + " must drop the request body");
+            for (String key : REPRESENTATION_ECHO_FIELDS) {
+                assertEquals("absent", field(echo, key),
+                        key + " describes the representation that " + status + " just discarded, so it must be "
+                                + "dropped with the body (RFC 9110, errata eid8138) — not only Content-Type "
+                                + "and Content-Length");
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"307", "308"})
+    @DisplayName("A body-preserving rewrite should keep the representation-metadata headers")
+    @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
+    void bodyPreservingRewriteShouldKeepRepresentationHeaders(int status, URIBuilder uriBuilder) throws Exception {
+        try (HttpHandler handler = handlerFor(uriBuilder, RedirectDispatcher.PATH_STATUS_PREFIX + status)) {
+            String echo = echoOf(handler.send(representationHeaderedPost(handler),
+                    HttpResponse.BodyHandlers.ofString()));
+
+            assertEquals(Integer.toString(POST_BODY.length()), field(echo, "body"),
+                    status + " must replay the original body");
+            for (String key : SETTABLE_REPRESENTATION_ECHO_FIELDS) {
+                assertEquals("present", field(echo, key),
+                        key + " still describes the body " + status + " replays verbatim, so stripping it would "
+                                + "misdescribe the request");
+            }
+        }
+    }
+
+    @ParameterizedTest
     @CsvSource({"301,GET", "302,GET", "301,HEAD", "302,HEAD"})
     @DisplayName("A bodyless method should be preserved across 301 and 302")
     @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
@@ -585,6 +642,23 @@ class HttpHandlerRedirectTest {
     private static HttpRequest postRequest(HttpHandler handler) {
         return handler.requestBuilder()
                 .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(POST_BODY))
+                .build();
+    }
+
+    /**
+     * A body-carrying POST that additionally declares every settable representation-metadata field.
+     * {@code Content-Encoding} is {@code identity} rather than a real codec so the body on the wire
+     * stays exactly what the publisher wrote.
+     */
+    private static HttpRequest representationHeaderedPost(HttpHandler handler) {
+        return handler.requestBuilder()
+                .header("Content-Type", "application/json")
+                .header("Content-Encoding", "identity")
+                .header("Content-Language", "en")
+                .header("Content-Location", "/original-representation")
+                .header("Digest", "sha-256=X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=")
+                .header("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT")
                 .POST(HttpRequest.BodyPublishers.ofString(POST_BODY))
                 .build();
     }

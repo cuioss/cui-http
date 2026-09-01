@@ -175,9 +175,12 @@ public class RedirectDispatcher implements ModuleDispatcherElement {
 
     /**
      * Describes the request that reached the terminal hop, as a {@code ;}-separated list of
-     * {@code key=value} fields: {@code method}, {@code body} ({@code absent} or the byte count),
-     * {@code contentType}, {@code contentLength}, {@code authorization} and {@code cookie} (each
-     * {@code present} or {@code absent}). The leading token is {@value #TARGET_BODY}.
+     * {@code key=value} fields: {@code method}, {@code body} ({@code absent} or the byte count), then
+     * one {@code present}/{@code absent} field per header of interest — the representation-metadata
+     * set a body-dropping rewrite must strip ({@code contentType}, {@code contentLength},
+     * {@code contentEncoding}, {@code contentLanguage}, {@code contentLocation}, {@code digest},
+     * {@code lastModified}) plus the two credential headers ({@code authorization}, {@code cookie}).
+     * The leading token is {@value #TARGET_BODY}.
      *
      * @param request the request that reached {@value #PATH_TARGET}
      * @return the echo string, served both as the body and as the {@value #HEADER_ECHO} header
@@ -189,6 +192,11 @@ public class RedirectDispatcher implements ModuleDispatcherElement {
                 + ";body=" + (bodySize == 0 ? "absent" : Long.toString(bodySize))
                 + ";contentType=" + presence(request, "Content-Type")
                 + ";contentLength=" + presence(request, "Content-Length")
+                + ";contentEncoding=" + presence(request, "Content-Encoding")
+                + ";contentLanguage=" + presence(request, "Content-Language")
+                + ";contentLocation=" + presence(request, "Content-Location")
+                + ";digest=" + presence(request, "Digest")
+                + ";lastModified=" + presence(request, "Last-Modified")
                 + ";authorization=" + presence(request, "Authorization")
                 + ";cookie=" + presence(request, "Cookie");
     }

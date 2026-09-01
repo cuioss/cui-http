@@ -36,8 +36,10 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Collections;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiPredicate;
 import java.util.regex.Pattern;
@@ -272,8 +274,34 @@ public final class HttpHandler implements AutoCloseable {
     private static final String HEADER_COOKIE = "Cookie";
     private static final String HEADER_CONTENT_TYPE = "Content-Type";
     private static final String HEADER_CONTENT_LENGTH = "Content-Length";
+    private static final String HEADER_CONTENT_ENCODING = "Content-Encoding";
+    private static final String HEADER_CONTENT_LANGUAGE = "Content-Language";
+    private static final String HEADER_CONTENT_LOCATION = "Content-Location";
+    private static final String HEADER_DIGEST = "Digest";
+    private static final String HEADER_LAST_MODIFIED = "Last-Modified";
     private static final String METHOD_GET = "GET";
     private static final String METHOD_HEAD = "HEAD";
+
+    /**
+     * The representation-metadata fields dropped together with the request body when a {@code 301},
+     * {@code 302} or {@code 303} rewrite changes the method to {@code GET} and discards the body.
+     * <p>
+     * Every one of these describes the representation that is no longer being sent, so carrying any
+     * of them onto the rewritten bodyless request would misdescribe it — RFC 9110 §8.3–§8.8 with
+     * errata eid8138, which corrects the field list to the full representation-metadata set rather
+     * than {@code Content-Type} / {@code Content-Length} alone. Ordered case-insensitively so
+     * membership matches the case-insensitive header comparisons used elsewhere in
+     * {@link #rebuildForHop}.
+     */
+    private static final Set<String> BODY_REPRESENTATION_HEADERS = caseInsensitiveSet(
+            HEADER_CONTENT_TYPE, HEADER_CONTENT_LENGTH, HEADER_CONTENT_ENCODING,
+            HEADER_CONTENT_LANGUAGE, HEADER_CONTENT_LOCATION, HEADER_DIGEST, HEADER_LAST_MODIFIED);
+
+    private static Set<String> caseInsensitiveSet(String... names) {
+        Set<String> set = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        Collections.addAll(set, names);
+        return Collections.unmodifiableSet(set);
+    }
 
     @Getter
     private final URI uri;
@@ -717,7 +745,10 @@ public final class HttpHandler implements AutoCloseable {
      * {@code 303} always rewrites to {@code GET} and drops the body. {@code 301} and {@code 302}
      * preserve a {@code GET} or {@code HEAD} and otherwise rewrite to {@code GET}, dropping the body.
      * {@code 307} and {@code 308} preserve both the method and the original body publisher. Whenever
-     * the body is dropped, {@code Content-Type} and {@code Content-Length} are dropped with it.
+     * the body is dropped, every {@linkplain #BODY_REPRESENTATION_HEADERS representation-metadata
+     * header} describing it is dropped with it — not only {@code Content-Type} and
+     * {@code Content-Length}, but also {@code Content-Encoding}, {@code Content-Language},
+     * {@code Content-Location}, {@code Digest} and {@code Last-Modified}.
      * <p>
      * Whether {@code Authorization} and {@code Cookie} survive the hop is
      * {@link RedirectPolicy#forwardsCredentials(URI, URI)}'s verdict alone — this class performs no
@@ -735,8 +766,7 @@ public final class HttpHandler implements AutoCloseable {
                     && (HEADER_AUTHORIZATION.equalsIgnoreCase(name) || HEADER_COOKIE.equalsIgnoreCase(name))) {
                 return false;
             }
-            return !dropBody
-                    || (!HEADER_CONTENT_TYPE.equalsIgnoreCase(name) && !HEADER_CONTENT_LENGTH.equalsIgnoreCase(name));
+            return !dropBody || !BODY_REPRESENTATION_HEADERS.contains(name);
         };
 
         HttpRequest.Builder builder = HttpRequest.newBuilder(request, headerFilter).uri(target);
