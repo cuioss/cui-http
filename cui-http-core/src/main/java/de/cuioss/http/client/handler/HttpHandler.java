@@ -254,6 +254,17 @@ public final class HttpHandler implements AutoCloseable {
      */
     @Getter
     private final boolean verifyHostname;
+    /**
+     * The egress host policy applied to every redirect hop this handler would follow. Never
+     * {@code null}: a handler built without an explicit policy carries {@link RedirectPolicy#sameOrigin()},
+     * so same-origin hops are followed, cross-origin hops are refused, and {@code Authorization} /
+     * {@code Cookie} are stripped on any non-same-origin hop. It is part of the handler's
+     * configuration identity ({@code equals}/{@code hashCode}) and is rendered in {@code toString}.
+     *
+     * @return the redirect policy for this handler, never {@code null}
+     */
+    @Getter
+    private final RedirectPolicy redirectPolicy;
     // Build-time provenance only: records whether the SSLContext was supplied by the caller rather
     // than derived by this class. It is not configuration - two handlers that differ only in how
     // their (identical) context was obtained are the same configuration - so it is excluded from
@@ -270,7 +281,8 @@ public final class HttpHandler implements AutoCloseable {
     private final HttpClient httpClient;
 
     // Constructor for HTTP URIs (no SSL context needed)
-    private HttpHandler(URI uri, URL url, int connectionTimeoutSeconds, int readTimeoutSeconds) {
+    private HttpHandler(URI uri, URL url, int connectionTimeoutSeconds, int readTimeoutSeconds,
+            RedirectPolicy redirectPolicy) {
         this.uri = uri;
         this.url = url;
         this.sslContext = null;
@@ -284,13 +296,14 @@ public final class HttpHandler implements AutoCloseable {
         // was consumed from the caller.
         this.verifyHostname = true;
         this.sslContextCallerSupplied = false;
+        this.redirectPolicy = redirectPolicy;
 
         // Create the HttpClient for HTTP.
-        // No redirect policy is configured: the JDK default is Redirect.NEVER, so no 3xx is ever
-        // followed and every redirect response surfaces to the caller. Auto-following would send the
-        // request to a target the caller never validated — this class runs no de.cuioss.http.security
-        // pipeline over a redirect destination. Validated redirect following (same-origin by default,
-        // with an opt-in host allowlist) is planned as follow-up work.
+        // No JDK redirect policy is configured: the JDK default is Redirect.NEVER, and it stays that
+        // way deliberately. Redirect following is application-level, driven by this handler against
+        // its RedirectPolicy, because the JDK follower would send the request to a target no policy
+        // ever evaluated. Every hop must be revalidated before it is requested, so the JDK must never
+        // follow one on its own.
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(connectionTimeoutSeconds))
                 .build();
@@ -304,7 +317,7 @@ public final class HttpHandler implements AutoCloseable {
     @SuppressWarnings("java:S107")
     private HttpHandler(URI uri, URL url, SSLContext sslContext, SecureSSLContextProvider secureSSLContextProvider,
             int connectionTimeoutSeconds, int readTimeoutSeconds, boolean allowInsecureHttp,
-            boolean verifyHostname, boolean sslContextCallerSupplied) {
+            boolean verifyHostname, boolean sslContextCallerSupplied, RedirectPolicy redirectPolicy) {
         this.uri = uri;
         this.url = url;
         this.sslContext = sslContext;
@@ -314,14 +327,16 @@ public final class HttpHandler implements AutoCloseable {
         this.allowInsecureHttp = allowInsecureHttp;
         this.verifyHostname = verifyHostname;
         this.sslContextCallerSupplied = sslContextCallerSupplied;
+        this.redirectPolicy = redirectPolicy;
 
         // JDK 11+ HttpClient enables hostname verification by default.
         // Pin the enabled TLS protocols so the configured minimum version is a hard
         // floor on the wire, not merely the context's default protocol object.
         SSLParameters sslParameters = new SSLParameters();
         sslParameters.setProtocols(secureSSLContextProvider.getEnabledProtocols());
-        // No redirect policy is configured here either — see the HTTP constructor above for why the
-        // JDK default (Redirect.NEVER) is deliberately left in place.
+        // No JDK redirect policy is configured here either — see the HTTP constructor above for why
+        // the JDK default (Redirect.NEVER) is deliberately left in place and the follow loop is
+        // application-level.
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(connectionTimeoutSeconds))
                 .sslContext(sslContext)
@@ -373,7 +388,8 @@ public final class HttpHandler implements AutoCloseable {
                 .readTimeoutSeconds(readTimeoutSeconds)
                 .tlsVersions(secureSSLContextProvider)
                 .allowInsecureHttp(allowInsecureHttp)
-                .verifyHostname(verifyHostname);
+                .verifyHostname(verifyHostname)
+                .redirectPolicy(redirectPolicy);
         return sslContextCallerSupplied
                 ? handlerBuilder.sslContext(sslContext)
                 : handlerBuilder.derivedSslContext(sslContext, !verifyHostname);
@@ -482,6 +498,7 @@ public final class HttpHandler implements AutoCloseable {
         private boolean allowInsecureHttp = false;
         private boolean verifyHostname = true;
         private boolean sslContextCallerSupplied = false;
+        private @Nullable RedirectPolicy redirectPolicy;
         // True when the current (derived, non-caller-supplied) sslContext was produced by
         // createHostnameRelaxedSSLContext() on the handler asBuilder() cloned this builder from.
         // build() consults this to refuse silently reusing a relaxed context once verifyHostname
@@ -719,6 +736,38 @@ public final class HttpHandler implements AutoCloseable {
         }
 
         /**
+         * Sets the egress host policy applied to every redirect hop the handler would follow.
+         * <p>
+         * This is the single seam through which all three redirect knobs are configured: the hop
+         * bound ({@link RedirectPolicy.RedirectPolicyBuilder#maxHops(int)}), the host allowlist
+         * ({@link RedirectPolicy.RedirectPolicyBuilder#allowedHosts(java.util.Collection)}), and the
+         * credential-forwarding strategy
+         * ({@link RedirectPolicy.RedirectPolicyBuilder#credentialForwarding(RedirectPolicy.CredentialForwarding)}).
+         * There is no separate builder method for any of them.
+         * </p>
+         * <p>
+         * Default: {@link RedirectPolicy#sameOrigin()} — same-origin hops are followed, every
+         * cross-origin hop is refused, and {@code Authorization} / {@code Cookie} are stripped on any
+         * non-same-origin hop. <strong>Credential forwarding across a cross-origin hop is opt-in</strong>:
+         * it requires naming {@link RedirectPolicy.CredentialForwarding#FORWARD_TO_ALLOWLISTED} on a
+         * policy that also allowlists the target host, and even then it changes no refusal verdict.
+         * </p>
+         * <p>
+         * Passing {@code null} <strong>restores the {@link RedirectPolicy#sameOrigin()} default</strong>
+         * — it does not disable redirect validation, and it does not leave a forwarding strategy
+         * previously set on this builder in force: the secure
+         * {@link RedirectPolicy.CredentialForwarding#STRIP_ON_CROSS_ORIGIN} default is restored with it.
+         * </p>
+         *
+         * @param redirectPolicy the policy to apply, or {@code null} to restore the same-origin default.
+         * @return This builder instance.
+         */
+        public HttpHandlerBuilder redirectPolicy(@Nullable RedirectPolicy redirectPolicy) {
+            this.redirectPolicy = redirectPolicy;
+            return this;
+        }
+
+        /**
          * Builds a new {@link HttpHandler} instance with the configured parameters.
          *
          * @return A new {@link HttpHandler} instance.
@@ -773,6 +822,10 @@ public final class HttpHandler implements AutoCloseable {
                 throw new IllegalStateException("Failed to convert URI to URL: " + resolvedUri, e);
             }
 
+            // A null policy restores the same-origin default rather than disabling validation, so a
+            // forwarding strategy set earlier on this builder cannot survive redirectPolicy(null).
+            RedirectPolicy resolvedRedirectPolicy = redirectPolicy != null ? redirectPolicy : RedirectPolicy.sameOrigin();
+
             // Fail-secure scheme policy: HTTPS is required; http is opt-in; anything else is rejected.
             String scheme = resolvedUri.getScheme();
             if ("https".equalsIgnoreCase(scheme)) {
@@ -782,7 +835,7 @@ public final class HttpHandler implements AutoCloseable {
                 SSLContext secureContext = resolveHttpsSecureContext(actualSecureSSLContextProvider, resolvedUri);
                 return new HttpHandler(resolvedUri, verifiedUrl, secureContext, actualSecureSSLContextProvider,
                         actualConnectionTimeoutSeconds, actualReadTimeoutSeconds, allowInsecureHttp,
-                        verifyHostname, sslContextCallerSupplied);
+                        verifyHostname, sslContextCallerSupplied, resolvedRedirectPolicy);
             }
             if ("http".equalsIgnoreCase(scheme)) {
                 if (!allowInsecureHttp) {
@@ -792,7 +845,8 @@ public final class HttpHandler implements AutoCloseable {
                 }
                 LOGGER.warn(HttpLogMessages.WARN.INSECURE_HTTP_CONNECTION, resolvedUri);
                 // For HTTP, no SSL context needed
-                return new HttpHandler(resolvedUri, verifiedUrl, actualConnectionTimeoutSeconds, actualReadTimeoutSeconds);
+                return new HttpHandler(resolvedUri, verifiedUrl, actualConnectionTimeoutSeconds, actualReadTimeoutSeconds,
+                        resolvedRedirectPolicy);
             }
             throw new IllegalArgumentException("Unsupported URI scheme '" + scheme + "' for " + resolvedUri
                     + "; only http and https are supported.");
