@@ -24,6 +24,8 @@ import mockwebserver3.RecordedRequest;
 import okhttp3.Headers;
 import okhttp3.HttpUrl;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -165,6 +167,33 @@ public class RedirectDispatcher implements ModuleDispatcherElement {
     /** Response header carrying the same echo as the body, so a HEAD response is assertable too. */
     public static final String HEADER_ECHO = "X-Echo";
 
+    /**
+     * The representation-metadata headers {@link #echo} reports, in emission order: each entry pairs
+     * the echo key with the wire header name it inspects. This is the single source {@link #echo} and
+     * {@link #REPRESENTATION_ECHO_FIELDS} both derive from, so a field added here widens what {@code
+     * echo} emits and what tests can assert against in the same edit — one cannot drift from the
+     * other.
+     */
+    private static final List<Map.Entry<String, String>> REPRESENTATION_HEADERS = List.of(
+            Map.entry("contentType", "Content-Type"),
+            Map.entry("contentLength", "Content-Length"),
+            Map.entry("contentEncoding", "Content-Encoding"),
+            Map.entry("contentLanguage", "Content-Language"),
+            Map.entry("contentLocation", "Content-Location"),
+            Map.entry("digest", "Digest"),
+            Map.entry("lastModified", "Last-Modified"));
+
+    /**
+     * The echo keys of {@link #REPRESENTATION_HEADERS}, in emission order — the authoritative
+     * representation-field set a body-dropping rewrite must strip (RFC 9110, errata eid8138).
+     * Consumers (e.g. {@code HttpHandlerRedirectTest}) assert against this collection instead of
+     * duplicating it as their own literal, so an echoed representation field added to {@link #echo}
+     * automatically widens what those tests check.
+     */
+    public static final List<String> REPRESENTATION_ECHO_FIELDS = REPRESENTATION_HEADERS.stream()
+            .map(Map.Entry::getKey)
+            .toList();
+
     @Override
     public Optional<MockResponse> handleGet(@NonNull RecordedRequest request) {
         return handle(request);
@@ -184,28 +213,25 @@ public class RedirectDispatcher implements ModuleDispatcherElement {
      * Describes the request that reached the terminal hop, as a {@code ;}-separated list of
      * {@code key=value} fields: {@code method}, {@code body} ({@code absent} or the byte count), then
      * one {@code present}/{@code absent} field per header of interest — the representation-metadata
-     * set a body-dropping rewrite must strip ({@code contentType}, {@code contentLength},
-     * {@code contentEncoding}, {@code contentLanguage}, {@code contentLocation}, {@code digest},
-     * {@code lastModified}) plus the two credential headers ({@code authorization}, {@code cookie}).
-     * The leading token is {@value #TARGET_BODY}.
+     * set a body-dropping rewrite must strip ({@link #REPRESENTATION_ECHO_FIELDS}) plus the two
+     * credential headers ({@code authorization}, {@code cookie}). The leading token is
+     * {@value #TARGET_BODY}.
      *
      * @param request the request that reached {@value #PATH_TARGET}
      * @return the echo string, served both as the body and as the {@value #HEADER_ECHO} header
      */
     public static String echo(RecordedRequest request) {
         long bodySize = request.getBodySize();
-        return TARGET_BODY
-                + ";method=" + request.getMethod()
-                + ";body=" + (bodySize == 0 ? "absent" : Long.toString(bodySize))
-                + ";contentType=" + presence(request, "Content-Type")
-                + ";contentLength=" + presence(request, "Content-Length")
-                + ";contentEncoding=" + presence(request, "Content-Encoding")
-                + ";contentLanguage=" + presence(request, "Content-Language")
-                + ";contentLocation=" + presence(request, "Content-Location")
-                + ";digest=" + presence(request, "Digest")
-                + ";lastModified=" + presence(request, "Last-Modified")
-                + ";authorization=" + presence(request, "Authorization")
-                + ";cookie=" + presence(request, "Cookie");
+        StringBuilder builder = new StringBuilder(TARGET_BODY)
+                .append(";method=").append(request.getMethod())
+                .append(";body=").append(bodySize == 0 ? "absent" : Long.toString(bodySize));
+        for (Map.Entry<String, String> field : REPRESENTATION_HEADERS) {
+            builder.append(';').append(field.getKey()).append('=').append(presence(request, field.getValue()));
+        }
+        return builder
+                .append(";authorization=").append(presence(request, "Authorization"))
+                .append(";cookie=").append(presence(request, "Cookie"))
+                .toString();
     }
 
     private static String presence(RecordedRequest request, String header) {

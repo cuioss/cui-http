@@ -80,21 +80,15 @@ class HttpHandlerRedirectTest {
     private static final String COOKIE_VALUE = "session=abc";
 
     /**
-     * Every representation-metadata field {@link RedirectDispatcher#echo} reports, named as its echo
-     * key. A body-dropping rewrite must strip all of them, so the list is asserted as a whole rather
-     * than spot-checking {@code Content-Type} / {@code Content-Length} — the two that were already
-     * dropped before the RFC 9110 errata eid8138 field set was applied.
-     */
-    private static final List<String> REPRESENTATION_ECHO_FIELDS = List.of("contentType", "contentLength",
-            "contentEncoding", "contentLanguage", "contentLocation", "digest", "lastModified");
-
-    /**
-     * The subset of {@link #REPRESENTATION_ECHO_FIELDS} a caller can actually set on an
-     * {@link HttpRequest}: {@code Content-Length} is a restricted header the JDK derives from the
+     * The subset of {@link RedirectDispatcher#REPRESENTATION_ECHO_FIELDS} a caller can actually set on
+     * an {@link HttpRequest}: {@code Content-Length} is a restricted header the JDK derives from the
      * body publisher rather than accepting from the caller, so it is the one field a positive
-     * "preserved verbatim" control cannot arrange.
+     * "preserved verbatim" control cannot arrange. Derived from the dispatcher's authoritative field
+     * set — rather than a literal of its own — so a field the dispatcher starts echoing is
+     * automatically asserted here too.
      */
-    private static final List<String> SETTABLE_REPRESENTATION_ECHO_FIELDS = REPRESENTATION_ECHO_FIELDS.stream()
+    private static final List<String> SETTABLE_REPRESENTATION_ECHO_FIELDS = RedirectDispatcher.REPRESENTATION_ECHO_FIELDS
+            .stream()
             .filter(field -> !"contentLength".equals(field))
             .toList();
 
@@ -540,7 +534,7 @@ class HttpHandlerRedirectTest {
                     HttpResponse.BodyHandlers.ofString()));
 
             assertEquals("absent", field(echo, "body"), status + " must drop the request body");
-            for (String key : REPRESENTATION_ECHO_FIELDS) {
+            for (String key : RedirectDispatcher.REPRESENTATION_ECHO_FIELDS) {
                 assertEquals("absent", field(echo, key),
                         key + " describes the representation that " + status + " just discarded, so it must be "
                                 + "dropped with the body (RFC 9110, errata eid8138) — not only Content-Type "
