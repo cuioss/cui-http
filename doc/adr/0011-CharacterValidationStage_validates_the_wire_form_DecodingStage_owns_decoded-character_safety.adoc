@@ -1,4 +1,4 @@
-= ADR-0004: CharacterValidationStage validates the wire form; DecodingStage owns decoded-character safety
+= ADR-0011: CharacterValidationStage validates the wire form; DecodingStage owns decoded-character safety
 :toc: left
 :toclevels: 2
 :sectnums:
