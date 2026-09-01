@@ -39,18 +39,20 @@ import static org.junit.jupiter.api.Assertions.*;
  * <ul>
  *   <li>Ping operations (HEAD/GET) with various HTTP status codes</li>
  *   <li>Success (2xx), client error (4xx), and server error (5xx) handling</li>
- *   <li>That redirects are <strong>not</strong> followed on either client path</li>
+ *   <li>That the JDK client never follows a redirect on either construction path</li>
  * </ul>
  * <p>
- * {@code HttpHandler} configures no redirect policy, so the JDK default
- * {@link HttpClient.Redirect#NEVER} applies. That is asserted on two levels: at the policy level, by
- * reading back {@link HttpClient#followRedirects()} on both the HTTP-only and the HTTPS constructor
- * path, and end-to-end against MockWebServer, by showing that a 302 with a {@code Location} header
- * surfaces to the caller unfollowed and classifies as the non-retryable
- * {@link HttpErrorCategory#INVALID_CONTENT}.
+ * {@code HttpHandler} configures no JDK redirect policy, so the JDK default
+ * {@link HttpClient.Redirect#NEVER} applies and the client itself never follows a hop. Redirect
+ * following is done by cui-http, in {@link HttpHandler#send}, which revalidates every target against
+ * the handler's {@link RedirectPolicy} before requesting it. That separation is asserted on two
+ * levels here: at the policy level, by reading back {@link HttpClient#followRedirects()} on both the
+ * HTTP-only and the HTTPS constructor path, and end-to-end against MockWebServer, by showing that a
+ * caller taking the raw {@link HttpHandler#createHttpClient()} route still observes the 302
+ * unfollowed and classifies it as the non-retryable {@link HttpErrorCategory#INVALID_CONTENT}.
  * <p>
- * Validated redirect following — same-origin by default, with an opt-in host allowlist — is planned
- * as follow-up work; these tests pin the current fail-secure baseline, not a permanent end state.
+ * The follow behaviour itself — which hops are taken, how they are rewritten, and which are refused —
+ * is covered by {@code HttpHandlerRedirectTest}.
  *
  * @author Oliver Wolff
  * @since 1.0
@@ -141,7 +143,7 @@ class HttpHandlerIntegrationTest {
     }
 
     @Test
-    @DisplayName("The HTTP client path leaves redirects unfollowed")
+    @DisplayName("The HTTP client path never follows a redirect itself")
     void httpClientPathDoesNotFollowRedirects() {
         HttpHandler handler = HttpHandler.builder()
                 .url("http://example.com/api")
@@ -149,30 +151,33 @@ class HttpHandlerIntegrationTest {
                 .build();
 
         assertEquals(HttpClient.Redirect.NEVER, handler.createHttpClient().followRedirects(),
-                "the HTTP-only constructor must configure no follow policy, leaving the JDK's NEVER default");
+                "the JDK client never follows a hop; cui-http does the following, revalidating each target first");
     }
 
     @Test
-    @DisplayName("The HTTPS client path leaves redirects unfollowed")
+    @DisplayName("The HTTPS client path never follows a redirect itself")
     void httpsClientPathDoesNotFollowRedirects() {
         HttpHandler handler = HttpHandler.builder()
                 .url("https://example.com/api")
                 .build();
 
         assertEquals(HttpClient.Redirect.NEVER, handler.createHttpClient().followRedirects(),
-                "the HTTPS constructor must configure no follow policy, leaving the JDK's NEVER default");
+                "the JDK client never follows a hop; cui-http does the following, revalidating each target first");
     }
 
     @Test
-    @DisplayName("A 302 surfaces to the caller unfollowed, with its Location header intact")
+    @DisplayName("The raw client path surfaces a 302 unfollowed, with its Location header intact")
     @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
     void redirectIsNotFollowedButSurfacesToCaller(URIBuilder uriBuilder) throws Exception {
         HttpResponse<String> response = get(uriBuilder, RedirectDispatcher.PATH_REDIRECT);
 
-        assertEquals(302, response.statusCode(), "the caller must observe the redirect itself, not its target");
+        // createHttpClient() hands out the raw JDK client, which bypasses the handler's follow loop:
+        // a caller taking that route observes the 302 itself and is responsible for validating the
+        // target. HttpHandler.send(...) is the route that follows; see HttpHandlerRedirectTest.
+        assertEquals(302, response.statusCode(), "the raw client path must observe the redirect itself, not its target");
         assertTrue(response.uri().getPath().endsWith(RedirectDispatcher.PATH_REDIRECT),
                 "the response URI must still be the original request URI");
-        assertTrue(response.previousResponse().isEmpty(), "no redirect hop may have been walked");
+        assertTrue(response.previousResponse().isEmpty(), "the raw client path may walk no redirect hop");
         assertTrue(response.headers().firstValue("Location")
                         .orElse("").endsWith(RedirectDispatcher.PATH_TARGET),
                 "the Location header must reach the caller so it can validate the target itself");
@@ -186,6 +191,8 @@ class HttpHandlerIntegrationTest {
 
         HttpStatusFamily family = HttpStatusFamily.fromStatusCode(response.statusCode());
 
+        // Now covers a redirect that was refused by the policy or is not followable at all: either way
+        // the 3xx reaches the caller and carries no usable representation.
         assertEquals(HttpStatusFamily.REDIRECTION, family, "a 302 must classify as REDIRECTION");
         assertEquals(HttpErrorCategory.INVALID_CONTENT, family.toErrorCategory(),
                 "an unfollowed redirect carries no usable representation");
