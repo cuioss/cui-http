@@ -254,7 +254,15 @@ public class RedirectDispatcher implements ModuleDispatcherElement {
         if (!STATUS_SEGMENT.matcher(segment).matches()) {
             return Optional.empty();
         }
-        int status = Integer.parseInt(segment);
+        int status;
+        try {
+            status = Integer.parseInt(segment);
+        } catch (NumberFormatException e) {
+            // Unreachable while STATUS_SEGMENT stays a three-ASCII-digit pattern: the guard above
+            // admits only values that fit an int. Kept so the parse never escapes the fixture as an
+            // unchecked failure if that pattern is ever widened.
+            return Optional.empty();
+        }
         return HttpHandler.followableStatusCodes().contains(status) ? Optional.of(status) : Optional.empty();
     }
 
