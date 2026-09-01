@@ -243,27 +243,36 @@
  *     .build();
  * }</pre>
  *
- * <h3>Redirect Behavior (Redirects Are Not Followed)</h3>
+ * <h3>Redirect Behavior (Validated Following)</h3>
  *
- * <p>{@link de.cuioss.http.client.handler.HttpHandler HttpHandler} configures <em>no</em> redirect
- * policy on either its HTTP or its HTTPS client, so the JDK default {@code HttpClient.Redirect.NEVER}
- * applies: redirects are <strong>not</strong> followed. Every 3xx response — followable status or not
- * — is returned to the adapter unfollowed, with any {@code Location} header it supplies left intact
- * and no further request issued.
+ * <p>Every request issued through this package's adapters goes out via
+ * {@link de.cuioss.http.client.handler.HttpHandler#sendAsync HttpHandler.sendAsync} and is therefore
+ * <strong>redirect-validated</strong>: {@code 301}, {@code 302}, {@code 303}, {@code 307} and
+ * {@code 308} carrying a usable {@code Location} are followed, and every candidate hop is checked
+ * against the handler's {@link de.cuioss.http.client.handler.RedirectPolicy RedirectPolicy} before the
+ * next request is issued. The default is same-origin only, with an opt-in host allowlist; an
+ * {@code https} to {@code http} hop is always refused; the chain is bounded; and
+ * {@code Authorization} / {@code Cookie} are stripped across an origin boundary unless the policy's
+ * credential-forwarding strategy explicitly opts in. The underlying JDK client stays on
+ * {@code HttpClient.Redirect.NEVER} throughout — the follow loop is cui-http's, not the JDK's.
  *
- * <p>The adapters classify such a response as a non-retryable {@code INVALID_CONTENT} failure: it is
- * not the representation the request asked for, and retrying the same request would reproduce the
- * same redirect. A caller that wants to act on the redirect must read {@code Location} — which a 3xx
- * is not required to carry — validate the target itself, for example through a
- * {@code de.cuioss.http.security} pipeline, and issue the follow-up request explicitly.
+ * <p>{@link de.cuioss.http.client.adapter.ResilientHttpAdapter ResilientHttpAdapter} inherits this by
+ * delegation: it wraps another adapter and adds retry, so it follows exactly the hops its delegate's
+ * handler permits, with no redirect logic of its own.
  *
- * <p><b>Why:</b> a followed redirect would make the effective request target differ from the URI the
- * caller configured and validated. Nothing in this package re-validates a server-chosen redirect
- * destination, so an auto-follow would silently honour a same-scheme redirect to an attacker-chosen
- * host or port. Leaving the JDK default in place keeps the caller-validated URI the only request
- * target. Validated redirect following — same-origin by default, with an opt-in host allowlist — is
- * planned as follow-up work; the current behaviour is a fail-secure baseline, not the intended
- * permanent end state.
+ * <p>A <em>refused</em> hop surfaces as a non-retryable failure: the
+ * {@code RedirectNotAllowedException} the policy raises classifies as
+ * {@code HttpErrorCategory.CONFIGURATION_ERROR}, so no retry is attempted. A 3xx that reaches the
+ * adapter unfollowed — an unfollowable status such as {@code 300} or {@code 305}, or a response with
+ * no usable {@code Location} — is classified as a non-retryable {@code INVALID_CONTENT} failure: it is
+ * not the representation the request asked for, and retrying would reproduce the same redirect.
+ *
+ * <p><b>Why a policy rather than a security pipeline:</b> the {@code de.cuioss.http.security}
+ * pipelines are deliberately <em>not</em> consulted for a redirect target. They answer an inbound
+ * path/pattern question — is this path, parameter or header carrying an attack pattern? — whereas the
+ * redirect threat is an outbound <em>egress host-policy</em> question: is this host an acceptable next
+ * hop for a request the caller aimed somewhere else? {@code RedirectPolicy} answers that question
+ * directly, with a small set of ordered origin rules and no pattern matching.
  *
  * <h3>Header Validation (Manual, Before Request)</h3>
  *

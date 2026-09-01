@@ -29,6 +29,8 @@ import java.net.URL;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.time.Duration;
+import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -962,6 +964,114 @@ class HttpHandlerTest {
                             "An equally-configured sibling handler is unaffected"));
 
             live.close();
+        }
+    }
+
+    @Nested
+    @DisplayName("Redirect Policy Tests")
+    class RedirectPolicyTests {
+
+        private static final String ALLOWLISTED_HOST = "cdn.example.net";
+
+        private static HttpHandler.HttpHandlerBuilder forwardingBuilder() {
+            return HttpHandler.builder()
+                    .uri(VALID_URL)
+                    .redirectPolicy(RedirectPolicy.builder()
+                            .allowedHosts(List.of(ALLOWLISTED_HOST))
+                            .credentialForwarding(RedirectPolicy.CredentialForwarding.FORWARD_TO_ALLOWLISTED)
+                            .build());
+        }
+
+        @Test
+        @DisplayName("A default handler should carry the same-origin policy and therefore STRIP_ON_CROSS_ORIGIN")
+        void shouldDefaultToSameOriginPolicy() {
+            HttpHandler handler = HttpHandler.builder().uri(VALID_URL).build();
+
+            assertEquals(RedirectPolicy.sameOrigin(), handler.getRedirectPolicy(),
+                    "A handler built without an explicit policy carries the same-origin default");
+            assertEquals(RedirectPolicy.CredentialForwarding.STRIP_ON_CROSS_ORIGIN,
+                    handler.getRedirectPolicy().getCredentialForwarding(),
+                    "The same-origin default strips credentials on any cross-origin hop");
+        }
+
+        @Test
+        @DisplayName("asBuilder should round-trip a FORWARD_TO_ALLOWLISTED policy with the strategy intact")
+        void shouldRoundTripForwardingPolicy() {
+            HttpHandler handler = forwardingBuilder().build();
+
+            HttpHandler cloned = handler.asBuilder().uri(VALID_URL).build();
+
+            assertEquals(handler.getRedirectPolicy(), cloned.getRedirectPolicy(),
+                    "asBuilder carries the configured policy over verbatim");
+            assertEquals(RedirectPolicy.CredentialForwarding.FORWARD_TO_ALLOWLISTED,
+                    cloned.getRedirectPolicy().getCredentialForwarding(),
+                    "The opted-in forwarding strategy survives the round trip");
+            assertEquals(Set.of(ALLOWLISTED_HOST), cloned.getRedirectPolicy().getAllowedHosts(),
+                    "The allowlist survives the round trip");
+        }
+
+        @Test
+        @DisplayName("redirectPolicy(null) should restore the same-origin default and STRIP_ON_CROSS_ORIGIN")
+        void shouldRestoreDefaultOnNull() {
+            HttpHandler handler = forwardingBuilder()
+                    .redirectPolicy(null)
+                    .build();
+
+            assertEquals(RedirectPolicy.sameOrigin(), handler.getRedirectPolicy(),
+                    "null restores the same-origin default rather than disabling validation");
+            assertEquals(RedirectPolicy.CredentialForwarding.STRIP_ON_CROSS_ORIGIN,
+                    handler.getRedirectPolicy().getCredentialForwarding(),
+                    "null also restores the secure credential-forwarding default");
+            assertTrue(handler.getRedirectPolicy().getAllowedHosts().isEmpty(),
+                    "null also drops the previously configured allowlist");
+        }
+
+        @Test
+        @DisplayName("Two handlers differing only in redirect policy should not be equal")
+        void shouldTreatPolicyAsConfigurationIdentity() {
+            HttpHandler sameOrigin = HttpHandler.builder().uri(VALID_URL).build();
+            HttpHandler allowlisted = HttpHandler.builder()
+                    .uri(VALID_URL)
+                    .redirectPolicy(RedirectPolicy.builder().allowedHosts(List.of(ALLOWLISTED_HOST)).build())
+                    .build();
+
+            assertNotEquals(sameOrigin, allowlisted,
+                    "The redirect policy is part of the handler's configuration identity");
+        }
+
+        @Test
+        @DisplayName("Two handlers differing only in the credential-forwarding strategy should not be equal")
+        void shouldTreatStrategyAsConfigurationIdentity() {
+            HttpHandler stripping = HttpHandler.builder()
+                    .uri(VALID_URL)
+                    .redirectPolicy(RedirectPolicy.builder().allowedHosts(List.of(ALLOWLISTED_HOST)).build())
+                    .build();
+            HttpHandler forwarding = forwardingBuilder().build();
+
+            assertNotEquals(stripping, forwarding,
+                    "The credential-forwarding strategy alone distinguishes two configurations");
+        }
+
+        @Test
+        @DisplayName("The HTTPS client should still report Redirect.NEVER")
+        void httpsClientShouldNeverFollowRedirects() {
+            try (HttpHandler handler = forwardingBuilder().build()) {
+                assertEquals(HttpClient.Redirect.NEVER, handler.createHttpClient().followRedirects(),
+                        "Redirect following is application-level; the JDK client must never follow a hop");
+            }
+        }
+
+        @Test
+        @DisplayName("The HTTP client should still report Redirect.NEVER")
+        void httpClientShouldNeverFollowRedirects() {
+            try (HttpHandler handler = HttpHandler.builder()
+                         .uri("http://example.com")
+                         .allowInsecureHttp(true)
+                         .redirectPolicy(RedirectPolicy.builder().allowedHosts(List.of(ALLOWLISTED_HOST)).build())
+                         .build()) {
+                assertEquals(HttpClient.Redirect.NEVER, handler.createHttpClient().followRedirects(),
+                        "Redirect following is application-level; the JDK client must never follow a hop");
+            }
         }
     }
 }

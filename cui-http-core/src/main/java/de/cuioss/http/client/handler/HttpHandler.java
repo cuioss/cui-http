@@ -36,6 +36,12 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Collections;
+import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.BiPredicate;
 import java.util.regex.Pattern;
 
 /**
@@ -60,9 +66,8 @@ import java.util.regex.Pattern;
  *     .readTimeoutSeconds(10)
  *     .build();
  *
- * // Execute a GET request via the shared client and the pre-configured request builder
- * HttpClient client = handler.createHttpClient();
- * HttpResponse&lt;String&gt; response = client.send(
+ * // Execute a GET request, following any redirect the policy permits
+ * HttpResponse&lt;String&gt; response = handler.send(
  *     handler.requestBuilder().GET().build(),
  *     HttpResponse.BodyHandlers.ofString());
  * if (response.statusCode() == 200) {
@@ -70,8 +75,17 @@ import java.util.regex.Pattern;
  *     // Process response
  * }
  *
- * // Or, for a lightweight reachability check
+ * // Or, for a lightweight reachability check (also redirect-following)
  * HttpStatusFamily status = handler.pingGet();
+ *
+ * // Opt in to a host allowlist, and let credentials survive the hop to it
+ * HttpHandler allowlisted = HttpHandler.builder()
+ *     .uri("https://api.example.com/users")
+ *     .redirectPolicy(RedirectPolicy.builder()
+ *         .allowedHosts(List.of("cdn.example.net"))
+ *         .credentialForwarding(RedirectPolicy.CredentialForwarding.FORWARD_TO_ALLOWLISTED)
+ *         .build())
+ *     .build();
  *
  * // Custom SSL context
  * SSLContext customSSL = new SecureSSLContextProvider().getOrCreateSecureSSLContext(null);
@@ -93,23 +107,49 @@ import java.util.regex.Pattern;
  *   <li>SSL context created automatically for HTTPS if not provided</li>
  *   <li>Default timeout: 10 seconds for both connection and read</li>
  *   <li>Schemeless string URLs default to HTTPS</li>
- *   <li>Redirects are <strong>not followed</strong>: no redirect policy is configured on either the
- *       HTTP or the HTTPS client, so the JDK default {@link HttpClient.Redirect#NEVER} applies. Every
- *       3xx response — followable status or not — reaches the caller verbatim, with any
- *       {@code Location} header it supplies left intact and no further request issued. Adapters
- *       classify such a response as a non-retryable {@code INVALID_CONTENT} failure; see
- *       {@link HttpStatusFamily#toErrorCategory()}. A caller that wants to act on a redirect can
- *       read and validate the {@code Location} header when the response supplies one — a 3xx is not
- *       required to carry it — and issue the follow-up request explicitly.</li>
+ *   <li>Redirects are followed by {@link #send} / {@link #sendAsync}, each hop revalidated against
+ *       the configured {@link RedirectPolicy} first; same-origin only by default. See
+ *       <a href="#redirect-policy">Redirect policy</a>.</li>
  * </ul>
- * <p>
- * <strong>Why redirects are not followed:</strong> a followed redirect would send the request to a
- * target the caller never validated. This class runs no {@code de.cuioss.http.security} pipeline over
- * a redirect destination, so a same-scheme redirect to an attacker-chosen host or port would be
- * honoured silently. Leaving the JDK default in place keeps the caller-validated URI the only request
- * target. Validated redirect following — same-origin by default, with an opt-in host allowlist — is
- * planned as follow-up work; the current behaviour is a fail-secure baseline, not the intended
- * permanent end state.
+ *
+ * <h3 id="redirect-policy">Redirect policy</h3>
+ * <p>The JDK client this handler owns stays on {@link HttpClient.Redirect#NEVER} and never follows a
+ * hop of its own. Redirect following is done here, in cui-http, so that <em>every</em> hop is
+ * validated before it is requested rather than after the fact:</p>
+ * <ul>
+ *   <li>{@link #send(HttpRequest, HttpResponse.BodyHandler)} and
+ *       {@link #sendAsync(HttpRequest, HttpResponse.BodyHandler)} follow {@code 301}, {@code 302},
+ *       {@code 303}, {@code 307} and {@code 308} when the response carries a non-blank
+ *       {@code Location}. Any other 3xx — and a followable status without a usable {@code Location} —
+ *       reaches the caller verbatim and classifies as a non-retryable {@code INVALID_CONTENT} failure;
+ *       see {@link HttpStatusFamily#toErrorCategory()}.</li>
+ *   <li>A non-blank {@code Location} that is not a parseable URI reference is refused with
+ *       {@link RedirectPolicy.RedirectRefusal#MALFORMED_LOCATION} rather than allowed to surface the
+ *       URI parser's own {@link IllegalArgumentException}. The value is remote-controlled, so an
+ *       unparseable one is a refused hop, not a caller-side programming error.</li>
+ *   <li>Each candidate hop is passed to {@link RedirectPolicy#refuse(URI, URI)} <em>before</em> the
+ *       request is issued. The default, {@link RedirectPolicy#sameOrigin()}, permits same-origin hops
+ *       only; a host allowlist is an explicit opt-in via
+ *       {@link HttpHandlerBuilder#redirectPolicy(RedirectPolicy)}.</li>
+ *   <li>An {@code https} &rarr; {@code http} hop is <strong>always</strong> refused
+ *       ({@link RedirectPolicy.RedirectRefusal#PROTOCOL_DOWNGRADE}), allowlisted or not — an
+ *       allowlist entry never buys a downgrade off TLS.</li>
+ *   <li>The chain is bounded by {@link RedirectPolicy#getMaxHops()} (default
+ *       {@value RedirectPolicy#DEFAULT_MAX_HOPS}); exhausting it raises
+ *       {@link RedirectPolicy.RedirectRefusal#TOO_MANY_HOPS}.</li>
+ *   <li>{@code Authorization} and {@code Cookie} are governed by the policy's
+ *       {@link RedirectPolicy.CredentialForwarding} strategy: stripped across an origin boundary by
+ *       default, forwarded to an allowlisted host only on the explicit
+ *       {@link RedirectPolicy.CredentialForwarding#FORWARD_TO_ALLOWLISTED} opt-in, and never stripped
+ *       on a same-origin hop.</li>
+ *   <li>Every refusal raises {@link RedirectNotAllowedException}, which names the hop and the reason
+ *       and classifies as the non-retryable {@code CONFIGURATION_ERROR}.</li>
+ *   <li>{@link #createHttpClient()} hands out the raw, non-following client. A caller taking that
+ *       route observes the 3xx itself and owns validating the {@code Location} target.</li>
+ * </ul>
+ * <p>This is deliberately an <em>egress host policy</em> and not a {@code de.cuioss.http.security}
+ * validation pipeline: those pipelines answer an inbound path/pattern question, while a redirect
+ * target poses the outbound question "is this host an acceptable next hop?".</p>
  *
  * <h3 id="lifecycle">Lifecycle</h3>
  * <p>A handler creates exactly one {@link HttpClient} during construction and shares it across every
@@ -203,8 +243,68 @@ public final class HttpHandler implements AutoCloseable {
      */
     private static final Pattern HOST_PORT_PATTERN = Pattern.compile("^[a-zA-Z][a-zA-Z0-9+.-]*:\\d+(?:[/?#].*)?$");
 
+    /**
+     * Matches every C0 control character (including CR, LF and TAB), DEL, and the C1 control range.
+     * Used by {@link #sanitizeForMessage(String)} to neutralize a remote-controlled value before it
+     * is embedded in an exception message.
+     */
+    private static final Pattern CONTROL_CHARACTERS = Pattern.compile("[\\x00-\\x1F\\x7F-\\x9F]");
+
+    /** Placeholder substituted for each neutralized control character. */
+    private static final String CONTROL_CHARACTER_PLACEHOLDER = "?";
+
+    /** Maximum characters of a remote-controlled value retained verbatim in a message. */
+    private static final int MAX_SANITIZED_VALUE_LENGTH = 256;
+
+    /** Marker appended when a remote-controlled value is truncated, so a reader can tell it was cut. */
+    private static final String TRUNCATION_MARKER = "...[truncated]";
+
     public static final int DEFAULT_CONNECTION_TIMEOUT_SECONDS = 10;
     public static final int DEFAULT_READ_TIMEOUT_SECONDS = 10;
+
+    /**
+     * The 3xx statuses this handler follows. {@code 300} (Multiple Choices), {@code 304} (Not
+     * Modified), {@code 305} (Use Proxy) and {@code 306} (unused) are deliberately absent: none of
+     * them names a single unambiguous next request, so each surfaces to the caller verbatim.
+     * <p>
+     * This is the sole definition of the set; {@link #followableStatusCodes()} publishes it so no
+     * caller — production or test fixture — has to restate it.
+     */
+    private static final Set<Integer> FOLLOWABLE_STATUS_CODES = Set.of(301, 302, 303, 307, 308);
+
+    private static final String HEADER_LOCATION = "Location";
+    private static final String HEADER_AUTHORIZATION = "Authorization";
+    private static final String HEADER_COOKIE = "Cookie";
+    private static final String HEADER_CONTENT_TYPE = "Content-Type";
+    private static final String HEADER_CONTENT_LENGTH = "Content-Length";
+    private static final String HEADER_CONTENT_ENCODING = "Content-Encoding";
+    private static final String HEADER_CONTENT_LANGUAGE = "Content-Language";
+    private static final String HEADER_CONTENT_LOCATION = "Content-Location";
+    private static final String HEADER_DIGEST = "Digest";
+    private static final String HEADER_LAST_MODIFIED = "Last-Modified";
+    private static final String METHOD_GET = "GET";
+    private static final String METHOD_HEAD = "HEAD";
+
+    /**
+     * The representation-metadata fields dropped together with the request body when a {@code 301},
+     * {@code 302} or {@code 303} rewrite changes the method to {@code GET} and discards the body.
+     * <p>
+     * Every one of these describes the representation that is no longer being sent, so carrying any
+     * of them onto the rewritten bodyless request would misdescribe it — RFC 9110 §8.3–§8.8 with
+     * errata eid8138, which corrects the field list to the full representation-metadata set rather
+     * than {@code Content-Type} / {@code Content-Length} alone. Ordered case-insensitively so
+     * membership matches the case-insensitive header comparisons used elsewhere in
+     * {@link #rebuildForHop}.
+     */
+    private static final Set<String> BODY_REPRESENTATION_HEADERS = caseInsensitiveSet(
+            HEADER_CONTENT_TYPE, HEADER_CONTENT_LENGTH, HEADER_CONTENT_ENCODING,
+            HEADER_CONTENT_LANGUAGE, HEADER_CONTENT_LOCATION, HEADER_DIGEST, HEADER_LAST_MODIFIED);
+
+    private static Set<String> caseInsensitiveSet(String... names) {
+        Set<String> set = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        Collections.addAll(set, names);
+        return Collections.unmodifiableSet(set);
+    }
 
     @Getter
     private final URI uri;
@@ -254,6 +354,17 @@ public final class HttpHandler implements AutoCloseable {
      */
     @Getter
     private final boolean verifyHostname;
+    /**
+     * The egress host policy applied to every redirect hop this handler would follow. Never
+     * {@code null}: a handler built without an explicit policy carries {@link RedirectPolicy#sameOrigin()},
+     * so same-origin hops are followed, cross-origin hops are refused, and {@code Authorization} /
+     * {@code Cookie} are stripped on any non-same-origin hop. It is part of the handler's
+     * configuration identity ({@code equals}/{@code hashCode}) and is rendered in {@code toString}.
+     *
+     * @return the redirect policy for this handler, never {@code null}
+     */
+    @Getter
+    private final RedirectPolicy redirectPolicy;
     // Build-time provenance only: records whether the SSLContext was supplied by the caller rather
     // than derived by this class. It is not configuration - two handlers that differ only in how
     // their (identical) context was obtained are the same configuration - so it is excluded from
@@ -270,7 +381,8 @@ public final class HttpHandler implements AutoCloseable {
     private final HttpClient httpClient;
 
     // Constructor for HTTP URIs (no SSL context needed)
-    private HttpHandler(URI uri, URL url, int connectionTimeoutSeconds, int readTimeoutSeconds) {
+    private HttpHandler(URI uri, URL url, int connectionTimeoutSeconds, int readTimeoutSeconds,
+            RedirectPolicy redirectPolicy) {
         this.uri = uri;
         this.url = url;
         this.sslContext = null;
@@ -284,13 +396,14 @@ public final class HttpHandler implements AutoCloseable {
         // was consumed from the caller.
         this.verifyHostname = true;
         this.sslContextCallerSupplied = false;
+        this.redirectPolicy = redirectPolicy;
 
         // Create the HttpClient for HTTP.
-        // No redirect policy is configured: the JDK default is Redirect.NEVER, so no 3xx is ever
-        // followed and every redirect response surfaces to the caller. Auto-following would send the
-        // request to a target the caller never validated — this class runs no de.cuioss.http.security
-        // pipeline over a redirect destination. Validated redirect following (same-origin by default,
-        // with an opt-in host allowlist) is planned as follow-up work.
+        // No JDK redirect policy is configured: the JDK default is Redirect.NEVER, and it stays that
+        // way deliberately. Redirect following is application-level, driven by this handler against
+        // its RedirectPolicy, because the JDK follower would send the request to a target no policy
+        // ever evaluated. Every hop must be revalidated before it is requested, so the JDK must never
+        // follow one on its own.
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(connectionTimeoutSeconds))
                 .build();
@@ -304,7 +417,7 @@ public final class HttpHandler implements AutoCloseable {
     @SuppressWarnings("java:S107")
     private HttpHandler(URI uri, URL url, SSLContext sslContext, SecureSSLContextProvider secureSSLContextProvider,
             int connectionTimeoutSeconds, int readTimeoutSeconds, boolean allowInsecureHttp,
-            boolean verifyHostname, boolean sslContextCallerSupplied) {
+            boolean verifyHostname, boolean sslContextCallerSupplied, RedirectPolicy redirectPolicy) {
         this.uri = uri;
         this.url = url;
         this.sslContext = sslContext;
@@ -314,14 +427,16 @@ public final class HttpHandler implements AutoCloseable {
         this.allowInsecureHttp = allowInsecureHttp;
         this.verifyHostname = verifyHostname;
         this.sslContextCallerSupplied = sslContextCallerSupplied;
+        this.redirectPolicy = redirectPolicy;
 
         // JDK 11+ HttpClient enables hostname verification by default.
         // Pin the enabled TLS protocols so the configured minimum version is a hard
         // floor on the wire, not merely the context's default protocol object.
         SSLParameters sslParameters = new SSLParameters();
         sslParameters.setProtocols(secureSSLContextProvider.getEnabledProtocols());
-        // No redirect policy is configured here either — see the HTTP constructor above for why the
-        // JDK default (Redirect.NEVER) is deliberately left in place.
+        // No JDK redirect policy is configured here either — see the HTTP constructor above for why
+        // the JDK default (Redirect.NEVER) is deliberately left in place and the follow loop is
+        // application-level.
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(connectionTimeoutSeconds))
                 .sslContext(sslContext)
@@ -331,6 +446,26 @@ public final class HttpHandler implements AutoCloseable {
 
     public static HttpHandlerBuilder builder() {
         return new HttpHandlerBuilder();
+    }
+
+    /**
+     * The 3xx statuses this handler's follow loop acts on — {@code 301}, {@code 302}, {@code 303},
+     * {@code 307} and {@code 308} — exposed as the single definition of that set.
+     * <p>
+     * A caller taking the raw {@link #createHttpClient()} route observes 3xx responses itself and
+     * owns deciding which of them name a next hop; this accessor is what lets that decision agree
+     * with {@link #send(HttpRequest, HttpResponse.BodyHandler)}'s rather than restate it. Test
+     * fixtures read it for the same reason: a fixture that re-declared the set would keep passing
+     * against a stale one after the production set changed.
+     * <p>
+     * A status being in this set is necessary but not sufficient for a hop to be followed — the
+     * response must also carry a non-blank, parseable {@code Location} that
+     * {@link #getRedirectPolicy()} permits.
+     *
+     * @return the followable statuses, unmodifiable
+     */
+    public static Set<Integer> followableStatusCodes() {
+        return FOLLOWABLE_STATUS_CODES;
     }
 
     /**
@@ -373,10 +508,295 @@ public final class HttpHandler implements AutoCloseable {
                 .readTimeoutSeconds(readTimeoutSeconds)
                 .tlsVersions(secureSSLContextProvider)
                 .allowInsecureHttp(allowInsecureHttp)
-                .verifyHostname(verifyHostname);
+                .verifyHostname(verifyHostname)
+                .redirectPolicy(redirectPolicy);
         return sslContextCallerSupplied
                 ? handlerBuilder.sslContext(sslContext)
                 : handlerBuilder.derivedSslContext(sslContext, !verifyHostname);
+    }
+
+    /**
+     * Sends {@code request} through this handler's client, following redirect hops that
+     * {@link #getRedirectPolicy()} permits.
+     * <p>
+     * Each hop is revalidated <em>before</em> it is requested: the policy sees the current URI and
+     * the resolved target and either permits the hop or names why it is refused. The underlying
+     * {@link HttpClient} is always configured with {@link HttpClient.Redirect#NEVER}, so no hop is
+     * ever taken without passing through the policy first.
+     * </p>
+     * <p>
+     * Only {@code 301}, {@code 302}, {@code 303}, {@code 307} and {@code 308} are followed, and only
+     * when the response carries a non-blank {@code Location}. Every other response — including a
+     * {@code 300}, {@code 304}, {@code 305} or {@code 306}, and a followable status with no usable
+     * {@code Location} — is returned verbatim. A {@code Location} that is present and non-blank but
+     * not a parseable URI reference is refused
+     * ({@link RedirectPolicy.RedirectRefusal#MALFORMED_LOCATION}), never surfaced as the URI parser's
+     * own {@link IllegalArgumentException}.
+     * </p>
+     *
+     * @param <R>         the response body type
+     * @param request     the request to send; its URI is the first hop's origin
+     * @param bodyHandler the body handler applied to the terminal response only. An intermediate
+     *                    hop's body is never handed to it: that body is drained and discarded before
+     *                    the next hop is issued, so a streaming handler such as
+     *                    {@link HttpResponse.BodyHandlers#ofInputStream()} cannot leak the
+     *                    intermediate hop's connection. A followable status carrying no usable
+     *                    {@code Location} is <em>not</em> an intermediate hop — it is terminal, and
+     *                    its body reaches this handler
+     * @return the terminal response, never a followed redirect
+     * @throws RedirectNotAllowedException if a hop is refused by the policy, if the {@code Location}
+     *                                     is unparseable, or if the hop budget
+     *                                     ({@link RedirectPolicy#getMaxHops()}) is exhausted
+     * @throws IOException                 if an I/O error occurs on any hop
+     * @throws InterruptedException        if the calling thread is interrupted
+     * @since 2.2
+     */
+    public <R> HttpResponse<R> send(HttpRequest request, HttpResponse.BodyHandler<R> bodyHandler)
+            throws IOException, InterruptedException {
+        HttpRequest current = request;
+        HttpResponse.BodyHandler<R> hopHandler = discardingIntermediateBodies(bodyHandler);
+        int hopsFollowed = 0;
+        while (true) {
+            HttpResponse<R> response = httpClient.send(current, hopHandler);
+            HttpRequest next = nextHop(current, response, hopsFollowed);
+            if (next == null) {
+                return response;
+            }
+            current = next;
+            hopsFollowed++;
+        }
+    }
+
+    /**
+     * Asynchronous counterpart of {@link #send(HttpRequest, HttpResponse.BodyHandler)}, applying the
+     * same revalidating hop policy.
+     * <p>
+     * A refused hop completes the returned future exceptionally with a
+     * {@link RedirectNotAllowedException} (wrapped in a {@link java.util.concurrent.CompletionException}
+     * by the {@link CompletableFuture} contract, which
+     * {@code HttpErrorCategory.fromException} unwraps).
+     * </p>
+     *
+     * @param <R>         the response body type
+     * @param request     the request to send; its URI is the first hop's origin
+     * @param bodyHandler the body handler applied to the terminal response only. An intermediate
+     *                    hop's body is never handed to it: that body is drained and discarded before
+     *                    the next hop is issued, so a streaming handler such as
+     *                    {@link HttpResponse.BodyHandlers#ofInputStream()} cannot leak the
+     *                    intermediate hop's connection. A followable status carrying no usable
+     *                    {@code Location} is <em>not</em> an intermediate hop — it is terminal, and
+     *                    its body reaches this handler
+     * @return a future completing with the terminal response, never with a followed redirect
+     * @since 2.2
+     */
+    public <R> CompletableFuture<HttpResponse<R>> sendAsync(HttpRequest request, HttpResponse.BodyHandler<R> bodyHandler) {
+        return sendAsyncHop(request, discardingIntermediateBodies(bodyHandler), 0);
+    }
+
+    /**
+     * Recursive async hop step: send, then either complete with the terminal response or compose the
+     * next hop. Recursion via {@code thenCompose} rather than iteration keeps the whole chain
+     * non-blocking.
+     * <p>
+     * {@code hopHandler} is the already-wrapped handler produced by
+     * {@link #discardingIntermediateBodies(HttpResponse.BodyHandler)} — wrapping happens once in
+     * {@link #sendAsync(HttpRequest, HttpResponse.BodyHandler)} and the same instance is threaded
+     * through every hop, so no recursion step re-wraps it.
+     */
+    private <R> CompletableFuture<HttpResponse<R>> sendAsyncHop(HttpRequest request,
+            HttpResponse.BodyHandler<R> hopHandler, int hopsFollowed) {
+        return httpClient.sendAsync(request, hopHandler).thenCompose(response -> {
+            HttpRequest next = nextHop(request, response, hopsFollowed);
+            return next == null
+                    ? CompletableFuture.completedFuture(response)
+                    : sendAsyncHop(next, hopHandler, hopsFollowed + 1);
+        });
+    }
+
+    /**
+     * Wraps a caller-supplied body handler so an <em>intermediate</em> hop's body is drained and
+     * discarded instead of being materialized through the caller's handler.
+     * <p>
+     * Without this, a streaming handler such as {@link HttpResponse.BodyHandlers#ofInputStream()}
+     * would produce an {@code InputStream} for every 3xx the loop then follows and throws away
+     * unread. Nothing ever consumes or closes those streams, so each one pins the underlying
+     * connection for as long as the client's pool holds it. Replacing the handler for intermediate
+     * hops with {@link HttpResponse.BodySubscribers#replacing(Object)} — which reads the body to
+     * completion and drops it — releases the connection at the moment the hop is left behind. The
+     * discarded response's {@code body()} is {@code null}, which is unobservable: an intermediate
+     * response is never returned to the caller.
+     * <p>
+     * The predicate is applied to the {@link HttpResponse.ResponseInfo} the JDK offers <em>before</em>
+     * the body is read, so the decision is made in time to avoid materializing it at all.
+     *
+     * @param <R>         the response body type
+     * @param bodyHandler the caller's handler, applied unchanged to the terminal response
+     * @return a handler that discards intermediate hop bodies and delegates for terminal responses
+     */
+    private static <R> HttpResponse.BodyHandler<R> discardingIntermediateBodies(
+            HttpResponse.BodyHandler<R> bodyHandler) {
+        return responseInfo -> isIntermediateHop(responseInfo)
+                ? HttpResponse.BodySubscribers.<R>replacing(null)
+                : bodyHandler.apply(responseInfo);
+    }
+
+    /**
+     * Whether {@code responseInfo} describes a hop the follow loop will leave behind — i.e. whether
+     * {@link #nextHop(HttpRequest, HttpResponse, int)} will treat it as a redirect to act on rather
+     * than as the terminal response.
+     * <p>
+     * This mirrors {@code nextHop}'s own two "is this a redirect at all?" conditions exactly: a
+     * status in {@link #FOLLOWABLE_STATUS_CODES} carrying a non-blank {@code Location}. It
+     * deliberately stops there. Whether the hop is then <em>followed</em> (permitted), or refused
+     * with a {@link RedirectNotAllowedException} (cross-origin, downgrade, malformed target,
+     * exhausted budget), makes no difference here: on both routes the response is discarded rather
+     * than returned, so its body must not reach the caller's handler either way. Conversely a
+     * followable status <em>without</em> a usable {@code Location} is terminal per {@code nextHop},
+     * so its body must still reach the caller.
+     *
+     * @param responseInfo the status and headers of the response about to be read
+     * @return {@code true} when this response is an intermediate hop whose body must be discarded
+     */
+    private static boolean isIntermediateHop(HttpResponse.ResponseInfo responseInfo) {
+        return FOLLOWABLE_STATUS_CODES.contains(responseInfo.statusCode())
+                && !MoreStrings.isBlank(responseInfo.headers().firstValue(HEADER_LOCATION).orElse(null));
+    }
+
+    /**
+     * Decides whether {@code response} is a hop worth following and, when it is, builds the request
+     * for it. Shared by the synchronous loop and the asynchronous recursion so both apply exactly
+     * one hop policy.
+     *
+     * @param request       the request that produced {@code response}
+     * @param response      the response to inspect
+     * @param hopsFollowed  how many hops have already been followed on this chain
+     * @return the request for the next hop, or {@code null} when {@code response} is terminal
+     * @throws RedirectNotAllowedException if the {@code Location} is unparseable, the policy refuses
+     *                                     the hop, or the budget is exhausted
+     */
+    private @Nullable HttpRequest nextHop(HttpRequest request, HttpResponse<?> response, int hopsFollowed) {
+        if (!FOLLOWABLE_STATUS_CODES.contains(response.statusCode())) {
+            return null;
+        }
+        String location = response.headers().firstValue(HEADER_LOCATION).orElse(null);
+        if (MoreStrings.isBlank(location)) {
+            // A followable status is not required to carry a usable Location; without one there is
+            // no target to validate, so the response surfaces verbatim.
+            return null;
+        }
+        URI currentUri = request.uri();
+        URI target = resolveTarget(currentUri, location);
+
+        // The policy is consulted before the hop counter: a refused target is reported as the
+        // refusal it is, never masked as an exhausted budget.
+        Optional<RedirectPolicy.RedirectRefusal> refusal = redirectPolicy.refuse(currentUri, target);
+        if (refusal.isPresent()) {
+            throw new RedirectNotAllowedException(currentUri, target, refusal.get());
+        }
+        if (hopsFollowed >= redirectPolicy.getMaxHops()) {
+            // No single target is at fault, so the refusal names none.
+            throw new RedirectNotAllowedException(currentUri, null, RedirectPolicy.RedirectRefusal.TOO_MANY_HOPS);
+        }
+        return rebuildForHop(request, currentUri, target, response.statusCode());
+    }
+
+    /**
+     * Resolves the {@code Location} value of a followable response against the hop that produced it.
+     * <p>
+     * {@code Location} is remote-controlled and is not guaranteed to be a syntactically valid URI
+     * reference. {@link URI#resolve(String)} answers a malformed one with a raw
+     * {@link IllegalArgumentException}, which is not part of this class's contract, so the parse
+     * failure is converted into the same {@link RedirectNotAllowedException} refusal every other
+     * rejected hop raises: the current URI as {@code from}, no {@code to} (none was ever resolved),
+     * and {@link RedirectPolicy.RedirectRefusal#MALFORMED_LOCATION} as the reason. Behaviour is
+     * unchanged in substance — the hop is not taken either way — but the failure is now typed,
+     * classifies as the non-retryable {@code CONFIGURATION_ERROR}, and carries the offending value,
+     * bounded in length and with control characters neutralized via {@link #sanitizeForMessage(String)}
+     * before it is embedded in the message.
+     *
+     * @param currentUri the URI the redirect response was received from
+     * @param location   the non-blank {@code Location} header value
+     * @return the resolved absolute target
+     * @throws RedirectNotAllowedException if {@code location} is not a parseable URI reference
+     */
+    private static URI resolveTarget(URI currentUri, String location) {
+        try {
+            return currentUri.resolve(location);
+        } catch (IllegalArgumentException e) {
+            throw new RedirectNotAllowedException(currentUri, null,
+                    RedirectPolicy.RedirectRefusal.MALFORMED_LOCATION,
+                    "Refusing to follow redirect from " + sanitizeForMessage(currentUri.toString())
+                            + ": malformed Location '" + sanitizeForMessage(location) + "': "
+                            + RedirectPolicy.RedirectRefusal.MALFORMED_LOCATION, e);
+        }
+    }
+
+    /**
+     * Neutralizes a remote-controlled value before it is spliced into an exception message that a
+     * caller may log verbatim (e.g. via {@code throwable.getMessage()} in a {@code .exceptionally()}
+     * handler). Bounds the value's length — appending {@value #TRUNCATION_MARKER} when it is cut, so
+     * a reader can tell the value was truncated rather than reading one that quietly ends early — and
+     * replaces every C0/C1 control character (including CR, LF and TAB) with a single visible
+     * placeholder, so unbounded, unescaped external content can never shape a log line's structure or
+     * size.
+     *
+     * <p>
+     * Package-private (rather than {@code private}) for two reasons: {@link RedirectNotAllowedException}
+     * — same package — calls it to bound the {@code from}/{@code to} values it embeds in every refusal
+     * message, not only the {@code MALFORMED_LOCATION} one this class builds directly; and the
+     * neutralization logic is directly unit-testable, which matters because the JDK {@code HttpClient}
+     * collapses an embedded {@code TAB} in a received header value to a single space before this class
+     * ever sees it (RFC 7230 optional-whitespace folding), so a real {@code Location} header cannot
+     * carry a control character through the wire for an end-to-end assertion — see
+     * {@code HttpHandlerRedirectTest}.
+     *
+     * @param value the untrusted, non-null value to neutralize
+     * @return the sanitized value, safe to embed verbatim in a message
+     */
+    static String sanitizeForMessage(String value) {
+        String bounded = value.length() > MAX_SANITIZED_VALUE_LENGTH
+                ? value.substring(0, MAX_SANITIZED_VALUE_LENGTH) + TRUNCATION_MARKER
+                : value;
+        return CONTROL_CHARACTERS.matcher(bounded).replaceAll(CONTROL_CHARACTER_PLACEHOLDER);
+    }
+
+    /**
+     * Rebuilds {@code request} for the next hop, applying the RFC 9110 method-and-body rules and the
+     * policy's credential-forwarding verdict.
+     * <p>
+     * {@code 303} always rewrites to {@code GET} and drops the body. {@code 301} and {@code 302}
+     * preserve a {@code GET} or {@code HEAD} and otherwise rewrite to {@code GET}, dropping the body.
+     * {@code 307} and {@code 308} preserve both the method and the original body publisher. Whenever
+     * the body is dropped, every {@linkplain #BODY_REPRESENTATION_HEADERS representation-metadata
+     * header} describing it is dropped with it — not only {@code Content-Type} and
+     * {@code Content-Length}, but also {@code Content-Encoding}, {@code Content-Language},
+     * {@code Content-Location}, {@code Digest} and {@code Last-Modified}.
+     * <p>
+     * Whether {@code Authorization} and {@code Cookie} survive the hop is
+     * {@link RedirectPolicy#forwardsCredentials(URI, URI)}'s verdict alone — this class performs no
+     * origin arithmetic and holds no strategy branch of its own.
+     */
+    private HttpRequest rebuildForHop(HttpRequest request, URI currentUri, URI target, int statusCode) {
+        String method = request.method();
+        boolean preserveMethodAndBody = statusCode == 307 || statusCode == 308;
+        boolean bodylessMethod = METHOD_GET.equals(method) || METHOD_HEAD.equals(method);
+        boolean dropBody = !preserveMethodAndBody && !(statusCode != 303 && bodylessMethod);
+
+        boolean forwardCredentials = redirectPolicy.forwardsCredentials(currentUri, target);
+        BiPredicate<String, String> headerFilter = (name, value) -> {
+            if (!forwardCredentials
+                    && (HEADER_AUTHORIZATION.equalsIgnoreCase(name) || HEADER_COOKIE.equalsIgnoreCase(name))) {
+                return false;
+            }
+            return !dropBody || !BODY_REPRESENTATION_HEADERS.contains(name);
+        };
+
+        HttpRequest.Builder builder = HttpRequest.newBuilder(request, headerFilter).uri(target);
+        if (!preserveMethodAndBody && (statusCode == 303 || !bodylessMethod)) {
+            // GET() also clears the body publisher carried over from the original request.
+            builder.GET();
+        }
+        return builder.build();
     }
 
     /**
@@ -415,13 +835,17 @@ public final class HttpHandler implements AutoCloseable {
     @SuppressWarnings("try")
     private HttpStatusFamily pingWithMethod(String method, HttpRequest.BodyPublisher bodyPublisher) {
         try {
-            HttpClient client = createHttpClient();
             HttpRequest request = requestBuilder()
                     .method(method, bodyPublisher)
                     .build();
 
-            HttpResponse<Void> response = client.send(request, HttpResponse.BodyHandlers.discarding());
+            // Routed through send(...) rather than the raw client so a ping reports the terminal
+            // status of a permitted redirect chain instead of the first 3xx on it.
+            HttpResponse<Void> response = send(request, HttpResponse.BodyHandlers.discarding());
             return HttpStatusFamily.fromStatusCode(response.statusCode());
+        } catch (RedirectNotAllowedException e) {
+            LOGGER.warn(HttpLogMessages.WARN.REDIRECT_REFUSED, e.getFrom(), e.getTo(), e.getReason());
+            return HttpStatusFamily.UNKNOWN;
         } catch (IOException e) {
             LOGGER.warn(e, HttpLogMessages.WARN.HTTP_PING_IO_ERROR, uri, e.getMessage());
             return HttpStatusFamily.UNKNOWN;
@@ -482,6 +906,7 @@ public final class HttpHandler implements AutoCloseable {
         private boolean allowInsecureHttp = false;
         private boolean verifyHostname = true;
         private boolean sslContextCallerSupplied = false;
+        private @Nullable RedirectPolicy redirectPolicy;
         // True when the current (derived, non-caller-supplied) sslContext was produced by
         // createHostnameRelaxedSSLContext() on the handler asBuilder() cloned this builder from.
         // build() consults this to refuse silently reusing a relaxed context once verifyHostname
@@ -719,6 +1144,38 @@ public final class HttpHandler implements AutoCloseable {
         }
 
         /**
+         * Sets the egress host policy applied to every redirect hop the handler would follow.
+         * <p>
+         * This is the single seam through which all three redirect knobs are configured: the hop
+         * bound ({@link RedirectPolicy.RedirectPolicyBuilder#maxHops(int)}), the host allowlist
+         * ({@link RedirectPolicy.RedirectPolicyBuilder#allowedHosts(java.util.Collection)}), and the
+         * credential-forwarding strategy
+         * ({@link RedirectPolicy.RedirectPolicyBuilder#credentialForwarding(RedirectPolicy.CredentialForwarding)}).
+         * There is no separate builder method for any of them.
+         * </p>
+         * <p>
+         * Default: {@link RedirectPolicy#sameOrigin()} — same-origin hops are followed, every
+         * cross-origin hop is refused, and {@code Authorization} / {@code Cookie} are stripped on any
+         * non-same-origin hop. <strong>Credential forwarding across a cross-origin hop is opt-in</strong>:
+         * it requires naming {@link RedirectPolicy.CredentialForwarding#FORWARD_TO_ALLOWLISTED} on a
+         * policy that also allowlists the target host, and even then it changes no refusal verdict.
+         * </p>
+         * <p>
+         * Passing {@code null} <strong>restores the {@link RedirectPolicy#sameOrigin()} default</strong>
+         * — it does not disable redirect validation, and it does not leave a forwarding strategy
+         * previously set on this builder in force: the secure
+         * {@link RedirectPolicy.CredentialForwarding#STRIP_ON_CROSS_ORIGIN} default is restored with it.
+         * </p>
+         *
+         * @param redirectPolicy the policy to apply, or {@code null} to restore the same-origin default.
+         * @return This builder instance.
+         */
+        public HttpHandlerBuilder redirectPolicy(@Nullable RedirectPolicy redirectPolicy) {
+            this.redirectPolicy = redirectPolicy;
+            return this;
+        }
+
+        /**
          * Builds a new {@link HttpHandler} instance with the configured parameters.
          *
          * @return A new {@link HttpHandler} instance.
@@ -773,6 +1230,10 @@ public final class HttpHandler implements AutoCloseable {
                 throw new IllegalStateException("Failed to convert URI to URL: " + resolvedUri, e);
             }
 
+            // A null policy restores the same-origin default rather than disabling validation, so a
+            // forwarding strategy set earlier on this builder cannot survive redirectPolicy(null).
+            RedirectPolicy resolvedRedirectPolicy = redirectPolicy != null ? redirectPolicy : RedirectPolicy.sameOrigin();
+
             // Fail-secure scheme policy: HTTPS is required; http is opt-in; anything else is rejected.
             String scheme = resolvedUri.getScheme();
             if ("https".equalsIgnoreCase(scheme)) {
@@ -782,7 +1243,7 @@ public final class HttpHandler implements AutoCloseable {
                 SSLContext secureContext = resolveHttpsSecureContext(actualSecureSSLContextProvider, resolvedUri);
                 return new HttpHandler(resolvedUri, verifiedUrl, secureContext, actualSecureSSLContextProvider,
                         actualConnectionTimeoutSeconds, actualReadTimeoutSeconds, allowInsecureHttp,
-                        verifyHostname, sslContextCallerSupplied);
+                        verifyHostname, sslContextCallerSupplied, resolvedRedirectPolicy);
             }
             if ("http".equalsIgnoreCase(scheme)) {
                 if (!allowInsecureHttp) {
@@ -792,7 +1253,8 @@ public final class HttpHandler implements AutoCloseable {
                 }
                 LOGGER.warn(HttpLogMessages.WARN.INSECURE_HTTP_CONNECTION, resolvedUri);
                 // For HTTP, no SSL context needed
-                return new HttpHandler(resolvedUri, verifiedUrl, actualConnectionTimeoutSeconds, actualReadTimeoutSeconds);
+                return new HttpHandler(resolvedUri, verifiedUrl, actualConnectionTimeoutSeconds, actualReadTimeoutSeconds,
+                        resolvedRedirectPolicy);
             }
             throw new IllegalArgumentException("Unsupported URI scheme '" + scheme + "' for " + resolvedUri
                     + "; only http and https are supported.");

@@ -13,7 +13,7 @@ Module: `de.cuioss.http`
 
 LogMessages Classes:
 
-- `de.cuioss.http.client.HttpLogMessages` - HTTP client operations (HTTP-106–108, HTTP-110–116, HTTP-200–201)
+- `de.cuioss.http.client.HttpLogMessages` - HTTP client operations (HTTP-106–108, HTTP-110–117, HTTP-200–201)
 - `de.cuioss.http.forwarded.ForwardedLogMessages` - Forwarded / reverse-proxy header resolution (HTTP-120–126) - source: xref:../cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedLogMessages.java[ForwardedLogMessages.java]
 
 == HttpLogMessages
@@ -73,6 +73,11 @@ LogMessages Classes:
 |Handler
 |TLS hostname verification disabled for %s (verifyHostname=false); certificate chain validation remains enforced
 |Logged when an HTTPS handler is built under the verifyHostname(false) opt-in. Parameters: URI.
+
+|HTTP-117
+|Handler
+|Refusing to follow redirect from %s to %s: %s
+|Logged when a redirect hop is refused by the handler's RedirectPolicy and therefore not followed. Parameters: source URI, refused target URI, refusal reason.
 |===
 
 === ERROR Level (200-299)
