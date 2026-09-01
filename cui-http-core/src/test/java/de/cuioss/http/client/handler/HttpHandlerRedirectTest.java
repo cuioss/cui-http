@@ -40,6 +40,8 @@ import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -202,6 +204,57 @@ class HttpHandlerRedirectTest {
         }
     }
 
+
+    @Test
+    @DisplayName("send should refuse an unparseable Location with MALFORMED_LOCATION, not an IllegalArgumentException")
+    @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
+    void sendShouldRefuseMalformedLocation(URIBuilder uriBuilder) {
+        try (HttpHandler handler = handlerFor(uriBuilder, RedirectDispatcher.PATH_MALFORMED_LOCATION)) {
+            RedirectNotAllowedException thrown = assertThrows(RedirectNotAllowedException.class,
+                    () -> get(handler), "a remote-controlled Location must never escape as a raw parse failure");
+
+            assertEquals(RedirectPolicy.RedirectRefusal.MALFORMED_LOCATION, thrown.getReason());
+            assertNull(thrown.getTo(), "no target was ever resolved, so the refusal names none");
+            assertTrue(thrown.getFrom().getPath().endsWith(RedirectDispatcher.PATH_MALFORMED_LOCATION),
+                    "the refusal must name the hop that produced the malformed Location");
+            assertTrue(thrown.getMessage().contains(RedirectDispatcher.MALFORMED_LOCATION),
+                    "the refusal must quote the offending Location value");
+            assertInstanceOf(IllegalArgumentException.class, thrown.getCause(),
+                    "the underlying parse failure must be retained as the cause");
+        }
+    }
+
+    @Test
+    @DisplayName("sendAsync should complete exceptionally with the same MALFORMED_LOCATION refusal")
+    @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
+    void sendAsyncShouldRefuseMalformedLocation(URIBuilder uriBuilder) {
+        try (HttpHandler handler = handlerFor(uriBuilder, RedirectDispatcher.PATH_MALFORMED_LOCATION)) {
+            CompletableFuture<HttpResponse<String>> future = handler.sendAsync(
+                    handler.requestBuilder().GET().build(), HttpResponse.BodyHandlers.ofString());
+
+            ExecutionException thrown = assertThrows(ExecutionException.class, future::get,
+                    "the async recursion must refuse the hop rather than fail on the parse");
+            RedirectNotAllowedException refusal = assertInstanceOf(RedirectNotAllowedException.class,
+                    thrown.getCause(), "the async path must surface the same typed refusal");
+
+            assertEquals(RedirectPolicy.RedirectRefusal.MALFORMED_LOCATION, refusal.getReason());
+            assertNull(refusal.getTo(), "no target was ever resolved, so the refusal names none");
+        }
+    }
+
+    @Test
+    @DisplayName("An unparseable Location on the ping path should log the HTTP-117 WARN and report UNKNOWN")
+    @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
+    void malformedLocationShouldLogRedirectRefusedWarning(URIBuilder uriBuilder) {
+        try (HttpHandler handler = handlerFor(uriBuilder, RedirectDispatcher.PATH_MALFORMED_LOCATION)) {
+            assertEquals(HttpStatusFamily.UNKNOWN, handler.pingGet(),
+                    "an unparseable Location leaves the ping without a usable status");
+
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "HTTP-117");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN,
+                    RedirectPolicy.RedirectRefusal.MALFORMED_LOCATION.name());
+        }
+    }
 
     @ParameterizedTest
     @ValueSource(strings = {RedirectDispatcher.PATH_CROSS_HOST, RedirectDispatcher.PATH_CROSS_PORT,

@@ -288,7 +288,16 @@ public final class RedirectPolicy {
          * evaluates a single hop and has no notion of how many preceded it; it is declared here so
          * every refusal reason has one home.
          */
-        TOO_MANY_HOPS
+        TOO_MANY_HOPS,
+        /**
+         * The {@code Location} header was present and non-blank but is not a syntactically valid URI
+         * reference, so no target could be resolved to evaluate. Like {@link #TOO_MANY_HOPS} this is
+         * raised by the redirect-following loop rather than by {@link RedirectPolicy#refuse(URI, URI)}:
+         * the refusal happens <em>before</em> a target exists to hand to the policy. The
+         * {@code Location} value is remote-controlled, so the loop treats an unparseable one as a
+         * refusal of the hop rather than letting the parse failure escape untyped.
+         */
+        MALFORMED_LOCATION
     }
 
     /**

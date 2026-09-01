@@ -52,6 +52,8 @@ import java.util.Set;
  *   <li>{@value #PATH_RELATIVE} — 302 whose {@code Location} is the relative reference
  *       {@value #RELATIVE_LOCATION}</li>
  *   <li>{@value #PATH_NO_LOCATION} — 302 with no {@code Location} header at all</li>
+ *   <li>{@value #PATH_MALFORMED_LOCATION} — 302 whose {@code Location} is the unparseable
+ *       {@value #MALFORMED_LOCATION}</li>
  * </ul>
  * The dispatcher is stateless; tests read the terminal echo (or the client's own record of the
  * exchange) rather than server-side counters, because the dispatcher resolver serves requests from
@@ -93,6 +95,16 @@ public class RedirectDispatcher implements ModuleDispatcherElement {
 
     /** 302 carrying no {@code Location} header. */
     public static final String PATH_NO_LOCATION = BASE_PATH + "/no-location";
+
+    /** 302 whose {@code Location} is present and non-blank but not a parseable URI reference. */
+    public static final String PATH_MALFORMED_LOCATION = BASE_PATH + "/malformed-location";
+
+    /**
+     * The unparseable {@code Location} served by {@value #PATH_MALFORMED_LOCATION}. The literal space
+     * in the authority is illegal in a URI reference, so {@code URI.create} rejects it — while
+     * remaining a legal HTTP header value, so it survives the wire and reaches the follow loop.
+     */
+    public static final String MALFORMED_LOCATION = "http://ex ample.org/target";
 
     /** Host alias naming this same MockWebServer instance; allowlist it to follow a real cross-origin hop. */
     public static final String ALLOWLISTED_HOST = "127.0.0.1";
@@ -168,6 +180,7 @@ public class RedirectDispatcher implements ModuleDispatcherElement {
             case PATH_CHAIN -> redirect(302, absolute(request, PATH_CHAIN));
             case PATH_RELATIVE -> redirect(302, RELATIVE_LOCATION);
             case PATH_NO_LOCATION -> new MockResponse(302, Headers.of(), "");
+            case PATH_MALFORMED_LOCATION -> redirect(302, MALFORMED_LOCATION);
             default -> null;
         });
     }

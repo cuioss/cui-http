@@ -121,6 +121,10 @@ import java.util.regex.Pattern;
  *       {@code Location}. Any other 3xx — and a followable status without a usable {@code Location} —
  *       reaches the caller verbatim and classifies as a non-retryable {@code INVALID_CONTENT} failure;
  *       see {@link HttpStatusFamily#toErrorCategory()}.</li>
+ *   <li>A non-blank {@code Location} that is not a parseable URI reference is refused with
+ *       {@link RedirectPolicy.RedirectRefusal#MALFORMED_LOCATION} rather than allowed to surface the
+ *       URI parser's own {@link IllegalArgumentException}. The value is remote-controlled, so an
+ *       unparseable one is a refused hop, not a caller-side programming error.</li>
  *   <li>Each candidate hop is passed to {@link RedirectPolicy#refuse(URI, URI)} <em>before</em> the
  *       request is issued. The default, {@link RedirectPolicy#sameOrigin()}, permits same-origin hops
  *       only; a host allowlist is an explicit opt-in via
@@ -457,14 +461,18 @@ public final class HttpHandler implements AutoCloseable {
      * Only {@code 301}, {@code 302}, {@code 303}, {@code 307} and {@code 308} are followed, and only
      * when the response carries a non-blank {@code Location}. Every other response — including a
      * {@code 300}, {@code 304}, {@code 305} or {@code 306}, and a followable status with no usable
-     * {@code Location} — is returned verbatim.
+     * {@code Location} — is returned verbatim. A {@code Location} that is present and non-blank but
+     * not a parseable URI reference is refused
+     * ({@link RedirectPolicy.RedirectRefusal#MALFORMED_LOCATION}), never surfaced as the URI parser's
+     * own {@link IllegalArgumentException}.
      * </p>
      *
      * @param <R>         the response body type
      * @param request     the request to send; its URI is the first hop's origin
      * @param bodyHandler the body handler applied to every response, including intermediate hops
      * @return the terminal response, never a followed redirect
-     * @throws RedirectNotAllowedException if a hop is refused by the policy, or the hop budget
+     * @throws RedirectNotAllowedException if a hop is refused by the policy, if the {@code Location}
+     *                                     is unparseable, or if the hop budget
      *                                     ({@link RedirectPolicy#getMaxHops()}) is exhausted
      * @throws IOException                 if an I/O error occurs on any hop
      * @throws InterruptedException        if the calling thread is interrupted
@@ -529,7 +537,8 @@ public final class HttpHandler implements AutoCloseable {
      * @param response      the response to inspect
      * @param hopsFollowed  how many hops have already been followed on this chain
      * @return the request for the next hop, or {@code null} when {@code response} is terminal
-     * @throws RedirectNotAllowedException if the policy refuses the hop or the budget is exhausted
+     * @throws RedirectNotAllowedException if the {@code Location} is unparseable, the policy refuses
+     *                                     the hop, or the budget is exhausted
      */
     private @Nullable HttpRequest nextHop(HttpRequest request, HttpResponse<?> response, int hopsFollowed) {
         if (!FOLLOWABLE_STATUS_CODES.contains(response.statusCode())) {
@@ -542,7 +551,7 @@ public final class HttpHandler implements AutoCloseable {
             return null;
         }
         URI currentUri = request.uri();
-        URI target = currentUri.resolve(location);
+        URI target = resolveTarget(currentUri, location);
 
         // The policy is consulted before the hop counter: a refused target is reported as the
         // refusal it is, never masked as an exhausted budget.
@@ -555,6 +564,34 @@ public final class HttpHandler implements AutoCloseable {
             throw new RedirectNotAllowedException(currentUri, null, RedirectPolicy.RedirectRefusal.TOO_MANY_HOPS);
         }
         return rebuildForHop(request, currentUri, target, response.statusCode());
+    }
+
+    /**
+     * Resolves the {@code Location} value of a followable response against the hop that produced it.
+     * <p>
+     * {@code Location} is remote-controlled and is not guaranteed to be a syntactically valid URI
+     * reference. {@link URI#resolve(String)} answers a malformed one with a raw
+     * {@link IllegalArgumentException}, which is not part of this class's contract, so the parse
+     * failure is converted into the same {@link RedirectNotAllowedException} refusal every other
+     * rejected hop raises: the current URI as {@code from}, no {@code to} (none was ever resolved),
+     * and {@link RedirectPolicy.RedirectRefusal#MALFORMED_LOCATION} as the reason. Behaviour is
+     * unchanged in substance — the hop is not taken either way — but the failure is now typed,
+     * classifies as the non-retryable {@code CONFIGURATION_ERROR}, and carries the offending value.
+     *
+     * @param currentUri the URI the redirect response was received from
+     * @param location   the non-blank {@code Location} header value
+     * @return the resolved absolute target
+     * @throws RedirectNotAllowedException if {@code location} is not a parseable URI reference
+     */
+    private static URI resolveTarget(URI currentUri, @Nullable String location) {
+        try {
+            return currentUri.resolve(location);
+        } catch (IllegalArgumentException e) {
+            throw new RedirectNotAllowedException(currentUri, null,
+                    RedirectPolicy.RedirectRefusal.MALFORMED_LOCATION,
+                    "Refusing to follow redirect from " + currentUri + ": malformed Location '" + location
+                            + "': " + RedirectPolicy.RedirectRefusal.MALFORMED_LOCATION, e);
+        }
     }
 
     /**

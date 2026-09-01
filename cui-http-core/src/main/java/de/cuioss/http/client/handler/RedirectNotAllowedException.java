@@ -57,11 +57,13 @@ public class RedirectNotAllowedException extends RuntimeException {
     private final URI from;
 
     /**
-     * The redirect target that was refused, or {@code null} when the refusal was
-     * {@link RedirectRefusal#TOO_MANY_HOPS} — the hop budget is exhausted before any particular
-     * target is evaluated, so there is no single target to name.
+     * The redirect target that was refused, or {@code null} when the refusal names no single target:
+     * {@link RedirectRefusal#TOO_MANY_HOPS} (the hop budget is exhausted before any particular target
+     * is evaluated) and {@link RedirectRefusal#MALFORMED_LOCATION} (the {@code Location} header could
+     * not be parsed, so no target URI exists). The offending {@code Location} value is named in
+     * {@link #getMessage()} for the latter.
      *
-     * @return the refused target URI, or {@code null} for a hop-budget refusal
+     * @return the refused target URI, or {@code null} for a refusal that names no single target
      */
     private final @Nullable URI to;
 
@@ -77,11 +79,29 @@ public class RedirectNotAllowedException extends RuntimeException {
      *
      * @param from   the URI the refused redirect response was received from
      * @param to     the refused redirect target, or {@code null} for
-     *               {@link RedirectRefusal#TOO_MANY_HOPS}
+     *               {@link RedirectRefusal#TOO_MANY_HOPS} and
+     *               {@link RedirectRefusal#MALFORMED_LOCATION}
      * @param reason why the hop was refused
      */
     public RedirectNotAllowedException(URI from, @Nullable URI to, RedirectRefusal reason) {
-        super("Refusing to follow redirect from " + from + " to " + to + ": " + reason);
+        this(from, to, reason, "Refusing to follow redirect from " + from + " to " + to + ": " + reason, null);
+    }
+
+    /**
+     * Creates a refusal with an explicit message and cause, for a reason whose detail is not carried
+     * by {@code to} — currently only {@link RedirectRefusal#MALFORMED_LOCATION}, whose offending
+     * {@code Location} value never became a {@link URI} and whose underlying parse failure is
+     * retained as the cause.
+     *
+     * @param from    the URI the refused redirect response was received from
+     * @param to      the refused redirect target, or {@code null} when none could be resolved
+     * @param reason  why the hop was refused
+     * @param message the detail message
+     * @param cause   the underlying failure, or {@code null} when the refusal has none
+     */
+    RedirectNotAllowedException(URI from, @Nullable URI to, RedirectRefusal reason, String message,
+            @Nullable Throwable cause) {
+        super(message, cause);
         this.from = from;
         this.to = to;
         this.reason = reason;
