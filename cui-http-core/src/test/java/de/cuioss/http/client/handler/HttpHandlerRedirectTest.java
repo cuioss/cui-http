@@ -242,6 +242,59 @@ class HttpHandlerRedirectTest {
         }
     }
 
+    /**
+     * Unit-level, not end-to-end: a real {@code Location} header cannot carry most control
+     * characters through the wire (okhttp's {@code Headers.Builder} rejects every C0/C1 control
+     * except {@code TAB}) and the JDK {@code HttpClient} itself collapses an embedded {@code TAB} in
+     * a received header value down to a single space (RFC 7230 optional-whitespace folding) before
+     * {@link HttpHandler} ever sees it — so the sanitizer's control-character neutralization is
+     * asserted directly against the package-private helper it exercises inside
+     * {@link HttpHandler#resolveTarget}, mirroring the class-level "Known end-to-end gap" note above
+     * for {@code PROTOCOL_DOWNGRADE}.
+     */
+    @Test
+    @DisplayName("sanitizeForMessage should neutralize control characters and preserve the rest of the value")
+    void sanitizeForMessageShouldNeutralizeControlCharacters() {
+        String withControlChars = "http://example.org/target\r\nInjected: evil\tvalue\u0000\u0007end";
+
+        String sanitized = HttpHandler.sanitizeForMessage(withControlChars);
+
+        assertEquals("http://example.org/target??Injected: evil?value??end", sanitized,
+                "each control character (CR, LF, TAB, NUL, BEL) must become a single visible placeholder");
+        assertFalse(sanitized.contains("\r") || sanitized.contains("\n") || sanitized.contains("\t")
+                || sanitized.contains("\u0000") || sanitized.contains("\u0007"),
+                "no raw control character may survive sanitization");
+    }
+
+    @Test
+    @DisplayName("sanitizeForMessage should bound length and mark truncation")
+    void sanitizeForMessageShouldTruncateOverlongValues() {
+        String overlong = "a".repeat(500);
+
+        String sanitized = HttpHandler.sanitizeForMessage(overlong);
+
+        assertTrue(sanitized.endsWith("...[truncated]"),
+                "an overlong value must carry a visible truncation marker");
+        assertTrue(sanitized.length() < overlong.length(),
+                "the sanitized value must be shorter than the unbounded original");
+    }
+
+    @Test
+    @DisplayName("An overlong malformed Location should be truncated in the refusal message")
+    @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
+    void overlongMalformedLocationShouldBeTruncated(URIBuilder uriBuilder) {
+        try (HttpHandler handler = handlerFor(uriBuilder, RedirectDispatcher.PATH_MALFORMED_LOCATION_OVERLONG)) {
+            RedirectNotAllowedException thrown = assertThrows(RedirectNotAllowedException.class,
+                    () -> get(handler), "an overlong Location must still refuse the hop");
+
+            assertEquals(RedirectPolicy.RedirectRefusal.MALFORMED_LOCATION, thrown.getReason());
+            assertFalse(thrown.getMessage().contains(RedirectDispatcher.MALFORMED_LOCATION_OVERLONG),
+                    "the full, unbounded Location must never reach the exception message verbatim");
+            assertTrue(thrown.getMessage().contains("...[truncated]"),
+                    "the refusal must carry a visible truncation marker so a reader can tell the value was cut");
+        }
+    }
+
     @Test
     @DisplayName("An unparseable Location on the ping path should log the HTTP-117 WARN and report UNKNOWN")
     @ModuleDispatcher(providerMethod = "getRedirectDispatcher")

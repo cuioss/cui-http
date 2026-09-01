@@ -54,6 +54,8 @@ import java.util.Set;
  *   <li>{@value #PATH_NO_LOCATION} — 302 with no {@code Location} header at all</li>
  *   <li>{@value #PATH_MALFORMED_LOCATION} — 302 whose {@code Location} is the unparseable
  *       {@value #MALFORMED_LOCATION}</li>
+ *   <li>{@value #PATH_MALFORMED_LOCATION_OVERLONG} — 302 whose {@code Location} is unparseable
+ *       and exceeds the sanitizer's retained-length bound</li>
  * </ul>
  * The dispatcher is stateless; tests read the terminal echo (or the client's own record of the
  * exchange) rather than server-side counters, because the dispatcher resolver serves requests from
@@ -105,6 +107,16 @@ public class RedirectDispatcher implements ModuleDispatcherElement {
      * remaining a legal HTTP header value, so it survives the wire and reaches the follow loop.
      */
     public static final String MALFORMED_LOCATION = "http://ex ample.org/target";
+
+    /** 302 whose {@code Location} is unparseable and exceeds the sanitizer's retained-length bound. */
+    public static final String PATH_MALFORMED_LOCATION_OVERLONG = BASE_PATH + "/malformed-location-overlong";
+
+    /**
+     * The unparseable {@code Location} served by {@value #PATH_MALFORMED_LOCATION_OVERLONG}: an
+     * embedded space makes it unparseable (the same technique as {@value #MALFORMED_LOCATION}), and
+     * its length exceeds the sanitizer's retained-length bound so truncation is exercised too.
+     */
+    public static final String MALFORMED_LOCATION_OVERLONG = "http://" + "a".repeat(500) + " space/target";
 
     /** Host alias naming this same MockWebServer instance; allowlist it to follow a real cross-origin hop. */
     public static final String ALLOWLISTED_HOST = "127.0.0.1";
@@ -181,6 +193,7 @@ public class RedirectDispatcher implements ModuleDispatcherElement {
             case PATH_RELATIVE -> redirect(302, RELATIVE_LOCATION);
             case PATH_NO_LOCATION -> new MockResponse(302, Headers.of(), "");
             case PATH_MALFORMED_LOCATION -> redirect(302, MALFORMED_LOCATION);
+            case PATH_MALFORMED_LOCATION_OVERLONG -> redirect(302, MALFORMED_LOCATION_OVERLONG);
             default -> null;
         });
     }

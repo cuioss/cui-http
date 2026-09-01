@@ -241,6 +241,22 @@ public final class HttpHandler implements AutoCloseable {
      */
     private static final Pattern HOST_PORT_PATTERN = Pattern.compile("^[a-zA-Z][a-zA-Z0-9+.-]*:\\d+(?:[/?#].*)?$");
 
+    /**
+     * Matches every C0 control character (including CR, LF and TAB), DEL, and the C1 control range.
+     * Used by {@link #sanitizeForMessage(String)} to neutralize a remote-controlled value before it
+     * is embedded in an exception message.
+     */
+    private static final Pattern CONTROL_CHARACTERS = Pattern.compile("[\\x00-\\x1F\\x7F-\\x9F]");
+
+    /** Placeholder substituted for each neutralized control character. */
+    private static final String CONTROL_CHARACTER_PLACEHOLDER = "?";
+
+    /** Maximum characters of a remote-controlled value retained verbatim in a message. */
+    private static final int MAX_SANITIZED_VALUE_LENGTH = 256;
+
+    /** Marker appended when a remote-controlled value is truncated, so a reader can tell it was cut. */
+    private static final String TRUNCATION_MARKER = "...[truncated]";
+
     public static final int DEFAULT_CONNECTION_TIMEOUT_SECONDS = 10;
     public static final int DEFAULT_READ_TIMEOUT_SECONDS = 10;
 
@@ -576,7 +592,9 @@ public final class HttpHandler implements AutoCloseable {
      * rejected hop raises: the current URI as {@code from}, no {@code to} (none was ever resolved),
      * and {@link RedirectPolicy.RedirectRefusal#MALFORMED_LOCATION} as the reason. Behaviour is
      * unchanged in substance — the hop is not taken either way — but the failure is now typed,
-     * classifies as the non-retryable {@code CONFIGURATION_ERROR}, and carries the offending value.
+     * classifies as the non-retryable {@code CONFIGURATION_ERROR}, and carries the offending value,
+     * bounded in length and with control characters neutralized via {@link #sanitizeForMessage(String)}
+     * before it is embedded in the message.
      *
      * @param currentUri the URI the redirect response was received from
      * @param location   the non-blank {@code Location} header value
@@ -589,9 +607,36 @@ public final class HttpHandler implements AutoCloseable {
         } catch (IllegalArgumentException e) {
             throw new RedirectNotAllowedException(currentUri, null,
                     RedirectPolicy.RedirectRefusal.MALFORMED_LOCATION,
-                    "Refusing to follow redirect from " + currentUri + ": malformed Location '" + location
-                            + "': " + RedirectPolicy.RedirectRefusal.MALFORMED_LOCATION, e);
+                    "Refusing to follow redirect from " + currentUri + ": malformed Location '"
+                            + sanitizeForMessage(location) + "': "
+                            + RedirectPolicy.RedirectRefusal.MALFORMED_LOCATION, e);
         }
+    }
+
+    /**
+     * Neutralizes a remote-controlled value before it is spliced into an exception message that a
+     * caller may log verbatim (e.g. via {@code throwable.getMessage()} in a {@code .exceptionally()}
+     * handler). Bounds the value's length — appending {@value #TRUNCATION_MARKER} when it is cut, so
+     * a reader can tell the value was truncated rather than reading one that quietly ends early — and
+     * replaces every C0/C1 control character (including CR, LF and TAB) with a single visible
+     * placeholder, so unbounded, unescaped external content can never shape a log line's structure or
+     * size.
+     *
+     * <p>
+     * Package-private (rather than {@code private}) solely so the neutralization logic is directly
+     * unit-testable: the JDK {@code HttpClient} collapses an embedded {@code TAB} in a received
+     * header value to a single space before this class ever sees it (RFC 7230 optional-whitespace
+     * folding), so a real {@code Location} header cannot carry a control character through the wire
+     * for an end-to-end assertion — see {@code HttpHandlerRedirectTest}.
+     *
+     * @param value the untrusted, non-null value to neutralize
+     * @return the sanitized value, safe to embed verbatim in a message
+     */
+    static String sanitizeForMessage(String value) {
+        String bounded = value.length() > MAX_SANITIZED_VALUE_LENGTH
+                ? value.substring(0, MAX_SANITIZED_VALUE_LENGTH) + TRUNCATION_MARKER
+                : value;
+        return CONTROL_CHARACTERS.matcher(bounded).replaceAll(CONTROL_CHARACTER_PLACEHOLDER);
     }
 
     /**
