@@ -232,11 +232,12 @@ public enum HttpStatusFamily {
      * <h3>Note on 3xx Redirects</h3>
      * Redirects are never followed. {@code HttpHandler} configures no redirect policy on its clients,
      * so the JDK default {@code HttpClient.Redirect.NEVER} applies and every 3xx — followable status
-     * or not — is returned to the caller unfollowed. Such a response carries no usable payload for the
-     * requested resource, only a {@code Location} pointer, which is why the classification is the
-     * non-retryable {@link HttpErrorCategory#INVALID_CONTENT}: retrying the same request would
-     * reproduce the same redirect. A caller that wants to act on the redirect must read
-     * {@code Location}, validate the target itself, and issue the follow-up request explicitly.
+     * or not — is returned to the caller unfollowed, with any {@code Location} header it supplies left
+     * intact. Such a response is not the representation the request asked for, which is why the
+     * classification is the non-retryable {@link HttpErrorCategory#INVALID_CONTENT}: retrying the same
+     * request would reproduce the same redirect. A caller that wants to act on the redirect can read
+     * and validate the {@code Location} header when the response supplies one — a 3xx is not required
+     * to carry it — and issue the follow-up request explicitly.
      * Validated redirect following — same-origin by default, with an opt-in host allowlist — is
      * planned as follow-up work.
      *
@@ -250,8 +251,8 @@ public enum HttpStatusFamily {
             case CLIENT_ERROR -> HttpErrorCategory.CLIENT_ERROR;
             case SERVER_ERROR -> HttpErrorCategory.SERVER_ERROR;
             case SUCCESS -> throw new IllegalStateException("SUCCESS is not an error");
-            // Redirects are never followed (JDK default Redirect.NEVER), so every 3xx lands here with
-            // only a Location pointer and no usable payload; retrying would reproduce the redirect
+            // Redirects are never followed (JDK default Redirect.NEVER), so every 3xx lands here
+            // unfollowed rather than as the requested representation; retrying would reproduce the redirect
             case REDIRECTION -> HttpErrorCategory.INVALID_CONTENT;
             case INFORMATIONAL, UNKNOWN -> HttpErrorCategory.INVALID_CONTENT;
         };

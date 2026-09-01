@@ -83,9 +83,12 @@ import static de.cuioss.http.client.HttpLogMessages.WARN;
  * <p>
  * Despite the name, caching is a switchable feature rather than a precondition for using this
  * adapter. Building with {@code etagCachingEnabled(false)} yields a straight pass-through: no
- * {@code If-None-Match} header is ever sent, no response is cached, and every request goes to the
- * origin. {@link #statusCodeOnly(de.cuioss.http.client.handler.HttpHandler)} uses exactly that
- * configuration. ETags are still extracted from responses in either mode.
+ * adapter-generated {@code If-None-Match} header is sent, no response is cached, and every request
+ * goes to the origin. A caller-supplied {@code If-None-Match} is still forwarded like any other
+ * caller header — disabling caching stops the adapter from reading or adding a cached validator,
+ * it does not suppress a header the caller set itself (which then draws the unsolicited-304
+ * handling described above). {@link #statusCodeOnly(de.cuioss.http.client.handler.HttpHandler)}
+ * uses exactly that configuration. ETags are still extracted from responses in either mode.
  * </p>
  *
  * <h3>Role in the adapter stack</h3>

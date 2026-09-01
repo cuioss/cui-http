@@ -95,12 +95,12 @@ import java.util.regex.Pattern;
  *   <li>Schemeless string URLs default to HTTPS</li>
  *   <li>Redirects are <strong>not followed</strong>: no redirect policy is configured on either the
  *       HTTP or the HTTPS client, so the JDK default {@link HttpClient.Redirect#NEVER} applies. Every
- *       3xx response — followable status or not — reaches the caller verbatim, with its
- *       {@code Location} header intact and no further request issued. Adapters classify such a
- *       response as a non-retryable {@code INVALID_CONTENT} failure; see
- *       {@link HttpStatusFamily#toErrorCategory()}. A caller that wants to act on a redirect must
- *       read the {@code Location} header, validate the target itself, and issue the follow-up
- *       request explicitly.</li>
+ *       3xx response — followable status or not — reaches the caller verbatim, with any
+ *       {@code Location} header it supplies left intact and no further request issued. Adapters
+ *       classify such a response as a non-retryable {@code INVALID_CONTENT} failure; see
+ *       {@link HttpStatusFamily#toErrorCategory()}. A caller that wants to act on a redirect can
+ *       read and validate the {@code Location} header when the response supplies one — a 3xx is not
+ *       required to carry it — and issue the follow-up request explicitly.</li>
  * </ul>
  * <p>
  * <strong>Why redirects are not followed:</strong> a followed redirect would send the request to a
