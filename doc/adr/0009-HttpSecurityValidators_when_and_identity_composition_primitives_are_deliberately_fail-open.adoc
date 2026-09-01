@@ -1,0 +1,134 @@
+= ADR-0009: HttpSecurityValidator's when() and identity() composition primitives are deliberately fail-open
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: when(Predicate) and identity() on HttpSecurityValidator return the input unchanged instead of validating, unlike every other validator in the interface, so a chain built with them can silently stop validating without an exception, a counted event, or a log line
+// tags: security, input-validation, api-design, fail-open, composition
+// affects: cui-http-core
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+`HttpSecurityValidator` states a single, uniform contract for every validator in the security
+tree: fail secure. A validator either returns the (possibly sanitized) input, or it throws
+`UrlSecurityException`; there is no third outcome. Callers build larger pipelines by composing
+validators with `andThen`/`compose`, and every composed link inherits that same guarantee — if
+any link throws, the whole chain throws.
+
+Composition, however, needs more than sequencing. A caller legitimately wants to run a validator
+only for a subset of inputs (skip an emptiness check for header validation, apply a numeric-range
+check only to inputs that look numeric), and needs a neutral starting point to build a chain
+functionally before any real validator is attached. Both needs require a validator-shaped value
+that does *not* validate — which is a direct exception to the "fail secure" principle the rest of
+the interface holds absolutely.
+
+The choice point this creates: does the interface admit a validator-shaped no-op at all, and if
+it does, how is a caller supposed to tell "this input was validated and passed" apart from "this
+input was never validated"? Refusing to admit the no-op forces every conditional-validation use
+case into ad hoc branching outside the composition API; admitting it without saying so leaves a
+gap where a caller who builds a chain around it can misread never-validated as passed-validation
+with no observable difference at the call site.
+
+== Decision
+
+`when(Predicate)` and `identity()` are accepted as legitimate composition primitives, and both are
+**fail-open by design** — a deliberate, explicit, documented exception to the "fail secure"
+principle every other member of `HttpSecurityValidator` upholds.
+
+* `when(predicate)` skips validation entirely whenever the predicate returns `false`, or the input
+  is `null`: it returns the input unchanged, with no exception, no security event counted, and no
+  log line. A misapplied or inverted predicate therefore silently disables validation for every
+  input the predicate does not select.
+* `identity()` performs no validation at all, ever. Used as a composition starting point or a
+  deliberate no-op, it is indistinguishable at runtime from a validator that ran and found
+  nothing.
+
+The interface's own Javadoc names this exception explicitly rather than leaving it implicit: both
+combinators are documented as "fail-open by design", and callers are told that a chain containing
+them requires review because a validator that never runs looks exactly like a validator that ran
+and passed. No third state (a "skipped" outcome distinct from "passed") is introduced — the
+contract stays "`Optional<String>`, throws on violation", and skipping is expressed as passing.
+
+== Consequences
+
+=== Positive
+
+* Conditional and functional composition (`validator.when(predicate)`, building a chain from
+  `identity()`) is expressible entirely within the `HttpSecurityValidator` API, without a caller
+  reaching outside it for ad hoc branching around validator calls.
+* The exception to fail-secure is confined to exactly two named members and stated in one place
+  (the interface Javadoc), rather than being an implicit property a caller has to infer from
+  reading every implementation.
+* A caller auditing a composition chain has one question to ask — "does this chain include
+  `when()` or `identity()`, and is the predicate/placement correct" — instead of needing to trace
+  runtime behaviour through every composed validator to find where an input might silently skip
+  validation.
+
+=== Negative
+
+* The interface's own stated design principle ("Fail Secure") is not absolute: two of its members
+  are knowingly the exception, so a reader who takes the class-level Javadoc at face value without
+  reading the per-method documentation can be misled about what the interface actually guarantees.
+* `Optional<String>` alone cannot distinguish "validated and passed" from "never validated" —
+  both combinators return the input exactly as `validate()` returns a passed input, so no return
+  value inspection at a call site can recover which one happened.
+
+=== Risks
+
+* A misapplied or inverted `when()` predicate silently disables validation for the inputs it
+  should have selected, with no exception, no counted security event, and no log line to surface
+  the gap; the risk is mitigated by naming the exact failure mode in the Javadoc rather than
+  leaving a caller to discover it by incident.
+* A stray `identity()` left in a composition chain (e.g. as a placeholder during development, or a
+  copy-paste residue) silently disables validation for that link and is not detectable by any
+  runtime signal; the mitigation is the same explicit documentation, plus code review of any chain
+  containing either combinator.
+
+== Alternatives Considered
+
+**Make `when()` fail closed when the predicate is false — reject rather than pass through.** This
+would remove the silent-skip risk entirely, since every input either passes the wrapped validator
+or is rejected. It fails architecturally because it destroys the actual use case `when()` exists
+for: conditional validation exists precisely so that inputs the predicate does not select are
+*not* subject to that validator, not so that they are rejected by it. A header-emptiness check
+gated on "input looks like a header value" must not reject every input that does not look like a
+header value; it must skip them. Fail-closed-on-false collapses "skip this validator" and "reject
+via this validator" into one behaviour, which is not what any caller of a conditional validator
+wants.
+
+**Return a distinguishable "skipped" outcome instead of `Optional<String>`.** A three-state result
+(validated-passed / validated-and-rejected / skipped) would let a caller detect a silently-skipped
+validation at the call site. It fails architecturally because it breaks the interface's own
+uniform contract — every `HttpSecurityValidator` in the codebase, and every caller composing them
+with `andThen`/`compose`/streams, is written against exactly two outcomes (`Optional<String>` or a
+thrown exception). Introducing a third outcome for two specific combinators would either force
+every consumer of the interface to handle a case that applies to almost none of them, or require a
+parallel type just for these two methods — both add API surface weight to close a gap that
+explicit documentation already closes without changing the contract.
+
+**Do not provide `identity()` or `when()` at all — require callers to branch outside the
+composition API.** This removes the fail-open surface from the interface entirely. It fails
+architecturally because conditional and functional composition are legitimate, common needs
+(building a chain that starts from a neutral element, applying a validator only to a subset of
+inputs identified by shape), and refusing to support them inside `HttpSecurityValidator` does not
+remove the need — it relocates it to ad hoc code outside the interface, where the same fail-open
+behaviour exists without even the benefit of being named and documented in one place.
+
+Each rejected alternative either eliminates a real composition need the codebase has, or hides the
+same fail-open behaviour behind API surface that costs more than it protects. The accepted
+decision keeps the fail-open surface as small as two named, documented members and relies on that
+documentation — not a type-level guarantee — to keep the risk visible to a reviewer.
+
+== References
+
+* `HttpSecurityValidator` — the interface Javadoc's "Fail-open combinators" section states this
+  decision at the point a caller reads before using either method.
+* `HttpSecurityValidator#when(Predicate)` and `HttpSecurityValidator#identity()` — the two members
+  this decision scopes; every other member of the interface remains fail-secure.

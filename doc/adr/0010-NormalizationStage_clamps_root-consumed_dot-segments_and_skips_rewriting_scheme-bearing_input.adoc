@@ -1,0 +1,155 @@
+= ADR-0010: NormalizationStage clamps root-consumed dot-segments and skips rewriting scheme-bearing input
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: For path validation, NormalizationStage clamps an absolute path whose ".." segments are consumed at root and returns normally (no throw), and skips RFC 3986 dot-segment rewriting entirely for scheme-bearing input while still running both traversal-intent check layers against it
+// tags: security, url-path, path-normalization, rfc-3986, trust-boundary
+// affects: cui-http-core
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+A path-normalization stage sitting in front of a filesystem or routing layer has to resolve two
+independent choice points, both forced by RFC 3986 Section 5.2.4's "remove dot segments"
+algorithm rather than invented by this codebase.
+
+The first choice point: what happens when an absolute path's `..` segments outnumber the
+directory levels available to consume, so that resolution reaches root before the segments run
+out? RFC 3986 says the algorithm discards a `..` segment at the root of an absolute path rather
+than erroring — resolution is defined to be total over syntactically valid absolute paths, not
+partial. A stage that instead throws on this case is stricter than the specification it claims to
+implement, and would reject syntactically ordinary absolute paths whose `..` count merely exceeds
+their nesting depth — a shape a legitimate caller (a reverse proxy, a templated client) can
+produce without any attacker involved.
+
+The second choice point: what does "resolve dot segments" even mean for input that is not a bare
+path, but a complete URI carrying a scheme and authority (`https://host/a/../b`)? RFC 3986's
+"remove dot segments" algorithm is defined over the *path component* of a URI, not over the URI
+string as a whole. Applying path-segment splitting and rewriting directly to a scheme-bearing
+string risks treating scheme or authority substrings as path segments, corrupting a structurally
+different kind of input the algorithm was never defined against — while the traversal-intent
+signal a `..`-shaped literal carries is unrelated to whether the string happens to carry a scheme
+prefix, so detecting that signal cannot simply be skipped alongside the rewrite.
+
+Both choice points sit inside a stage whose class-level Javadoc, before this decision was
+recorded, gave no account of either: a caller reading the class contract had no way to know that
+one traversal shape returns normally instead of throwing, or that scheme-bearing input receives a
+narrower guarantee than bare-path input.
+
+== Decision
+
+For path-type validation, `NormalizationStage` implements RFC 3986 Section 5.2.4 exactly, which
+produces two behaviours that are easy to mistake for gaps if the stage's contract is read as
+"rejects all directory traversal":
+
+**Root-consumed `..` is clamped, not rejected.** An absolute path whose `..` segments are
+consumed at root — `/api/../../etc/passwd` is the canonical case — is normalized per the RFC's own
+algorithm (`..` at the top of an absolute path is discarded, not carried) and the call **returns
+normally with no throw**. This is distinct from, and does not weaken, the two throwing checks the
+stage runs on every path: LAYER 1 (`containsDirectoryTraversalIntent`, before normalization)
+rejects four literal traversal-pattern classes regardless of where they resolve to, and LAYER 2
+(post-normalization) rejects any `..` that *survives* normalization plus any path that still
+escapes root after resolution. Clamping applies only to the residual case neither layer's checks
+catch: a `..` sequence long enough to walk past root, then read as ordinary (non-attack-shaped)
+input by LAYER 1, that RFC 3986 defines to resolve harmlessly to root rather than to fail.
+
+**Scheme-bearing input skips dot-segment rewriting, not traversal-intent detection.** When the
+input matches a URI-with-scheme shape, `normalizeUriComponent` returns it unchanged rather than
+splitting and rewriting it as path segments — RFC 3986's dot-segment algorithm targets a URI's
+path component, not the URI string as a whole, so applying it to a scheme-bearing string risks
+rewriting scheme or authority substrings the algorithm was never defined against. Both throwing
+checks, however, still run against that unmodified value: LAYER 1 evaluates it before the
+scheme-bearing branch is reached, and LAYER 2 evaluates the (unrewritten) result the scheme branch
+returns. Scheme-bearing input therefore loses the dot-segment *rewrite*, never the traversal
+*detection*.
+
+== Consequences
+
+=== Positive
+
+* The stage's normalization behaviour is exactly what RFC 3986 Section 5.2.4 defines, so a caller
+  who already knows the RFC can predict this stage's output for any absolute path without reading
+  the implementation.
+* Clamping never masks an attack: LAYER 1's literal-pattern checks and LAYER 2's post-normalization
+  checks both still run on every path, including the ones that end up clamped or scheme-bearing.
+  The clamp/skip decision is scoped strictly to the residual case that clears both layers by
+  construction (RFC-legal input) rather than being a general carve-out.
+* Scheme-bearing input is protected against a structurally different failure mode — corrupting a
+  full URI by rewriting its scheme or authority as if they were path segments — without losing
+  traversal-intent coverage on that same input.
+
+=== Negative
+
+* A caller that treats "this stage returned without throwing" as "this input carried no traversal
+  intent" is wrong for the clamped case: the clamped result is a legitimately normalized value,
+  not proof the caller's own resource-resolution boundary was respected, so the caller must still
+  authorize the returned value against its own root.
+* Scheme-bearing input receives a narrower guarantee than bare-path input receives: it is checked
+  for traversal-intent literals but never rewritten to a canonical dot-segment-free form, so a
+  downstream consumer that expects every value from this stage to be equally normalized must
+  branch on whether the value carries a scheme.
+
+=== Risks
+
+* A caller unaware of the clamp behaviour may build a resource-resolution step on the assumption
+  that any return from this stage is inherently traversal-free, when the correct assumption is
+  narrower: the return is free of the literal patterns and post-normalization escapes both layers
+  check, but a clamped result still requires the caller's own authorization step. The risk is
+  mitigated by stating the clamp explicitly in the stage's own class-level Javadoc rather than
+  leaving it to be discovered from test behaviour.
+* A caller unaware that scheme-bearing input is not rewritten may expect a normalized path
+  component out of a scheme-bearing string and instead receive the original string verbatim; the
+  same class-level Javadoc scoping mitigates this by stating which validation types receive the
+  rewrite and which receive detection-only treatment.
+
+== Alternatives Considered
+
+**Throw whenever a `..` segment is consumed at root, instead of clamping.** This would make every
+returning value from this stage carry a stronger guarantee — "definitely no `..` walked past any
+directory boundary, ever, including at root" — at the cost of rejecting RFC-legal absolute paths
+whose `..` count merely exceeds their nesting depth. It fails architecturally because it is
+stricter than the specification the stage implements: RFC 3986 defines root-consumed `..` as a
+resolvable, non-error case, and rejecting it would reject ordinary (non-attack-shaped) input a
+legitimate caller — a reverse proxy rewriting relative references, a client following a templated
+link — can produce without any attacker involved. It would also do nothing LAYER 1 and LAYER 2
+do not already do for the actual attack-shaped inputs; the clamp only ever reaches input that
+already cleared both throwing checks.
+
+**Fully parse scheme-bearing input into its URI components and normalize only the path
+component.** This would extend the RFC's own algorithm scope correctly — normalizing exactly the
+part of the URI the algorithm is defined over — and remove the asymmetry between scheme-bearing
+and bare-path input. It was not taken because it requires a full URI parser inside a stage whose
+job is Section 5.2.4 segment resolution, introduces new failure modes around malformed URIs that
+a segment-splitting approach never has to handle, and the traversal-intent coverage this decision
+already preserves (both layers still run against scheme-bearing input) closes the security-
+relevant gap without that added parsing surface. The remaining asymmetry — scheme-bearing input is
+checked but not rewritten — is a documented scope limit, not an unaddressed risk.
+
+**Skip both dot-segment rewriting and traversal-intent detection for scheme-bearing input.** This
+is the simplest implementation and avoids running any check twice on the same input shape. It
+fails architecturally because a `..`-shaped literal signals traversal intent independently of
+whether the surrounding string happens to carry a scheme prefix — an attacker can embed the exact
+same attack patterns LAYER 1 detects inside a scheme-bearing string, so skipping detection would
+open a bypass class the bare-path case already closes.
+
+Each rejected alternative either tightens the stage beyond what the specification it implements
+requires (rejecting legal input), adds parsing complexity to close an asymmetry that carries no
+security gap, or removes real attack-detection coverage. The accepted decision keeps detection
+uniform across both input shapes and scopes the rewrite asymmetry to exactly the case RFC 3986's
+own algorithm definition creates.
+
+== References
+
+* `NormalizationStage` — the class-level Javadoc's "What this stage rejects, and what it silently
+  clamps" section, and the `normalizeUriComponent` in-code comment describing the scheme-bearing
+  skip, both state this decision at the point a caller or maintainer reads the contract.
+* RFC 3986 Section 5.2.4 "Remove Dot Segments" — the specification this stage implements exactly
+  for the clamp behaviour; the source of the "resolution is total, not partial" property this
+  decision preserves.
