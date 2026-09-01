@@ -39,9 +39,12 @@
  *   <li><strong>URL Paths</strong> - Use {@code URLPathValidationPipeline} for a URL <em>path
  *       component</em> such as {@code /api/users/123}. It is <strong>not</strong> a validator for a
  *       full absolute URL: {@code NormalizationStage} recognises a leading {@code scheme://} and
- *       returns such an input unchanged, so RFC 3986 dot-segment resolution - and the traversal
- *       detection that depends on it - is skipped. Extract the path component from an absolute URL
- *       and pass that.</li>
+ *       returns such an input unchanged, so the RFC 3986 dot-segment resolution and clamping
+ *       transform is skipped. Its traversal checks still run - the pre-normalization intent check
+ *       and the post-normalization {@code escapesRoot} and internal-traversal checks all execute -
+ *       but the latter see the unresolved string, so they judge dot-segments that resolution would
+ *       otherwise have collapsed or rejected. Extract the path component from an absolute URL and
+ *       pass that.</li>
  *   <li><strong>Parameter values</strong> - Use {@code URLParameterValidationPipeline} for query
  *       parameter values and form data</li>
  *   <li><strong>Parameter names</strong> - Use {@code URLParameterNameValidationPipeline} for query
