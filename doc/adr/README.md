@@ -5,9 +5,12 @@ This directory holds the architecture decision records for cui-http. Each ADR is
 The number appears twice — in the filename and in the level-0 heading inside the file — and the two
 must agree.
 
-This index is Markdown rather than AsciiDoc on purpose. `manage-adr list` and `manage-adr scan`
-enumerate `doc/adr/*.adoc` without filtering on the numeric prefix, so any `.adoc` file placed here is
-reported as an ADR. A `README.adoc` would show up as a fifteenth record numbered `0`, titled `Unknown`.
+This index is Markdown rather than AsciiDoc on purpose. The `manage-adr` tooling is external to this
+repository, so its enumeration behaviour is neither configured nor enforced here. As observed on
+2026-09-01, `manage-adr list` and `manage-adr scan` enumerated `doc/adr/*.adoc` without filtering on the
+numeric prefix, which reported a `README.adoc` placed here as an extra record numbered `0` and titled
+`Unknown`. Keeping this file as `.md` sidesteps that enumeration entirely rather than relying on a
+filter this repository cannot guarantee.
 
 ## Index
 
@@ -28,7 +31,9 @@ reported as an ADR. A `README.adoc` would show up as a fifteenth record numbered
 | 13 | [HttpSecurityValidator's when() and identity() composition primitives are deliberately fail-open](0013-HttpSecurityValidators_when_and_identity_composition_primitives_are_deliberately_fail-open.adoc) | Proposed |
 | 14 | [NormalizationStage clamps root-consumed dot-segments and skips rewriting scheme-bearing input](0014-NormalizationStage_clamps_root-consumed_dot-segments_and_skips_rewriting_scheme-bearing_input.adoc) | Proposed |
 
-The highest allocated number is **14**.
+The highest allocated number is **14**. This table is maintained by hand and is not derived from
+`doc/adr/` at build time, so a rename, addition, or status change elsewhere can leave it stale;
+treat the `.adoc` files as authoritative and update this table in the same change.
 
 ## Allocating a number
 
