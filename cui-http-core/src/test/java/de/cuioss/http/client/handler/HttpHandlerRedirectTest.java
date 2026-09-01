@@ -236,9 +236,10 @@ class HttpHandlerRedirectTest {
     void refusedHopBodyShouldBeDiscarded(URIBuilder uriBuilder) {
         try (HttpHandler handler = handlerFor(uriBuilder, RedirectDispatcher.PATH_CROSS_HOST)) {
             RecordingBodyHandler<InputStream> recorder = streamRecorder();
+            HttpRequest request = handler.requestBuilder().GET().build();
 
             assertThrows(RedirectNotAllowedException.class,
-                    () -> handler.send(handler.requestBuilder().GET().build(), recorder),
+                    () -> handler.send(request, recorder),
                     "the same-origin default must refuse this hop");
 
             assertEquals(List.of(), recorder.appliedStatuses(),

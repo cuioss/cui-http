@@ -753,11 +753,11 @@ public final class HttpHandler implements AutoCloseable {
      * @param value the untrusted, non-null value to neutralize
      * @return the sanitized value, safe to embed verbatim in a message
      */
-    // NOSONAR java:S4449 - this package is @NullMarked (JSpecify), so `value` is non-null by the
+    // this package is @NullMarked (JSpecify), so `value` is non-null by the
     // package-wide default and every call site passes a non-null argument; the rule's
     // javax.annotation.Nullable vocabulary predates JSpecify and does not recognize @NullMarked as
     // an equivalent non-null declaration.
-    static String sanitizeForMessage(String value) {
+    static String sanitizeForMessage(String value) { // NOSONAR java:S4449 - see rationale above
         String bounded = value.length() > MAX_SANITIZED_VALUE_LENGTH
                 ? value.substring(0, MAX_SANITIZED_VALUE_LENGTH) + TRUNCATION_MARKER
                 : value;
