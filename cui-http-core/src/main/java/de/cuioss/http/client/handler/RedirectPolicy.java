@@ -21,11 +21,7 @@ import lombok.ToString;
 import org.jspecify.annotations.Nullable;
 
 import java.net.URI;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.LinkedHashSet;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Per-hop egress host policy deciding whether one redirect hop may be followed.

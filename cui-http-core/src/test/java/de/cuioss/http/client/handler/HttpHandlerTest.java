@@ -1065,10 +1065,10 @@ class HttpHandlerTest {
         @DisplayName("The HTTP client should still report Redirect.NEVER")
         void httpClientShouldNeverFollowRedirects() {
             try (HttpHandler handler = HttpHandler.builder()
-                    .uri("http://example.com")
-                    .allowInsecureHttp(true)
-                    .redirectPolicy(RedirectPolicy.builder().allowedHosts(List.of(ALLOWLISTED_HOST)).build())
-                    .build()) {
+                         .uri("http://example.com")
+                         .allowInsecureHttp(true)
+                         .redirectPolicy(RedirectPolicy.builder().allowedHosts(List.of(ALLOWLISTED_HOST)).build())
+                         .build()) {
                 assertEquals(HttpClient.Redirect.NEVER, handler.createHttpClient().followRedirects(),
                         "Redirect following is application-level; the JDK client must never follow a hop");
             }

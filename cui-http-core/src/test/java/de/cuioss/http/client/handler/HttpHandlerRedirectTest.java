@@ -41,10 +41,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * End-to-end tests for {@link HttpHandler}'s bounded, revalidating redirect loop.
@@ -156,7 +153,7 @@ class HttpHandlerRedirectTest {
     @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
     void allowlistedCrossOriginHopShouldBeFollowed(URIBuilder uriBuilder) throws Exception {
         try (HttpHandler handler = allowlistingHandlerFor(uriBuilder, RedirectDispatcher.PATH_ALLOWLISTED,
-                RedirectPolicy.CredentialForwarding.STRIP_ON_CROSS_ORIGIN)) {
+                     RedirectPolicy.CredentialForwarding.STRIP_ON_CROSS_ORIGIN)) {
             HttpResponse<String> response = get(handler);
 
             assertEquals(200, response.statusCode(), "an allowlisted host is a permitted hop target");
@@ -242,10 +239,10 @@ class HttpHandlerRedirectTest {
     @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
     void hopBoundShouldBeEnforced(URIBuilder uriBuilder) {
         try (HttpHandler handler = HttpHandler.builder()
-                .uri(targetUri(uriBuilder, RedirectDispatcher.PATH_CHAIN))
-                .allowInsecureHttp(true)
-                .redirectPolicy(RedirectPolicy.builder().maxHops(2).build())
-                .build()) {
+                     .uri(targetUri(uriBuilder, RedirectDispatcher.PATH_CHAIN))
+                     .allowInsecureHttp(true)
+                     .redirectPolicy(RedirectPolicy.builder().maxHops(2).build())
+                     .build()) {
             RedirectNotAllowedException thrown = assertThrows(RedirectNotAllowedException.class,
                     () -> get(handler), "a self-looping chain must exhaust the bound");
 
@@ -328,7 +325,7 @@ class HttpHandlerRedirectTest {
     @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
     void stripStrategyShouldDropCredentialsCrossOrigin(URIBuilder uriBuilder) throws Exception {
         try (HttpHandler handler = allowlistingHandlerFor(uriBuilder, RedirectDispatcher.PATH_ALLOWLISTED,
-                RedirectPolicy.CredentialForwarding.STRIP_ON_CROSS_ORIGIN)) {
+                     RedirectPolicy.CredentialForwarding.STRIP_ON_CROSS_ORIGIN)) {
             String echo = echoOf(handler.send(credentialedRequest(handler), HttpResponse.BodyHandlers.ofString()));
 
             assertEquals("absent", field(echo, "authorization"),
@@ -343,7 +340,7 @@ class HttpHandlerRedirectTest {
     @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
     void forwardStrategyShouldKeepCredentialsCrossOrigin(URIBuilder uriBuilder) throws Exception {
         try (HttpHandler handler = allowlistingHandlerFor(uriBuilder, RedirectDispatcher.PATH_ALLOWLISTED,
-                RedirectPolicy.CredentialForwarding.FORWARD_TO_ALLOWLISTED)) {
+                     RedirectPolicy.CredentialForwarding.FORWARD_TO_ALLOWLISTED)) {
             String echo = echoOf(handler.send(credentialedRequest(handler), HttpResponse.BodyHandlers.ofString()));
 
             assertEquals("present", field(echo, "authorization"),
@@ -360,10 +357,10 @@ class HttpHandlerRedirectTest {
     void sameOriginHopShouldKeepCredentials(RedirectPolicy.CredentialForwarding strategy, URIBuilder uriBuilder)
             throws Exception {
         try (HttpHandler handler = HttpHandler.builder()
-                .uri(targetUri(uriBuilder, RedirectDispatcher.PATH_REDIRECT))
-                .allowInsecureHttp(true)
-                .redirectPolicy(RedirectPolicy.builder().credentialForwarding(strategy).build())
-                .build()) {
+                     .uri(targetUri(uriBuilder, RedirectDispatcher.PATH_REDIRECT))
+                     .allowInsecureHttp(true)
+                     .redirectPolicy(RedirectPolicy.builder().credentialForwarding(strategy).build())
+                     .build()) {
             String echo = echoOf(handler.send(credentialedRequest(handler), HttpResponse.BodyHandlers.ofString()));
 
             assertEquals("present", field(echo, "authorization"),
@@ -378,7 +375,7 @@ class HttpHandlerRedirectTest {
     @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
     void forwardStrategyShouldNotWidenTheAllowlist(URIBuilder uriBuilder) {
         try (HttpHandler handler = allowlistingHandlerFor(uriBuilder, RedirectDispatcher.PATH_CROSS_HOST,
-                RedirectPolicy.CredentialForwarding.FORWARD_TO_ALLOWLISTED)) {
+                     RedirectPolicy.CredentialForwarding.FORWARD_TO_ALLOWLISTED)) {
             RedirectNotAllowedException thrown = assertThrows(RedirectNotAllowedException.class,
                     () -> get(handler), "the strategy changes no refusal verdict");
 

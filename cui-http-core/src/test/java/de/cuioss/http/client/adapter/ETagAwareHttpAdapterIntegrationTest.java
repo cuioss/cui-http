@@ -881,9 +881,9 @@ class ETagAwareHttpAdapterIntegrationTest {
                 case PATH_TARGET -> Optional.of(ETAG.equals(ifNoneMatch)
                         ? new MockResponse(304, new Headers.Builder().add("ETag", ETAG).build(), "")
                         : new MockResponse(200, new Headers.Builder()
-                                .add("ETag", ETAG)
-                                .add("Content-Type", "application/json")
-                                .build(), BODY));
+                        .add("ETag", ETAG)
+                        .add("Content-Type", "application/json")
+                        .build(), BODY));
                 default -> Optional.empty();
             };
         }
