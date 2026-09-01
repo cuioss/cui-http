@@ -442,6 +442,7 @@ class NormalizationStageTest {
             "/matrix;a=1;b=2/next",  // multiple path parameters on a normal segment
             "/a/b..;/c"              // segment ends in "..;" but does not start with ".."
     })
+    @SuppressWarnings("java:S4144")  // Identical body to validate_withLegitimateDoubleDotsInFilenames_shouldNotBeRejected is intentional: each parameterized test documents a distinct negative-control family via its @ValueSource, and the method name is the meaningful differentiator
     void validate_withLegitimatePathParameters_shouldNotBeRejected(String input) {
         Optional<String> result = stage.validate(input);
         assertTrue(result.isPresent(), "Path '" + input + "' should be allowed but was rejected");
