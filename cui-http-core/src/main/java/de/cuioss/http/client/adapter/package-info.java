@@ -243,6 +243,28 @@
  *     .build();
  * }</pre>
  *
+ * <h3>Redirect Behavior (Redirects Are Not Followed)</h3>
+ *
+ * <p>{@link de.cuioss.http.client.handler.HttpHandler HttpHandler} configures <em>no</em> redirect
+ * policy on either its HTTP or its HTTPS client, so the JDK default {@code HttpClient.Redirect.NEVER}
+ * applies: redirects are <strong>not</strong> followed. Every 3xx response — followable status or not
+ * — is returned to the adapter unfollowed, with any {@code Location} header it supplies left intact
+ * and no further request issued.
+ *
+ * <p>The adapters classify such a response as a non-retryable {@code INVALID_CONTENT} failure: it is
+ * not the representation the request asked for, and retrying the same request would reproduce the
+ * same redirect. A caller that wants to act on the redirect must read {@code Location} — which a 3xx
+ * is not required to carry — validate the target itself, for example through a
+ * {@code de.cuioss.http.security} pipeline, and issue the follow-up request explicitly.
+ *
+ * <p><b>Why:</b> a followed redirect would make the effective request target differ from the URI the
+ * caller configured and validated. Nothing in this package re-validates a server-chosen redirect
+ * destination, so an auto-follow would silently honour a same-scheme redirect to an attacker-chosen
+ * host or port. Leaving the JDK default in place keeps the caller-validated URI the only request
+ * target. Validated redirect following — same-origin by default, with an opt-in host allowlist — is
+ * planned as follow-up work; the current behaviour is a fail-secure baseline, not the intended
+ * permanent end state.
+ *
  * <h3>Header Validation (Manual, Before Request)</h3>
  *
  * <p>Custom headers must be validated BEFORE passing to the adapter using {@code HTTPHeaderValidationPipeline}.

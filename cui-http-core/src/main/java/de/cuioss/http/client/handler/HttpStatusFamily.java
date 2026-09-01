@@ -214,7 +214,7 @@ public enum HttpStatusFamily {
      * <ul>
      *   <li><strong>CLIENT_ERROR (4xx)</strong> → {@link HttpErrorCategory#CLIENT_ERROR} - Client request errors (non-retryable)</li>
      *   <li><strong>SERVER_ERROR (5xx)</strong> → {@link HttpErrorCategory#SERVER_ERROR} - Server errors (retryable)</li>
-     *   <li><strong>REDIRECTION (3xx)</strong> → {@link HttpErrorCategory#INVALID_CONTENT} - Rare case, most redirects handled by HttpClient</li>
+     *   <li><strong>REDIRECTION (3xx)</strong> → {@link HttpErrorCategory#INVALID_CONTENT} - redirects are never followed (see below)</li>
      *   <li><strong>INFORMATIONAL (1xx)</strong> → {@link HttpErrorCategory#INVALID_CONTENT} - Unexpected in response processing</li>
      *   <li><strong>UNKNOWN</strong> → {@link HttpErrorCategory#INVALID_CONTENT} - Invalid status codes</li>
      *   <li><strong>SUCCESS (2xx)</strong> → Throws IllegalStateException (not an error)</li>
@@ -230,9 +230,16 @@ public enum HttpStatusFamily {
      * </pre>
      *
      * <h3>Note on 3xx Redirects</h3>
-     * Most HTTP redirects (301, 302, 307, etc.) are handled automatically by Java's HttpClient.
-     * If a 3xx status reaches error handling, it typically indicates a configuration issue
-     * or a redirect loop, hence it's classified as INVALID_CONTENT.
+     * Redirects are never followed. {@code HttpHandler} configures no redirect policy on its clients,
+     * so the JDK default {@code HttpClient.Redirect.NEVER} applies and every 3xx — followable status
+     * or not — is returned to the caller unfollowed, with any {@code Location} header it supplies left
+     * intact. Such a response is not the representation the request asked for, which is why the
+     * classification is the non-retryable {@link HttpErrorCategory#INVALID_CONTENT}: retrying the same
+     * request would reproduce the same redirect. A caller that wants to act on the redirect can read
+     * and validate the {@code Location} header when the response supplies one — a 3xx is not required
+     * to carry it — and issue the follow-up request explicitly.
+     * Validated redirect following — same-origin by default, with an opt-in host allowlist — is
+     * planned as follow-up work.
      *
      * @return the corresponding HttpErrorCategory for this status family
      * @throws IllegalStateException if called on SUCCESS family (which is not an error)
@@ -244,7 +251,9 @@ public enum HttpStatusFamily {
             case CLIENT_ERROR -> HttpErrorCategory.CLIENT_ERROR;
             case SERVER_ERROR -> HttpErrorCategory.SERVER_ERROR;
             case SUCCESS -> throw new IllegalStateException("SUCCESS is not an error");
-            case REDIRECTION -> HttpErrorCategory.INVALID_CONTENT;  // Rare, handled by adapter
+            // Redirects are never followed (JDK default Redirect.NEVER), so every 3xx lands here
+            // unfollowed rather than as the requested representation; retrying would reproduce the redirect
+            case REDIRECTION -> HttpErrorCategory.INVALID_CONTENT;
             case INFORMATIONAL, UNKNOWN -> HttpErrorCategory.INVALID_CONTENT;
         };
     }

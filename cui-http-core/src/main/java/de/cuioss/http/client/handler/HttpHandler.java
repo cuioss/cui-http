@@ -74,7 +74,7 @@ import java.util.regex.Pattern;
  * HttpStatusFamily status = handler.pingGet();
  *
  * // Custom SSL context
- * SSLContext customSSL = mySecureSSLProvider.getSSLContext();
+ * SSLContext customSSL = new SecureSSLContextProvider().getOrCreateSecureSSLContext(null);
  * HttpHandler secureHandler = HttpHandler.builder()
  *     .uri("https://secure.example.com/api")
  *     .sslContext(customSSL)
@@ -93,7 +93,23 @@ import java.util.regex.Pattern;
  *   <li>SSL context created automatically for HTTPS if not provided</li>
  *   <li>Default timeout: 10 seconds for both connection and read</li>
  *   <li>Schemeless string URLs default to HTTPS</li>
+ *   <li>Redirects are <strong>not followed</strong>: no redirect policy is configured on either the
+ *       HTTP or the HTTPS client, so the JDK default {@link HttpClient.Redirect#NEVER} applies. Every
+ *       3xx response — followable status or not — reaches the caller verbatim, with any
+ *       {@code Location} header it supplies left intact and no further request issued. Adapters
+ *       classify such a response as a non-retryable {@code INVALID_CONTENT} failure; see
+ *       {@link HttpStatusFamily#toErrorCategory()}. A caller that wants to act on a redirect can
+ *       read and validate the {@code Location} header when the response supplies one — a 3xx is not
+ *       required to carry it — and issue the follow-up request explicitly.</li>
  * </ul>
+ * <p>
+ * <strong>Why redirects are not followed:</strong> a followed redirect would send the request to a
+ * target the caller never validated. This class runs no {@code de.cuioss.http.security} pipeline over
+ * a redirect destination, so a same-scheme redirect to an attacker-chosen host or port would be
+ * honoured silently. Leaving the JDK default in place keeps the caller-validated URI the only request
+ * target. Validated redirect following — same-origin by default, with an opt-in host allowlist — is
+ * planned as follow-up work; the current behaviour is a fail-secure baseline, not the intended
+ * permanent end state.
  *
  * <h3 id="lifecycle">Lifecycle</h3>
  * <p>A handler creates exactly one {@link HttpClient} during construction and shares it across every
@@ -269,7 +285,12 @@ public final class HttpHandler implements AutoCloseable {
         this.verifyHostname = true;
         this.sslContextCallerSupplied = false;
 
-        // Create the HttpClient for HTTP
+        // Create the HttpClient for HTTP.
+        // No redirect policy is configured: the JDK default is Redirect.NEVER, so no 3xx is ever
+        // followed and every redirect response surfaces to the caller. Auto-following would send the
+        // request to a target the caller never validated — this class runs no de.cuioss.http.security
+        // pipeline over a redirect destination. Validated redirect following (same-origin by default,
+        // with an opt-in host allowlist) is planned as follow-up work.
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(connectionTimeoutSeconds))
                 .build();
@@ -299,6 +320,8 @@ public final class HttpHandler implements AutoCloseable {
         // floor on the wire, not merely the context's default protocol object.
         SSLParameters sslParameters = new SSLParameters();
         sslParameters.setProtocols(secureSSLContextProvider.getEnabledProtocols());
+        // No redirect policy is configured here either — see the HTTP constructor above for why the
+        // JDK default (Redirect.NEVER) is deliberately left in place.
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(connectionTimeoutSeconds))
                 .sslContext(sslContext)
@@ -357,7 +380,7 @@ public final class HttpHandler implements AutoCloseable {
     }
 
     /**
-     * Pings the URI using the HEAD method and returns the HTTP status code.
+     * Pings the URI using the HEAD method and returns the HTTP status code family.
      *
      * @return The HTTP status code family, or {@link HttpStatusFamily#UNKNOWN} if an error occurred
      */
@@ -369,7 +392,7 @@ public final class HttpHandler implements AutoCloseable {
     }
 
     /**
-     * Pings the URI using the GET method and returns the HTTP status code.
+     * Pings the URI using the GET method and returns the HTTP status code family.
      *
      * @return The HTTP status code family, or {@link HttpStatusFamily#UNKNOWN} if an error occurred
      */
@@ -381,7 +404,7 @@ public final class HttpHandler implements AutoCloseable {
     }
 
     /**
-     * Pings the URI using the specified HTTP method and returns the HTTP status code.
+     * Pings the URI using the specified HTTP method and returns the HTTP status code family.
      *
      * @param method The HTTP method to use (e.g., "HEAD", "GET")
      * @param bodyPublisher The body publisher to use for the request
@@ -702,6 +725,9 @@ public final class HttpHandler implements AutoCloseable {
          * @throws IllegalArgumentException If any parameter is invalid, or if
          *                                  {@code verifyHostname(false)} is combined with a
          *                                  caller-supplied {@link #sslContext(SSLContext)}.
+         * @throws IllegalStateException    If the resolved URI cannot be converted to a
+         *                                  {@link URL} — the URI is syntactically valid but names
+         *                                  no protocol handler this JVM can resolve.
          */
         public HttpHandler build() {
             // The relaxation only applies to the default-trust-store context this class derives
@@ -734,9 +760,10 @@ public final class HttpHandler implements AutoCloseable {
                 throw new IllegalArgumentException("Read timeout must be positive");
             }
 
-            // Convert the URI to a URL
-            // Note: URI.toURL() is deprecated but all alternatives (URL constructors) are also deprecated.
-            // We suppress the warning since we need to create a URL for backward compatibility.
+            // Materialise the URL eagerly so build() is the single place a URI that names no
+            // resolvable protocol handler is rejected; the handler then exposes url() without any
+            // later failure path. URI.toURL() is the non-deprecated route (the URL constructors are
+            // the deprecated ones).
             // At this point, resolvedUri is guaranteed to be non-null because resolveUri() either
             // returns a non-null URI or throws.
             URL verifiedUrl;

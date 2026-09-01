@@ -78,7 +78,13 @@ public enum ContentType {
     /** URL-encoded form data with UTF-8 charset */
     APPLICATION_FORM_URLENCODED("application/x-www-form-urlencoded", StandardCharsets.UTF_8),
 
-    /** Multipart form data (boundary specified separately, no charset) */
+    /**
+     * Multipart form data (no charset).
+     * <p>
+     * <strong>Incomplete on its own:</strong> {@code multipart/form-data} is only usable as a
+     * header value once a {@code boundary} parameter is appended, and this enum carries no
+     * boundary. See {@link #toHeaderValue()}.
+     */
     MULTIPART_FORM_DATA("multipart/form-data", null),
 
     /** Binary octet stream (no charset) */
@@ -143,8 +149,18 @@ public enum ContentType {
      * For text-based types, includes charset parameter (e.g., "application/json; charset=UTF-8").
      * For binary types, returns only the media type (e.g., "application/pdf").
      * </p>
+     * <p>
+     * <strong>Exception — {@link #MULTIPART_FORM_DATA}:</strong> the returned value is
+     * <em>incomplete</em>. It is the bare {@code multipart/form-data} media type with no
+     * {@code boundary} parameter, because the boundary is a per-request value this enum does not
+     * know. A caller sending multipart content MUST append their own boundary parameter — e.g.
+     * {@code ContentType.MULTIPART_FORM_DATA.toHeaderValue() + "; boundary=" + boundary} — before
+     * using the result as a {@code Content-Type} header; sending it unmodified produces a request
+     * body the receiver cannot parse.
+     * </p>
      *
-     * @return the complete Content-Type header value
+     * @return the complete Content-Type header value, except for {@link #MULTIPART_FORM_DATA},
+     * which requires the caller to append a {@code boundary} parameter
      */
     public String toHeaderValue() {
         if (defaultCharset != null) {

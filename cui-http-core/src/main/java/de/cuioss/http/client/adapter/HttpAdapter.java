@@ -131,6 +131,9 @@ public interface HttpAdapter<T> {
 
     /**
      * Sends HEAD request to retrieve headers only (async, no body in response).
+     * <p>
+     * See {@link #head()} for how this relates to
+     * {@link de.cuioss.http.client.handler.HttpHandler}'s ping methods.
      *
      * @param additionalHeaders Additional HTTP headers
      * @return CompletableFuture containing result with response metadata
@@ -139,6 +142,26 @@ public interface HttpAdapter<T> {
 
     /**
      * Sends HEAD request to retrieve headers only (async, no body in response).
+     *
+     * <h4>Choosing between {@code head()} and {@code HttpHandler.pingGet()}/{@code pingHead()}</h4>
+     *
+     * <p>The library offers two ways to probe an endpoint without fetching a body. They are not
+     * interchangeable — pick by what you need back:
+     * <ul>
+     *   <li><b>Use {@code head()}</b> when you are already working with an adapter and want a
+     *       structured {@link de.cuioss.http.client.result.HttpResult}: it preserves the ETag, the
+     *       HTTP status, and — on failure — a
+     *       {@link de.cuioss.http.client.result.HttpErrorCategory} plus the originating exception,
+     *       so a transport failure is distinguishable from a 4xx and a retry decision is possible.</li>
+     *   <li><b>Use {@link de.cuioss.http.client.handler.HttpHandler#pingGet()} or
+     *       {@link de.cuioss.http.client.handler.HttpHandler#pingHead()}</b> for a bare liveness
+     *       check with no adapter in play. They return only an
+     *       {@link de.cuioss.http.client.handler.HttpStatusFamily} and <strong>swallow IO
+     *       errors</strong>, reporting them as
+     *       {@link de.cuioss.http.client.handler.HttpStatusFamily#UNKNOWN} — so an unreachable host
+     *       and a malformed response are indistinguishable, and no exception reaches the caller.
+     *       That loss of detail is the trade for the simpler call.</li>
+     * </ul>
      *
      * @return CompletableFuture containing result with response metadata
      */

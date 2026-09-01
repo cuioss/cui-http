@@ -19,9 +19,11 @@ import de.cuioss.test.juli.junit5.EnableTestLogger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import javax.net.ssl.SSLContext;
+import java.util.Set;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -38,9 +40,6 @@ class SecureSSLContextProviderTest {
         assertEquals("TLSv1.2", SecureSSLContextProvider.TLS_V1_2);
         assertEquals("TLSv1.3", SecureSSLContextProvider.TLS_V1_3);
         assertEquals("TLS", SecureSSLContextProvider.TLS);
-        assertEquals("TLSv1", SecureSSLContextProvider.TLS_V1_0);
-        assertEquals("TLSv1.1", SecureSSLContextProvider.TLS_V1_1);
-        assertEquals("SSLv3", SecureSSLContextProvider.SSL_V3);
         assertEquals(SecureSSLContextProvider.TLS_V1_2, SecureSSLContextProvider.DEFAULT_TLS_VERSION);
     }
 
@@ -53,52 +52,39 @@ class SecureSSLContextProviderTest {
         assertTrue(SecureSSLContextProvider.ALLOWED_TLS_VERSIONS.contains(SecureSSLContextProvider.TLS));
     }
 
-    @Test
-    @DisplayName("Should have correct forbidden TLS versions")
-    void shouldHaveCorrectForbiddenVersions() {
-        assertEquals(3, SecureSSLContextProvider.FORBIDDEN_TLS_VERSIONS.size());
-        assertTrue(SecureSSLContextProvider.FORBIDDEN_TLS_VERSIONS.contains(SecureSSLContextProvider.TLS_V1_0));
-        assertTrue(SecureSSLContextProvider.FORBIDDEN_TLS_VERSIONS.contains(SecureSSLContextProvider.TLS_V1_1));
-        assertTrue(SecureSSLContextProvider.FORBIDDEN_TLS_VERSIONS.contains(SecureSSLContextProvider.SSL_V3));
-    }
-
     @ParameterizedTest
-    @ValueSource(strings = {"TLSv1.2", "TLSv1.3", "TLS"})
-    @DisplayName("Should identify secure TLS versions with default minimum (TLS 1.2)")
-    void shouldIdentifySecureTlsVersionsWithDefaultMinimum(String protocol) {
-        SecureSSLContextProvider secureSSLContextProvider = new SecureSSLContextProvider();
-        assertTrue(secureSSLContextProvider.isSecureTlsVersion(protocol));
-        assertEquals(SecureSSLContextProvider.TLS_V1_2, secureSSLContextProvider.minimumTlsVersion());
+    @MethodSource("allowedTlsVersions")
+    @DisplayName("Every allowed version is accepted as a minimum and reported back verbatim")
+    void shouldAcceptEveryAllowedVersionAsMinimum(String minimum) {
+        SecureSSLContextProvider secureSSLContextProvider = new SecureSSLContextProvider(minimum);
+
+        assertEquals(minimum, secureSSLContextProvider.minimumTlsVersion());
+    }
+
+    /**
+     * Derived from the production constant rather than restated as a literal, so a version added to
+     * {@link SecureSSLContextProvider#ALLOWED_TLS_VERSIONS} is covered automatically instead of
+     * silently escaping this test.
+     *
+     * @return every allowed minimum-TLS-version token
+     */
+    static Stream<String> allowedTlsVersions() {
+        return SecureSSLContextProvider.ALLOWED_TLS_VERSIONS.stream();
     }
 
     @Test
-    @DisplayName("Should identify secure TLS versions with TLS 1.3 as minimum")
-    void shouldIdentifySecureTlsVersionsWithTls13Minimum() {
-        SecureSSLContextProvider secureSSLContextProvider = new SecureSSLContextProvider(SecureSSLContextProvider.TLS_V1_3);
+    @DisplayName("Should report TLS 1.2 as the default minimum")
+    void shouldReportDefaultMinimum() {
+        assertEquals(SecureSSLContextProvider.TLS_V1_2, new SecureSSLContextProvider().minimumTlsVersion());
+    }
 
-        // TLS 1.3 and generic TLS should be secure
-        assertTrue(secureSSLContextProvider.isSecureTlsVersion(SecureSSLContextProvider.TLS_V1_3));
-        assertTrue(secureSSLContextProvider.isSecureTlsVersion(SecureSSLContextProvider.TLS));
-
-        // TLS 1.2 should not be secure when minimum is TLS 1.3
-        assertFalse(secureSSLContextProvider.isSecureTlsVersion(SecureSSLContextProvider.TLS_V1_2));
+    @Test
+    @DisplayName("Should report TLS 1.3 as the minimum when configured with TLS 1.3")
+    void shouldReportTls13Minimum() {
+        SecureSSLContextProvider secureSSLContextProvider =
+                new SecureSSLContextProvider(SecureSSLContextProvider.TLS_V1_3);
 
         assertEquals(SecureSSLContextProvider.TLS_V1_3, secureSSLContextProvider.minimumTlsVersion());
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {"TLSv1.0", "TLSv1.1", "SSLv3", "SSLv2", "unknown"})
-    @DisplayName("Should identify insecure TLS versions")
-    void shouldIdentifyInsecureTlsVersions(String protocol) {
-        SecureSSLContextProvider secureSSLContextProvider = new SecureSSLContextProvider();
-        assertFalse(secureSSLContextProvider.isSecureTlsVersion(protocol));
-    }
-
-    @Test
-    @DisplayName("Should handle null protocol")
-    void shouldHandleNullProtocol() {
-        SecureSSLContextProvider secureSSLContextProvider = new SecureSSLContextProvider();
-        assertFalse(secureSSLContextProvider.isSecureTlsVersion(null));
     }
 
     @Test
@@ -129,30 +115,28 @@ class SecureSSLContextProviderTest {
         assertArrayEquals(new String[]{SecureSSLContextProvider.TLS_V1_3}, protocols);
     }
 
+    /**
+     * The floor invariant, expressed positively against the surviving API: whatever minimum is
+     * configured, the enabled protocol list is non-empty and contains only concrete TLS 1.2 / 1.3
+     * versions. Any pre-1.2 protocol is excluded by construction, because nothing outside that pair
+     * can appear in the list.
+     */
     @Test
-    @DisplayName("Enabled protocols must never include a forbidden version")
-    void enabledProtocolsMustExcludeForbiddenVersions() {
+    @DisplayName("Enabled protocols are always a non-empty subset of the concrete secure versions")
+    void enabledProtocolsAreAlwaysSecureVersions() {
+        Set<String> concreteSecureVersions =
+                Set.of(SecureSSLContextProvider.TLS_V1_2, SecureSSLContextProvider.TLS_V1_3);
+
         for (String minimum : SecureSSLContextProvider.ALLOWED_TLS_VERSIONS) {
             String[] protocols = new SecureSSLContextProvider(minimum).getEnabledProtocols();
-            assertTrue(protocols.length > 0);
+
+            assertTrue(protocols.length > 0,
+                    "Enabled protocols for minimum " + minimum + " must never be empty");
             for (String protocol : protocols) {
-                assertFalse(SecureSSLContextProvider.FORBIDDEN_TLS_VERSIONS.contains(protocol),
-                        "Enabled protocols for minimum " + minimum + " must not contain forbidden " + protocol);
+                assertTrue(concreteSecureVersions.contains(protocol),
+                        "Enabled protocols for minimum " + minimum + " must contain only TLS 1.2/1.3, but had "
+                                + protocol);
             }
-        }
-    }
-
-    @Test
-    @DisplayName("Should have no overlap between allowed and forbidden versions")
-    void shouldHaveNoOverlapBetweenAllowedAndForbidden() {
-        for (String allowed : SecureSSLContextProvider.ALLOWED_TLS_VERSIONS) {
-            assertFalse(SecureSSLContextProvider.FORBIDDEN_TLS_VERSIONS.contains(allowed),
-                    "Protocol " + allowed + " should not be in both allowed and forbidden sets");
-        }
-
-        for (String forbidden : SecureSSLContextProvider.FORBIDDEN_TLS_VERSIONS) {
-            assertFalse(SecureSSLContextProvider.ALLOWED_TLS_VERSIONS.contains(forbidden),
-                    "Protocol " + forbidden + " should not be in both allowed and forbidden sets");
         }
     }
 

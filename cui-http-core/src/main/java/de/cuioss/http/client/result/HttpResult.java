@@ -218,11 +218,17 @@ public sealed interface HttpResult<T>
     /**
      * Transforms content to a different type while preserving metadata.
      * Applies mapper to success content or fallback content if present.
-     * Metadata (ETag, status, error info) is preserved.
+     * <p>
+     * The transformation is applied to the <em>content only</em>. Response metadata — the ETag, the
+     * HTTP status, and (for a failure) the error message, category and cause — is carried over to
+     * the returned result verbatim, unchanged by the mapper. This is deliberate: {@code map}
+     * changes how the payload is represented, not what the server said about it, so a mapped result
+     * still describes the same exchange and remains valid for cache revalidation and retry
+     * decisions.
      *
      * @param mapper function to transform content
      * @param <U> target type
-     * @return new HttpResult with transformed content
+     * @return new HttpResult with transformed content and the original metadata
      */
     <U> HttpResult<U> map(Function<T, U> mapper);
 
@@ -356,6 +362,14 @@ public sealed interface HttpResult<T>
             return Optional.empty();
         }
 
+        /**
+         * {@inheritDoc}
+         * <p>
+         * The returned {@code Success} carries this result's {@code etag} and {@code httpStatus}
+         * verbatim; only the content is passed through the mapper. A {@code null} content (a
+         * body-less success, e.g. from a HEAD or a status-code-only request) is left as
+         * {@code null} and the mapper is not invoked.
+         */
         @Override
         public <U> HttpResult<U> map(Function<T, U> mapper) {
             U mappedContent = content != null ? mapper.apply(content) : null;
