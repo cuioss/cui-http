@@ -266,6 +266,9 @@ public final class HttpHandler implements AutoCloseable {
      * The 3xx statuses this handler follows. {@code 300} (Multiple Choices), {@code 304} (Not
      * Modified), {@code 305} (Use Proxy) and {@code 306} (unused) are deliberately absent: none of
      * them names a single unambiguous next request, so each surfaces to the caller verbatim.
+     * <p>
+     * This is the sole definition of the set; {@link #followableStatusCodes()} publishes it so no
+     * caller — production or test fixture — has to restate it.
      */
     private static final Set<Integer> FOLLOWABLE_STATUS_CODES = Set.of(301, 302, 303, 307, 308);
 
@@ -443,6 +446,26 @@ public final class HttpHandler implements AutoCloseable {
 
     public static HttpHandlerBuilder builder() {
         return new HttpHandlerBuilder();
+    }
+
+    /**
+     * The 3xx statuses this handler's follow loop acts on — {@code 301}, {@code 302}, {@code 303},
+     * {@code 307} and {@code 308} — exposed as the single definition of that set.
+     * <p>
+     * A caller taking the raw {@link #createHttpClient()} route observes 3xx responses itself and
+     * owns deciding which of them name a next hop; this accessor is what lets that decision agree
+     * with {@link #send(HttpRequest, HttpResponse.BodyHandler)}'s rather than restate it. Test
+     * fixtures read it for the same reason: a fixture that re-declared the set would keep passing
+     * against a stale one after the production set changed.
+     * <p>
+     * A status being in this set is necessary but not sufficient for a hop to be followed — the
+     * response must also carry a non-blank, parseable {@code Location} that
+     * {@link #getRedirectPolicy()} permits.
+     *
+     * @return the followable statuses, unmodifiable
+     */
+    public static Set<Integer> followableStatusCodes() {
+        return FOLLOWABLE_STATUS_CODES;
     }
 
     /**

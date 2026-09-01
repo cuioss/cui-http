@@ -15,6 +15,7 @@
  */
 package de.cuioss.http.client.dispatcher;
 
+import de.cuioss.http.client.handler.HttpHandler;
 import de.cuioss.test.mockwebserver.dispatcher.HttpMethodMapper;
 import de.cuioss.test.mockwebserver.dispatcher.ModuleDispatcherElement;
 import lombok.NonNull;
@@ -25,6 +26,7 @@ import okhttp3.HttpUrl;
 
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Test dispatcher serving the redirect shapes {@code HttpHandler}'s validated follow loop is
@@ -40,8 +42,10 @@ import java.util.Set;
  *   <li>{@value #PATH_REDIRECT} — 302 pointing at {@value #PATH_TARGET}</li>
  *   <li>{@value #PATH_TARGET} — 200 whose body <em>and</em> {@value #HEADER_ECHO} header describe the
  *       request that reached it; see {@link #echo(RecordedRequest)}</li>
- *   <li>{@value #PATH_STATUS_PREFIX}{@code {code}} — the named followable status (301, 302, 303, 307,
- *       308) pointing at {@value #PATH_TARGET}, used to pin the per-status method/body rewrite rules</li>
+ *   <li>{@value #PATH_STATUS_PREFIX}{@code {code}} — the named status, pointing at
+ *       {@value #PATH_TARGET}, used to pin the per-status method/body rewrite rules. Only a status
+ *       {@code HttpHandler.followableStatusCodes()} contains is served, so the fixture cannot drift
+ *       from the production set</li>
  *   <li>{@value #PATH_CROSS_HOST} — 302 whose {@code Location} names an off-server host</li>
  *   <li>{@value #PATH_CROSS_PORT} — 302 whose {@code Location} keeps the host but changes the port</li>
  *   <li>{@value #PATH_CROSS_SCHEME} — 302 whose {@code Location} keeps host and port but switches to
@@ -68,6 +72,9 @@ import java.util.Set;
  * @author Oliver Wolff
  */
 public class RedirectDispatcher implements ModuleDispatcherElement {
+
+    /** Guards {@link #parseStatus(String)} against a non-numeric segment before it is parsed. */
+    private static final Pattern STATUS_SEGMENT = Pattern.compile("\\d{3}");
 
     /** Base path this dispatcher claims. */
     public static final String BASE_PATH = "/redirect";
@@ -232,15 +239,23 @@ public class RedirectDispatcher implements ModuleDispatcherElement {
         });
     }
 
+    /**
+     * Resolves a {@value #PATH_STATUS_PREFIX} path segment to the status it names, admitting only
+     * statuses {@link HttpHandler#followableStatusCodes()} actually contains.
+     * <p>
+     * The set is read from the production definition rather than re-declared here: a fixture that
+     * carried its own copy would keep serving the old set after the production one changed, so the
+     * redirect tests would pass while no longer exercising the current contract.
+     *
+     * @param segment the path segment following {@value #PATH_STATUS_PREFIX}
+     * @return the followable status it names, or empty when it names none
+     */
     private static Optional<Integer> parseStatus(String segment) {
-        return switch (segment) {
-            case "301" -> Optional.of(301);
-            case "302" -> Optional.of(302);
-            case "303" -> Optional.of(303);
-            case "307" -> Optional.of(307);
-            case "308" -> Optional.of(308);
-            default -> Optional.empty();
-        };
+        if (!STATUS_SEGMENT.matcher(segment).matches()) {
+            return Optional.empty();
+        }
+        int status = Integer.parseInt(segment);
+        return HttpHandler.followableStatusCodes().contains(status) ? Optional.of(status) : Optional.empty();
     }
 
     private static MockResponse terminal(RecordedRequest request) {
