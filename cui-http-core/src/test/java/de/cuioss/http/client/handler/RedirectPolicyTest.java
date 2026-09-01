@@ -25,10 +25,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.net.URI;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -271,6 +268,23 @@ class RedirectPolicyTest {
             Set<String> hosts = RedirectPolicy.builder().allowedHosts(List.of("cdn.example.net")).build().getAllowedHosts();
 
             assertThrows(UnsupportedOperationException.class, () -> hosts.add("evil.example.org"));
+        }
+
+        @Test
+        @DisplayName("Should not let mutating a copy of the returned allowedHosts widen the policy's egress allowlist")
+        void shouldNotLeakAllowedHostsMutationIntoPolicyBehaviour() {
+            RedirectPolicy policy = RedirectPolicy.builder().allowedHosts(List.of("cdn.example.net")).build();
+            URI evil = URI.create("https://evil.example.org/asset");
+
+            Set<String> callerCopy = new HashSet<>(policy.getAllowedHosts());
+            callerCopy.add("evil.example.org");
+
+            // The caller's own copy now contains the extra host, but the policy never saw that copy,
+            // so its allowlist and every refuse()/forwardsCredentials() verdict stay exactly as built.
+            assertTrue(callerCopy.contains("evil.example.org"));
+            assertEquals(Set.of("cdn.example.net"), policy.getAllowedHosts());
+            assertRefused(policy, ORIGIN, evil, RedirectRefusal.CROSS_ORIGIN);
+            assertPermitted(policy, ORIGIN, URI.create("https://cdn.example.net/asset"));
         }
 
         @Test

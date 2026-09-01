@@ -15,6 +15,7 @@
  */
 package de.cuioss.http.client.handler;
 
+import lombok.AccessLevel;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.ToString;
@@ -108,11 +109,13 @@ public final class RedirectPolicy {
     private final int maxHops;
 
     /**
-     * The hosts a cross-origin hop may target, ASCII-lowercased and unmodifiable. Empty by default,
-     * which makes the policy same-origin only.
-     *
-     * @return the unmodifiable, ASCII-lowercased set of additionally permitted hosts
+     * The hosts a cross-origin hop may target, ASCII-lowercased. Empty by default, which makes the
+     * policy same-origin only.
+     * <p>
+     * Stored as a private, independently-owned copy — see {@link #getAllowedHosts()} for how it is
+     * exposed without leaking this internal representation.
      */
+    @Getter(AccessLevel.NONE)
     private final Set<String> allowedHosts;
 
     /**
@@ -124,8 +127,26 @@ public final class RedirectPolicy {
 
     private RedirectPolicy(int maxHops, Set<String> allowedHosts, CredentialForwarding credentialForwarding) {
         this.maxHops = maxHops;
-        this.allowedHosts = allowedHosts;
+        // Defensive copy at the boundary: even though the builder already hands over an unmodifiable,
+        // independently-owned set, copying here again decouples this field from whatever reference was
+        // passed in, so this constructor is safe on its own and never aliases caller-owned state.
+        this.allowedHosts = new LinkedHashSet<>(allowedHosts);
         this.credentialForwarding = credentialForwarding;
+    }
+
+    /**
+     * The hosts a cross-origin hop may target, ASCII-lowercased.
+     * <p>
+     * Returns an unmodifiable view backed by a private, independently-owned copy: the returned
+     * {@link Set} can never be mutated (attempting to do so throws
+     * {@link UnsupportedOperationException}), and no reference to the internal field is ever handed
+     * out, so mutating any collection the caller separately holds can never widen this policy's
+     * egress allowlist after construction.
+     *
+     * @return the unmodifiable, ASCII-lowercased set of additionally permitted hosts
+     */
+    public Set<String> getAllowedHosts() {
+        return Collections.unmodifiableSet(allowedHosts);
     }
 
     /**
