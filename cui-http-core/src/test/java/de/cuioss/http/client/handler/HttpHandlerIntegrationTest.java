@@ -184,15 +184,19 @@ class HttpHandlerIntegrationTest {
     }
 
     @Test
-    @DisplayName("An unfollowed 3xx classifies as non-retryable INVALID_CONTENT")
+    @DisplayName("A 3xx the raw client did not follow classifies as non-retryable INVALID_CONTENT")
     @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
     void unfollowedRedirectClassifiesAsInvalidContent(URIBuilder uriBuilder) throws Exception {
         HttpResponse<String> response = get(uriBuilder, RedirectDispatcher.PATH_REDIRECT);
 
         HttpStatusFamily family = HttpStatusFamily.fromStatusCode(response.statusCode());
 
-        // Now covers a redirect that was refused by the policy or is not followable at all: either way
-        // the 3xx reaches the caller and carries no usable representation.
+        // Scope: the raw createHttpClient() route only. That client is Redirect.NEVER, so the 302
+        // reaches the caller as an ordinary response carrying no usable representation. A hop the
+        // RedirectPolicy refuses is a different path entirely — it never yields a 3xx response,
+        // because HttpHandler.send(...) throws RedirectNotAllowedException instead; that refusal and
+        // its CONFIGURATION_ERROR classification are asserted in RedirectPolicyTest, and the refusal
+        // paths themselves in HttpHandlerRedirectTest.
         assertEquals(HttpStatusFamily.REDIRECTION, family, "a 302 must classify as REDIRECTION");
         assertEquals(HttpErrorCategory.INVALID_CONTENT, family.toErrorCategory(),
                 "an unfollowed redirect carries no usable representation");
