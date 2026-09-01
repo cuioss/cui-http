@@ -164,16 +164,17 @@ import static de.cuioss.http.client.HttpLogMessages.WARN;
  * <ul>
  *   <li>Builder: NOT thread-safe (build once per adapter)</li>
  *   <li>Built adapter: Immutable fields, concurrent cache, safe for shared use</li>
- *   <li>HttpClient: Borrowed once in the constructor from the configured handler, reused for all
- *       requests</li>
+ *   <li>HttpClient: Not held by the adapter. Requests are issued through the configured
+ *       {@link HttpHandler}, which owns both the reused client and the redirect policy applied to
+ *       every hop</li>
  *   <li>Cache: ConcurrentHashMap with local reference pattern for 304 handling</li>
  * </ul>
  *
  * <h2>Client Ownership</h2>
  * <p>
  * This adapter <strong>borrows</strong> the {@link HttpClient} from the {@link HttpHandler} it is
- * configured with — the handler creates and owns that client, and the adapter merely holds a
- * reference to it. The adapter is deliberately <em>not</em> {@link AutoCloseable}: closing a
+ * configured with — the handler creates and owns that client, and the adapter reaches it only by
+ * issuing every request through the handler. The adapter is deliberately <em>not</em> {@link AutoCloseable}: closing a
  * borrowed client would shut down a resource shared with the handler and with every other adapter
  * built from it. Release the client by closing the <em>handler</em>
  * ({@link HttpHandler#close()}), once every adapter built from it is done.
@@ -206,7 +207,6 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
     private static final CuiLogger LOGGER = new CuiLogger(ETagAwareHttpAdapter.class);
 
     private final HttpHandler httpHandler;
-    private final HttpClient httpClient;
     private final HttpResponseConverter<T> responseConverter;
     @Nullable
     private final HttpRequestConverter<T> requestConverter;
@@ -252,9 +252,6 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         this.cacheKeyHeaderFilter = Objects.requireNonNull(builder.cacheKeyHeaderFilter, "cacheKeyHeaderFilter is required");
         this.maxCacheSize = builder.maxCacheSize;
         this.cache = new ConcurrentHashMap<>();
-
-        // Create HttpClient ONCE in constructor for thread-safe reuse
-        this.httpClient = httpHandler.createHttpClient();
 
         LOGGER.debug("Created ETagAwareHttpAdapter: etagCachingEnabled=%s, maxCacheSize=%s",
                 etagCachingEnabled, maxCacheSize);
@@ -543,7 +540,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      * <ol>
      *   <li>Retrieve cache entry BEFORE building request (local reference held)</li>
      *   <li>Add If-None-Match header if cache entry exists (GET only)</li>
-     *   <li>Execute request asynchronously via HttpClient</li>
+     *   <li>Execute request asynchronously via the handler's redirect-following send</li>
      *   <li>Route every 304 through {@link #handleNotModified}, which resolves it against the
      *       cached entry when one is held and reports the RFC 7232 violation when none is</li>
      * </ol>
@@ -688,7 +685,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             @Nullable CacheEntry<T> cachedEntry,
             String cacheKey
     ) {
-        return httpClient.sendAsync(request, responseConverter.getBodyHandler())
+        return httpHandler.sendAsync(request, responseConverter.getBodyHandler())
                 .thenApply(response -> handleHttpResponse(response, method, cachedEntry, cacheKey))
                 .exceptionally(throwable -> {
                     // Classify via the single source of truth in client.result

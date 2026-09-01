@@ -19,14 +19,20 @@ import de.cuioss.http.client.ContentType;
 import de.cuioss.http.client.HttpMethod;
 import de.cuioss.http.client.converter.HttpRequestConverter;
 import de.cuioss.http.client.converter.HttpResponseConverter;
+import de.cuioss.http.client.dispatcher.RedirectDispatcher;
 import de.cuioss.http.client.handler.HttpHandler;
 import de.cuioss.http.client.result.HttpErrorCategory;
 import de.cuioss.http.client.result.HttpResult;
 import de.cuioss.test.juli.junit5.EnableTestLogger;
 import de.cuioss.test.mockwebserver.EnableMockWebServer;
 import de.cuioss.test.mockwebserver.URIBuilder;
+import de.cuioss.test.mockwebserver.dispatcher.HttpMethodMapper;
 import de.cuioss.test.mockwebserver.dispatcher.ModuleDispatcher;
 import de.cuioss.test.mockwebserver.dispatcher.ModuleDispatcherElement;
+import lombok.NonNull;
+import mockwebserver3.MockResponse;
+import mockwebserver3.RecordedRequest;
+import okhttp3.Headers;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,8 +41,11 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -65,8 +74,26 @@ class ETagAwareHttpAdapterIntegrationTest {
 
     private final TestApiDispatcher dispatcher = new TestApiDispatcher();
 
+    private final RedirectDispatcher redirectDispatcher = new RedirectDispatcher();
+
+    private final OffServerRedirectDispatcher offServerRedirectDispatcher = new OffServerRedirectDispatcher();
+
+    private final CachingRedirectDispatcher cachingRedirectDispatcher = new CachingRedirectDispatcher();
+
     public ModuleDispatcherElement getModuleDispatcher() {
         return dispatcher;
+    }
+
+    public ModuleDispatcherElement getRedirectDispatcher() {
+        return redirectDispatcher;
+    }
+
+    public ModuleDispatcherElement getOffServerRedirectDispatcher() {
+        return offServerRedirectDispatcher;
+    }
+
+    public ModuleDispatcherElement getCachingRedirectDispatcher() {
+        return cachingRedirectDispatcher;
     }
 
     /**
@@ -709,6 +736,168 @@ class ETagAwareHttpAdapterIntegrationTest {
     }
 
     // === Helper Converters ===
+
+    @Test
+    @DisplayName("load should follow a same-origin redirect and convert the terminal body")
+    @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
+    void loadShouldFollowSameOriginRedirect(URIBuilder uriBuilder) {
+        HttpAdapter<String> adapter = adapterFor(uriBuilder, RedirectDispatcher.PATH_REDIRECT);
+
+        HttpResult<String> result = adapter.getBlocking();
+
+        assertTrue(result.isSuccess(), "the followed redirect must resolve to the terminal 200");
+        assertEquals(RedirectDispatcher.TARGET_BODY, result.getContent().orElse(null),
+                "the terminal hop's body must be converted and returned");
+        assertEquals(Optional.of(200), result.getHttpStatus(),
+                "the terminal status reaches the caller, not the 302");
+    }
+
+    @Test
+    @DisplayName("ResilientHttpAdapter should inherit redirect following by delegation")
+    @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
+    void resilientWrapperShouldInheritRedirectFollowing(URIBuilder uriBuilder) {
+        HttpAdapter<String> resilient = ResilientHttpAdapter.wrap(
+                adapterFor(uriBuilder, RedirectDispatcher.PATH_REDIRECT),
+                RetryConfig.builder().maxAttempts(2).initialDelay(Duration.ofMillis(10)).build());
+
+        HttpResult<String> result = resilient.getBlocking();
+
+        assertTrue(result.isSuccess(), "the wrapper delegates and inherits the follow behaviour unchanged");
+        assertEquals(RedirectDispatcher.TARGET_BODY, result.getContent().orElse(null),
+                "the wrapper returns the same terminal body as the delegate");
+    }
+
+    @Test
+    @DisplayName("A refused hop should surface as a non-retryable CONFIGURATION_ERROR failure")
+    @ModuleDispatcher(providerMethod = "getOffServerRedirectDispatcher")
+    void refusedHopShouldSurfaceAsConfigurationError(URIBuilder uriBuilder) {
+        HttpAdapter<String> adapter = adapterFor(uriBuilder, OffServerRedirectDispatcher.PATH_OFF_SERVER);
+
+        HttpResult<String> result = adapter.getBlocking();
+
+        assertFalse(result.isSuccess(), "an off-server hop is refused by the same-origin default");
+        assertEquals(Optional.of(HttpErrorCategory.CONFIGURATION_ERROR), result.getErrorCategory(),
+                "the CompletionException-wrapped RedirectNotAllowedException classifies as CONFIGURATION_ERROR");
+        assertFalse(HttpErrorCategory.CONFIGURATION_ERROR.isRetryable(),
+                "a refused redirect is not worth retrying");
+    }
+
+    @Test
+    @DisplayName("The ETag cache key of a followed redirect should be the adapter's configured URI")
+    @ModuleDispatcher(providerMethod = "getCachingRedirectDispatcher")
+    void cacheKeyShouldBeTheConfiguredUriNotTheTerminalHop(URIBuilder uriBuilder) {
+        CachingRedirectDispatcher.reset();
+        HttpAdapter<String> adapter = adapterFor(uriBuilder, CachingRedirectDispatcher.PATH_REDIRECT);
+
+        HttpResult<String> first = adapter.getBlocking();
+        assertTrue(first.isSuccess(), "the first call follows the hop and caches the terminal ETag");
+        assertEquals(CachingRedirectDispatcher.ETAG, first.getETag().orElse(null),
+                "the terminal hop's ETag is the one cached");
+
+        HttpResult<String> second = adapter.getBlocking();
+
+        assertTrue(second.isSuccess(), "the second call revalidates and resolves from the cache");
+        assertEquals(CachingRedirectDispatcher.ETAG,
+                CachingRedirectDispatcher.ifNoneMatchOn(CachingRedirectDispatcher.PATH_REDIRECT),
+                "the conditional request is issued against the configured URI, so that is the cache key");
+    }
+
+    private HttpAdapter<String> adapterFor(URIBuilder uriBuilder, String path) {
+        String serverUrl = uriBuilder.build().toString().replaceAll("/$", "") + path;
+        HttpHandler handler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
+        return ETagAwareHttpAdapter.<String>builder()
+                .httpHandler(handler)
+                .responseConverter(new StringResponseConverter())
+                .build();
+    }
+
+    /**
+     * Serves a single 302 whose {@code Location} names a host this server does not serve, so the
+     * handler's same-origin default refuses the hop before any off-server request is issued.
+     */
+    static final class OffServerRedirectDispatcher implements ModuleDispatcherElement {
+
+        static final String BASE_PATH = "/adapter-offsite";
+        static final String PATH_OFF_SERVER = BASE_PATH + "/start";
+        static final String OFF_SERVER_LOCATION = "http://off-server.example.org/target";
+
+        @Override
+        public Optional<MockResponse> handleGet(@NonNull RecordedRequest request) {
+            if (PATH_OFF_SERVER.equals(request.getUrl().encodedPath())) {
+                return Optional.of(new MockResponse(302,
+                        new Headers.Builder().add("Location", OFF_SERVER_LOCATION).build(), ""));
+            }
+            return Optional.empty();
+        }
+
+        @Override
+        public String getBaseUrl() {
+            return BASE_PATH;
+        }
+
+        @Override
+        public @NonNull Set<HttpMethodMapper> supportedMethods() {
+            return Set.of(HttpMethodMapper.GET);
+        }
+    }
+
+    /**
+     * A same-origin redirect whose terminal hop carries an ETag, and which records the
+     * {@code If-None-Match} header per path. That record is what makes the cache key observable: a
+     * conditional request arriving on the redirect source proves the entry was keyed by the
+     * adapter's configured URI rather than by the terminal hop's.
+     */
+    static final class CachingRedirectDispatcher implements ModuleDispatcherElement {
+
+        static final String BASE_PATH = "/adapter-redirect";
+        static final String PATH_REDIRECT = BASE_PATH + "/start";
+        static final String PATH_TARGET = BASE_PATH + "/target";
+        static final String BODY = "{\"id\":1,\"name\":\"redirected\"}";
+        static final String ETAG = "\"etag-redirect\"";
+
+        // Static because the dispatcher resolver serves requests from its own instance rather than
+        // the one the test holds — the same caveat RedirectDispatcher documents.
+        private static final Map<String, String> IF_NONE_MATCH_BY_PATH = new ConcurrentHashMap<>();
+
+        static void reset() {
+            IF_NONE_MATCH_BY_PATH.clear();
+        }
+
+        static @Nullable String ifNoneMatchOn(String path) {
+            return IF_NONE_MATCH_BY_PATH.get(path);
+        }
+
+        @Override
+        public Optional<MockResponse> handleGet(@NonNull RecordedRequest request) {
+            String path = request.getUrl().encodedPath();
+            String ifNoneMatch = request.getHeaders().get("If-None-Match");
+            if (ifNoneMatch != null) {
+                IF_NONE_MATCH_BY_PATH.put(path, ifNoneMatch);
+            }
+            return switch (path) {
+                case PATH_REDIRECT -> Optional.of(new MockResponse(302, new Headers.Builder()
+                        .add("Location", request.getUrl().newBuilder().encodedPath(PATH_TARGET).build().toString())
+                        .build(), ""));
+                case PATH_TARGET -> Optional.of(ETAG.equals(ifNoneMatch)
+                        ? new MockResponse(304, new Headers.Builder().add("ETag", ETAG).build(), "")
+                        : new MockResponse(200, new Headers.Builder()
+                                .add("ETag", ETAG)
+                                .add("Content-Type", "application/json")
+                                .build(), BODY));
+                default -> Optional.empty();
+            };
+        }
+
+        @Override
+        public String getBaseUrl() {
+            return BASE_PATH;
+        }
+
+        @Override
+        public @NonNull Set<HttpMethodMapper> supportedMethods() {
+            return Set.of(HttpMethodMapper.GET);
+        }
+    }
 
     private static class StringResponseConverter implements HttpResponseConverter<String> {
         @Override
