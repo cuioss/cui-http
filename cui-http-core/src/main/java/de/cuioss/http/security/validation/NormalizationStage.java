@@ -531,13 +531,13 @@ ValidationType validationType) implements HttpSecurityValidator {
             return true;
         }
 
-        // Pattern 5: Dot-segment carrying a ";" path-parameter suffix ("/..;/" or leading "..;")
+        // Pattern 4: Dot-segment carrying a ";" path-parameter suffix ("/..;/" or leading "..;")
         // A Servlet-style container strips path parameters, so "..;" resolves to ".." downstream
         if (DOT_SEGMENT_WITH_PATH_PARAM_PATTERN.matcher(input).find()) {
             return true;
         }
 
-        // Pattern 4: Windows-style backslash traversal (but not if it starts with ..)
+        // Pattern 5: Windows-style backslash traversal (but not if it starts with ..)
         // Patterns starting with .. should be handled by escapesRoot check
         return CONTAINS_DOTDOT_BACKSLASH_PATTERN.matcher(input).find() &&
                 !STARTS_WITH_DOTDOT_BACKSLASH_PATTERN.matcher(input).matches();
