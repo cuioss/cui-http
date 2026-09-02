@@ -30,6 +30,7 @@ import org.junit.jupiter.api.Test;
 
 import javax.net.ssl.SSLContext;
 import java.net.URI;
+import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -123,9 +124,9 @@ class HttpHandlerHttpsIntegrationTest {
                      .uri(start)
                      .sslContext(sslContext)
                      .build()) {
+            HttpRequest request = handler.requestBuilder().GET().build();
             refusal = assertThrows(RedirectNotAllowedException.class,
-                    () -> handler.send(handler.requestBuilder().GET().build(),
-                            HttpResponse.BodyHandlers.ofString()),
+                    () -> handler.send(request, HttpResponse.BodyHandlers.ofString()),
                     "a hop off TLS must be refused, so no response ever reaches the caller");
         }
 
