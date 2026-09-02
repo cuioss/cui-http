@@ -94,6 +94,47 @@
                     </execution>
                 </executions>
             </plugin>
+            <!-- Guard the generators artifact produced above: a build that skips test compilation
+                 (-Dmaven.test.skip=true) leaves testOutputDirectory empty and the generators jar
+                 is published with metadata only. Bound unconditionally at verify, which precedes
+                 install and deploy, so a defective artifact never reaches a repository.
+                 maven-enforcer-plugin is version-managed and already active via cuioss-parent-pom;
+                 this only adds an execution, no new plugin and no new dependency. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>generators-not-empty</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireFilesExist>
+                                    <files>
+                                        <file>${project.build.testOutputDirectory}/de/cuioss/http/security/generators</file>
+                                        <file>${project.build.testOutputDirectory}/de/cuioss/http/security/database</file>
+                                    </files>
+                                    <message>The generators/database test classes are missing from ${project.build.testOutputDirectory}, so the 'generators' classifier jar would be published without any classes. Test compilation was skipped (-Dmaven.test.skip=true) — run the build without skipping test compilation.</message>
+                                </requireFilesExist>
+                                <requireFilesSize>
+                                    <minsize>50000</minsize>
+                                    <!-- The rule's default maxsize is 10000 bytes, which a healthy
+                                         generators jar (~180 KB) exceeds; raise the ceiling so only
+                                         the minsize floor is enforced. -->
+                                    <maxsize>1073741824</maxsize>
+                                    <files>
+                                        <file>${project.build.directory}/${project.build.finalName}-generators.jar</file>
+                                    </files>
+                                    <message>The 'generators' classifier jar is far smaller than a healthy one, so it carries no generator/database classes. Test compilation was skipped (-Dmaven.test.skip=true) — run the build without skipping test compilation.</message>
+                                </requireFilesSize>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <!-- Surefire useModulePath=false (tests run on the classpath to bypass JPMS module
                  restrictions) is inherited from the parent pluginManagement. -->
             <plugin>
