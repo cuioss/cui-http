@@ -224,7 +224,7 @@ Pipeline architecture audit:
 
 [NOTE]
 ====
-**Key Finding**: HTTPBodyValidationPipeline has been eliminated from the architecture. All URL validation (including full URLs with protocols) is now handled by URLPathValidationPipeline as they represent HTTP protocol-layer concerns, not application body content.
+**Key Finding**: HTTPBodyValidationPipeline has been eliminated from the architecture. URL *path component* validation is now handled by URLPathValidationPipeline, as it represents an HTTP protocol-layer concern rather than application body content. That pipeline is not a validator for a full absolute URL: `NormalizationStage` recognises a leading `scheme://` and returns such an input unchanged, so the RFC 3986 dot-segment resolution and clamping transform is skipped. Its traversal checks still run, but against the unresolved string. Extract the path component from an absolute URL and pass that.
 ====
 
 == Future Considerations
