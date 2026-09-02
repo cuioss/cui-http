@@ -17,6 +17,9 @@ package de.cuioss.http.client;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.EnumSet;
+import java.util.Set;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -140,12 +143,16 @@ class HttpMethodTest {
     @Test
     void allSafeMethodsShouldBeIdempotent() {
         // Per RFC 7231: Safe methods are always idempotent
+        Set<HttpMethod> safeMethodsReached = EnumSet.noneOf(HttpMethod.class);
         for (HttpMethod method : HttpMethod.values()) {
             if (method.isSafe()) {
+                safeMethodsReached.add(method);
                 assertTrue(method.isIdempotent(),
                         "Safe method should be idempotent: " + method);
             }
         }
+        assertEquals(EnumSet.of(HttpMethod.GET, HttpMethod.HEAD, HttpMethod.OPTIONS), safeMethodsReached,
+                "The idempotence assertion must have been reached for every safe method");
     }
 
     @Test

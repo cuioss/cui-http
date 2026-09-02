@@ -55,13 +55,16 @@ class ValidURLGeneratorTest {
         assertFalse(generatedValue.contains("<script"), "Valid URLs should not contain script tags");
         assertFalse(generatedValue.contains("javascript:"), "Valid URLs should not contain javascript protocol");
 
-        // Should be well-formed if it has parameters
+        // Both arms assert, so a value never reaches the end of this test without a query verdict
         if (generatedValue.contains("?")) {
             String[] parts = URL_QUERY_SPLIT_PATTERN.split(generatedValue, 2);
             assertEquals(2, parts.length, "URL with parameters should have proper format");
             String params = parts[1];
             assertTrue(URL_PARAMS_PATTERN.matcher(params).matches(),
                     "URL parameters should contain valid characters");
+        } else {
+            assertFalse(generatedValue.contains("&") || generatedValue.contains("="),
+                    "A URL carrying no '?' must not carry query syntax either: " + generatedValue);
         }
 
         // Should have valid structure characteristics

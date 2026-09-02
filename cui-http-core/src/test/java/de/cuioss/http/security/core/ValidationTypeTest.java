@@ -18,6 +18,7 @@ package de.cuioss.http.security.core;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -171,6 +172,8 @@ class ValidationTypeTest {
     @Test
     void shouldHaveUniqueClassifications() {
         // Verify that the type classifications don't overlap inappropriately
+        Set<ValidationType> bodyTypesAsserted = EnumSet.noneOf(ValidationType.class);
+        Set<ValidationType> pathTypesAsserted = EnumSet.noneOf(ValidationType.class);
         for (ValidationType type : ValidationType.values()) {
             // A type should not be both key and value
             assertFalse(type.isKey() && type.isValue(),
@@ -178,6 +181,7 @@ class ValidationTypeTest {
 
             // Body should be distinct from other categories
             if (type.isBody()) {
+                bodyTypesAsserted.add(type);
                 assertFalse(type.isKey() || type.isValue() || type.isPath() ||
                         type.isHeader() || type.isCookie() || type.isParameter(),
                         type + " should not be body and another category");
@@ -185,10 +189,15 @@ class ValidationTypeTest {
 
             // Path should be distinct from key/value pairs
             if (type.isPath()) {
+                pathTypesAsserted.add(type);
                 assertFalse(type.isKey() || type.isValue(),
                         type + " should not be path and key/value");
             }
         }
+        assertEquals(EnumSet.of(ValidationType.BODY), bodyTypesAsserted,
+                "The body-distinctness assertion must have been reached for BODY");
+        assertEquals(EnumSet.of(ValidationType.URL_PATH), pathTypesAsserted,
+                "The path-distinctness assertion must have been reached for URL_PATH");
     }
 
     @Test
