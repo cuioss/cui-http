@@ -51,14 +51,14 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>Handler lifecycle across the full adapter stack</li>
  * </ul>
  * <p>
- * TLS-dependent cases are <strong>not</strong> covered here. An {@code @EnableMockWebServer(useHttps
- * = true)} server cannot currently accept a connection in this project: the mockwebserver3 build on
- * the test classpath calls {@code okhttp3.internal.platform.Platform.configureTlsExtensions}, which
- * the resolved okhttp version no longer declares, so every TLS connection attempt dies with a
- * {@code NoSuchMethodError} on the server's task-runner thread and the client sees only a connect
- * timeout. TLS behaviour is therefore asserted where it can be driven deterministically:
- * classification in {@code HttpErrorCategoryTest}, and the adapter-level no-retry consequence in
- * {@link ResilientHttpAdapterTest}.
+ * TLS-dependent cases are <strong>not</strong> covered here — this fixture runs cleartext by choice,
+ * not because TLS is unavailable. A {@code @EnableMockWebServer(useHttps = true)} server does accept
+ * connections in this project, and {@code HttpHandlerHttpsIntegrationTest} drives a real handshake
+ * against one. Retry behaviour is orthogonal to the transport, so adding TLS here would buy no
+ * evidence this suite does not already have; the transport-level TLS evidence lives in that class.
+ * The adapter-level TLS consequence that is <em>not</em> orthogonal — a handshake failure must not be
+ * retried — is pinned deterministically in {@link ResilientHttpAdapterTest}, and the classification
+ * it depends on in {@code HttpErrorCategoryTest}.
  *
  * @author Oliver Wolff
  * @since 1.0

@@ -560,10 +560,12 @@ class ResilientHttpAdapterTest {
      * multiplies the handshake cost against a trust problem that will not resolve, so the adapter
      * must stop after exactly one attempt and report a non-retryable {@code CONFIGURATION_ERROR}.
      * <p>
-     * The handshake is injected at the delegate rather than driven against a real TLS server:
-     * {@code @EnableMockWebServer(useHttps = true)} cannot accept a connection in this project (see
-     * the class comment on {@link ResilientHttpAdapterIntegrationTest}), and a genuine handshake
-     * failure would in any case surface here as exactly this exception.
+     * The handshake failure is injected at the delegate rather than provoked against a real TLS
+     * server because injection is the only deterministic way to pin the consequence under test. A
+     * real server would have to be coaxed into failing the handshake on demand, and the attempt
+     * count — the assertion that actually carries this test — would then depend on retry-worthy
+     * transport timing rather than on the classifier. What reaches the adapter is the same
+     * {@code SSLHandshakeException} either way, so injecting it loses no fidelity at this seam.
      */
     @Test
     void handshakeFailureIsNotRetried() {

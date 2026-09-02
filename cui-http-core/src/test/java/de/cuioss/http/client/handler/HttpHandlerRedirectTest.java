@@ -59,13 +59,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * {@code HttpHandlerIntegrationTest}; here the concern is which hops the loop takes, how it rewrites
  * them, and which it refuses.
  * <p>
- * <strong>Known end-to-end gap.</strong> The HTTPS&nbsp;&rarr;&nbsp;HTTP downgrade refusal
- * ({@link RedirectPolicy.RedirectRefusal#PROTOCOL_DOWNGRADE}) is asserted at the
- * {@link RedirectPolicy} validation seam in {@code RedirectPolicyTest} rather than end-to-end here:
- * driving it would need a second, TLS-terminated MockWebServer instance issuing a cleartext
- * {@code Location}, which the single-instance {@code @EnableMockWebServer} fixture does not offer.
- * The seam-level assertion pins the verdict; the transport-level path is unasserted. Recorded per
- * lesson 2026-08-29-12-001.
+ * The HTTPS&nbsp;&rarr;&nbsp;HTTP downgrade refusal
+ * ({@link RedirectPolicy.RedirectRefusal#PROTOCOL_DOWNGRADE}) is not exercised here, because this
+ * fixture is cleartext and there is nothing to downgrade from. It is asserted at the
+ * {@link RedirectPolicy} validation seam in {@code RedirectPolicyTest} and end-to-end over a real
+ * TLS connection in {@code HttpHandlerHttpsIntegrationTest}.
  *
  * @author Oliver Wolff
  * @since 2.2
@@ -336,8 +334,9 @@ class HttpHandlerRedirectTest {
      * a received header value down to a single space (RFC 7230 optional-whitespace folding) before
      * {@link HttpHandler} ever sees it — so the sanitizer's control-character neutralization is
      * asserted directly against the package-private helper it exercises inside
-     * {@link HttpHandler#resolveTarget}, mirroring the class-level "Known end-to-end gap" note above
-     * for {@code PROTOCOL_DOWNGRADE}.
+     * {@link HttpHandler#resolveTarget}. Unlike {@code PROTOCOL_DOWNGRADE} — which the class comment
+     * above now points at an end-to-end assertion for — this one has no transport-level counterpart
+     * to point at, because the wire cannot deliver the input it neutralizes.
      */
     @Test
     @DisplayName("sanitizeForMessage should neutralize control characters and preserve the rest of the value")
