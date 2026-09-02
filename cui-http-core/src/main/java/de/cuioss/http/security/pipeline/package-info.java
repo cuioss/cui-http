@@ -75,7 +75,7 @@
  *         // Process the validated parameter
  *     });
  * } catch (UrlSecurityException e) {
- *     log.warn("Security violation: {}", e.getFailureType());
+ *     log.warn("Security violation: %s", e.getFailureType());
  * }
  * </code></pre>
  *

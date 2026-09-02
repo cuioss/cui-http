@@ -55,7 +55,7 @@
  * } else {
  *     // Handle error case with fallback
  *     result.getErrorMessage().ifPresent(msg ->
- *         logger.warn("JWKS loading failed: {}", msg));
+ *         logger.warn("JWKS loading failed: %s", msg));
  * }
  * </pre>
  *
