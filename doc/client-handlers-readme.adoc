@@ -135,9 +135,18 @@ classifies as the non-retryable `CONFIGURATION_ERROR`.
 Credential handling is a separate axis. `RedirectPolicy.CredentialForwarding` decides whether
 `Authorization` and `Cookie` survive a non-same-origin hop: the secure default
 `STRIP_ON_CROSS_ORIGIN` drops both, and the explicit opt-in `FORWARD_TO_ALLOWLISTED` lets them
-through. A same-origin hop forwards them under either strategy. Note that `CredentialForwarding`
-changes only *what is carried* across a hop - it never changes the refusal verdict. A hop the policy
-refuses is not taken at all, so no credential is ever forwarded to it.
+through. An *`https`* same-origin hop forwards them under either strategy.
+
+One rule sits above the strategy and is not configurable: `forwardsCredentials` returns `false`
+whenever the *target* scheme is `http`, so neither header is ever written onto an unencrypted wire.
+That covers the two hops the rule list above still permits to a cleartext target - an `http` ->
+`http` same-origin hop, and an `http` -> `http` hop to an allowlisted host under
+`FORWARD_TO_ALLOWLISTED` - both reachable only from a handler built with `allowInsecureHttp(true)`.
+The `https` -> `http` case never gets this far: rule 2 already refuses it with `PROTOCOL_DOWNGRADE`.
+
+Note that `CredentialForwarding` - and the cleartext rule layered on it - changes only *what is
+carried* across a hop; neither changes the refusal verdict. A hop the policy refuses is not taken at
+all, so no credential is ever forwarded to it.
 
 [source,java]
 ----

@@ -139,9 +139,13 @@ import java.util.regex.Pattern;
  *       {@link RedirectPolicy.RedirectRefusal#TOO_MANY_HOPS}.</li>
  *   <li>{@code Authorization} and {@code Cookie} are governed by the policy's
  *       {@link RedirectPolicy.CredentialForwarding} strategy: stripped across an origin boundary by
- *       default, forwarded to an allowlisted host only on the explicit
- *       {@link RedirectPolicy.CredentialForwarding#FORWARD_TO_ALLOWLISTED} opt-in, and never stripped
- *       on a same-origin hop.</li>
+ *       default, and forwarded to an allowlisted host only on the explicit
+ *       {@link RedirectPolicy.CredentialForwarding#FORWARD_TO_ALLOWLISTED} opt-in. Above that
+ *       strategy sits one unconditional rule: a hop whose target scheme is {@code http} never
+ *       carries either header, same-origin or not and under either strategy, so a cleartext handler
+ *       (see <a href="#scheme-policy">Scheme policy</a>) cannot leak a credential onto an
+ *       unencrypted wire. An {@code https} same-origin hop is the case in which neither header is
+ *       ever stripped. See {@link RedirectPolicy#forwardsCredentials(URI, URI)}.</li>
  *   <li>Every refusal raises {@link RedirectNotAllowedException}, which names the hop and the reason
  *       and classifies as the non-retryable {@code CONFIGURATION_ERROR}.</li>
  *   <li>{@link #createHttpClient()} hands out the raw, non-following client. A caller taking that
@@ -167,7 +171,7 @@ import java.util.regex.Pattern;
  * <p>Adapters such as {@code ETagAwareHttpAdapter} <em>borrow</em> the client from the handler they
  * are configured with and never close it — closing the handler is the caller's responsibility.</p>
  *
- * <h3>Scheme policy (fail-secure)</h3>
+ * <h3 id="scheme-policy">Scheme policy (fail-secure)</h3>
  * <p>HTTPS is required by default. {@link HttpHandlerBuilder#build()} rejects an {@code http://}
  * URI with {@link IllegalArgumentException} unless {@link HttpHandlerBuilder#allowInsecureHttp(boolean)}
  * is set (default {@code false}); when permitted, a cleartext handler is built and a WARN is logged.
@@ -1159,6 +1163,9 @@ public final class HttpHandler implements AutoCloseable {
          * non-same-origin hop. <strong>Credential forwarding across a cross-origin hop is opt-in</strong>:
          * it requires naming {@link RedirectPolicy.CredentialForwarding#FORWARD_TO_ALLOWLISTED} on a
          * policy that also allowlists the target host, and even then it changes no refusal verdict.
+         * No strategy reaches a cleartext target: a hop to an {@code http} target carries neither
+         * {@code Authorization} nor {@code Cookie} — see
+         * {@link RedirectPolicy#forwardsCredentials(URI, URI)}.
          * </p>
          * <p>
          * Passing {@code null} <strong>restores the {@link RedirectPolicy#sameOrigin()} default</strong>

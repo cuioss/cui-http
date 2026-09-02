@@ -303,6 +303,9 @@ class RedirectPolicyTest {
 
         private static final URI ALLOWLISTED = URI.create("https://cdn.example.net/asset");
         private static final URI SAME_ORIGIN = URI.create("https://api.example.com/v2/other");
+        private static final URI CLEARTEXT_ORIGIN = URI.create("http://api.example.com/v1/resource");
+        private static final URI CLEARTEXT_SAME_ORIGIN = URI.create("http://api.example.com/v2/other");
+        private static final URI CLEARTEXT_ALLOWLISTED = URI.create("http://cdn.example.net/asset");
 
         private static RedirectPolicy policyWith(CredentialForwarding strategy) {
             return RedirectPolicy.builder()
@@ -353,6 +356,52 @@ class RedirectPolicyTest {
             assertRefused(forwarding, ORIGIN, URI.create("https://evil.example.org/asset"), RedirectRefusal.CROSS_ORIGIN);
             assertRefused(forwarding, ORIGIN, URI.create("http://cdn.example.net/asset"), RedirectRefusal.PROTOCOL_DOWNGRADE);
             assertPermitted(forwarding, ORIGIN, ALLOWLISTED);
+        }
+
+        @Test
+        @DisplayName("Should strip credentials on a cleartext same-origin hop under STRIP_ON_CROSS_ORIGIN")
+        void shouldStripCleartextSameOriginUnderStrip() {
+            assertFalse(policyWith(CredentialForwarding.STRIP_ON_CROSS_ORIGIN)
+                    .forwardsCredentials(CLEARTEXT_ORIGIN, CLEARTEXT_SAME_ORIGIN));
+        }
+
+        @Test
+        @DisplayName("Should strip credentials on a cleartext same-origin hop under FORWARD_TO_ALLOWLISTED")
+        void shouldStripCleartextSameOriginUnderForward() {
+            assertFalse(policyWith(CredentialForwarding.FORWARD_TO_ALLOWLISTED)
+                    .forwardsCredentials(CLEARTEXT_ORIGIN, CLEARTEXT_SAME_ORIGIN));
+        }
+
+        @Test
+        @DisplayName("Should strip credentials on a cleartext allowlisted cross-host hop under FORWARD_TO_ALLOWLISTED")
+        void shouldStripCleartextAllowlistedUnderForward() {
+            assertFalse(policyWith(CredentialForwarding.FORWARD_TO_ALLOWLISTED)
+                    .forwardsCredentials(CLEARTEXT_ORIGIN, CLEARTEXT_ALLOWLISTED));
+        }
+
+        @Test
+        @DisplayName("Should compare the target scheme case-insensitively when stripping on a cleartext hop")
+        void shouldStripCleartextTargetCaseInsensitively() {
+            assertFalse(policyWith(CredentialForwarding.FORWARD_TO_ALLOWLISTED)
+                    .forwardsCredentials(CLEARTEXT_ORIGIN, URI.create("HTTP://api.example.com/v2/other")));
+        }
+
+        @Test
+        @DisplayName("Should keep forwarding to an https target — the positive control for the cleartext rule")
+        void shouldStillForwardToHttpsTarget() {
+            RedirectPolicy forwarding = policyWith(CredentialForwarding.FORWARD_TO_ALLOWLISTED);
+
+            assertTrue(forwarding.forwardsCredentials(ORIGIN, SAME_ORIGIN));
+            assertTrue(forwarding.forwardsCredentials(ORIGIN, ALLOWLISTED));
+        }
+
+        @Test
+        @DisplayName("Should not let the cleartext credential rule change any refuse verdict")
+        void shouldNotLetCleartextRuleChangeRefuseVerdicts() {
+            RedirectPolicy forwarding = policyWith(CredentialForwarding.FORWARD_TO_ALLOWLISTED);
+
+            assertPermitted(forwarding, CLEARTEXT_ORIGIN, CLEARTEXT_SAME_ORIGIN);
+            assertPermitted(forwarding, CLEARTEXT_ORIGIN, CLEARTEXT_ALLOWLISTED);
         }
     }
 

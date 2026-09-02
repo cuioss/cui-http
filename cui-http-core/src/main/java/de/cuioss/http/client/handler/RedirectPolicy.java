@@ -202,16 +202,31 @@ public final class RedirectPolicy {
      * Decides whether {@code Authorization} and {@code Cookie} headers may be carried across the hop
      * from {@code from} to {@code to}.
      * <p>
-     * A same-origin hop forwards credentials under both strategies. A non-same-origin hop forwards
-     * them only under {@link CredentialForwarding#FORWARD_TO_ALLOWLISTED}. This method never changes
-     * a {@link #refuse(URI, URI)} verdict and is meaningful only for a hop that {@code refuse}
-     * already permitted — a hop it refused is not taken at all.
+     * A cleartext target ends the question: when the scheme of {@code to} is {@code http}, this
+     * method returns {@code false} whatever the same-origin and strategy verdicts would otherwise
+     * be, so no credential is written onto an unencrypted wire. That closes the two hops
+     * {@link #refuse(URI, URI)} still permits to a cleartext target — an {@code http} &rarr;
+     * {@code http} same-origin hop, and an {@code http} &rarr; {@code http} hop to an allowlisted
+     * host under {@link CredentialForwarding#FORWARD_TO_ALLOWLISTED}. An {@code https} &rarr;
+     * {@code http} hop never reaches this method at all: {@code refuse} already rejects it with
+     * {@link RedirectRefusal#PROTOCOL_DOWNGRADE}.
+     * <p>
+     * For an {@code https} target the strategy decides: a same-origin hop forwards credentials under
+     * both strategies, and a non-same-origin hop forwards them only under
+     * {@link CredentialForwarding#FORWARD_TO_ALLOWLISTED}.
+     * <p>
+     * This method never changes a {@link #refuse(URI, URI)} verdict and is meaningful only for a hop
+     * that {@code refuse} already permitted — a hop it refused is not taken at all. The cleartext
+     * rule narrows only what is carried; it refuses no hop and redirects none.
      *
      * @param from the URI the redirect response was received from
      * @param to   the absolute redirect target
      * @return {@code true} when credentials may be forwarded across this hop
      */
     public boolean forwardsCredentials(URI from, URI to) {
+        if (SCHEME_HTTP.equals(asciiLowerCase(to.getScheme()))) {
+            return false;
+        }
         return isSameOrigin(from, to) || credentialForwarding == CredentialForwarding.FORWARD_TO_ALLOWLISTED;
     }
 
@@ -335,7 +350,9 @@ public final class RedirectPolicy {
         STRIP_ON_CROSS_ORIGIN,
         /**
          * Explicit opt-in: let credentials survive a cross-origin hop, but only to a host
-         * {@link RedirectPolicy#refuse(URI, URI)} already permitted. It changes no refusal verdict —
+         * {@link RedirectPolicy#refuse(URI, URI)} already permitted and only when that host is
+         * reached over {@code https} — a cleartext target is stripped under this strategy too, see
+         * {@link RedirectPolicy#forwardsCredentials(URI, URI)}. It changes no refusal verdict —
          * a hop that is refused is never taken, so no credential is ever forwarded to it.
          */
         FORWARD_TO_ALLOWLISTED

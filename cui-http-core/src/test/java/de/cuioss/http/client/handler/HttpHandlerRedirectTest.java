@@ -64,6 +64,14 @@ import static org.junit.jupiter.api.Assertions.*;
  * fixture is cleartext and there is nothing to downgrade from. It is asserted at the
  * {@link RedirectPolicy} validation seam in {@code RedirectPolicyTest} and end-to-end over a real
  * TLS connection in {@code HttpHandlerHttpsIntegrationTest}.
+ * <p>
+ * For the same reason every hop here targets {@code http}, so
+ * {@link RedirectPolicy#forwardsCredentials(URI, URI)}'s unconditional cleartext rule applies to all
+ * of them: the credential tests below assert that {@code Authorization} and {@code Cookie} are
+ * dropped, under either strategy and same-origin or not. The matching positive control — credentials
+ * surviving a same-origin hop when the target is {@code https} — lives in
+ * {@code HttpHandlerHttpsIntegrationTest}, and the per-strategy verdicts live in
+ * {@code RedirectPolicyTest}.
  *
  * @author Oliver Wolff
  * @since 2.2
@@ -587,6 +595,9 @@ class HttpHandlerRedirectTest {
                      RedirectPolicy.CredentialForwarding.STRIP_ON_CROSS_ORIGIN)) {
             String echo = echoOf(handler.send(credentialedRequest(handler), HttpResponse.BodyHandlers.ofString()));
 
+            // Over this cleartext fixture the unconditional http-target rule reaches the same verdict,
+            // so this case no longer isolates the strategy on its own; the strategy-discriminating
+            // evidence is RedirectPolicyTest's https-target forward/strip pair.
             assertEquals("absent", field(echo, "authorization"),
                     "the secure default drops Authorization on a cross-origin hop");
             assertEquals("absent", field(echo, "cookie"),
@@ -595,26 +606,26 @@ class HttpHandlerRedirectTest {
     }
 
     @Test
-    @DisplayName("FORWARD_TO_ALLOWLISTED should carry Authorization and Cookie across the allowlisted hop")
+    @DisplayName("FORWARD_TO_ALLOWLISTED should still drop Authorization and Cookie on a cleartext allowlisted hop")
     @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
-    void forwardStrategyShouldKeepCredentialsCrossOrigin(URIBuilder uriBuilder) throws Exception {
+    void forwardStrategyShouldDropCredentialsToCleartextAllowlistedHost(URIBuilder uriBuilder) throws Exception {
         try (HttpHandler handler = allowlistingHandlerFor(uriBuilder, RedirectDispatcher.PATH_ALLOWLISTED,
                      RedirectPolicy.CredentialForwarding.FORWARD_TO_ALLOWLISTED)) {
             String echo = echoOf(handler.send(credentialedRequest(handler), HttpResponse.BodyHandlers.ofString()));
 
-            assertEquals("present", field(echo, "authorization"),
-                    "the opt-in keeps Authorization on a hop the policy already permitted");
-            assertEquals("present", field(echo, "cookie"),
-                    "the opt-in keeps Cookie on a hop the policy already permitted");
+            assertEquals("absent", field(echo, "authorization"),
+                    "the opt-in does not reach a cleartext target: Authorization is dropped anyway");
+            assertEquals("absent", field(echo, "cookie"),
+                    "the opt-in does not reach a cleartext target: Cookie is dropped anyway");
         }
     }
 
     @ParameterizedTest
     @CsvSource({"STRIP_ON_CROSS_ORIGIN", "FORWARD_TO_ALLOWLISTED"})
-    @DisplayName("A same-origin hop should keep Authorization and Cookie under either strategy")
+    @DisplayName("A cleartext same-origin hop should drop Authorization and Cookie under either strategy")
     @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
-    void sameOriginHopShouldKeepCredentials(RedirectPolicy.CredentialForwarding strategy, URIBuilder uriBuilder)
-            throws Exception {
+    void cleartextSameOriginHopShouldDropCredentials(RedirectPolicy.CredentialForwarding strategy,
+            URIBuilder uriBuilder) throws Exception {
         try (HttpHandler handler = HttpHandler.builder()
                      .uri(targetUri(uriBuilder, RedirectDispatcher.PATH_REDIRECT))
                      .allowInsecureHttp(true)
@@ -622,10 +633,10 @@ class HttpHandlerRedirectTest {
                      .build()) {
             String echo = echoOf(handler.send(credentialedRequest(handler), HttpResponse.BodyHandlers.ofString()));
 
-            assertEquals("present", field(echo, "authorization"),
-                    "a same-origin hop never strips credentials");
-            assertEquals("present", field(echo, "cookie"),
-                    "a same-origin hop never strips credentials");
+            assertEquals("absent", field(echo, "authorization"),
+                    "an http target never carries Authorization, same-origin or not");
+            assertEquals("absent", field(echo, "cookie"),
+                    "an http target never carries Cookie, same-origin or not");
         }
     }
 
