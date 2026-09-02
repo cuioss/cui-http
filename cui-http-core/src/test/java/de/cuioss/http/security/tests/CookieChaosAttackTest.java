@@ -75,6 +75,13 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("Cookie Chaos: Cookie Security Bypass Attack Tests")
 class CookieChaosAttackTest {
 
+    /**
+     * Draws for the aggregate attack-cookie test. The rarest name family is one of four, and the
+     * empty name one of seven within it, so 200 draws reach every family with certainty for
+     * practical purposes.
+     */
+    private static final int ATTACK_COOKIE_DRAWS = 200;
+
     private CharacterValidationStage cookieNameValidator;
     private CharacterValidationStage cookieValueValidator;
     private SecurityConfiguration config;
@@ -329,51 +336,78 @@ class CookieChaosAttackTest {
     @TypeGeneratorSource(value = ValidCookieGenerator.class, count = 20)
     @DisplayName("Test #7: Valid cookies should be accepted")
     void shouldAcceptValidCookies(Cookie validCookie) {
-        if (validCookie.hasName()) {
-            assertDoesNotThrow(() -> cookieNameValidator.validate(validCookie.name()),
-                    "Valid cookie name should be accepted: " + validCookie.name());
-        }
-        if (validCookie.hasValue()) {
-            assertDoesNotThrow(() -> cookieValueValidator.validate(validCookie.value()),
-                    "Valid cookie value should be accepted: " + validCookie.value());
-        }
+        // ValidCookieGenerator always emits a non-blank name and value, so guarding these
+        // acceptance checks would let a degenerate-cookie regression pass vacuously.
+        assertTrue(validCookie.hasName(), "ValidCookieGenerator must emit a cookie carrying a name");
+        assertTrue(validCookie.hasValue(), "ValidCookieGenerator must emit a cookie carrying a value");
+
+        assertDoesNotThrow(() -> cookieNameValidator.validate(validCookie.name()),
+                "Valid cookie name should be accepted: " + validCookie.name());
+        assertDoesNotThrow(() -> cookieValueValidator.validate(validCookie.value()),
+                "Valid cookie value should be accepted: " + validCookie.value());
     }
 
     /**
      * Test #8: Attack Cookie Generator Patterns
      *
      * <p>
-     * The existing AttackCookieGenerator includes various attack patterns.
-     * This test validates that malicious cookie names and values are properly rejected.
+     * The existing AttackCookieGenerator includes various attack patterns. Not every attack name
+     * is malformed at the character level — the generator deliberately emits an empty name too —
+     * so rejection cannot be asserted per draw. It is asserted in aggregate instead: across the
+     * draws, the character validator must have rejected at least one attack name and at least one
+     * attack value, and the named-cookie branch must have been reached at all. Without those
+     * after-the-loop assertions a validator that accepted everything would pass this test.
      * </p>
      */
-    @ParameterizedTest
-    @TypeGeneratorSource(value = AttackCookieGenerator.class, count = 50)
+    @Test
     @DisplayName("Test #8: Attack cookie patterns must be rejected")
-    void shouldRejectAttackCookiePatterns(Cookie attackCookie) {
-        if (attackCookie.hasName()) {
-            String name = attackCookie.name();
-            // Some attack names may be valid at character level (e.g., empty string)
-            // We document the validation behavior without asserting failure for all
-            try {
-                cookieNameValidator.validate(name);
-                // If validation passes, the attack is at semantic level (not character level)
-                assertNotNull(name, "Attack cookie name processed");
-            } catch (UrlSecurityException e) {
-                // Expected for many attack patterns
-                assertNotNull(e.getOriginalInput());
+    void shouldRejectAttackCookiePatterns() {
+        AttackCookieGenerator generator = new AttackCookieGenerator();
+        boolean namedCookieReached = false;
+        boolean nameRejected = false;
+        boolean valueRejected = false;
+
+        for (int draw = 0; draw < ATTACK_COOKIE_DRAWS; draw++) {
+            Cookie attackCookie = generator.next();
+
+            if (attackCookie.hasName()) {
+                namedCookieReached = true;
+                nameRejected |= isRejected(cookieNameValidator, attackCookie.name());
             }
+
+            assertTrue(attackCookie.hasValue(),
+                    "AttackCookieGenerator must emit a cookie carrying a value");
+            valueRejected |= isRejected(cookieValueValidator, attackCookie.value());
         }
 
-        if (attackCookie.hasValue()) {
-            String value = attackCookie.value();
-            // Many attack values contain control characters and should be rejected
-            try {
-                cookieValueValidator.validate(value);
-            } catch (UrlSecurityException e) {
-                // Expected for attack patterns with control characters
-                assertNotNull(e);
-            }
+        boolean reachedNamedCookie = namedCookieReached;
+        boolean rejectedAName = nameRejected;
+        boolean rejectedAValue = valueRejected;
+        assertAll("Attack cookie rejection",
+                () -> assertTrue(reachedNamedCookie,
+                        "A cookie with a non-empty name must be reachable within "
+                                + ATTACK_COOKIE_DRAWS + " draws"),
+                () -> assertTrue(rejectedAName,
+                        "The character validator must reject at least one attack cookie name within "
+                                + ATTACK_COOKIE_DRAWS + " draws"),
+                () -> assertTrue(rejectedAValue,
+                        "The character validator must reject at least one attack cookie value within "
+                                + ATTACK_COOKIE_DRAWS + " draws"));
+    }
+
+    /**
+     * Reports whether the validator rejects the input, without asserting either outcome.
+     *
+     * @param validator the character validation stage to apply
+     * @param input the cookie name or value to validate
+     * @return {@code true} when validation threw, {@code false} when it passed
+     */
+    private static boolean isRejected(CharacterValidationStage validator, String input) {
+        try {
+            validator.validate(input);
+            return false;
+        } catch (UrlSecurityException e) {
+            return true;
         }
     }
 

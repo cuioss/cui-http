@@ -731,9 +731,14 @@ class DecodingStageTest {
         if (description.contains("pass through")) {
             // For pass-through scenarios, input and result should be identical (no decoding occurred)
             assertEquals(input, resultString, "Application-layer encoding should pass through unchanged");
-        } else if (description.contains("URL encoded")) {
-            // For URL encoding scenarios, ensure actual decoding occurred
+        } else if (description.contains("URL encoded") || description.contains("URL encoding")) {
+            // Both the pure URL-encoded rows and the mixed rows carry a percent-escape the HTTP
+            // protocol layer must decode, so the result differs from the input in either case.
             assertNotEquals(input, resultString, "URL encoding should be decoded at HTTP protocol layer");
+        } else {
+            fail(("Scenario '%s' falls into neither the pass-through nor the URL-encoding family, "
+                    + "so its decoding behaviour is left unasserted - classify it or rename it")
+                    .formatted(description));
         }
     }
 

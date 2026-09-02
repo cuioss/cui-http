@@ -92,10 +92,26 @@ class URLLengthLimitAttackGeneratorTest {
     @DisplayName("Every generated value exceeds the strict path limit and is a rooted URL")
     void shouldGenerateOverlongRootedUrl(String generatedValue) {
         assertOverlongRootedUrl(generatedValue);
+    }
 
-        if (isGovernedByPathPipeline(generatedValue)) {
-            assertPipelineRejects(strictPathPipeline(), generatedValue);
+    @Test
+    @DisplayName("The path-pipeline-governed form is reachable and the strict pipeline rejects it")
+    void shouldRejectEveryPathPipelineGovernedValue() {
+        URLLengthLimitAttackGenerator generator = new URLLengthLimitAttackGenerator();
+        URLPathValidationPipeline pipeline = strictPathPipeline();
+        boolean governedFormReached = false;
+
+        for (int draw = 0; draw < AGGREGATE_DRAWS; draw++) {
+            String value = generator.next();
+            if (isGovernedByPathPipeline(value)) {
+                governedFormReached = true;
+                assertPipelineRejects(pipeline, value);
+            }
         }
+
+        assertTrue(governedFormReached,
+                "A value the URL path pipeline governs must be reachable within " + AGGREGATE_DRAWS
+                        + " draws, otherwise the rejection assertion above never fires");
     }
 
     @Test

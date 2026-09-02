@@ -30,6 +30,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 
 import java.text.Normalizer;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -233,11 +236,21 @@ class UnicodeNormalizationAttackTest {
                 ".\u0303\u0304",           // . with multiple combining characters
         };
 
+        // A combining mark composes only where a precomposed code point exists, so the ".", "n"
+        // entries above are deliberately NFKC-invariant and never enter the guarded block. The set
+        // below names the entries that MUST change; asserting it after the loop is what stops an
+        // edit that made every entry invariant from leaving this test asserting nothing at all.
+        Set<String> expectedToChange = Set.of(
+                normalizationTests[0], normalizationTests[3], normalizationTests[4],
+                normalizationTests[5], normalizationTests[6]);
+        Set<String> changed = new LinkedHashSet<>();
+
         for (String test : normalizationTests) {
             String normalized = Normalizer.normalize(test, Normalizer.Form.NFKC);
 
             // Only test cases where normalization actually changes the string
             if (!test.equals(normalized)) {
+                changed.add(test);
                 long initialEventCount = eventCounter.getTotalCount();
 
                 // When: Validating normalization-changing input
@@ -254,6 +267,24 @@ class UnicodeNormalizationAttackTest {
                         "Security event should be recorded for normalization change: " + test);
             }
         }
+
+        assertTrue(changed.containsAll(expectedToChange),
+                "Every NFKC-folding entry must reach the rejection assertions, but the entries that "
+                        + "actually changed were " + codePointsOf(changed)
+                        + " and the entries expected to change were " + codePointsOf(expectedToChange));
+    }
+
+    /**
+     * Renders a set of payloads as code-point sequences, so a failure message stays readable when
+     * the offending characters are combining marks or fullwidth forms.
+     *
+     * @param payloads the payloads to render
+     * @return one bracketed code-point list per payload
+     */
+    private static List<String> codePointsOf(Set<String> payloads) {
+        return payloads.stream()
+                .map(payload -> payload.codePoints().mapToObj("U+%04X"::formatted).toList().toString())
+                .toList();
     }
 
     /**
@@ -417,10 +448,16 @@ class UnicodeNormalizationAttackTest {
     @Test
     @DisplayName("Should reject normalization-changing forms")
     void shouldRejectNormalizationChangingForms() {
+        // Every entry must genuinely compose under NFC, which requires the base character and the
+        // combining mark to have a precomposed code point. A "." carries no precomposed form with
+        // any combining mark, so ".\u0301/" is NFC-invariant and would leave the guarded block
+        // below unreached - which is what the assertion after the loop now catches.
         String[] normalizationChangingCases = {
-                ".\u0301/",       // Combining acute - composes under NFC
-                "\uFF0E\uFF0E",   // Fullwidth full stops - fold to ".." under NFKC, unchanged under NFC
+                "file\u0300",     // e + combining grave composes to U+00E8 under NFC
+                "admin\u0301",    // n + combining acute composes to U+0144 under NFC
         };
+
+        Set<String> changed = new LinkedHashSet<>();
 
         for (String testCase : normalizationChangingCases) {
             String nfc = Normalizer.normalize(testCase, Normalizer.Form.NFC);
@@ -428,6 +465,7 @@ class UnicodeNormalizationAttackTest {
 
             // Only test if normalization changes the input
             if (!testCase.equals(nfc)) {
+                changed.add(testCase);
                 // When: Validating normalization-changing input
                 var exception = assertThrows(UrlSecurityException.class,
                         () -> pipeline.validate(testCase),
@@ -442,6 +480,10 @@ class UnicodeNormalizationAttackTest {
                         "Security event should be recorded for: " + testCase);
             }
         }
+
+        assertEquals(Set.of(normalizationChangingCases), changed,
+                "Every case listed here must change under NFC and reach the rejection assertions, "
+                        + "but the entries that actually changed were " + codePointsOf(changed));
     }
 
     /**

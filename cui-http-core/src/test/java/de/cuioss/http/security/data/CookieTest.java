@@ -241,9 +241,14 @@ class CookieTest {
         // Should contain equals sign for name=value format
         assertTrue(cookieString.contains("="), "Cookie string should contain equals sign for name=value format");
 
-        // If cookie has attributes, they should be included
+        // Both arms assert, so no generated cookie leaves this test without an attribute verdict
+        String nameValue = cookie.nameOrDefault("") + "=" + cookie.valueOrDefault("");
         if (cookie.hasAttributes()) {
-            assertTrue(cookieString.length() > (cookie.nameOrDefault("") + "=" + cookie.valueOrDefault("")).length(), "Cookie string with attributes should be longer than just name=value");
+            assertTrue(cookieString.length() > nameValue.length(),
+                    "Cookie string with attributes should be longer than just name=value");
+        } else {
+            assertEquals(nameValue, cookieString,
+                    "Cookie string without attributes should be exactly name=value");
         }
     }
 
@@ -321,10 +326,11 @@ class CookieTest {
         String string = cookie.toString();
         assertNotNull(string, "Cookie toString should never return null");
 
-        // String representation should contain the cookie name if present
-        if (cookie.name() != null && !cookie.name().isEmpty()) {
-            assertTrue(string.contains(cookie.name()), "toString should include the actual cookie name when present");
-        }
+        // ValidCookieGenerator always emits a non-blank name, so the containment check is
+        // unconditional: a guard here would let an empty-name regression pass vacuously.
+        assertNotNull(cookie.name(), "ValidCookieGenerator must emit a non-null cookie name");
+        assertFalse(cookie.name().isEmpty(), "ValidCookieGenerator must emit a non-empty cookie name");
+        assertTrue(string.contains(cookie.name()), "toString should include the actual cookie name");
 
         // String representation should contain some representation of the cookie
         assertTrue(string.length() > 5, "Cookie toString should produce meaningful string representation");

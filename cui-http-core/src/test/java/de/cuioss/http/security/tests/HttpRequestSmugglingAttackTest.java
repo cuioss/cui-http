@@ -23,9 +23,13 @@ import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
+
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -77,9 +81,135 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("T16: HTTP Request Smuggling Attack Tests")
 class HttpRequestSmugglingAttackTest {
 
+    /**
+     * Sample counters for the six guarded parameterized tests. Each of those tests opens with an
+     * early-return filter that keeps only the attack shape it is about, because the shared
+     * {@link HttpRequestSmugglingAttackGenerator} emits every smuggling family. That filter is only
+     * sound while it still admits samples: if the generator ever stops producing the filtered
+     * shape, the guard would swallow every sample and the test would pass while asserting nothing.
+     * The {@link #shouldHaveAdmittedFilteredSamples()} check turns that silent degradation into a
+     * failure.
+     */
+    private static final AtomicInteger CL_TE_SAMPLES = new AtomicInteger();
+    private static final AtomicInteger CL_TE_ADMITTED = new AtomicInteger();
+    private static final AtomicInteger TE_CL_SAMPLES = new AtomicInteger();
+    private static final AtomicInteger TE_CL_ADMITTED = new AtomicInteger();
+    private static final AtomicInteger TE_TE_SAMPLES = new AtomicInteger();
+    private static final AtomicInteger TE_TE_ADMITTED = new AtomicInteger();
+    private static final AtomicInteger PIPELINE_SAMPLES = new AtomicInteger();
+    private static final AtomicInteger PIPELINE_ADMITTED = new AtomicInteger();
+    private static final AtomicInteger CACHE_SAMPLES = new AtomicInteger();
+    private static final AtomicInteger CACHE_ADMITTED = new AtomicInteger();
+    private static final AtomicInteger DOUBLE_CL_SAMPLES = new AtomicInteger();
+    private static final AtomicInteger DOUBLE_CL_ADMITTED = new AtomicInteger();
+
+    /**
+     * Family-fingerprint patterns matched against the exact header shapes produced by
+     * {@code HttpRequestSmugglingAttackGenerator}. Each guard below verifies header ORDER and/or
+     * MULTIPLICITY rather than a broad substring, so a payload from a different generator branch
+     * (e.g. a CL.TE payload, which also contains both header names) cannot be admitted by a
+     * differently-named guard.
+     */
+    private static final Pattern CL_THEN_TE = Pattern.compile("Content-Length: \\d+%0d%0aTransfer-Encoding: chunked");
+    private static final Pattern TE_THEN_CL = Pattern.compile("Transfer-Encoding: chunked%0d%0aContent-Length: \\d+");
+    private static final Pattern DOUBLE_TRANSFER_ENCODING =
+            Pattern.compile("(?i)transfer-encoding:.*?%0d%0atransfer-encoding:");
+    private static final Pattern DOUBLE_CONTENT_LENGTH =
+            Pattern.compile("Content-Length: \\d+%0d%0aContent-Length: \\d+");
+    private static final Pattern PIPELINE_CONNECTION_KEEPALIVE =
+            Pattern.compile("Connection: keep-alive%0d%0aContent-Length: \\d+");
+    private static final Pattern CACHE_HEADER_THEN_CONTENT_LENGTH =
+            Pattern.compile("(?:Cache-Control|Vary|Expires): .*?%0d%0aContent-Length: \\d+");
+
+    /**
+     * CL.TE family: exactly the header order the front-end/back-end desync relies on -
+     * Content-Length immediately followed by Transfer-Encoding. A TE.CL payload (reversed order)
+     * does not match.
+     */
+    private static boolean isClTeFamily(String attack) {
+        return CL_THEN_TE.matcher(attack).find();
+    }
+
+    /**
+     * TE.CL family: Transfer-Encoding immediately followed by Content-Length - the reverse order
+     * of CL.TE, which is precisely the discriminator between the two families.
+     */
+    private static boolean isTeClFamily(String attack) {
+        return TE_THEN_CL.matcher(attack).find();
+    }
+
+    /**
+     * TE.TE family: two Transfer-Encoding headers (header multiplicity, case-insensitive per the
+     * generator's casing variants) and no Content-Length header at all, so a single
+     * Transfer-Encoding header (as used by CL.TE, TE.CL, or chunked-encoding-bypass payloads)
+     * cannot be admitted.
+     */
+    private static boolean isTeTeFamily(String attack) {
+        return DOUBLE_TRANSFER_ENCODING.matcher(attack).find() && !attack.contains("Content-Length:");
+    }
+
+    /**
+     * Pipeline poisoning family: the generator's unique "Connection: keep-alive" immediately
+     * followed by Content-Length signature. WebSocket-upgrade payloads also use
+     * "Connection: keep-alive" but always as "Connection: keep-alive, Upgrade" (no CRLF directly
+     * after "keep-alive"), so they do not match.
+     */
+    private static boolean isPipelinePoisoningFamily(String attack) {
+        return PIPELINE_CONNECTION_KEEPALIVE.matcher(attack).find();
+    }
+
+    /**
+     * Cache deception family: one of the cache-specific headers (Cache-Control, Vary, Expires -
+     * used nowhere else in the generator) immediately followed by Content-Length.
+     */
+    private static boolean isCacheDeceptionFamily(String attack) {
+        return CACHE_HEADER_THEN_CONTENT_LENGTH.matcher(attack).find();
+    }
+
+    /**
+     * Double Content-Length (CL.CL) family: two Content-Length headers adjacent to each other
+     * (header multiplicity) and no Transfer-Encoding header, so a CL.TE/TE.CL payload whose
+     * embedded smuggled request happens to contain a second, non-adjacent Content-Length string
+     * is not admitted.
+     */
+    private static boolean isDoubleContentLengthFamily(String attack) {
+        return DOUBLE_CONTENT_LENGTH.matcher(attack).find() && !attack.contains("Transfer-Encoding:");
+    }
+
     private URLPathValidationPipeline pipeline;
     private SecurityEventCounter eventCounter;
     private SecurityConfiguration config;
+
+    @AfterAll
+    static void shouldHaveAdmittedFilteredSamples() {
+        assertAll("Guarded parameterized tests must not degrade into silent no-ops",
+                () -> assertGuardAdmittedSamples("shouldBlockClTeSmuggling",
+                        CL_TE_SAMPLES, CL_TE_ADMITTED),
+                () -> assertGuardAdmittedSamples("shouldBlockTeClSmuggling",
+                        TE_CL_SAMPLES, TE_CL_ADMITTED),
+                () -> assertGuardAdmittedSamples("shouldBlockTeTeSmuggling",
+                        TE_TE_SAMPLES, TE_TE_ADMITTED),
+                () -> assertGuardAdmittedSamples("shouldBlockPipelinePoisoning",
+                        PIPELINE_SAMPLES, PIPELINE_ADMITTED),
+                () -> assertGuardAdmittedSamples("shouldBlockCacheDeception",
+                        CACHE_SAMPLES, CACHE_ADMITTED),
+                () -> assertGuardAdmittedSamples("shouldBlockDoubleContentLength",
+                        DOUBLE_CL_SAMPLES, DOUBLE_CL_ADMITTED));
+    }
+
+    /**
+     * Asserts that a guarded test admitted at least one sample, but only when that test actually
+     * ran. Skipping the assertion for a test with zero samples keeps a single-method IDE run from
+     * failing on the sibling methods it never executed.
+     */
+    private static void assertGuardAdmittedSamples(String testName, AtomicInteger samples, AtomicInteger admitted) {
+        if (samples.get() == 0) {
+            return;
+        }
+        assertTrue(admitted.get() > 0,
+                () -> testName + " saw " + samples.get() + " generated samples but its pattern guard "
+                        + "admitted none — the test asserted nothing this run");
+    }
 
     @BeforeEach
     void setUp() {
@@ -136,13 +266,15 @@ class HttpRequestSmugglingAttackTest {
      * </p>
      */
     @ParameterizedTest
-    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.class, count = 25)
+    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.class, count = 200)
     @DisplayName("CL.TE smuggling attacks must be blocked")
     void shouldBlockClTeSmuggling(String clTeAttack) {
-        // Filter to test only CL.TE patterns (Content-Length + Transfer-Encoding)
-        if (!clTeAttack.contains("Content-Length:") || !clTeAttack.contains("Transfer-Encoding:")) {
-            return; // Skip non-CL.TE patterns
+        // Filter to test only CL.TE patterns: Content-Length immediately followed by Transfer-Encoding
+        CL_TE_SAMPLES.incrementAndGet();
+        if (!isClTeFamily(clTeAttack)) {
+            return; // Skip non-CL.TE-order patterns
         }
+        CL_TE_ADMITTED.incrementAndGet();
 
         long initialEventCount = eventCounter.getTotalCount();
 
@@ -167,13 +299,15 @@ class HttpRequestSmugglingAttackTest {
      * </p>
      */
     @ParameterizedTest
-    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.class, count = 25)
+    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.class, count = 200)
     @DisplayName("TE.CL smuggling attacks must be blocked")
     void shouldBlockTeClSmuggling(String teClAttack) {
-        // Filter to test only TE.CL patterns (Transfer-Encoding + Content-Length, TE first)
-        if (!teClAttack.contains("Transfer-Encoding:") || !teClAttack.contains("Content-Length:")) {
-            return; // Skip non-TE.CL patterns
+        // Filter to test only TE.CL patterns: Transfer-Encoding immediately followed by Content-Length
+        TE_CL_SAMPLES.incrementAndGet();
+        if (!isTeClFamily(teClAttack)) {
+            return; // Skip non-TE.CL-order patterns
         }
+        TE_CL_ADMITTED.incrementAndGet();
 
         long initialEventCount = eventCounter.getTotalCount();
 
@@ -198,14 +332,15 @@ class HttpRequestSmugglingAttackTest {
      * </p>
      */
     @ParameterizedTest
-    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.class, count = 30)
+    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.class, count = 200)
     @DisplayName("TE.TE smuggling attacks must be blocked")
     void shouldBlockTeTeSmuggling(String teTeAttack) {
-        // Filter to test patterns that might be TE.TE (multiple Transfer-Encoding headers)
-        // Note: Generator covers this in its TE.TE method, but we test all generator output
-        if (!teTeAttack.contains("Transfer-Encoding:")) {
-            return; // Skip non-Transfer-Encoding patterns
+        // Filter to test only TE.TE patterns: two Transfer-Encoding headers, no Content-Length
+        TE_TE_SAMPLES.incrementAndGet();
+        if (!isTeTeFamily(teTeAttack)) {
+            return; // Skip patterns without duplicated Transfer-Encoding headers
         }
+        TE_TE_ADMITTED.incrementAndGet();
 
         long initialEventCount = eventCounter.getTotalCount();
 
@@ -229,13 +364,15 @@ class HttpRequestSmugglingAttackTest {
      * </p>
      */
     @ParameterizedTest
-    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.class, count = 30)
+    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.class, count = 200)
     @DisplayName("HTTP pipeline poisoning attacks must be blocked")
     void shouldBlockPipelinePoisoning(String pipelinePoisoningAttack) {
-        // Pipeline poisoning typically uses CRLF injection patterns
-        if (!pipelinePoisoningAttack.contains("%0d%0a")) {
-            return; // Skip non-CRLF patterns
+        // Filter to test only pipeline-poisoning patterns: Connection: keep-alive then Content-Length
+        PIPELINE_SAMPLES.incrementAndGet();
+        if (!isPipelinePoisoningFamily(pipelinePoisoningAttack)) {
+            return; // Skip patterns without the keep-alive pipeline signature
         }
+        PIPELINE_ADMITTED.incrementAndGet();
 
         long initialEventCount = eventCounter.getTotalCount();
 
@@ -259,13 +396,15 @@ class HttpRequestSmugglingAttackTest {
      * </p>
      */
     @ParameterizedTest
-    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.class, count = 25)
+    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.class, count = 200)
     @DisplayName("Cache deception attacks must be blocked")
     void shouldBlockCacheDeception(String cacheDeceptionAttack) {
-        // Cache deception through HTTP request smuggling uses CRLF patterns
-        if (!cacheDeceptionAttack.contains("%0d%0a")) {
-            return; // Skip non-CRLF patterns
+        // Filter to test only cache-deception patterns: a cache header then Content-Length
+        CACHE_SAMPLES.incrementAndGet();
+        if (!isCacheDeceptionFamily(cacheDeceptionAttack)) {
+            return; // Skip patterns without the cache-header + Content-Length signature
         }
+        CACHE_ADMITTED.incrementAndGet();
 
         long initialEventCount = eventCounter.getTotalCount();
 
@@ -289,13 +428,15 @@ class HttpRequestSmugglingAttackTest {
      * </p>
      */
     @ParameterizedTest
-    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.class, count = 25)
+    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.class, count = 200)
     @DisplayName("Double Content-Length header attacks must be blocked")
     void shouldBlockDoubleContentLength(String doubleContentLengthAttack) {
-        // Double Content-Length attacks use Content-Length headers with CRLF
-        if (!doubleContentLengthAttack.contains("Content-Length:") || !doubleContentLengthAttack.contains("%0d%0a")) {
-            return; // Skip non-Content-Length CRLF patterns
+        // Filter to test only CL.CL patterns: two adjacent Content-Length headers, no Transfer-Encoding
+        DOUBLE_CL_SAMPLES.incrementAndGet();
+        if (!isDoubleContentLengthFamily(doubleContentLengthAttack)) {
+            return; // Skip patterns without duplicated adjacent Content-Length headers
         }
+        DOUBLE_CL_ADMITTED.incrementAndGet();
 
         long initialEventCount = eventCounter.getTotalCount();
 
