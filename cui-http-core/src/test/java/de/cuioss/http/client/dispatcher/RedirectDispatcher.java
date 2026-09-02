@@ -52,6 +52,9 @@ import java.util.regex.Pattern;
  *   <li>{@value #PATH_CROSS_PORT} — 302 whose {@code Location} keeps the host but changes the port</li>
  *   <li>{@value #PATH_CROSS_SCHEME} — 302 whose {@code Location} keeps host and port but switches to
  *       {@code https}</li>
+ *   <li>{@value #PATH_DOWNGRADE_SCHEME} — 302 whose {@code Location} keeps host and port but
+ *       downgrades to cleartext {@code http}; the mirror of {@value #PATH_CROSS_SCHEME}, and
+ *       meaningful only against a TLS-terminated server</li>
  *   <li>{@value #PATH_ALLOWLISTED} — 302 whose {@code Location} names the same server under the
  *       {@value #ALLOWLISTED_HOST} alias, so an allowlisted cross-origin hop can be followed for real</li>
  *   <li>{@value #PATH_CHAIN} — 302 pointing at itself, so any hop bound can be exhausted</li>
@@ -98,6 +101,20 @@ public class RedirectDispatcher implements ModuleDispatcherElement {
 
     /** 302 whose {@code Location} keeps host and port but switches the scheme to {@code https}. */
     public static final String PATH_CROSS_SCHEME = BASE_PATH + "/cross-scheme";
+
+    /**
+     * 302 whose {@code Location} keeps host and port but downgrades the scheme to cleartext
+     * {@code http} — the mirror of {@value #PATH_CROSS_SCHEME}.
+     * <p>
+     * Only meaningful against a server running under {@code @EnableMockWebServer(useHttps = true)}:
+     * the downgrade this route offers is the hop
+     * {@link de.cuioss.http.client.handler.RedirectPolicy.RedirectRefusal#PROTOCOL_DOWNGRADE} exists
+     * to refuse, and there is nothing to downgrade from on a cleartext server. Because the
+     * {@code Location} keeps this server's own host and port, a client that wrongly followed the hop
+     * would speak cleartext to the TLS listener and fail on transport — so a typed refusal, rather
+     * than an I/O error, is what proves the hop was never issued.
+     */
+    public static final String PATH_DOWNGRADE_SCHEME = BASE_PATH + "/downgrade-scheme";
 
     /** 302 whose {@code Location} names this same server under {@value #ALLOWLISTED_HOST}. */
     public static final String PATH_ALLOWLISTED = BASE_PATH + "/allowlisted";
@@ -253,6 +270,8 @@ public class RedirectDispatcher implements ModuleDispatcherElement {
                     .port(otherPort(request.getUrl())).encodedPath(PATH_TARGET).build().toString());
             case PATH_CROSS_SCHEME -> redirect(302, request.getUrl().newBuilder()
                     .scheme("https").encodedPath(PATH_TARGET).build().toString());
+            case PATH_DOWNGRADE_SCHEME -> redirect(302, request.getUrl().newBuilder()
+                    .scheme("http").encodedPath(PATH_TARGET).build().toString());
             case PATH_ALLOWLISTED -> redirect(302, request.getUrl().newBuilder()
                     .host(ALLOWLISTED_HOST).encodedPath(PATH_TARGET).build().toString());
             case PATH_CHAIN -> redirect(302, absolute(request, PATH_CHAIN));

@@ -15,6 +15,7 @@
  */
 package de.cuioss.http.client.handler;
 
+import de.cuioss.http.client.dispatcher.RedirectDispatcher;
 import de.cuioss.http.client.dispatcher.TestContentDispatcher;
 import de.cuioss.test.generator.Generators;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
@@ -23,6 +24,7 @@ import de.cuioss.test.mockwebserver.EnableMockWebServer;
 import de.cuioss.test.mockwebserver.URIBuilder;
 import de.cuioss.test.mockwebserver.dispatcher.ModuleDispatcher;
 import de.cuioss.test.mockwebserver.dispatcher.ModuleDispatcherElement;
+import mockwebserver3.MockWebServer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -32,6 +34,8 @@ import java.net.http.HttpResponse;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Integration tests for {@link HttpHandler} against a TLS-terminated MockWebServer.
@@ -52,8 +56,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * match by coincidence, so observing it on the client side proves the bytes travelled the
  * connection.
  * <p>
+ * Having a TLS-terminated server is also what makes the HTTPS&nbsp;&rarr;&nbsp;HTTP downgrade
+ * refusal ({@link RedirectPolicy.RedirectRefusal#PROTOCOL_DOWNGRADE}) assertable end-to-end rather
+ * than only at the {@link RedirectPolicy} seam. One TLS server suffices: the refusal is decided
+ * before the next hop is contacted, so no second, cleartext MockWebServer instance is needed.
+ * <p>
  * Cleartext {@code HttpHandler} integration coverage lives in {@code HttpHandlerIntegrationTest};
- * redirect-following behaviour lives in {@code HttpHandlerRedirectTest}.
+ * the remaining redirect-following behaviour lives in {@code HttpHandlerRedirectTest}.
  *
  * @author Oliver Wolff
  * @since 1.0
@@ -66,8 +75,14 @@ class HttpHandlerHttpsIntegrationTest {
 
     private final TestContentDispatcher dispatcher = new TestContentDispatcher();
 
+    private final RedirectDispatcher redirectDispatcher = new RedirectDispatcher();
+
     public ModuleDispatcherElement getModuleDispatcher() {
         return dispatcher;
+    }
+
+    public ModuleDispatcherElement getRedirectDispatcher() {
+        return redirectDispatcher;
     }
 
     @Test
@@ -96,5 +111,44 @@ class HttpHandlerHttpsIntegrationTest {
                         "the server's body must reach the caller byte-for-byte through the TLS connection"),
                 () -> assertEquals(1, dispatcher.getCallCounter(),
                         "the server must have served exactly one exchange, so the handshake completed"));
+    }
+
+    @Test
+    @DisplayName("A 302 off TLS to a cleartext target is refused before the target is contacted")
+    @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
+    void redirectFromTlsToCleartextIsRefusedBeforeContactingTheTarget(
+            MockWebServer server, URIBuilder uriBuilder, SSLContext sslContext) {
+        URI start = URI.create(uriBuilder.build().toString().replaceAll("/$", "")
+                + RedirectDispatcher.PATH_DOWNGRADE_SCHEME);
+
+        RedirectNotAllowedException refusal;
+        try (HttpHandler handler = HttpHandler.builder()
+                .uri(start)
+                .sslContext(sslContext)
+                .build()) {
+            refusal = assertThrows(RedirectNotAllowedException.class,
+                    () -> handler.send(handler.requestBuilder().GET().build(),
+                            HttpResponse.BodyHandlers.ofString()),
+                    "a hop off TLS must be refused, so no response ever reaches the caller");
+        }
+
+        URI refusedTarget = refusal.getTo();
+        assertNotNull(refusedTarget, "the refusal must name the cleartext target it refused");
+
+        // The target keeps this server's own host and port, so a client that wrongly followed the
+        // hop would speak cleartext to the TLS listener and fail on transport. A typed refusal
+        // rather than an I/O error is therefore the proof that the request was never issued; the
+        // request count below corroborates it from the server's side.
+        assertAll("the downgrade refusal observed end-to-end over TLS",
+                () -> assertEquals(RedirectPolicy.RedirectRefusal.PROTOCOL_DOWNGRADE, refusal.getReason(),
+                        "dropping off TLS must be refused as a downgrade, not as a generic cross-origin hop"),
+                () -> assertEquals("https", refusal.getFrom().getScheme(),
+                        "the refused hop must have originated on the TLS connection"),
+                () -> assertEquals("http", refusedTarget.getScheme(),
+                        "the refused target must be the cleartext one the server offered"),
+                () -> assertEquals(RedirectDispatcher.PATH_TARGET, refusedTarget.getPath(),
+                        "the refused target must be the redirect's declared destination"),
+                () -> assertEquals(1, server.getRequestCount(),
+                        "only the redirect exchange may appear on the wire: the cleartext target was never contacted"));
     }
 }
