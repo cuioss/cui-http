@@ -38,7 +38,7 @@ The authoritative Git workflow is defined in the "Git Workflow" section below.
 ### Core Components
 
 1. **Security Validation Pipelines** (`de.cuioss.http.security.pipeline`)
-   - `URLPathValidationPipeline`: All URL validation (paths, full URLs, directory traversal, CVE exploits)
+   - `URLPathValidationPipeline`: URL *path component* validation (directory traversal, CVE exploits) — not a full absolute URL; extract the path and pass that
    - `URLParameterValidationPipeline`: Query parameter *value* validation
    - `URLParameterNameValidationPipeline`: Query parameter *name* validation (rejects delimiters that appear only after decoding)
    - `HTTPHeaderValidationPipeline`: Header injection attacks (header names and values)

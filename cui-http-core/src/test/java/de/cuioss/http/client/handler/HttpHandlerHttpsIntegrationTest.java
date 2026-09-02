@@ -59,6 +59,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * than only at the {@link RedirectPolicy} seam. One TLS server suffices: the refusal is decided
  * before the next hop is contacted, so no second, cleartext MockWebServer instance is needed.
  * <p>
+ * The TLS fixture is likewise what makes the positive half of
+ * {@link RedirectPolicy#forwardsCredentials(java.net.URI, java.net.URI)} assertable end-to-end:
+ * credentials survive a same-origin hop only when the target is {@code https}, and every hop in the
+ * cleartext {@code HttpHandlerRedirectTest} fixture is refused them by the unconditional
+ * cleartext rule.
+ * <p>
  * Cleartext {@code HttpHandler} integration coverage lives in {@code HttpHandlerIntegrationTest};
  * the remaining redirect-following behaviour lives in {@code HttpHandlerRedirectTest}.
  *
@@ -148,5 +154,51 @@ class HttpHandlerHttpsIntegrationTest {
                         "the refused target must be the redirect's declared destination"),
                 () -> assertEquals(1, server.getRequestCount(),
                         "only the redirect exchange may appear on the wire: the cleartext target was never contacted"));
+    }
+
+    @Test
+    @DisplayName("A same-origin hop over TLS carries Authorization and Cookie to the terminal request")
+    @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
+    void sameOriginHopOverTlsKeepsCredentials(URIBuilder uriBuilder, SSLContext sslContext) throws Exception {
+        URI start = URI.create(uriBuilder.build().toString().replaceAll("/$", "")
+                + RedirectDispatcher.PATH_REDIRECT);
+
+        HttpResponse<String> response;
+        try (HttpHandler handler = HttpHandler.builder()
+                     .uri(start)
+                     .sslContext(sslContext)
+                     .build()) {
+            HttpRequest request = handler.requestBuilder()
+                    .header("Authorization", "Bearer test-token")
+                    .header("Cookie", "session=abc")
+                    .GET()
+                    .build();
+            response = handler.send(request, HttpResponse.BodyHandlers.ofString());
+        }
+
+        assertEquals(200, response.statusCode(), "the hop must have reached the terminal route");
+        String echo = response.headers().firstValue(RedirectDispatcher.HEADER_ECHO)
+                .orElseThrow(() -> new AssertionError("terminal response carried no "
+                        + RedirectDispatcher.HEADER_ECHO + " header"));
+
+        // The positive control for the cleartext credential rule: the same hop shape that drops both
+        // headers over http in HttpHandlerRedirectTest carries both when the target is https.
+        assertAll("the credentials the terminal request actually received over TLS",
+                () -> assertEquals("https", response.uri().getScheme(),
+                        "the terminal request must have been issued over TLS"),
+                () -> assertEquals("present", echoField(echo, "authorization"),
+                        "an https same-origin hop must keep Authorization"),
+                () -> assertEquals("present", echoField(echo, "cookie"),
+                        "an https same-origin hop must keep Cookie"));
+    }
+
+    /** Extracts one {@code key=value} field from a {@link RedirectDispatcher#echo} string. */
+    private static String echoField(String echo, String key) {
+        for (String segment : echo.split(";")) {
+            if (segment.startsWith(key + "=")) {
+                return segment.substring(key.length() + 1);
+            }
+        }
+        throw new AssertionError("echo '" + echo + "' carries no field '" + key + "'");
     }
 }

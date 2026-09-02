@@ -34,7 +34,7 @@ import java.net.URI;
  * <h3>Usage Example</h3>
  * <pre>
  * try {
- *     HttpResponse&lt;String&gt; response = handler.sendFollowingRedirects(request, bodyHandler);
+ *     HttpResponse&lt;String&gt; response = handler.send(request, bodyHandler);
  * } catch (RedirectNotAllowedException e) {
  *     LOGGER.warn("Refused redirect %s -&gt; %s (%s)", e.getFrom(), e.getTo(), e.getReason());
  * }

@@ -49,7 +49,7 @@
  *     Optional&lt;String&gt; sanitized = e.getSanitizedInput();
  *
  *     // Log security event
- *     log.warn("Security violation: {} in {} for input: {}",
+ *     log.warn("Security violation: %s in %s for input: %s",
  *         failureType, validationType, originalInput);
  *
  *     // Take appropriate action based on failure type

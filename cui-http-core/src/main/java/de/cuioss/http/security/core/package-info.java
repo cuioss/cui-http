@@ -36,7 +36,7 @@
  *     }
  * } catch (UrlSecurityException e) {
  *     // Handle security violation
- *     log.warn("Security violation: {}", e.getFailureType());
+ *     log.warn("Security violation: %s", e.getFailureType());
  * }
  * </code></pre>
  *
