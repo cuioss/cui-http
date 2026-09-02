@@ -93,6 +93,85 @@ the JVM-wide `jdk.internal.httpclient.disableHostnameVerification` system proper
 process-global and affects every client in the JVM), and a trust-all `X509TrustManager` (it
 discards chain validation entirely, which this opt-in specifically preserves).
 
+[#redirect-policy]
+*Redirect policy (fail-secure):* redirects are followed by cui-http itself, not by the JDK. The
+underlying `HttpClient` stays pinned to `HttpClient.Redirect#NEVER`, and `send(...)` /
+`sendAsync(...)` run the follow loop so that *every* hop is revalidated against the handler's
+`RedirectPolicy` *before* the next request is issued - the JDK follower would instead send the
+request first and leave no seam at which to refuse it.
+
+Five 3xx statuses are followable: `301`, `302`, `303`, `307` and `308`, and only when the
+response carries a non-blank `Location`. `300`, `304`, `305` and `306` are deliberately absent -
+none of them names a single unambiguous next request - so each of those reaches the caller
+verbatim, as does a followable status with no usable `Location`. The set is published as
+`HttpHandler.followableStatusCodes()`, so a caller taking the raw `createHttpClient()` route (which
+hands out the non-following client and owns validating the `Location` target itself) can agree with
+the follow loop rather than restate the set.
+
+`RedirectPolicy.refuse(from, to)` evaluates an ordered rule list and returns on the first match:
+
+. `to` names a scheme other than `http` or `https`, or names none at all -> refused with `UNSUPPORTED_SCHEME`.
+. `from` is `https` and `to` is `http` -> refused with `PROTOCOL_DOWNGRADE`, evaluated *before* the allowlist check so an allowlisted host never buys a downgrade off TLS.
+. `from` and `to` are same-origin -> permitted.
+. the host of `to` is in the configured allowlist -> permitted.
+. otherwise -> refused with `CROSS_ORIGIN`.
+
+Same-origin means scheme, host and *effective* port all match, with scheme and host compared
+case-insensitively. An absent port (`-1`) normalises to `443` for `https` and `80` for `http`, so
+`https://example.com/a` and `https://example.com:443/b` are the same origin. The host allowlist is
+an opt-in that is consulted *only after* the same-origin test has already failed; the default
+policy, `RedirectPolicy.sameOrigin()`, carries an empty allowlist and is therefore same-origin only.
+
+The chain is bounded by `RedirectPolicy.DEFAULT_MAX_HOPS`, which is `10` unless the builder sets
+`maxHops(int)` explicitly. Exceeding the budget raises `RedirectNotAllowedException` with reason
+`TOO_MANY_HOPS`. The policy is consulted *before* the hop counter, so a target the policy refuses is
+reported as the refusal it is and never masked as an exhausted budget. A `Location` that is present
+and non-blank but is not a parseable URI reference is likewise refused - `MALFORMED_LOCATION` -
+rather than surfacing the URI parser's own `IllegalArgumentException`; the header value is
+remote-controlled, so an unparseable one is a refused hop, not a caller-side programming error.
+Every refusal raises `RedirectNotAllowedException`, which names the hop and the reason and
+classifies as the non-retryable `CONFIGURATION_ERROR`.
+
+Credential handling is a separate axis. `RedirectPolicy.CredentialForwarding` decides whether
+`Authorization` and `Cookie` survive a non-same-origin hop: the secure default
+`STRIP_ON_CROSS_ORIGIN` drops both, and the explicit opt-in `FORWARD_TO_ALLOWLISTED` lets them
+through. A same-origin hop forwards them under either strategy. Note that `CredentialForwarding`
+changes only *what is carried* across a hop - it never changes the refusal verdict. A hop the policy
+refuses is not taken at all, so no credential is ever forwarded to it.
+
+[source,java]
+----
+// Secure default: same-origin hops only, credentials stripped across any origin boundary,
+// at most RedirectPolicy.DEFAULT_MAX_HOPS (10) hops.
+HttpHandler strict = HttpHandler.builder()
+        .uri("https://api.example.com/users")
+        .build();
+
+// Opt in to one downstream host, let credentials survive the hop to it, and tighten the budget.
+HttpHandler allowlisted = HttpHandler.builder()
+        .uri("https://api.example.com/users")
+        .redirectPolicy(RedirectPolicy.builder()
+                .maxHops(3)
+                .allowedHosts(List.of("cdn.example.net"))
+                .credentialForwarding(RedirectPolicy.CredentialForwarding.FORWARD_TO_ALLOWLISTED)
+                .build())
+        .build();
+
+try {
+    HttpResponse<String> response = allowlisted.send(
+            allowlisted.requestBuilder().GET().build(),
+            HttpResponse.BodyHandlers.ofString());
+    // The terminal response of the chain, never a followed redirect.
+} catch (RedirectNotAllowedException e) {
+    // e.getReason() is one of UNSUPPORTED_SCHEME, PROTOCOL_DOWNGRADE, CROSS_ORIGIN,
+    // TOO_MANY_HOPS, MALFORMED_LOCATION.
+    LOGGER.warn("Refused redirect %s -> %s (%s)", e.getFrom(), e.getTo(), e.getReason());
+}
+
+// Refused even though cdn.example.net is allowlisted: the downgrade rule runs first.
+// https://api.example.com/users -> http://cdn.example.net/users  =>  PROTOCOL_DOWNGRADE
+----
+
 ==== xref:../cui-http-core/src/main/java/de/cuioss/http/client/adapter/package-info.java[HTTP Adapters (New Architecture)]
 
 Async-first HTTP client adapters with composable retry and caching.
