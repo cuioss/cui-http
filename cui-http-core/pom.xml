@@ -13,6 +13,13 @@
     <description>Provides a number of http-related utilities.</description>
     <properties>
         <maven.jar.plugin.automatic.module.name>de.cuioss.http</maven.jar.plugin.automatic.module.name>
+        <!-- Single authoritative definition of the packages the 'generators' classifier ships.
+             Both the maven-jar-plugin execution that builds the classifier and the
+             maven-enforcer-plugin execution that guards it reference these, so the two cannot
+             drift: adding a package here extends the artifact AND the guard together. Paths are
+             relative to ${project.build.testOutputDirectory}. -->
+        <generators.classifier.package.generators>de/cuioss/http/security/generators</generators.classifier.package.generators>
+        <generators.classifier.package.database>de/cuioss/http/security/database</generators.classifier.package.database>
     </properties>
     <dependencies>
         <dependency>
@@ -84,11 +91,11 @@
                             <classifier>generators</classifier>
                             <classesDirectory>${project.build.testOutputDirectory}</classesDirectory>
                             <includes>
-                                <include>**/http/security/generators/**</include>
-                                <include>**/http/security/database/**</include>
+                                <include>${generators.classifier.package.generators}/**</include>
+                                <include>${generators.classifier.package.database}/**</include>
                             </includes>
                             <excludes>
-                                <exclude>**/http/security/generators/**/*Test.class</exclude>
+                                <exclude>${generators.classifier.package.generators}/**/*Test.class</exclude>
                             </excludes>
                         </configuration>
                     </execution>
@@ -114,8 +121,8 @@
                             <rules>
                                 <requireFilesExist>
                                     <files>
-                                        <file>${project.build.testOutputDirectory}/de/cuioss/http/security/generators</file>
-                                        <file>${project.build.testOutputDirectory}/de/cuioss/http/security/database</file>
+                                        <file>${project.build.testOutputDirectory}/${generators.classifier.package.generators}</file>
+                                        <file>${project.build.testOutputDirectory}/${generators.classifier.package.database}</file>
                                     </files>
                                     <message>The generators/database test classes are missing from ${project.build.testOutputDirectory}, so the 'generators' classifier jar would be published without any classes. Test compilation was skipped (-Dmaven.test.skip=true) — run the build without skipping test compilation.</message>
                                 </requireFilesExist>
