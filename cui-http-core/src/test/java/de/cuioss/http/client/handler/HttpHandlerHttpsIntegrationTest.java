@@ -32,10 +32,7 @@ import javax.net.ssl.SSLContext;
 import java.net.URI;
 import java.net.http.HttpResponse;
 
-import static org.junit.jupiter.api.Assertions.assertAll;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Integration tests for {@link HttpHandler} against a TLS-terminated MockWebServer.
@@ -95,9 +92,9 @@ class HttpHandlerHttpsIntegrationTest {
         URI target = uriBuilder.addPathSegments("api", "data").build();
         HttpResponse<String> response;
         try (HttpHandler handler = HttpHandler.builder()
-                .uri(target)
-                .sslContext(sslContext)
-                .build()) {
+                     .uri(target)
+                     .sslContext(sslContext)
+                     .build()) {
             response = handler.send(handler.requestBuilder().GET().build(),
                     HttpResponse.BodyHandlers.ofString());
         }
@@ -123,9 +120,9 @@ class HttpHandlerHttpsIntegrationTest {
 
         RedirectNotAllowedException refusal;
         try (HttpHandler handler = HttpHandler.builder()
-                .uri(start)
-                .sslContext(sslContext)
-                .build()) {
+                     .uri(start)
+                     .sslContext(sslContext)
+                     .build()) {
             refusal = assertThrows(RedirectNotAllowedException.class,
                     () -> handler.send(handler.requestBuilder().GET().build(),
                             HttpResponse.BodyHandlers.ofString()),
