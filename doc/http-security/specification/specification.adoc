@@ -322,14 +322,32 @@ For usage examples, see the JavaDoc of link:../../../cui-http-core/src/main/java
   rejects many script-injection URL forms (e.g. control characters, `<`/`>`, malformed encoding)
   as a side effect — it simply does not perform XSS signature matching. See
   xref:compliance-traceability.adoc#_limitations_and_scope[Limitations and Scope].
+- NOTE: The same scope boundary applies to the *application-layer content judgement* over URL
+  paths — sensitive filesystem paths (`/etc/`, `/proc/`, `/root/`, …), sensitive filenames
+  (`web.xml`, `.env`, `.htaccess`, …) and generic parameter names (`file`, `path`, `url`, …).
+  Whether such a value is hostile depends on the sink it flows into, which the library cannot see,
+  so this judgement has been re-tiered *out of* the `defaults()` and `strict()` postures for the
+  same reason XSS detection was removed. It remains available, but only via
+  `SecurityConfiguration.paranoid()` or an explicit `blockedPathPatterns` /
+  `blockedParameterNames` block-list. What stays enforced in `strict()` is the *structural*
+  protocol-handler scheme check (`javascript:`, `vbscript:`, `data:`, `file:` at the start of the
+  value), which is decidable from the HTTP component alone. The admission rule is recorded in
+  xref:../../adr/0015-A_pattern_literal_enforced_by_a_named_preset_must_be_decidable_from_the_HTTP_component_alone.adoc[ADR-0015].
 
 === Default Security Posture
 
-- Three presets ship as the single source of truth (`SecurityDefaults`):
-  `SecurityConfiguration.strict()`, `.defaults()` (balanced), and `.lenient()`
-  (maximum compatibility, for trusted environments only)
+- Four presets ship as the single source of truth (`SecurityDefaults`), from most permissive to
+  most restrictive: `SecurityConfiguration.lenient()` (maximum compatibility, for trusted
+  environments only), `.defaults()` (balanced), `.strict()` (the recommended hardened production
+  posture), and `.paranoid()` (`strict()` plus the application-layer content detection)
 - The out-of-the-box default (`SecurityConfiguration.defaults()`, identical to
-  `builder().build()`) is the *balanced* preset — not the strict/maximum-security preset
+  `builder().build()`) is the *balanced* preset — not the strict or paranoid preset
+- `paranoid()` is appropriate only where URL paths and parameter values really do reach a
+  filesystem. It seeds `blockedPathPatterns` and `blockedParameterNames` from `SecurityDefaults`,
+  so it rejects any path carrying a matching `/`-delimited segment — including ordinary API
+  vocabulary such as `/config/etc/settings` or `/api/v1/root/children` — and any parameter named
+  exactly `file`, `path`, `url` or one of their siblings. Where that false-positive profile does
+  not fit, seed a narrower block-list of your own on any base preset instead
 - Relaxing to the lenient preset (e.g. allowing double encoding, control characters, or
   disabling Unicode normalization) requires an explicit, opt-in configuration choice
 - Security events are counted in-memory (`SecurityEventCounter`); the core performs no

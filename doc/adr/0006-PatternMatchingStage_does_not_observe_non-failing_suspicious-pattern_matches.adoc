@@ -4,7 +4,7 @@
 :sectnums:
 
 // adr-metadata
-// summary: PatternMatchingStage neither logs nor counts a suspicious-pattern match when failOnSuspiciousPatterns is false; security-event observability is scoped to SecurityEventCounter on thrown violations only
+// summary: PatternMatchingStage neither logs nor counts a protocol-handler scheme match when failOnSuspiciousPatterns is false — the flag's remaining scope after the preset re-tiering; security-event observability is scoped to SecurityEventCounter on thrown violations only
 // tags: observability, security-configuration, pattern-matching, logging
 // affects: cui-http-core
 // supersedes:
@@ -43,10 +43,16 @@ fact worth recording, not just an implementation detail.
 
 == Decision
 
-`PatternMatchingStage` does not log or count a suspicious-pattern match when
+`PatternMatchingStage` does not log or count a protocol-handler scheme match when
 `failOnSuspiciousPatterns=false`. Security-event observability for this stage is scoped to
 `SecurityEventCounter`, and only for matches that actually throw `UrlSecurityException` — a permitted
 match under a non-failing configuration produces no observable side effect of any kind.
+
+The scheme check is the flag's entire remaining scope. The application-layer content judgement —
+sensitive filesystem paths, sensitive filenames, suspicious parameter names — is governed by the
+`blockedPathPatterns` and `blockedParameterNames` lists, each gated on its own non-emptiness rather
+than on this flag, and each of which always throws when it matches. A silent-permit mode therefore
+does not exist for those checks, so this decision does not reach them.
 
 This follows from the stage's own construction and the location of the observability primitive it
 would otherwise need. `PatternMatchingStage` is an immutable value type constructed with only the
@@ -84,7 +90,7 @@ stated contract.
 === Negative
 
 * An operator running with `failOnSuspiciousPatterns=false` has zero visibility into how often the
-  suspicious-pattern databases actually match traffic that is nonetheless permitted through — that
+  protocol-handler scheme set actually matches traffic that is nonetheless permitted through — that
   signal is architecturally unavailable, not merely undocumented.
 * A caller who wants to *tune* `failOnSuspiciousPatterns` toward `true` based on real traffic data
   (rather than guessing) has no built-in way to gather that data from this stage; they would need to
@@ -136,6 +142,14 @@ capability, amortizing the infrastructure cost across more than one call site).
   match is allowed silently, with observability delegated to `SecurityEventCounter` on thrown
   violations.
 * `SecurityConfigurationBuilder.failOnSuspiciousPatterns(boolean)` — the configuration flag whose
-  Javadoc states the same silent-permit contract from the configuration-authoring side.
+  Javadoc states the same silent-permit contract from the configuration-authoring side, now scoped
+  to the protocol-handler scheme match: "a scheme match is allowed through silently:
+  `PatternMatchingStage` does not log, count or otherwise report it."
 * `AbstractValidationPipeline` — the owner of `SecurityEventCounter`, and the boundary this decision
   keeps `PatternMatchingStage` on the far side of.
+* link:0015-A_pattern_literal_enforced_by_a_named_preset_must_be_decidable_from_the_HTTP_component_alone.adoc[ADR-0015:
+  A pattern literal enforced by a named preset must be decidable from the HTTP component alone] —
+  the decision that narrowed this flag's scope to the scheme check by moving the content judgement
+  onto the two non-emptiness-gated block-lists. `SUSPICIOUS_PATH_PATTERNS` was split into
+  `PROTOCOL_HANDLER_SCHEMES` and `SENSITIVE_PATH_PATTERNS`; its four Windows filesystem literals
+  were deleted as unreachable.

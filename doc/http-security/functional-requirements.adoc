@@ -183,6 +183,10 @@ xref:#HTTP-14[HTTP-14] for the per-validation-type status.
   ** Maximum length limits
   ** Allowed character sets
   ** Encoding strictness levels
+  ** Attack-pattern block lists: the sensitive-path block list (`blockedPathPatterns`, matched as a
+     whole `/`-delimited path segment) and the parameter-name block list
+     (`blockedParameterNames`, matched by exact equality), alongside the existing header-name and
+     content-type allow/block lists
 
 * Configuration must be immutable after initialization
 * Must provide sensible secure defaults

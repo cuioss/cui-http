@@ -31,7 +31,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 import java.util.Optional;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Pipeline-level behavioural contract of the preset re-tiering.

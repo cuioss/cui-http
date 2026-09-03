@@ -51,14 +51,15 @@ therefore only ever *reduce* detection, never increase it, for a comparison mech
 way.
 
 The superset relation is the load-bearing fact; it does not depend on every database sharing the
-same case shape. `SUSPICIOUS_PATH_PATTERNS` and `SUSPICIOUS_PARAMETER_NAMES` are all-lowercase
-literal sets, so under case-sensitive comparison they cannot match any mixed- or upper-case input at
-all. `PATH_TRAVERSAL_PATTERNS` is deliberately mixed-case — it enumerates multiple case permutations
+same case shape. `PROTOCOL_HANDLER_SCHEMES`, `SENSITIVE_PATH_PATTERNS` and
+`SUSPICIOUS_PARAMETER_NAMES` are all-lowercase literal sets, so under case-sensitive comparison they
+cannot match any mixed- or upper-case input at all. `PATH_TRAVERSAL_PATTERNS` is deliberately
+mixed-case — it enumerates multiple case permutations
 of the same encoded traversal sequence as separate literal entries — so under case-sensitive
 comparison it still matches only the specific permutations it literally spells out, a narrower match
 than case-insensitive comparison achieves against the same enumeration. The superset relation holds
 for both shapes; only the *magnitude* of the gap differs, so the all-lowercase property is a property
-of two of the three databases, not the reason the invariant holds.
+of three of the four databases, not the reason the invariant holds.
 
 `SecurityConfiguration.isStrict()` classifies a configuration as strict independently of the
 `caseSensitiveComparison` flag, so this decision changes what a strict-classified configuration
@@ -137,3 +138,8 @@ meaningful and the preset's detection guarantee true.
 * `SecurityConfigurationBuilder.caseSensitiveComparison(boolean)` — the general-purpose setter,
   documented with the same superset warning for callers building a configuration outside the preset
   system.
+* link:0015-A_pattern_literal_enforced_by_a_named_preset_must_be_decidable_from_the_HTTP_component_alone.adoc[ADR-0015:
+  A pattern literal enforced by a named preset must be decidable from the HTTP component alone] —
+  the constant lineage behind the database names above. `SUSPICIOUS_PATH_PATTERNS` was split into
+  `PROTOCOL_HANDLER_SCHEMES` and `SENSITIVE_PATH_PATTERNS`, and `paranoid()` is the fourth preset
+  this invariant governs.

@@ -4,7 +4,7 @@
 
 This document is the central reference for every *enforced* setting in
 `de.cuioss.http.security.config.SecurityConfiguration`. For each knob it lists the default
-value across the three presets and the stage / validator that enforces it.
+value across the four presets and the stage / validator that enforces it.
 
 Every setting listed here is enforced. Single-value settings are consumed by the validation
 stages inside the pipelines built by `PipelineFactory`; request-level settings that need
@@ -15,12 +15,25 @@ toc::[]
 
 == Presets
 
-Three presets are provided as the single source of truth
-(`de.cuioss.http.security.config.SecurityDefaults`):
+Four presets are provided as the single source of truth
+(`de.cuioss.http.security.config.SecurityDefaults`), ordered from most permissive to most
+restrictive:
 
-* `SecurityConfiguration.defaults()` — balanced (identical to `builder().build()`)
-* `SecurityConfiguration.strict()` — security over compatibility
 * `SecurityConfiguration.lenient()` — maximum compatibility (trusted environments only)
+* `SecurityConfiguration.defaults()` — balanced (identical to `builder().build()`)
+* `SecurityConfiguration.strict()` — security over compatibility; the recommended hardened
+  production posture
+* `SecurityConfiguration.paranoid()` — `strict()` plus the application-layer content detection
+
+`paranoid()` differs from `strict()` in exactly two settings: it seeds `blockedPathPatterns` from
+`SecurityDefaults.SENSITIVE_PATH_PATTERNS` and `blockedParameterNames` from
+`SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES`. Those literals are filesystem paths, configuration
+filenames and generic parameter names, so the preset rejects a request whose path carries a
+matching `/`-delimited segment (for example `/config/etc/settings`) and a request whose parameter
+name is exactly `file`, `path` or `url` — all legitimate vocabulary in many REST APIs. Choose it
+where URL paths and parameters really do reach a filesystem; otherwise seed a narrower list of your
+own on another base preset. Both block-lists are orthogonal to the strictness predicate, so
+`paranoid().isStrict()` is `true`.
 
 Build a custom configuration with `SecurityConfiguration.builder()`.
 
@@ -30,29 +43,29 @@ Enforced by `LengthValidationStage`, which runs first in each of the five value 
 prevent DoS. (The exception is `ContentTypeValidationPipeline`, which is a single
 `AllowBlockListStage` and has no length stage.)
 
-[cols="3,1,1,1", options="header"]
+[cols="3,1,1,1,1", options="header"]
 |===
-| Setting | default | strict | lenient
-| `maxPathLength`          | 4096 | 1024 | 8192
-| `maxParameterNameLength` | 128  | 64   | 256
-| `maxParameterValueLength`| 2048 | 1024 | 8192
-| `maxHeaderNameLength`    | 128  | 64   | 256
-| `maxHeaderValueLength`   | 2048 | 1024 | 8192
-| `maxCookieNameLength`    | 128  | 64   | 256
-| `maxCookieValueLength`   | 2048 | 1024 | 8192
-| `maxBodySize` (bytes)    | 5 MB | 1 MB | 10 MB
+| Setting | default | strict | paranoid | lenient
+| `maxPathLength`          | 4096 | 1024 | 1024 | 8192
+| `maxParameterNameLength` | 128  | 64   | 64   | 256
+| `maxParameterValueLength`| 2048 | 1024 | 1024 | 8192
+| `maxHeaderNameLength`    | 128  | 64   | 64   | 256
+| `maxHeaderValueLength`   | 2048 | 1024 | 1024 | 8192
+| `maxCookieNameLength`    | 128  | 64   | 64   | 256
+| `maxCookieValueLength`   | 2048 | 1024 | 1024 | 8192
+| `maxBodySize` (bytes)    | 5 MB | 1 MB | 1 MB | 10 MB
 |===
 
 == Encoding and character policy
 
-[cols="3,1,1,1,3", options="header"]
+[cols="3,1,1,1,1,3", options="header"]
 |===
-| Setting | default | strict | lenient | Enforced by
-| `allowDoubleEncoding`     | false | false | true  | `DecodingStage`
-| `allowNullBytes`          | false | false | false | `CharacterValidationStage`, `DecodingStage`
-| `allowControlCharacters`  | false | false | true  | `CharacterValidationStage`, `DecodingStage`
-| `allowExtendedAscii`      | true  | false | true  | `CharacterValidationStage`
-| `normalizeUnicode`        | true  | true  | false | `DecodingStage`
+| Setting | default | strict | paranoid | lenient | Enforced by
+| `allowDoubleEncoding`     | false | false | false | true  | `DecodingStage`
+| `allowNullBytes`          | false | false | false | false | `CharacterValidationStage`, `DecodingStage`
+| `allowControlCharacters`  | false | false | false | true  | `CharacterValidationStage`, `DecodingStage`
+| `allowExtendedAscii`      | true  | false | false | true  | `CharacterValidationStage`
+| `normalizeUnicode`        | true  | true  | true  | false | `DecodingStage`
 |===
 
 `normalizeUnicode` follows the OWASP _canonicalize-then-validate_ model: input is normalized and
@@ -79,24 +92,101 @@ Enforced by `PatternMatchingStage`.
 `caseSensitiveComparison` and `failOnSuspiciousPatterns` have no effect on header or content-type
 validation.
 
-[cols="3,1,1,1", options="header"]
+[cols="3,1,1,1,1", options="header"]
 |===
-| Setting | default | strict | lenient
-| `caseSensitiveComparison`  | false | false | false
-| `failOnSuspiciousPatterns` | false | true  | false
+| Setting | default | strict | paranoid | lenient
+| `caseSensitiveComparison`  | false | false | false | false
+| `failOnSuspiciousPatterns` | false | true  | true  | false
 |===
+
+=== What `failOnSuspiciousPatterns` governs
+
+`failOnSuspiciousPatterns` governs exactly one check: whether a URL path or parameter value that
+*starts with* one of `SecurityDefaults.PROTOCOL_HANDLER_SCHEMES` (`javascript:`, `vbscript:`,
+`data:`, `file:`) is rejected. That check is structural — a path component that *is* a
+scheme-bearing URI is not a valid path component, independent of what the receiving application
+does with it — which is why it stays enforced in `strict()`. With the flag `false`, a scheme match
+is permitted silently: the stage does not log, count or otherwise report it.
+
+The application-layer content judgement is *not* governed by this flag. Sensitive filesystem paths,
+sensitive filenames and suspicious parameter names are decidable only with knowledge of the sink
+the value flows into, which the library does not have, so they live on the two configurable
+block-lists below and are enforced only where a caller has seeded them. See
+link:../adr/0015-A_pattern_literal_enforced_by_a_named_preset_must_be_decidable_from_the_HTTP_component_alone.adoc[ADR-0015]
+for the admission rule this split follows.
+
+Path-traversal detection (`../` and its encoded variants) is unconditional in every preset and is
+governed by no flag at all.
+
+== Attack-pattern block lists
+
+Two configurable block lists (default empty) carry the application-layer content judgement. Each is
+enforced by `PatternMatchingStage` whenever *that list* is non-empty — neither is gated on
+`failOnSuspiciousPatterns`, mirroring the header-name and content-type block lists, which are
+likewise gated only on their own contents.
+
+[cols="3,3,2,3", options="header"]
+|===
+| Setting | default (defaults/strict/lenient) | paranoid | Matcher semantics
+| `blockedPathPatterns`
+| empty (block-none)
+| `SENSITIVE_PATH_PATTERNS`
+| Whole `/`-delimited path segment, compared against `URL_PATH` and `PARAMETER_VALUE`. The
+  pattern's leading and trailing `/` are stripped, so `/etc/` matches an `etc` segment.
+
+| `blockedParameterNames`
+| empty (block-none)
+| `SUSPICIOUS_PARAMETER_NAMES`
+| Exact string equality against `PARAMETER_NAME`.
+|===
+
+Both lists follow `caseSensitiveComparison`: with the default `false`, list and input are lowercased
+before comparison, so an all-lowercase list still matches mixed-case input.
+
+The matchers are deliberately precise rather than substring-based. `blockedPathPatterns` matching a
+whole segment is what keeps `/documents/document.envelope` accepted under a list containing `.env`,
+and the scheme check anchoring on the *whole* value — not on each segment — is what keeps
+`/v1/data:export` and `/api/profile:read` accepted.
+
+=== Why the two lists are separate
+
+They apply different matching semantics to different HTTP components: a path pattern matches a
+whole path segment of a `URL_PATH` or `PARAMETER_VALUE`, while a parameter name matches a
+`PARAMETER_NAME` by exact equality. A single combined list would have to pick one semantics and
+would then misapply it to the other component — seeding it with the parameter name `file` would
+also reject every path carrying a `file` segment.
+
+[source,java]
+----
+// Reproduce the paranoid() detection on any base preset
+SecurityConfiguration config = SecurityConfiguration.builder()
+    .blockedPathPatterns(SecurityDefaults.SENSITIVE_PATH_PATTERNS)
+    .blockedParameterNames(SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES)
+    .build();
+
+// Or seed only what matches your application's sink
+SecurityConfiguration narrow = SecurityConfiguration.builder()
+    .blockedPathPatterns(Set.of("/etc/", ".env"))
+    .build();
+----
+
+The seeding constants in `SecurityDefaults` — `SENSITIVE_PATH_PATTERNS` (the six Unix filesystem
+paths and five sensitive filenames) and `SUSPICIOUS_PARAMETER_NAMES` (eight generic names) — are
+reference values, exactly like the header and content-type classification constants below.
+`PROTOCOL_HANDLER_SCHEMES` is *not* a seeding constant: it backs the structural scheme check
+directly and is not caller-configurable.
 
 == Collection count limits
 
 Request-level limits enforced by `RequestCollectionValidator` (a single-value pipeline cannot
 count a collection). Defend against resource-exhaustion / hash-collision DoS.
 
-[cols="3,1,1,1", options="header"]
+[cols="3,1,1,1,1", options="header"]
 |===
-| Setting | default | strict | lenient
-| `maxParameterCount` | 100 | 20 | 500
-| `maxHeaderCount`    | 50  | 20 | 100
-| `maxCookieCount`    | 20  | 10 | 50
+| Setting | default | strict | paranoid | lenient
+| `maxParameterCount` | 100 | 20 | 20 | 500
+| `maxHeaderCount`    | 50  | 20 | 20 | 100
+| `maxCookieCount`    | 20  | 10 | 10 | 50
 |===
 
 [source,java]
@@ -113,11 +203,11 @@ Opt-in (default `false`) requirements enforced by `CookiePrefixValidationStage.v
 Meaningful only for attribute-bearing (Set-Cookie) cookies, not request `Cookie`-header
 `name=value` pairs.
 
-[cols="3,1,1,1", options="header"]
+[cols="3,1,1,1,1", options="header"]
 |===
-| Setting | default | strict | lenient
-| `requireSecureCookies`   | false | false | false
-| `requireHttpOnlyCookies` | false | false | false
+| Setting | default | strict | paranoid | lenient
+| `requireSecureCookies`   | false | false | false | false
+| `requireHttpOnlyCookies` | false | false | false | false
 |===
 
 == Header-name and content-type allow/block lists
