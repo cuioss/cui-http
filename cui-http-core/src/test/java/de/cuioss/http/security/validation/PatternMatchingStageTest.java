@@ -16,6 +16,7 @@
 package de.cuioss.http.security.validation;
 
 import de.cuioss.http.security.config.SecurityConfiguration;
+import de.cuioss.http.security.config.SecurityDefaults;
 import de.cuioss.http.security.core.HttpSecurityValidator;
 import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.core.ValidationType;
@@ -130,35 +131,30 @@ class PatternMatchingStageTest {
 
     // Command injection tests removed - application layer responsibility
 
-    // ========== Suspicious Path Pattern Tests ==========
+    // ========== Blocked Path Pattern Tests ==========
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "/etc/passwd",
-            "/proc/version",
-            "/sys/devices",
-            "/dev/null",
-            "/boot/grub",
-            "/root/.ssh",
-            "\\windows\\system32\\config",
-            "\\users\\administrator",
-            "\\program files\\",
-            "web.xml",
-            "web.config",
-            ".env",
-            ".htaccess",
-            ".htpasswd"
+            "/app/etc/passwd",
+            "/app/proc/version",
+            "/app/sys/devices",
+            "/app/dev/null",
+            "/app/boot/grub",
+            "/app/root/.ssh",
+            "/app/web.xml",
+            "/app/web.config",
+            "/app/.env",
+            "/app/.htaccess",
+            "/app/.htpasswd"
     })
-    void shouldDetectSuspiciousPathsWithFailOnSuspiciousEnabled(String suspiciousPath) {
+    void shouldDetectBlockedPathsWhenListIsSeeded(String blockedPath) {
         SecurityConfiguration config = SecurityConfiguration.builder()
-                .failOnSuspiciousPatterns(true)
+                .blockedPathPatterns(SecurityDefaults.SENSITIVE_PATH_PATTERNS)
                 .build();
         PatternMatchingStage stage = new PatternMatchingStage(config, ValidationType.URL_PATH);
 
-        String fullPath = "/app" + suspiciousPath;
-
         UrlSecurityException exception = assertThrows(UrlSecurityException.class,
-                () -> stage.validate(fullPath));
+                () -> stage.validate(blockedPath));
 
         assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType());
         assertTrue(exception.getDetail().isPresent(), "Exception should have detail");
@@ -167,24 +163,86 @@ class PatternMatchingStageTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "/etc/passwd",
-            "/proc/version",
-            "web.xml",
-            ".htaccess"
+            "/app/etc/passwd",
+            "/app/proc/version",
+            "/app/web.xml",
+            "/app/.htaccess"
     })
-    void shouldNotFailOnSuspiciousPathsWhenDisabled(String suspiciousPath) {
+    void shouldNotFailOnSensitivePathsWhenBlockListIsEmpty(String path) {
+        // The gate is the list's non-emptiness, not failOnSuspiciousPatterns - so even the strict
+        // preset's true lets these through, because no preset below paranoid() seeds the list.
+        SecurityConfiguration config = SecurityConfiguration.builder()
+                .failOnSuspiciousPatterns(true)
+                .build();
+        PatternMatchingStage stage = new PatternMatchingStage(config, ValidationType.URL_PATH);
+
+        Optional<String> result = stage.validate(path);
+        assertTrue(result.isPresent());
+        assertEquals(path, result.get());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "/api/sketches",
+            "/api/v1/protocols",
+            "/users/rootkit-scanner",
+            "/download/web.xml.bak"
+    })
+    void shouldNotRejectSegmentsMerelyEmbeddingABlockedLiteral(String legitimatePath) {
+        SecurityConfiguration config = SecurityConfiguration.paranoid();
+        PatternMatchingStage stage = new PatternMatchingStage(config, ValidationType.URL_PATH);
+
+        Optional<String> result = stage.validate(legitimatePath);
+        assertTrue(result.isPresent(), "whole-segment matching must not fire on a mere substring");
+        assertEquals(legitimatePath, result.get());
+    }
+
+    // ========== Protocol Handler Scheme Tests ==========
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "javascript:alert(1)",
+            "vbscript:msgbox",
+            "data:text/html;base64,AAAA",
+            "file:///home/user"
+    })
+    void shouldDetectProtocolHandlerSchemesWhenFailOnSuspiciousEnabled(String value) {
+        SecurityConfiguration config = SecurityConfiguration.builder()
+                .failOnSuspiciousPatterns(true)
+                .build();
+        PatternMatchingStage stage = new PatternMatchingStage(config, ValidationType.URL_PATH);
+
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> stage.validate(value));
+
+        assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType());
+    }
+
+    @Test
+    void shouldNotDetectProtocolHandlerSchemeMidValue() {
+        // Start-anchored on the WHOLE value: a scheme-shaped path segment is ordinary REST
+        // vocabulary and must survive even under the strictest preset.
+        SecurityConfiguration config = SecurityConfiguration.paranoid();
+        PatternMatchingStage stage = new PatternMatchingStage(config, ValidationType.URL_PATH);
+
+        Optional<String> result = stage.validate("/v1/data:export");
+        assertTrue(result.isPresent());
+        assertEquals("/v1/data:export", result.get());
+    }
+
+    @Test
+    void shouldNotFailOnProtocolHandlerSchemeWhenDisabled() {
         SecurityConfiguration config = SecurityConfiguration.builder()
                 .failOnSuspiciousPatterns(false)
                 .build();
         PatternMatchingStage stage = new PatternMatchingStage(config, ValidationType.URL_PATH);
 
-        String fullPath = "/app" + suspiciousPath;
-        Optional<String> result = stage.validate(fullPath);
+        Optional<String> result = stage.validate("javascript:alert(1)");
         assertTrue(result.isPresent());
-        assertEquals(fullPath, result.get()); // Should pass through without throwing
+        assertEquals("javascript:alert(1)", result.get());
     }
 
-    // ========== Suspicious Parameter Name Tests ==========
+    // ========== Blocked Parameter Name Tests ==========
 
     @ParameterizedTest
     @ValueSource(strings = {
@@ -197,14 +255,14 @@ class PatternMatchingStageTest {
             "redirect",
             "forward"
     })
-    void shouldDetectSuspiciousParameterNamesWithFailOnSuspiciousEnabled(String suspiciousName) {
+    void shouldDetectBlockedParameterNamesWhenListIsSeeded(String blockedName) {
         SecurityConfiguration config = SecurityConfiguration.builder()
-                .failOnSuspiciousPatterns(true)
+                .blockedParameterNames(SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES)
                 .build();
         PatternMatchingStage stage = new PatternMatchingStage(config, ValidationType.PARAMETER_NAME);
 
         UrlSecurityException exception = assertThrows(UrlSecurityException.class,
-                () -> stage.validate(suspiciousName));
+                () -> stage.validate(blockedName));
 
         assertEquals(UrlSecurityFailureType.SUSPICIOUS_PARAMETER_NAME, exception.getFailureType());
         assertEquals(ValidationType.PARAMETER_NAME, exception.getValidationType());
@@ -213,15 +271,15 @@ class PatternMatchingStageTest {
     }
 
     @Test
-    void shouldNotFailOnSuspiciousParameterNamesWhenDisabled() {
+    void shouldNotFailOnParameterNamesWhenBlockListIsEmpty() {
         SecurityConfiguration config = SecurityConfiguration.builder()
-                .failOnSuspiciousPatterns(false)
+                .failOnSuspiciousPatterns(true)
                 .build();
         PatternMatchingStage stage = new PatternMatchingStage(config, ValidationType.PARAMETER_NAME);
 
-        Optional<String> result = stage.validate("cmd");
+        Optional<String> result = stage.validate("file");
         assertTrue(result.isPresent(), "Validation should return result");
-        assertEquals("cmd", result.get()); // Should pass through
+        assertEquals("file", result.get());
     }
 
     // ========== Case Sensitivity Tests ==========
@@ -276,7 +334,7 @@ class PatternMatchingStageTest {
     @Test
     void shouldApplySuspiciousParameterNamesOnlyToParameterNames() {
         SecurityConfiguration config = SecurityConfiguration.builder()
-                .failOnSuspiciousPatterns(true)
+                .blockedParameterNames(SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES)
                 .build();
 
         // Should detect in PARAMETER_NAME

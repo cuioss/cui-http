@@ -74,7 +74,13 @@ import java.util.Set;
  *        folds of legitimate international text are preserved, not rejected. Paths use NFKC,
  *        parameter values use the lossless NFC form.
  * @param caseSensitiveComparison Whether string comparisons are case-sensitive
- * @param failOnSuspiciousPatterns Whether validation fails on suspicious (non-attack) patterns
+ * @param failOnSuspiciousPatterns Whether validation fails when a URL path or parameter value
+ *        starts with one of the {@link SecurityDefaults#PROTOCOL_HANDLER_SCHEMES}. That structural
+ *        scheme check is this flag's entire remaining scope: the application-layer content
+ *        judgement (sensitive filesystem paths, suspicious parameter names) is governed by
+ *        {@code blockedPathPatterns} and {@code blockedParameterNames}, which are gated on their
+ *        own non-emptiness and not on this flag. When {@code false} a scheme match is allowed
+ *        through <em>silently</em> - {@code PatternMatchingStage} does not log or count it.
  * @param requireSecureCookies Whether cookies must carry the {@code Secure} attribute
  *        (enforced by {@code CookiePrefixValidationStage.validateCookie}). Opt-in, default
  *        {@code false}. Meaningful only for attribute-bearing (Set-Cookie) cookies, not for
@@ -96,6 +102,16 @@ import java.util.Set;
  *        Enforced by the content-type validator ({@code AllowBlockListStage}).
  * @param blockedContentTypes Case-insensitive block-list of content types (takes precedence over
  *        the allow-list). Enforced by the content-type validator ({@code AllowBlockListStage}).
+ * @param blockedPathPatterns Block-list of sensitive path literals; empty (the default) means
+ *        block-none. Enforced by {@code PatternMatchingStage} for {@code URL_PATH} and
+ *        {@code PARAMETER_VALUE} whenever the set is non-empty, matching a whole {@code /}-delimited
+ *        path segment. Seed it from {@link SecurityDefaults#SENSITIVE_PATH_PATTERNS} to reproduce
+ *        the {@link #paranoid()} detection on any base preset.
+ * @param blockedParameterNames Block-list of parameter names; empty (the default) means block-none.
+ *        Enforced by {@code PatternMatchingStage} for {@code PARAMETER_NAME} whenever the set is
+ *        non-empty, matching by exact string equality. Seed it from
+ *        {@link SecurityDefaults#SUSPICIOUS_PARAMETER_NAMES} to reproduce the {@link #paranoid()}
+ *        detection on any base preset.
  *
  * @since 1.0
  * @see SecurityConfigurationBuilder
@@ -127,7 +143,9 @@ int maxCookieCount,
 Set<String> allowedHeaderNames,
 Set<String> blockedHeaderNames,
 Set<String> allowedContentTypes,
-Set<String> blockedContentTypes
+Set<String> blockedContentTypes,
+Set<String> blockedPathPatterns,
+Set<String> blockedParameterNames
 ) {
 
     /**
@@ -174,6 +192,8 @@ Set<String> blockedContentTypes
         blockedHeaderNames = blockedHeaderNames == null ? Set.of() : Set.copyOf(blockedHeaderNames);
         allowedContentTypes = allowedContentTypes == null ? Set.of() : Set.copyOf(allowedContentTypes);
         blockedContentTypes = blockedContentTypes == null ? Set.of() : Set.copyOf(blockedContentTypes);
+        blockedPathPatterns = blockedPathPatterns == null ? Set.of() : Set.copyOf(blockedPathPatterns);
+        blockedParameterNames = blockedParameterNames == null ? Set.of() : Set.copyOf(blockedParameterNames);
     }
 
     /**
@@ -196,6 +216,29 @@ Set<String> blockedContentTypes
      */
     public static SecurityConfiguration strict() {
         return SecurityDefaults.STRICT_CONFIGURATION;
+    }
+
+    /**
+     * Creates a paranoid security configuration: {@link #strict()} plus the application-layer
+     * content detection that no lower preset performs.
+     *
+     * <p>Delegates to {@link SecurityDefaults#PARANOID_CONFIGURATION}, the single source of truth
+     * for preset semantics. It differs from {@code strict()} in exactly two settings - it seeds
+     * {@code blockedPathPatterns} from {@link SecurityDefaults#SENSITIVE_PATH_PATTERNS} and
+     * {@code blockedParameterNames} from {@link SecurityDefaults#SUSPICIOUS_PARAMETER_NAMES}.</p>
+     *
+     * <p><strong>False-positive profile.</strong> Those literals are filesystem paths and
+     * configuration filenames, so this preset rejects a request whose path carries a matching
+     * {@code /}-delimited segment (for example {@code /config/etc/settings}) and a request whose
+     * parameter name is exactly {@code file}, {@code path}, {@code url} or one of their siblings -
+     * all legitimate vocabulary in many REST APIs. Choose it where paths and parameters really do
+     * reach a filesystem; otherwise seed a narrower list of your own via
+     * {@link SecurityConfigurationBuilder#blockedPathPatterns(Set)} on another base preset.</p>
+     *
+     * @return A SecurityConfiguration with strict policies plus content block-lists
+     */
+    public static SecurityConfiguration paranoid() {
+        return SecurityDefaults.PARANOID_CONFIGURATION;
     }
 
     /**

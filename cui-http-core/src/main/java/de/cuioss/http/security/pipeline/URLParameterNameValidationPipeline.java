@@ -48,8 +48,9 @@ import java.util.Objects;
  *       stage does not rewrite parameter names. It is retained here solely for stage-order
  *       symmetry with the parameter-value pipeline; removing it is out of this plan's scope.</li>
  *   <li><strong>Pattern Matching</strong> - Path-traversal detection is unconditional.
- *       Suspicious-parameter-name detection fires only when {@code failOnSuspiciousPatterns} is
- *       enabled, which is <em>not</em> the default.</li>
+ *       Blocked-parameter-name detection fires only when {@code blockedParameterNames} is
+ *       non-empty, which it is <em>not</em> by default;
+ *       {@link SecurityConfiguration#paranoid()} is the preset that seeds it.</li>
  * </ol>
  *
  * <h3>Value Equality</h3>
@@ -95,7 +96,7 @@ public final class URLParameterNameValidationPipeline extends AbstractValidation
     private static List<HttpSecurityValidator> createStages(SecurityConfiguration config) {
         Objects.requireNonNull(config, "Config must not be null");
         // Stages are typed PARAMETER_NAME so that name-only rules (stricter length limit,
-        // decoded delimiter/CR-LF rejection, suspicious-name detection) are actually applied.
+        // decoded delimiter/CR-LF rejection, blocked-name detection) are actually applied.
         return List.of(
                 new LengthValidationStage(config, ValidationType.PARAMETER_NAME),
                 new CharacterValidationStage(config, ValidationType.PARAMETER_NAME),

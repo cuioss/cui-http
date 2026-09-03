@@ -23,6 +23,7 @@ import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import org.jspecify.annotations.Nullable;
 
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
@@ -37,11 +38,19 @@ import java.util.stream.Collectors;
  * The stage analyzes input against multiple security pattern databases:</p>
  *
  * <ol>
- *   <li><strong>Path Traversal Patterns</strong> - Detects directory traversal attempts</li>
- *   <li><strong>Suspicious Protocol Patterns</strong> - Identifies protocol violations</li>
- *   <li><strong>Suspicious Path Patterns</strong> - Detects access to sensitive system locations</li>
- *   <li><strong>Parameter Attack Patterns</strong> - Identifies malicious parameter usage</li>
+ *   <li><strong>Path Traversal Patterns</strong> - Detects directory traversal attempts
+ *       (unconditional)</li>
+ *   <li><strong>Protocol Handler Schemes</strong> - Rejects a value that <em>starts with</em> a
+ *       protocol handler such as {@code javascript:}; gated on {@code failOnSuspiciousPatterns}</li>
+ *   <li><strong>Blocked Path Patterns</strong> - Rejects a value carrying a blocked
+ *       {@code /}-delimited path segment; gated on {@code blockedPathPatterns} being non-empty</li>
+ *   <li><strong>Blocked Parameter Names</strong> - Rejects a parameter name equal to a blocked
+ *       name; gated on {@code blockedParameterNames} being non-empty</li>
  * </ol>
+ *
+ * <p>The last two are application-layer content judgements, so no preset below
+ * {@link SecurityConfiguration#paranoid()} seeds their lists - see that preset for the default
+ * seeding and its false-positive profile.</p>
  *
  * <h3>Supported Validation Types</h3>
  * <p>The pattern databases apply to {@link ValidationType#URL_PATH},
@@ -54,7 +63,8 @@ import java.util.stream.Collectors;
  * <h3>Design Principles</h3>
  * <ul>
  *   <li><strong>Signature-Based Detection</strong> - Uses known attack patterns from OWASP and CVE databases</li>
- *   <li><strong>Configurable Sensitivity</strong> - Behavior controlled by failOnSuspiciousPatterns setting</li>
+ *   <li><strong>Configurable Sensitivity</strong> - The scheme check is controlled by
+ *       failOnSuspiciousPatterns; the two content block-lists are controlled by their own contents</li>
  *   <li><strong>Performance</strong> - Uses pre-compiled patterns</li>
  *   <li><strong>Context Aware</strong> - Different pattern sets applied based on validation type</li>
  * </ul>
@@ -62,9 +72,11 @@ import java.util.stream.Collectors;
  * <h3>Security Validations</h3>
  * <ul>
  *   <li><strong>Path Traversal</strong> - ../,..\\, and encoded variants</li>
- *   <li><strong>Protocol Violations</strong> - Suspicious URI schemes and protocol handlers</li>
- *   <li><strong>File Access</strong> - Attempts to access sensitive system files</li>
- *   <li><strong>Parameter Pollution</strong> - Suspicious parameter names and patterns</li>
+ *   <li><strong>Protocol Violations</strong> - Values starting with a protocol handler scheme</li>
+ *   <li><strong>File Access</strong> - Attempts to access sensitive system files (opt-in via
+ *       {@code blockedPathPatterns})</li>
+ *   <li><strong>Parameter Pollution</strong> - Blocked parameter names (opt-in via
+ *       {@code blockedParameterNames})</li>
  * </ul>
  *
  * <h3>Usage Examples</h3>
@@ -111,18 +123,23 @@ import java.util.stream.Collectors;
  *
  * <h3>Configuration Dependencies</h3>
  * <ul>
- *   <li><strong>failOnSuspiciousPatterns</strong> - Controls whether a suspicious-pattern match
- *       rejects the input. When {@code false} a match is allowed through <em>silently</em>: this
- *       stage does not log, count or otherwise report it.</li>
+ *   <li><strong>failOnSuspiciousPatterns</strong> - Controls whether a protocol-handler scheme
+ *       match rejects the input, and nothing else. When {@code false} a match is allowed through
+ *       <em>silently</em>: this stage does not log, count or otherwise report it.</li>
+ *   <li><strong>blockedPathPatterns / blockedParameterNames</strong> - Each governs its own check
+ *       and is enforced whenever the set is non-empty, independently of
+ *       {@code failOnSuspiciousPatterns}.</li>
  *   <li><strong>caseSensitiveComparison</strong> - When {@code false} (the default) both the input
  *       and the pattern set are lowercased before comparison, so case-insensitive matching detects
  *       a superset of what case-sensitive matching detects. Enabling it can therefore only
  *       <em>reduce</em> detection, never increase it. The effect differs per database:
  *       <ul>
- *         <li>{@link SecurityDefaults#SUSPICIOUS_PATH_PATTERNS} and
+ *         <li>{@link SecurityDefaults#PROTOCOL_HANDLER_SCHEMES},
+ *             {@link SecurityDefaults#SENSITIVE_PATH_PATTERNS} and
  *             {@link SecurityDefaults#SUSPICIOUS_PARAMETER_NAMES} are all-lowercase literals, so
- *             under {@code true} they cannot match a mixed-case input such as {@code /ETC/passwd}
- *             at all.</li>
+ *             under {@code true} they cannot match a mixed-case input such as
+ *             {@code JavaScript:alert(1)} or {@code /ETC/passwd} at all. The same holds for any
+ *             caller-supplied block-list seeded from them.</li>
  *         <li>{@link SecurityDefaults#PATH_TRAVERSAL_PATTERNS} is deliberately mixed-case (it
  *             enumerates encoded spellings such as {@code ..%2F} and {@code %2E%2E/}), so under
  *             {@code true} it matches only the case permutations it literally enumerates.</li>
@@ -209,16 +226,16 @@ ValidationType validationType) implements HttpSecurityValidator {
     // Application layers have proper context for HTML/JS escaping and validation.
 
     /**
-     * Pre-computed lowercase variants of the pattern databases. The pattern sets are
+     * Pre-computed lowercase variants of the static pattern databases. These sets are
      * constants, so lowercasing them once here avoids re-lowercasing every pattern on
-     * every validation call in case-insensitive mode (the common configuration).
+     * every validation call in case-insensitive mode (the common configuration). The
+     * configurable block-lists have no such cache - they are caller-supplied, so they are
+     * lowercased per check call instead; both are small.
      */
     private static final Set<String> PATH_TRAVERSAL_PATTERNS_LOWERCASE =
             toLowercaseSet(SecurityDefaults.PATH_TRAVERSAL_PATTERNS);
-    private static final Set<String> SUSPICIOUS_PATH_PATTERNS_LOWERCASE =
-            toLowercaseSet(SecurityDefaults.SUSPICIOUS_PATH_PATTERNS);
-    private static final Set<String> SUSPICIOUS_PARAMETER_NAMES_LOWERCASE =
-            toLowercaseSet(SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES);
+    private static final Set<String> PROTOCOL_HANDLER_SCHEMES_LOWERCASE =
+            toLowercaseSet(SecurityDefaults.PROTOCOL_HANDLER_SCHEMES);
 
     private static Set<String> toLowercaseSet(Set<String> patterns) {
         return patterns.stream()
@@ -249,7 +266,12 @@ ValidationType validationType) implements HttpSecurityValidator {
      *                              <ul>
      *                                <li>PATH_TRAVERSAL_DETECTED - if path traversal patterns found</li>
      *                                <!-- XSS detection removed - application layer responsibility -->
-     *                                <li>SUSPICIOUS_PATTERN_DETECTED - if suspicious patterns found and policy requires failure</li>
+     *                                <li>SUSPICIOUS_PATTERN_DETECTED - if the value starts with a
+     *                                    protocol handler scheme and {@code failOnSuspiciousPatterns}
+     *                                    is enabled, or if a {@code /}-delimited segment matches the
+     *                                    non-empty {@code blockedPathPatterns} list</li>
+     *                                <li>SUSPICIOUS_PARAMETER_NAME - if a parameter name equals an
+     *                                    entry of the non-empty {@code blockedParameterNames} list</li>
      *                              </ul>
      */
     @Override
@@ -277,14 +299,15 @@ ValidationType validationType) implements HttpSecurityValidator {
 
         // XSS pattern checking removed - application layer responsibility.
 
-        // Step 3: Check for suspicious system paths (paths and parameters)
+        // Step 3: Check for protocol handler schemes and blocked path literals (paths and parameters)
         if (validationType == ValidationType.URL_PATH || validationType == ValidationType.PARAMETER_VALUE) {
-            checkSuspiciousPathPatterns(value, testValue);
+            checkProtocolHandlerSchemes(value, testValue);
+            checkBlockedPathPatterns(value, testValue);
         }
 
-        // Step 4: Check for suspicious parameter names (parameter names only)
+        // Step 4: Check for blocked parameter names (parameter names only)
         if (validationType == ValidationType.PARAMETER_NAME) {
-            checkSuspiciousParameterNames(value, testValue);
+            checkBlockedParameterNames(value, testValue);
         }
 
         // Validation passed - return original value
@@ -346,17 +369,58 @@ ValidationType validationType) implements HttpSecurityValidator {
     // Application layers have proper context for HTML/JS escaping and validation.
 
     /**
-     * Checks input for suspicious system path patterns.
+     * Checks whether the input starts with a protocol handler scheme.
+     *
+     * <p>The match is anchored to the start of the <em>whole</em> tested value, not to each path
+     * segment: a path component may never begin with a protocol handler, but a segment such as
+     * {@code data:export} in {@code /v1/data:export} is ordinary REST vocabulary and must pass.</p>
      *
      * @param originalValue The original input value
      * @param testValue     The value prepared for testing (case-normalized if needed)
-     * @throws UrlSecurityException if suspicious patterns are found and policy requires failure
+     * @throws UrlSecurityException if a scheme is found and policy requires failure
      */
-    private void checkSuspiciousPathPatterns(String originalValue, String testValue) {
-        Set<String> patterns = config.caseSensitiveComparison()
-                ? SecurityDefaults.SUSPICIOUS_PATH_PATTERNS : SUSPICIOUS_PATH_PATTERNS_LOWERCASE;
+    private void checkProtocolHandlerSchemes(String originalValue, String testValue) {
+        if (!config.failOnSuspiciousPatterns()) {
+            // Not configured to fail - the match is permitted silently (see ADR-0006).
+            return;
+        }
+        Set<String> schemes = config.caseSensitiveComparison()
+                ? SecurityDefaults.PROTOCOL_HANDLER_SCHEMES : PROTOCOL_HANDLER_SCHEMES_LOWERCASE;
+        for (String scheme : schemes) {
+            if (testValue.startsWith(scheme)) {
+                throw UrlSecurityException.builder()
+                        .failureType(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED)
+                        .validationType(validationType)
+                        .originalInput(originalValue)
+                        .detail("Suspicious path pattern detected: " + scheme)
+                        .build();
+            }
+        }
+    }
+
+    /**
+     * Checks the input against the configured path block-list.
+     *
+     * <p>Enforced whenever {@link SecurityConfiguration#blockedPathPatterns()} is non-empty -
+     * mirroring {@code AllowBlockListStage}, whose block-list is likewise not gated by any boolean.
+     * A pattern matches only when some {@code /}-delimited segment of the tested value
+     * <em>equals</em> it with its leading and trailing {@code /} stripped, so {@code /etc/} rejects
+     * {@code /config/etc/settings} but not {@code /api/sketches}.</p>
+     *
+     * @param originalValue The original input value
+     * @param testValue     The value prepared for testing (case-normalized if needed)
+     * @throws UrlSecurityException if a blocked path pattern is found
+     */
+    private void checkBlockedPathPatterns(String originalValue, String testValue) {
+        Set<String> configured = config.blockedPathPatterns();
+        if (configured.isEmpty()) {
+            return;
+        }
+        Set<String> patterns = config.caseSensitiveComparison() ? configured : toLowercaseSet(configured);
+        Set<String> segments = Arrays.stream(testValue.split("/")).collect(Collectors.toSet());
         for (String pattern : patterns) {
-            if (testValue.contains(pattern) && config.failOnSuspiciousPatterns()) {
+            String segment = stripSurroundingSlashes(pattern);
+            if (!segment.isEmpty() && segments.contains(segment)) {
                 throw UrlSecurityException.builder()
                         .failureType(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED)
                         .validationType(validationType)
@@ -364,35 +428,51 @@ ValidationType validationType) implements HttpSecurityValidator {
                         .detail("Suspicious path pattern detected: " + pattern)
                         .build();
             }
-            // If not configured to fail, continue validation but could log here
-
         }
     }
 
     /**
-     * Checks parameter names for suspicious patterns commonly used in attacks.
+     * Strips one leading and one trailing {@code /} from a block-list pattern, so that the
+     * path-shaped spelling {@code /etc/} and the bare spelling {@code etc} both denote the same
+     * path segment.
+     *
+     * @param pattern The configured block-list pattern
+     * @return The pattern reduced to the path segment it denotes
+     */
+    private static String stripSurroundingSlashes(String pattern) {
+        int start = pattern.startsWith("/") ? 1 : 0;
+        int end = pattern.length();
+        if (end > start && pattern.charAt(end - 1) == '/') {
+            end--;
+        }
+        return pattern.substring(start, end);
+    }
+
+    /**
+     * Checks parameter names against the configured parameter-name block-list.
+     *
+     * <p>Enforced whenever {@link SecurityConfiguration#blockedParameterNames()} is non-empty.</p>
      *
      * @param originalValue The original input value
      * @param testValue     The value prepared for testing (case-normalized if needed)
-     * @throws UrlSecurityException if suspicious parameter names are found and policy requires failure
+     * @throws UrlSecurityException if a blocked parameter name is found
      */
-    private void checkSuspiciousParameterNames(String originalValue, String testValue) {
-        Set<String> names = config.caseSensitiveComparison()
-                ? SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES : SUSPICIOUS_PARAMETER_NAMES_LOWERCASE;
-        for (String suspiciousName : names) {
-            // Exact-match only: substring matching (contains) would reject legitimate names such
-            // as "transcript", "profile" or "filepath" merely because they embed a suspicious
-            // token like "script", "file" or "path".
-            if (testValue.equals(suspiciousName) && config.failOnSuspiciousPatterns()) {
-                throw UrlSecurityException.builder()
-                        .failureType(UrlSecurityFailureType.SUSPICIOUS_PARAMETER_NAME)
-                        .validationType(validationType)
-                        .originalInput(originalValue)
-                        .detail("Suspicious parameter name detected: " + suspiciousName)
-                        .build();
-            }
-            // If not configured to fail, continue validation
-
+    private void checkBlockedParameterNames(String originalValue, String testValue) {
+        Set<String> configured = config.blockedParameterNames();
+        if (configured.isEmpty()) {
+            return;
+        }
+        Set<String> names = config.caseSensitiveComparison() ? configured : toLowercaseSet(configured);
+        // Exact-match only: substring matching (contains) would reject legitimate names such
+        // as "transcript", "profile" or "filepath" merely because they embed a blocked
+        // token like "script", "file" or "path".
+        if (names.contains(testValue)) {
+            throw UrlSecurityException.builder()
+                    .failureType(UrlSecurityFailureType.SUSPICIOUS_PARAMETER_NAME)
+                    .validationType(validationType)
+                    .originalInput(originalValue)
+                    .detail("Suspicious parameter name detected: " + testValue)
+                    .build();
         }
     }
 

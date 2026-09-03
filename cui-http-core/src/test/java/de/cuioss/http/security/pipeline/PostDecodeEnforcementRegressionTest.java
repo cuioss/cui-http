@@ -42,7 +42,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * <ol>
  *   <li>a percent-encoded control character is rejected after decoding, and the guard is governed
  *       by {@code allowControlCharacters} rather than hard-coded (SV-3 / SV-5);</li>
- *   <li>the strict preset detects a mixed-case suspicious path, because it no longer compares
+ *   <li>the paranoid preset detects a mixed-case sensitive path, because it no longer compares
  *       case-sensitively against an all-lowercase pattern set (SV-4);</li>
  *   <li>every case permutation of the encoded double dot is detected as traversal (SV-10);</li>
  *   <li>URL path decoding follows RFC 3986 and preserves a literal {@code +} instead of rewriting
@@ -97,18 +97,18 @@ class PostDecodeEnforcementRegressionTest {
     }
 
     @Nested
-    @DisplayName("(2) SV-4: the strict preset is no longer case-weakened")
-    class StrictPresetCaseSensitivity {
+    @DisplayName("(2) SV-4: the paranoid preset is no longer case-weakened")
+    class ParanoidPresetCaseSensitivity {
 
         @ParameterizedTest
-        @DisplayName("SV-4: strict() rejects a suspicious path in either case")
+        @DisplayName("SV-4: paranoid() rejects a sensitive path in either case")
         @ValueSource(strings = {"/ETC/passwd", "/etc/passwd"})
-        void strictRejectsSuspiciousPathRegardlessOfCase(String path) {
-            HttpSecurityValidator pipeline = pipeline(SecurityConfiguration.strict());
+        void paranoidRejectsSensitivePathRegardlessOfCase(String path) {
+            HttpSecurityValidator pipeline = pipeline(SecurityConfiguration.paranoid());
 
             UrlSecurityException exception = assertThrows(UrlSecurityException.class,
                     () -> pipeline.validate(path),
-                    "strict() must detect '" + path + "' - SUSPICIOUS_PATH_PATTERNS is all-lowercase, "
+                    "paranoid() must detect '" + path + "' - SENSITIVE_PATH_PATTERNS is all-lowercase, "
                             + "so case-sensitive comparison would let the mixed-case spelling through");
 
             assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType());

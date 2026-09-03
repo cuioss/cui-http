@@ -116,6 +116,10 @@ public class SecurityConfigurationBuilder {
     private Set<String> allowedContentTypes = Set.of();
     private Set<String> blockedContentTypes = Set.of();
 
+    // Content block-list defaults (empty = block-none; enforced by PatternMatchingStage)
+    private Set<String> blockedPathPatterns = Set.of();
+    private Set<String> blockedParameterNames = Set.of();
+
     /**
      * Package-private constructor for internal use.
      */
@@ -344,10 +348,16 @@ public class SecurityConfigurationBuilder {
      * {@code false} (the default) both the input and the pattern set are lowercased before
      * comparison, so case-insensitive matching detects a superset of what case-sensitive matching
      * detects. Enabling case sensitivity therefore never increases detection. Concretely,
-     * {@link de.cuioss.http.security.config.SecurityDefaults#SUSPICIOUS_PATH_PATTERNS} and
+     * {@link de.cuioss.http.security.config.SecurityDefaults#PROTOCOL_HANDLER_SCHEMES},
+     * {@link de.cuioss.http.security.config.SecurityDefaults#SENSITIVE_PATH_PATTERNS} and
      * {@link de.cuioss.http.security.config.SecurityDefaults#SUSPICIOUS_PARAMETER_NAMES} are
-     * all-lowercase literals, so under {@code true} they match nothing mixed-case - an input such
-     * as {@code /ETC/passwd} passes. ({@link
+     * all-lowercase literals, so under {@code true} they match nothing mixed-case - inputs such
+     * as {@code JavaScript:alert(1)} and {@code /ETC/passwd} pass. The same holds for any
+     * caller-supplied block-list seeded via {@link #blockedPathPatterns(Set)} or
+     * {@link #blockedParameterNames(Set)}: seeding it from
+     * {@code SecurityDefaults.SENSITIVE_PATH_PATTERNS} reproduces the
+     * {@link SecurityConfiguration#paranoid()} detection on any base preset, and enabling case
+     * sensitivity narrows that detection to the literal spellings. ({@link
      * de.cuioss.http.security.config.SecurityDefaults#PATH_TRAVERSAL_PATTERNS} is deliberately
      * mixed-case rather than all-lowercase, but under {@code true} it still matches only the case
      * permutations it literally enumerates.)</p>
@@ -361,12 +371,18 @@ public class SecurityConfigurationBuilder {
     }
 
     /**
-     * Sets whether to fail on detection of suspicious patterns.
+     * Sets whether to fail when a URL path or parameter value starts with one of the
+     * {@link de.cuioss.http.security.config.SecurityDefaults#PROTOCOL_HANDLER_SCHEMES}.
      *
-     * <p>With {@code false}, a suspicious-pattern match is allowed through <em>silently</em>:
+     * <p>That structural scheme check is this flag's entire scope. The application-layer content
+     * judgement - sensitive filesystem paths and suspicious parameter names - is governed by
+     * {@link #blockedPathPatterns(Set)} and {@link #blockedParameterNames(Set)}, each gated on its
+     * own list being non-empty rather than on this flag.</p>
+     *
+     * <p>With {@code false}, a scheme match is allowed through <em>silently</em>:
      * {@code PatternMatchingStage} does not log, count or otherwise report it.</p>
      *
-     * @param fail true to reject input on a suspicious-pattern match, false to allow it silently
+     * @param fail true to reject input on a protocol-handler scheme match, false to allow it silently
      * @return This builder for method chaining
      */
     public SecurityConfigurationBuilder failOnSuspiciousPatterns(boolean fail) {
@@ -509,6 +525,42 @@ public class SecurityConfigurationBuilder {
         return this;
     }
 
+    // === Content Block-List Methods ===
+
+    /**
+     * Sets the block-list of sensitive path literals. An empty set (the default) means block-none.
+     * Enforced by {@code PatternMatchingStage} for URL paths and parameter values whenever the set
+     * is non-empty, matching a whole {@code /}-delimited path segment.
+     *
+     * <p>Seeding this from {@link SecurityDefaults#SENSITIVE_PATH_PATTERNS} reproduces the
+     * {@link SecurityConfiguration#paranoid()} path detection on any base preset - it is gated on
+     * the list being non-empty, not on {@code failOnSuspiciousPatterns}.</p>
+     *
+     * @param pathPatterns blocked path literals (null is treated as empty)
+     * @return This builder for method chaining
+     */
+    public SecurityConfigurationBuilder blockedPathPatterns(@Nullable Set<String> pathPatterns) {
+        this.blockedPathPatterns = pathPatterns == null ? Set.of() : Set.copyOf(pathPatterns);
+        return this;
+    }
+
+    /**
+     * Sets the block-list of parameter names. An empty set (the default) means block-none.
+     * Enforced by {@code PatternMatchingStage} for parameter names whenever the set is non-empty,
+     * matching by exact string equality (never as a substring, so {@code transcript} is not
+     * rejected by a {@code script} entry).
+     *
+     * <p>Seeding this from {@link SecurityDefaults#SUSPICIOUS_PARAMETER_NAMES} reproduces the
+     * {@link SecurityConfiguration#paranoid()} parameter-name detection on any base preset.</p>
+     *
+     * @param parameterNames blocked parameter names (null is treated as empty)
+     * @return This builder for method chaining
+     */
+    public SecurityConfigurationBuilder blockedParameterNames(@Nullable Set<String> parameterNames) {
+        this.blockedParameterNames = parameterNames == null ? Set.of() : Set.copyOf(parameterNames);
+        return this;
+    }
+
     /**
      * Builds the SecurityConfiguration with the current settings.
      *
@@ -526,7 +578,8 @@ public class SecurityConfigurationBuilder {
                 caseSensitiveComparison, failOnSuspiciousPatterns,
                 requireSecureCookies, requireHttpOnlyCookies,
                 maxParameterCount, maxHeaderCount, maxCookieCount,
-                allowedHeaderNames, blockedHeaderNames, allowedContentTypes, blockedContentTypes
+                allowedHeaderNames, blockedHeaderNames, allowedContentTypes, blockedContentTypes,
+                blockedPathPatterns, blockedParameterNames
         );
     }
 }
