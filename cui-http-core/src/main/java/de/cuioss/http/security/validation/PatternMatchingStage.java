@@ -392,7 +392,7 @@ ValidationType validationType) implements HttpSecurityValidator {
                         .failureType(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED)
                         .validationType(validationType)
                         .originalInput(originalValue)
-                        .detail("Suspicious path pattern detected: " + scheme)
+                        .detail("Protocol handler scheme detected: " + scheme)
                         .build();
             }
         }
