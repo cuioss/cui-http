@@ -21,10 +21,13 @@ import de.cuioss.test.generator.Generators;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
 import de.cuioss.test.juli.junit5.EnableTestLogger;
 import de.cuioss.test.mockwebserver.EnableMockWebServer;
+import de.cuioss.test.mockwebserver.TestProvidedCertificate;
 import de.cuioss.test.mockwebserver.URIBuilder;
 import de.cuioss.test.mockwebserver.dispatcher.ModuleDispatcher;
 import de.cuioss.test.mockwebserver.dispatcher.ModuleDispatcherElement;
 import mockwebserver3.MockWebServer;
+import okhttp3.tls.HandshakeCertificates;
+import okhttp3.tls.HeldCertificate;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -32,6 +35,9 @@ import javax.net.ssl.SSLContext;
 import java.net.URI;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -65,6 +71,14 @@ import static org.junit.jupiter.api.Assertions.*;
  * cleartext {@code HttpHandlerRedirectTest} fixture is refused them by the unconditional
  * cleartext rule.
  * <p>
+ * The fixture certificate this class provides ({@link #getTestProvidedHandshakeCertificates()})
+ * additionally names {@value RedirectDispatcher#ALLOWLISTED_HOST} — the loopback alias under which
+ * the same server is reachable a second time. That one extra
+ * subject-alternative name is what extends the same-origin credential proof to the
+ * <em>allowlisted cross-origin</em> hop: without it the hop cannot complete its handshake at all,
+ * so {@link RedirectPolicy.CredentialForwarding#FORWARD_TO_ALLOWLISTED} could only ever be asserted
+ * at the {@link RedirectPolicy} seam, never against the request the target actually received.
+ * <p>
  * Cleartext {@code HttpHandler} integration coverage lives in {@code HttpHandlerIntegrationTest};
  * the remaining redirect-following behaviour lives in {@code HttpHandlerRedirectTest}.
  *
@@ -74,8 +88,43 @@ import static org.junit.jupiter.api.Assertions.*;
 @EnableTestLogger
 @EnableGeneratorController
 @EnableMockWebServer(useHttps = true)
+@TestProvidedCertificate
 @DisplayName("HttpHandler HTTPS Integration Tests")
 class HttpHandlerHttpsIntegrationTest {
+
+    private static final String AUTHORIZATION_VALUE = "Bearer test-token";
+
+    private static final String COOKIE_VALUE = "session=abc";
+
+    /**
+     * The TLS material both the server and the injected client {@code SSLContext} are built from.
+     * <p>
+     * Mirrors {@code KeyMaterialUtil.createSelfSignedHandshakeCertificates} — same common name,
+     * same one-day validity window, same RSA key size, held and trusted alike — with one addition:
+     * {@value RedirectDispatcher#ALLOWLISTED_HOST} is registered as a second subject-alternative
+     * name. It parses as an IP literal, so okhttp emits it as an
+     * {@code iPAddress} SAN rather than a DNS one, which is what a JDK client checks when it
+     * connects to that literal. The default fixture certificate names {@code localhost} only, so the
+     * allowlisted cross-origin hop would fail hostname verification before any credential decision
+     * could be observed.
+     *
+     * @return the handshake certificates the MockWebServer fixture runs with
+     */
+    static HandshakeCertificates getTestProvidedHandshakeCertificates() {
+        Instant notBefore = Instant.now();
+        Instant notAfter = notBefore.plus(1, ChronoUnit.DAYS);
+        HeldCertificate certificate = new HeldCertificate.Builder()
+                .commonName("MockWebServer")
+                .addSubjectAlternativeName("localhost")
+                .addSubjectAlternativeName(RedirectDispatcher.ALLOWLISTED_HOST)
+                .validityInterval(notBefore.toEpochMilli(), notAfter.toEpochMilli())
+                .rsa2048()
+                .build();
+        return new HandshakeCertificates.Builder()
+                .heldCertificate(certificate)
+                .addTrustedCertificate(certificate.certificate())
+                .build();
+    }
 
     private final TestContentDispatcher dispatcher = new TestContentDispatcher();
 
@@ -169,17 +218,14 @@ class HttpHandlerHttpsIntegrationTest {
                      .sslContext(sslContext)
                      .build()) {
             HttpRequest request = handler.requestBuilder()
-                    .header("Authorization", "Bearer test-token")
-                    .header("Cookie", "session=abc")
+                    .header("Authorization", AUTHORIZATION_VALUE)
+                    .header("Cookie", COOKIE_VALUE)
                     .GET()
                     .build();
             response = handler.send(request, HttpResponse.BodyHandlers.ofString());
         }
 
-        assertEquals(200, response.statusCode(), "the hop must have reached the terminal route");
-        String echo = response.headers().firstValue(RedirectDispatcher.HEADER_ECHO)
-                .orElseThrow(() -> new AssertionError("terminal response carried no "
-                        + RedirectDispatcher.HEADER_ECHO + " header"));
+        String echo = echoOf(response);
 
         // The positive control for the cleartext credential rule: the same hop shape that drops both
         // headers over http in HttpHandlerRedirectTest carries both when the target is https.
@@ -190,6 +236,79 @@ class HttpHandlerHttpsIntegrationTest {
                         "an https same-origin hop must keep Authorization"),
                 () -> assertEquals("present", echoField(echo, "cookie"),
                         "an https same-origin hop must keep Cookie"));
+    }
+
+    @Test
+    @DisplayName("FORWARD_TO_ALLOWLISTED carries Authorization and Cookie across an allowlisted cross-origin hop over TLS")
+    @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
+    void forwardToAllowlistedCrossOriginHopOverTlsKeepsCredentials(URIBuilder uriBuilder, SSLContext sslContext)
+            throws Exception {
+        HttpResponse<String> response = allowlistedCrossOriginHop(uriBuilder, sslContext,
+                RedirectPolicy.CredentialForwarding.FORWARD_TO_ALLOWLISTED);
+        String echo = echoOf(response);
+
+        // The end-to-end proof the opt-in actually forwards: the hop is genuinely cross-origin (a
+        // different host reached over a real second handshake), so only the strategy can explain the
+        // credentials arriving — and the negative control below shows the same hop dropping them.
+        assertAll("the credentials the allowlisted cross-origin target actually received over TLS",
+                () -> assertEquals("https", response.uri().getScheme(),
+                        "the terminal request must have been issued over TLS, not over a cleartext fallback"),
+                () -> assertEquals(RedirectDispatcher.ALLOWLISTED_HOST, response.uri().getHost(),
+                        "the terminal request must have gone to the allowlisted host, so the hop was cross-origin"),
+                () -> assertEquals("present", echoField(echo, "authorization"),
+                        "FORWARD_TO_ALLOWLISTED must carry Authorization to an allowlisted https target"),
+                () -> assertEquals("present", echoField(echo, "cookie"),
+                        "FORWARD_TO_ALLOWLISTED must carry Cookie to an allowlisted https target"));
+    }
+
+    @Test
+    @DisplayName("STRIP_ON_CROSS_ORIGIN drops Authorization and Cookie on the same allowlisted TLS hop")
+    @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
+    void stripOnCrossOriginHopOverTlsDropsCredentials(URIBuilder uriBuilder, SSLContext sslContext) throws Exception {
+        String echo = echoOf(allowlistedCrossOriginHop(uriBuilder, sslContext,
+                RedirectPolicy.CredentialForwarding.STRIP_ON_CROSS_ORIGIN));
+
+        // The negative control for the test above: same hop, same fixture, only the strategy differs.
+        assertAll("the credentials the same hop delivers under the secure default",
+                () -> assertEquals("absent", echoField(echo, "authorization"),
+                        "the secure default must drop Authorization even on an allowlisted https hop"),
+                () -> assertEquals("absent", echoField(echo, "cookie"),
+                        "the secure default must drop Cookie even on an allowlisted https hop"));
+    }
+
+    /**
+     * Drives {@link RedirectDispatcher#PATH_ALLOWLISTED} — a hop to the same server under its
+     * loopback alias, so genuinely cross-origin — with {@code Authorization} and {@code Cookie} set,
+     * under the given forwarding strategy.
+     */
+    private static HttpResponse<String> allowlistedCrossOriginHop(URIBuilder uriBuilder, SSLContext sslContext,
+            RedirectPolicy.CredentialForwarding strategy) throws Exception {
+        URI start = URI.create(uriBuilder.build().toString().replaceAll("/$", "")
+                + RedirectDispatcher.PATH_ALLOWLISTED);
+
+        try (HttpHandler handler = HttpHandler.builder()
+                     .uri(start)
+                     .sslContext(sslContext)
+                     .redirectPolicy(RedirectPolicy.builder()
+                             .allowedHosts(List.of(RedirectDispatcher.ALLOWLISTED_HOST))
+                             .credentialForwarding(strategy)
+                             .build())
+                     .build()) {
+            HttpRequest request = handler.requestBuilder()
+                    .header("Authorization", AUTHORIZATION_VALUE)
+                    .header("Cookie", COOKIE_VALUE)
+                    .GET()
+                    .build();
+            return handler.send(request, HttpResponse.BodyHandlers.ofString());
+        }
+    }
+
+    /** Reads the terminal echo from the response header, after asserting the hop reached the target. */
+    private static String echoOf(HttpResponse<String> response) {
+        assertEquals(200, response.statusCode(), "the hop must have reached the terminal route");
+        return response.headers().firstValue(RedirectDispatcher.HEADER_ECHO)
+                .orElseThrow(() -> new AssertionError("terminal response carried no "
+                        + RedirectDispatcher.HEADER_ECHO + " header"));
     }
 
     /** Extracts one {@code key=value} field from a {@link RedirectDispatcher#echo} string. */
