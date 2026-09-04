@@ -110,8 +110,6 @@ gh pr create --repo cuioss/cui-http --base main \
 
 The mechanical release PR carries the `skip-bot-review` label to skip automated bot review.
 
-Use the project commit convention: `Co-Authored-By: Claude <noreply@anthropic.com>` (no
-model name / no "Generated with Claude Code" footer).
 
 ### Step 7 — Wait for PR checks (~5–8 min)
 
@@ -254,4 +252,3 @@ dependency PRs were collapsed/removed during note reformatting.
   and auto-merge is blocked.
 - Never merge a red PR; fix and re-wait.
 - Temporary files go under `.plan/temp/`.
-- Commit trailer: `Co-Authored-By: Claude <noreply@anthropic.com>`; no PR footer line.
