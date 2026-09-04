@@ -244,7 +244,7 @@ accepts a realistic REST API vocabulary. `SecurityConfiguration.paranoid()` is t
 carries a real false-positive cost — it rejects paths whose segments are ordinary API vocabulary
 such as `root`, `dev` or `etc`, and parameter names such as `file` or `url` — so choose it only
 where URL paths and parameters really do reach a filesystem, or seed a narrower block-list of your
-own on any base preset. See
+own on any base preset via `SecurityConfiguration.withContentBlockLists(Set, Set)`. See
 xref:specification/specification.adoc#_default_security_posture[Default Security Posture] and
 xref:configuration.adoc[Configuration Reference] for the exact per-preset values.
 ====

@@ -140,8 +140,11 @@ public final class SecurityDefaults {
      *
      * <p>These literals are therefore <strong>not</strong> enforced by any preset below
      * {@link SecurityConfiguration#paranoid()}. Feed this set into
-     * {@link SecurityConfigurationBuilder#blockedPathPatterns(Set)} to reproduce the
-     * {@code paranoid()} detection on any other base preset.</p>
+     * {@link SecurityConfiguration#withContentBlockLists(Set, Set)} to reproduce the
+     * {@code paranoid()} detection on any other base preset, or into
+     * {@link SecurityConfigurationBuilder#blockedPathPatterns(Set)} to reproduce it on the default
+     * preset — the builder always starts from the defaults and cannot be seeded from another
+     * preset.</p>
      *
      * <p>The Windows entries keep their backslash delimiters, and that spelling is load-bearing in
      * two directions. They are <em>reachable</em> despite {@code CharacterValidationStage} rejecting
@@ -444,7 +447,8 @@ public final class SecurityDefaults {
      * {@code /}-delimited segment ({@code /config/etc/settings}) or whose parameter name is
      * exactly one of {@code file}, {@code path}, {@code url} and their siblings - all of which are
      * legitimate vocabulary in many REST APIs. Choose it only where paths and parameters do reach
-     * a filesystem; otherwise seed a narrower list of your own on another base preset.</p>
+     * a filesystem; otherwise seed a narrower list of your own on another base preset via
+     * {@link SecurityConfiguration#withContentBlockLists(Set, Set)}.</p>
      *
      * <p>{@code caseSensitiveComparison} stays {@code false} here, per ADR-0012: a security preset
      * must never enable it, since case sensitivity can only reduce detection.</p>
