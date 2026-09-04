@@ -132,7 +132,9 @@ likewise gated only on their own contents.
 | empty (block-none)
 | `SENSITIVE_PATH_PATTERNS`
 | Whole `/`-delimited path segment, compared against `URL_PATH` and `PARAMETER_VALUE`. The
-  pattern's leading and trailing `/` are stripped, so `/etc/` matches an `etc` segment.
+  pattern's leading and trailing `/` are stripped, so `/etc/` matches an `etc` segment. A pattern
+  containing a backslash is matched as a substring instead — its own delimiters already anchor it,
+  and a decoded backslash cannot occur in a legitimate URL path.
 
 | `blockedParameterNames`
 | empty (block-none)
@@ -147,6 +149,14 @@ The matchers are deliberately precise rather than substring-based. `blockedPathP
 whole segment is what keeps `/documents/document.envelope` accepted under a list containing `.env`,
 and the scheme check anchoring on the *whole* value — not on each segment — is what keeps
 `/v1/data:export` and `/api/profile:read` accepted.
+
+The scheme anchor is applied to the value a URL *parser* would read: ASCII TAB, CR and LF are
+removed from anywhere in the value and leading C0 controls and spaces are skipped before the
+comparison, because a parser does the same before it determines the scheme. Without that step a
+parameter value of `%09javascript%3Aalert(1)` would clear the anchor while still being a
+`javascript:` URL to every browser — CR, LF and TAB are legitimate form-data content in a
+`PARAMETER_VALUE` and therefore reach this check intact. The normalisation positions the anchor
+only; the value that flows on to the caller is never the stripped view.
 
 === Why the two lists are separate
 
@@ -171,7 +181,8 @@ SecurityConfiguration narrow = SecurityConfiguration.builder()
 ----
 
 The seeding constants in `SecurityDefaults` — `SENSITIVE_PATH_PATTERNS` (the six Unix filesystem
-paths and five sensitive filenames) and `SUSPICIOUS_PARAMETER_NAMES` (eight generic names) — are
+paths, five sensitive filenames and four backslash-delimited Windows filesystem paths) and
+`SUSPICIOUS_PARAMETER_NAMES` (eight generic names) — are
 reference values, exactly like the header and content-type classification constants below.
 `PROTOCOL_HANDLER_SCHEMES` is *not* a seeding constant: it backs the structural scheme check
 directly and is not caller-configurable.
