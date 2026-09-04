@@ -302,8 +302,10 @@ class SecurityConfigurationBuilderTest {
 
         assertEquals(Set.of("/etc/"), config.blockedPathPatterns());
         assertEquals(Set.of("file"), config.blockedParameterNames());
-        assertThrows(UnsupportedOperationException.class, () -> config.blockedPathPatterns().add("/sys/"));
-        assertThrows(UnsupportedOperationException.class, () -> config.blockedParameterNames().add("path"));
+        Set<String> copiedPaths = config.blockedPathPatterns();
+        Set<String> copiedNames = config.blockedParameterNames();
+        assertThrows(UnsupportedOperationException.class, () -> copiedPaths.add("/sys/"));
+        assertThrows(UnsupportedOperationException.class, () -> copiedNames.add("path"));
     }
 
     @Test

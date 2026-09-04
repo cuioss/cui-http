@@ -112,8 +112,10 @@ class PresetTieringBehaviourTest {
         @DisplayName("strict() rejects a scheme-bearing path")
         @ValueSource(strings = {"javascript:alert(1)", "data:text/html,x"})
         void strictRejectsSchemeBearingPath(String path) {
+            HttpSecurityValidator pipeline = pathPipeline(SecurityConfiguration.strict());
+
             UrlSecurityException exception = assertThrows(UrlSecurityException.class,
-                    () -> pathPipeline(SecurityConfiguration.strict()).validate(path),
+                    () -> pipeline.validate(path),
                     "a path component that IS a scheme-bearing URI is structurally invalid");
 
             assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType());
@@ -142,8 +144,10 @@ class PresetTieringBehaviourTest {
                 "/API/V1/ROOT/children"
         })
         void paranoidRejectsSensitiveSegmentRegardlessOfCase(String path) {
+            HttpSecurityValidator pipeline = pathPipeline(SecurityConfiguration.paranoid());
+
             UrlSecurityException exception = assertThrows(UrlSecurityException.class,
-                    () -> pathPipeline(SecurityConfiguration.paranoid()).validate(path),
+                    () -> pipeline.validate(path),
                     "SENSITIVE_PATH_PATTERNS is all-lowercase, so the preset must compare case-insensitively");
 
             assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType());
@@ -152,8 +156,10 @@ class PresetTieringBehaviourTest {
         @Test
         @DisplayName("paranoid() rejects a blocked parameter name")
         void paranoidRejectsBlockedParameterName() {
+            HttpSecurityValidator pipeline = parameterNamePipeline(SecurityConfiguration.paranoid());
+
             UrlSecurityException exception = assertThrows(UrlSecurityException.class,
-                    () -> parameterNamePipeline(SecurityConfiguration.paranoid()).validate("file"));
+                    () -> pipeline.validate("file"));
 
             assertEquals(UrlSecurityFailureType.SUSPICIOUS_PARAMETER_NAME, exception.getFailureType());
         }
@@ -179,9 +185,10 @@ class PresetTieringBehaviourTest {
             SecurityConfiguration config = SecurityConfiguration.builder()
                     .blockedPathPatterns(Set.of("/etc/"))
                     .build();
+            HttpSecurityValidator pipeline = pathPipeline(config);
 
             UrlSecurityException exception = assertThrows(UrlSecurityException.class,
-                    () -> pathPipeline(config).validate("/config/etc/settings"),
+                    () -> pipeline.validate("/config/etc/settings"),
                     "the list is gated on its own non-emptiness, not on failOnSuspiciousPatterns");
 
             assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType());
@@ -206,9 +213,10 @@ class PresetTieringBehaviourTest {
             SecurityConfiguration config = SecurityConfiguration.builder()
                     .blockedPathPatterns(SecurityDefaults.SENSITIVE_PATH_PATTERNS)
                     .build();
+            HttpSecurityValidator pipeline = pathPipeline(config);
 
             assertThrows(UrlSecurityException.class,
-                    () -> pathPipeline(config).validate("/hardware/sys/temperature"));
+                    () -> pipeline.validate("/hardware/sys/temperature"));
         }
     }
 }
