@@ -154,39 +154,17 @@ Set<String> blockedParameterNames
      * @throws IllegalArgumentException if any length limit is invalid
      */
     public SecurityConfiguration {
-        if (maxPathLength <= 0) {
-            throw new IllegalArgumentException("maxPathLength must be positive, got: " + maxPathLength);
-        }
-        if (maxParameterNameLength <= 0) {
-            throw new IllegalArgumentException("maxParameterNameLength must be positive, got: " + maxParameterNameLength);
-        }
-        if (maxParameterValueLength <= 0) {
-            throw new IllegalArgumentException("maxParameterValueLength must be positive, got: " + maxParameterValueLength);
-        }
-        if (maxHeaderNameLength <= 0) {
-            throw new IllegalArgumentException("maxHeaderNameLength must be positive, got: " + maxHeaderNameLength);
-        }
-        if (maxHeaderValueLength <= 0) {
-            throw new IllegalArgumentException("maxHeaderValueLength must be positive, got: " + maxHeaderValueLength);
-        }
-        if (maxCookieNameLength <= 0) {
-            throw new IllegalArgumentException("maxCookieNameLength must be positive, got: " + maxCookieNameLength);
-        }
-        if (maxCookieValueLength <= 0) {
-            throw new IllegalArgumentException("maxCookieValueLength must be positive, got: " + maxCookieValueLength);
-        }
-        if (maxBodySize < 0) {
-            throw new IllegalArgumentException("maxBodySize must be non-negative, got: " + maxBodySize);
-        }
-        if (maxParameterCount <= 0) {
-            throw new IllegalArgumentException("maxParameterCount must be positive, got: " + maxParameterCount);
-        }
-        if (maxHeaderCount <= 0) {
-            throw new IllegalArgumentException("maxHeaderCount must be positive, got: " + maxHeaderCount);
-        }
-        if (maxCookieCount <= 0) {
-            throw new IllegalArgumentException("maxCookieCount must be positive, got: " + maxCookieCount);
-        }
+        validatePositive("maxPathLength", maxPathLength);
+        validatePositive("maxParameterNameLength", maxParameterNameLength);
+        validatePositive("maxParameterValueLength", maxParameterValueLength);
+        validatePositive("maxHeaderNameLength", maxHeaderNameLength);
+        validatePositive("maxHeaderValueLength", maxHeaderValueLength);
+        validatePositive("maxCookieNameLength", maxCookieNameLength);
+        validatePositive("maxCookieValueLength", maxCookieValueLength);
+        validateNonNegative("maxBodySize", maxBodySize);
+        validatePositive("maxParameterCount", maxParameterCount);
+        validatePositive("maxHeaderCount", maxHeaderCount);
+        validatePositive("maxCookieCount", maxCookieCount);
         // Defensive, null-tolerant immutable copies of the allow/block lists.
         allowedHeaderNames = allowedHeaderNames == null ? Set.of() : Set.copyOf(allowedHeaderNames);
         blockedHeaderNames = blockedHeaderNames == null ? Set.of() : Set.copyOf(blockedHeaderNames);
@@ -194,6 +172,32 @@ Set<String> blockedParameterNames
         blockedContentTypes = blockedContentTypes == null ? Set.of() : Set.copyOf(blockedContentTypes);
         blockedPathPatterns = blockedPathPatterns == null ? Set.of() : Set.copyOf(blockedPathPatterns);
         blockedParameterNames = blockedParameterNames == null ? Set.of() : Set.copyOf(blockedParameterNames);
+    }
+
+    /**
+     * Rejects a limit that is not strictly positive.
+     *
+     * @param name  the record component name, used verbatim in the failure message
+     * @param value the configured limit
+     * @throws IllegalArgumentException if {@code value} is zero or negative
+     */
+    private static void validatePositive(String name, long value) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(name + " must be positive, got: " + value);
+        }
+    }
+
+    /**
+     * Rejects a limit that is negative.
+     *
+     * @param name  the record component name, used verbatim in the failure message
+     * @param value the configured limit
+     * @throws IllegalArgumentException if {@code value} is negative
+     */
+    private static void validateNonNegative(String name, long value) {
+        if (value < 0) {
+            throw new IllegalArgumentException(name + " must be non-negative, got: " + value);
+        }
     }
 
     /**
