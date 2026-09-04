@@ -59,6 +59,16 @@ Applying the rule to this library's pattern set:
 * **Structural — stays in `strict()`.** The protocol-handler schemes (`javascript:`, `vbscript:`,
   `data:`, `file:`), held in `SecurityDefaults.PROTOCOL_HANDLER_SCHEMES`. A path component that
   *is* a scheme-bearing URI violates what a path component may structurally be.
++
+The anchor that decides "begins with a scheme" is applied to the value a *URL parser* would read,
+not to the raw decoded string. A parser removes ASCII TAB, CR and LF from anywhere in its input and
+skips leading C0 controls and spaces before it reads the scheme, so `%09javascript:alert(1)` is a
+`javascript:` URL to every browser. Those characters reach `PatternMatchingStage` intact for a
+`PARAMETER_VALUE`, where `DecodingStage` treats CR, LF and TAB as legitimate form-data content, so
+anchoring on the raw string would let one leading whitespace byte smuggle the scheme past the check
+— which the substring matcher this decision replaced happened to be immune to. Normalising for the
+anchor is not a widening of it: the anchor still fires only at the start, and the value that flows
+on is always the caller's, never the stripped view.
 * **Content judgement — opt-in only.** The Unix filesystem paths and sensitive filenames, held in
   `SecurityDefaults.SENSITIVE_PATH_PATTERNS`, and the parameter names in
   `SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES`. Whether a path segment named `etc` or a parameter

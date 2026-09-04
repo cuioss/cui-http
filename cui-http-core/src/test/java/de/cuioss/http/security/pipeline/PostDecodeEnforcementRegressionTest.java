@@ -219,6 +219,68 @@ class PostDecodeEnforcementRegressionTest {
     }
 
     /**
+     * The protocol-handler check anchors the scheme to the start of the whole value. That anchor
+     * has to be applied to the value a <em>URL parser</em> would read: a parser strips TAB, CR and
+     * LF from anywhere in its input and skips leading C0 controls and spaces before it reads the
+     * scheme. Those characters reach {@code PatternMatchingStage} intact for a parameter value,
+     * where {@code DecodingStage} treats CR, LF and TAB as legitimate form-data content, so
+     * anchoring on the raw decoded string would let one leading whitespace byte smuggle a
+     * {@code javascript:} URL past both {@code strict()} and {@code paranoid()}.
+     */
+    @Nested
+    @DisplayName("(5) the scheme anchor is applied to the value a URL parser would read")
+    class SchemeAnchorParserView {
+
+        private HttpSecurityValidator parameterPipeline(SecurityConfiguration config) {
+            return PipelineFactory.createUrlParameterPipeline(config, eventCounter);
+        }
+
+        @ParameterizedTest
+        @DisplayName("strict() rejects a scheme hidden behind parser-ignored leading whitespace")
+        @ValueSource(strings = {
+                "%09javascript%3Aalert(1)",
+                "%0d%0ajavascript%3Aalert(1)",
+                "%20javascript%3Aalert(1)",
+                "ja%09vascript%3Aalert(1)",
+                "%09data%3Atext"})
+        void strictRejectsSchemeBehindParserIgnoredWhitespace(String parameterValue) {
+            HttpSecurityValidator pipeline = parameterPipeline(SecurityConfiguration.strict());
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                    () -> pipeline.validate(parameterValue),
+                    "strict() must detect '" + parameterValue + "' - a URL parser removes TAB/CR/LF "
+                            + "and skips leading spaces before reading the scheme, so this IS a "
+                            + "protocol-handler URL to every browser");
+
+            assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType());
+        }
+
+        @ParameterizedTest
+        @DisplayName("the parser view does not widen the anchor - a mid-value scheme still passes")
+        @ValueSource(strings = {
+                "report-for-data%3A2024-01-01",
+                "see-file%3Athe-attached-one",
+                "x%09javascript%3Anotes"})
+        void anchorStaysAtTheStartOfTheParserView(String parameterValue) {
+            HttpSecurityValidator pipeline = parameterPipeline(SecurityConfiguration.strict());
+
+            assertDoesNotThrow(() -> pipeline.validate(parameterValue),
+                    "'" + parameterValue + "' does not START with a scheme once the parser-ignored "
+                            + "characters are removed, so the anchor must not fire on it");
+        }
+
+        @Test
+        @DisplayName("the value that flows on is the caller's, not the stripped parser view")
+        void returnsTheCallerValueNotTheParserView() {
+            Optional<String> result =
+                    parameterPipeline(SecurityConfiguration.strict()).validate("a%09b");
+
+            assertEquals("a\tb", result.orElseThrow(),
+                    "the parser view positions the anchor only - it must never replace the value");
+        }
+    }
+
+    /**
      * Characterization test for a deliberate scope boundary, not an oversight.
      *
      * <p>{@code /%3Cscript%3E} decodes to {@code /<script>} and is accepted: this library validates

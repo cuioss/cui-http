@@ -221,6 +221,12 @@ ValidationType validationType) implements HttpSecurityValidator {
             Pattern.CASE_INSENSITIVE
     );
 
+    /**
+     * The characters a URL parser removes from anywhere in its input before it determines the
+     * scheme - ASCII TAB, CR and LF, per the WHATWG URL Standard's basic URL parser.
+     * ReDoS-safe: a single-character class with no quantifier.
+     */
+    private static final Pattern URL_PARSER_STRIPPED_CHARS = Pattern.compile("[\\t\\r\\n]");
 
     // XSS script pattern removed - application layer responsibility.
     // Application layers have proper context for HTML/JS escaping and validation.
@@ -375,6 +381,14 @@ ValidationType validationType) implements HttpSecurityValidator {
      * segment: a path component may never begin with a protocol handler, but a segment such as
      * {@code data:export} in {@code /v1/data:export} is ordinary REST vocabulary and must pass.</p>
      *
+     * <p>The anchor is applied to the value a <em>URL parser</em> would see, not to the raw decoded
+     * string. A parser strips ASCII TAB, CR and LF from anywhere in its input and skips leading C0
+     * controls and spaces before it reads the scheme, so {@code %09javascript:alert(1)} is a
+     * {@code javascript:} URL to every browser. Those characters survive
+     * {@link DecodingStage} for {@link ValidationType#PARAMETER_VALUE}, where CR, LF and TAB are
+     * legitimate form-data content, so anchoring on the raw string would let a leading whitespace
+     * byte smuggle the scheme past this check.</p>
+     *
      * @param originalValue The original input value
      * @param testValue     The value prepared for testing (case-normalized if needed)
      * @throws UrlSecurityException if a scheme is found and policy requires failure
@@ -386,8 +400,9 @@ ValidationType validationType) implements HttpSecurityValidator {
         }
         Set<String> schemes = config.caseSensitiveComparison()
                 ? SecurityDefaults.PROTOCOL_HANDLER_SCHEMES : PROTOCOL_HANDLER_SCHEMES_LOWERCASE;
+        String parserView = asUrlParserWouldRead(testValue);
         for (String scheme : schemes) {
-            if (testValue.startsWith(scheme)) {
+            if (parserView.startsWith(scheme)) {
                 throw UrlSecurityException.builder()
                         .failureType(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED)
                         .validationType(validationType)
@@ -396,6 +411,23 @@ ValidationType validationType) implements HttpSecurityValidator {
                         .build();
             }
         }
+    }
+
+    /**
+     * Renders the value as a URL parser would read it before determining the scheme: ASCII TAB, CR
+     * and LF removed from anywhere in the string, then leading C0 controls and spaces skipped.
+     * Used only to position the scheme anchor - the value that flows on is always the caller's.
+     *
+     * @param testValue the value prepared for testing
+     * @return the same value with the parser-ignored characters removed
+     */
+    private static String asUrlParserWouldRead(String testValue) {
+        String stripped = URL_PARSER_STRIPPED_CHARS.matcher(testValue).replaceAll("");
+        int start = 0;
+        while (start < stripped.length() && stripped.charAt(start) <= ' ') {
+            start++;
+        }
+        return stripped.substring(start);
     }
 
     /**
