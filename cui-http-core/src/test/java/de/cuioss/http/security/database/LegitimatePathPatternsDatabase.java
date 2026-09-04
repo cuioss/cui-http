@@ -167,8 +167,8 @@ public class LegitimatePathPatternsDatabase implements LegitimatePatternDatabase
     );
 
     // Segments that read like a Unix filesystem path but are ordinary API vocabulary. These are
-    // the false-positive class the application-layer blocklist produced while it lived in strict();
-    // the content judgement now belongs to paranoid() / an explicit block-list.
+    // the false-positive class the application-layer blocklist produced while it lived in strict; // NOSONAR java:S125 - prose referencing preset names, not commented-out code
+    // the content judgement now belongs to paranoid / an explicit block-list.
     public static final LegitimateTestCase API_ROOT_SEGMENT = new LegitimateTestCase(
             "/api/v1/root/children",
             "Tree-structured API exposing the root node's children",
