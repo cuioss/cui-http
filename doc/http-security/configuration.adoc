@@ -32,8 +32,8 @@ filenames and generic parameter names, so the preset rejects a request whose pat
 matching `/`-delimited segment (for example `/config/etc/settings`) and a request whose parameter
 name is exactly `file`, `path` or `url` — all legitimate vocabulary in many REST APIs. Choose it
 where URL paths and parameters really do reach a filesystem; otherwise seed a narrower list of your
-own on another base preset. Both block-lists are orthogonal to the strictness predicate, so
-`paranoid().isStrict()` is `true`.
+own on another base preset (see <<Seeding the lists>>). Both block-lists are orthogonal to the
+strictness predicate, so `paranoid().isStrict()` is `true`.
 
 Build a custom configuration with `SecurityConfiguration.builder()`.
 
@@ -166,19 +166,43 @@ whole path segment of a `URL_PATH` or `PARAMETER_VALUE`, while a parameter name 
 would then misapply it to the other component — seeding it with the parameter name `file` would
 also reject every path carrying a `file` segment.
 
+=== Seeding the lists
+
+There are two routes, and they differ in which base settings you get.
+
+`SecurityConfiguration.builder()` always starts from the *default* preset — it cannot be seeded
+from `strict()` or `lenient()`. Use it when the default base is what you want:
+
 [source,java]
 ----
-// Reproduce the paranoid() detection on any base preset
-SecurityConfiguration config = SecurityConfiguration.builder()
-    .blockedPathPatterns(SecurityDefaults.SENSITIVE_PATH_PATTERNS)
-    .blockedParameterNames(SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES)
-    .build();
-
-// Or seed only what matches your application's sink
+// Default preset plus a narrow block-list of your own
 SecurityConfiguration narrow = SecurityConfiguration.builder()
     .blockedPathPatterns(Set.of("/etc/", ".env"))
     .build();
 ----
+
+To carry the block-lists onto *another* base preset, derive a copy with
+`SecurityConfiguration.withContentBlockLists(Set, Set)`. It takes every other setting from the
+receiver, so the base preset's strictness is preserved exactly:
+
+[source,java]
+----
+// strict() plus a narrow block-list — keeps strict()'s 1024-byte path limit,
+// allowExtendedAscii=false and the failOnSuspiciousPatterns scheme check
+SecurityConfiguration hardened = SecurityConfiguration.strict()
+    .withContentBlockLists(Set.of("/etc/", ".env"), Set.of());
+
+// The full paranoid() detection is exactly this, on the strict() base
+SecurityConfiguration paranoid = SecurityConfiguration.strict()
+    .withContentBlockLists(SecurityDefaults.SENSITIVE_PATH_PATTERNS,
+        SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES);
+----
+
+Reaching for the builder when you meant a hardened base is a silent downgrade rather than an
+error: `builder().blockedPathPatterns(...).build()` yields the default preset's
+`maxPathLength` of 4096, `allowExtendedAscii=true` and `failOnSuspiciousPatterns=false`, so the
+protocol-handler scheme check is off. Both arguments to `withContentBlockLists` are defensively
+copied and may be `null`, which reads as an empty (block-none) list.
 
 The seeding constants in `SecurityDefaults` — `SENSITIVE_PATH_PATTERNS` (the six Unix filesystem
 paths, five sensitive filenames and four backslash-delimited Windows filesystem paths) and

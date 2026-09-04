@@ -356,7 +356,7 @@ public class SecurityConfigurationBuilder {
      * caller-supplied block-list seeded via {@link #blockedPathPatterns(Set)} or
      * {@link #blockedParameterNames(Set)}: seeding it from
      * {@code SecurityDefaults.SENSITIVE_PATH_PATTERNS} reproduces the
-     * {@link SecurityConfiguration#paranoid()} detection on any base preset, and enabling case
+     * {@link SecurityConfiguration#paranoid()} detection, and enabling case
      * sensitivity narrows that detection to the literal spellings. ({@link
      * de.cuioss.http.security.config.SecurityDefaults#PATH_TRAVERSAL_PATTERNS} is deliberately
      * mixed-case rather than all-lowercase, but under {@code true} it still matches only the case
@@ -533,8 +533,11 @@ public class SecurityConfigurationBuilder {
      * is non-empty, matching a whole {@code /}-delimited path segment.
      *
      * <p>Seeding this from {@link SecurityDefaults#SENSITIVE_PATH_PATTERNS} reproduces the
-     * {@link SecurityConfiguration#paranoid()} path detection on any base preset - it is gated on
-     * the list being non-empty, not on {@code failOnSuspiciousPatterns}.</p>
+     * {@link SecurityConfiguration#paranoid()} path detection - it is gated on the list being
+     * non-empty, not on {@code failOnSuspiciousPatterns}. This builder always starts from the
+     * <em>default</em> preset, so the result carries the default strictness; to carry the same
+     * block-list onto another base preset use
+     * {@link SecurityConfiguration#withContentBlockLists(Set, Set)} instead.</p>
      *
      * @param pathPatterns blocked path literals (null is treated as empty)
      * @return This builder for method chaining
@@ -551,7 +554,9 @@ public class SecurityConfigurationBuilder {
      * rejected by a {@code script} entry).
      *
      * <p>Seeding this from {@link SecurityDefaults#SUSPICIOUS_PARAMETER_NAMES} reproduces the
-     * {@link SecurityConfiguration#paranoid()} parameter-name detection on any base preset.</p>
+     * {@link SecurityConfiguration#paranoid()} parameter-name detection on the default preset;
+     * to carry it onto another base preset use
+     * {@link SecurityConfiguration#withContentBlockLists(Set, Set)} instead.</p>
      *
      * @param parameterNames blocked parameter names (null is treated as empty)
      * @return This builder for method chaining

@@ -347,7 +347,8 @@ For usage examples, see the JavaDoc of link:../../../cui-http-core/src/main/java
   so it rejects any path carrying a matching `/`-delimited segment — including ordinary API
   vocabulary such as `/config/etc/settings` or `/api/v1/root/children` — and any parameter named
   exactly `file`, `path`, `url` or one of their siblings. Where that false-positive profile does
-  not fit, seed a narrower block-list of your own on any base preset instead
+  not fit, seed a narrower block-list of your own on any base preset instead, via
+  `SecurityConfiguration.withContentBlockLists(Set, Set)`
 - Relaxing to the lenient preset (e.g. allowing double encoding, control characters, or
   disabling Unicode normalization) requires an explicit, opt-in configuration choice
 - Security events are counted in-memory (`SecurityEventCounter`); the core performs no

@@ -105,13 +105,14 @@ import java.util.Set;
  * @param blockedPathPatterns Block-list of sensitive path literals; empty (the default) means
  *        block-none. Enforced by {@code PatternMatchingStage} for {@code URL_PATH} and
  *        {@code PARAMETER_VALUE} whenever the set is non-empty, matching a whole {@code /}-delimited
- *        path segment. Seed it from {@link SecurityDefaults#SENSITIVE_PATH_PATTERNS} to reproduce
- *        the {@link #paranoid()} detection on any base preset.
+ *        path segment. Seed it from {@link SecurityDefaults#SENSITIVE_PATH_PATTERNS} — via
+ *        {@link #withContentBlockLists(Set, Set)} on any base preset, or via the builder on the
+ *        default preset — to reproduce the {@link #paranoid()} detection.
  * @param blockedParameterNames Block-list of parameter names; empty (the default) means block-none.
  *        Enforced by {@code PatternMatchingStage} for {@code PARAMETER_NAME} whenever the set is
  *        non-empty, matching by exact string equality. Seed it from
- *        {@link SecurityDefaults#SUSPICIOUS_PARAMETER_NAMES} to reproduce the {@link #paranoid()}
- *        detection on any base preset.
+ *        {@link SecurityDefaults#SUSPICIOUS_PARAMETER_NAMES} the same way to reproduce the
+ *        {@link #paranoid()} detection.
  *
  * @since 1.0
  * @see SecurityConfigurationBuilder
@@ -237,7 +238,8 @@ Set<String> blockedParameterNames
      * parameter name is exactly {@code file}, {@code path}, {@code url} or one of their siblings -
      * all legitimate vocabulary in many REST APIs. Choose it where paths and parameters really do
      * reach a filesystem; otherwise seed a narrower list of your own via
-     * {@link SecurityConfigurationBuilder#blockedPathPatterns(Set)} on another base preset.</p>
+     * {@link #withContentBlockLists(Set, Set)} on another base preset, or via
+     * {@link SecurityConfigurationBuilder#blockedPathPatterns(Set)} on the default preset.</p>
      *
      * @return A SecurityConfiguration with strict policies plus content block-lists
      */
