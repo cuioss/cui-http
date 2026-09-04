@@ -158,9 +158,22 @@ switch, and the combined list couples two components' matching semantics to a si
   `failOnSuspiciousPatterns`.
 * Constant lineage: `SUSPICIOUS_PATH_PATTERNS` was split into
   `SecurityDefaults.PROTOCOL_HANDLER_SCHEMES` (structural) and
-  `SecurityDefaults.SENSITIVE_PATH_PATTERNS` (content judgement); its four Windows filesystem
-  literals were deleted as unreachable, because `CharacterValidationStage` rejects the backslash
-  character in a URL path under every preset.
+  `SecurityDefaults.SENSITIVE_PATH_PATTERNS` (content judgement). Its four Windows filesystem
+  literals moved into `SENSITIVE_PATH_PATTERNS` alongside the Unix ones, keeping their
+  backslash-delimited spelling. They were briefly deleted as unreachable on the premise that
+  `CharacterValidationStage` rejects the backslash character under every preset; that premise is
+  false for the encoded form. `CharacterValidationStage` judges the *wire* form, in which `%5C` is a
+  well-formed escape, and `DecodingStage` then yields a literal backslash without re-checking
+  RFC 3986 membership — so `/api/%5cwindows%5csystem32` reaches `PatternMatchingStage` as
+  `/api/\windows\system32`.
++
+`checkBlockedPathPatterns` therefore matches a backslash-bearing pattern as a substring rather than
+as a `/`-delimited segment. That is not a weaker rule taken for convenience — it is the rule the
+delimiters already encode, and it is safe for exactly the reason segment matching is necessary
+elsewhere: a decoded backslash cannot occur in a legitimate URL path, so a substring match on
+`\users\` has no false-positive surface, whereas the bare segment `users` would reject every
+`/users/...` route. The tiering rule this ADR states is about *which preset* enforces a literal; the
+matcher a literal needs follows from its own spelling.
 * link:../http-security/specification/specification.adoc[HTTP security specification] — records the
   precedent this decision follows: signature/pattern-based application-layer injection detection
   (XSS) was deliberately removed from `PatternMatchingStage` for the same reason, and the same

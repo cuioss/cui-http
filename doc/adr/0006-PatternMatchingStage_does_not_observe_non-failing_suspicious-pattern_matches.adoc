@@ -152,4 +152,5 @@ capability, amortizing the infrastructure cost across more than one call site).
   the decision that narrowed this flag's scope to the scheme check by moving the content judgement
   onto the two non-emptiness-gated block-lists. `SUSPICIOUS_PATH_PATTERNS` was split into
   `PROTOCOL_HANDLER_SCHEMES` and `SENSITIVE_PATH_PATTERNS`; its four Windows filesystem literals
-  were deleted as unreachable.
+  moved into `SENSITIVE_PATH_PATTERNS` as bare segments, since the encoded backslash `%5C` reaches
+  the block-list decoded.

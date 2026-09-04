@@ -403,9 +403,19 @@ ValidationType validationType) implements HttpSecurityValidator {
      *
      * <p>Enforced whenever {@link SecurityConfiguration#blockedPathPatterns()} is non-empty -
      * mirroring {@code AllowBlockListStage}, whose block-list is likewise not gated by any boolean.
-     * A pattern matches only when some {@code /}-delimited segment of the tested value
-     * <em>equals</em> it with its leading and trailing {@code /} stripped, so {@code /etc/} rejects
+     * A pattern matches only when some segment of the tested value <em>equals</em> it with its
+     * leading and trailing {@code /} stripped, so {@code /etc/} rejects
      * {@code /config/etc/settings} but not {@code /api/sketches}.</p>
+     *
+     * <p>A backslash-bearing pattern is matched as a <em>substring</em> instead, because such a
+     * pattern is already delimiter-anchored by its own spelling. This is not a weaker rule applied
+     * for convenience: {@code CharacterValidationStage} rejects only a <em>raw</em> backslash in the
+     * wire form, so a percent-encoded {@code %5C} passes it and {@code DecodingStage} yields a
+     * literal backslash — meaning {@code /api/%5cwindows%5csystem32} arrives here as
+     * {@code /api/\windows\system32}, and a decoded backslash cannot occur in a legitimate URL path
+     * at all. Substring matching therefore carries no false-positive risk for these patterns, while
+     * segment matching would: respelling the backslash-delimited {@code users} entry as a bare
+     * segment would reject every {@code /users/...} route.</p>
      *
      * @param originalValue The original input value
      * @param testValue     The value prepared for testing (case-normalized if needed)
@@ -420,7 +430,10 @@ ValidationType validationType) implements HttpSecurityValidator {
         Set<String> segments = Arrays.stream(testValue.split("/")).collect(Collectors.toSet());
         for (String pattern : patterns) {
             String segment = stripSurroundingSlashes(pattern);
-            if (!segment.isEmpty() && segments.contains(segment)) {
+            boolean matched = pattern.indexOf('\\') >= 0
+                    ? testValue.contains(pattern)
+                    : !segment.isEmpty() && segments.contains(segment);
+            if (matched) {
                 throw UrlSecurityException.builder()
                         .failureType(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED)
                         .validationType(validationType)

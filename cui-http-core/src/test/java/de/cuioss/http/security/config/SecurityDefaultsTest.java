@@ -114,15 +114,17 @@ class SecurityDefaultsTest {
 
     @Test
     void shouldHaveSensitivePathPatterns() {
-        assertEquals(11, SecurityDefaults.SENSITIVE_PATH_PATTERNS.size());
+        assertEquals(15, SecurityDefaults.SENSITIVE_PATH_PATTERNS.size());
 
         assertAll("sensitive path patterns",
                 () -> assertTrue(SecurityDefaults.SENSITIVE_PATH_PATTERNS.contains("/etc/")),
                 () -> assertTrue(SecurityDefaults.SENSITIVE_PATH_PATTERNS.contains("web.xml")),
                 () -> assertTrue(SecurityDefaults.SENSITIVE_PATH_PATTERNS.contains(".env")),
-                () -> assertTrue(SecurityDefaults.SENSITIVE_PATH_PATTERNS.stream().noneMatch(p -> p.contains("\\")),
-                        "backslash-bearing literals are unreachable - CharacterValidationStage rejects '\\' "
-                                + "under every preset - and must not be carried over"));
+                () -> assertTrue(SecurityDefaults.SENSITIVE_PATH_PATTERNS.contains("\\windows\\"),
+                        "the Windows literals are reachable post-decode via %5C and must be carried"),
+                () -> assertTrue(SecurityDefaults.SENSITIVE_PATH_PATTERNS.contains("\\users\\"),
+                        "the backslash delimiters are load-bearing - the bare segment 'users' would "
+                                + "reject every /users/... REST route"));
     }
 
     @Test

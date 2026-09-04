@@ -113,6 +113,43 @@ class PostDecodeEnforcementRegressionTest {
 
             assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType());
         }
+
+        /**
+         * A percent-encoded backslash is <em>not</em> stopped by character validation:
+         * {@code CharacterValidationStage} judges the wire form, where {@code %5C} is a well-formed
+         * escape, and {@code DecodingStage} then yields a literal backslash without re-checking
+         * RFC 3986 membership. The Windows literals therefore have to survive the re-tiering and be
+         * matched in their backslash-delimited spelling, or a Windows filesystem path reaches the
+         * application unexamined.
+         */
+        @ParameterizedTest
+        @DisplayName("paranoid() rejects a Windows filesystem path smuggled in as %5C")
+        @ValueSource(strings = {
+                "/api/%5cwindows%5csystem32%5cconfig",
+                "/%5cWindows%5cwin.ini",
+                "%5cusers%5cadmin"})
+        void paranoidRejectsPercentEncodedBackslashPath(String path) {
+            HttpSecurityValidator pipeline = pipeline(SecurityConfiguration.paranoid());
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                    () -> pipeline.validate(path),
+                    "paranoid() must detect '" + path + "' - %5C survives wire-form character "
+                            + "validation and decodes to a literal backslash, so dropping the "
+                            + "Windows literals would let the whole path through unexamined");
+
+            assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType());
+        }
+
+        @ParameterizedTest
+        @DisplayName("paranoid() still accepts a slash-delimited segment sharing a Windows literal's name")
+        @ValueSource(strings = {"/users/42/profile", "/api/v1/users", "/windows/tint-preview"})
+        void paranoidAcceptsSlashDelimitedNamesakes(String path) {
+            HttpSecurityValidator pipeline = pipeline(SecurityConfiguration.paranoid());
+
+            assertDoesNotThrow(() -> pipeline.validate(path),
+                    "the Windows literals are backslash-delimited, so '" + path + "' - an ordinary "
+                            + "REST route - must not be caught by them");
+        }
     }
 
     @Nested

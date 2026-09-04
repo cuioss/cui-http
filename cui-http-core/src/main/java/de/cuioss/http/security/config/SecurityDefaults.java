@@ -142,10 +142,21 @@ public final class SecurityDefaults {
      * {@link SecurityConfiguration#paranoid()}. Feed this set into
      * {@link SecurityConfigurationBuilder#blockedPathPatterns(Set)} to reproduce the
      * {@code paranoid()} detection on any other base preset.</p>
+     *
+     * <p>The Windows entries keep their backslash delimiters, and that spelling is load-bearing in
+     * two directions. They are <em>reachable</em> despite {@code CharacterValidationStage} rejecting
+     * a raw backslash, because that stage validates the <em>wire</em> form — where {@code %5C} is a
+     * well-formed escape — and {@code DecodingStage} then yields a literal backslash without
+     * re-checking RFC 3986 character-set membership, so {@code /api/%5cwindows%5csystem32} arrives
+     * here as {@code /api/\windows\system32}. And they are <em>safe</em> to match as substrings
+     * precisely because a decoded backslash cannot occur in a legitimate URL path: respelling them
+     * as bare segments would make {@code users} reject every {@code /users/...} REST route, which is
+     * the false-positive class this tiering exists to remove.</p>
      */
     public static final Set<String> SENSITIVE_PATH_PATTERNS = Set.of(
             "/etc/", "/proc/", "/sys/", "/dev/", "/boot/", "/root/",
-            "web.xml", "web.config", ".env", ".htaccess", ".htpasswd"
+            "web.xml", "web.config", ".env", ".htaccess", ".htpasswd",
+            "\\windows\\", "\\system32\\", "\\users\\", "\\program files\\"
     );
 
     // ========== PARAMETER SECURITY CONSTANTS ==========
