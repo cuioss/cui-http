@@ -273,6 +273,41 @@ Set<String> blockedParameterNames
     }
 
     /**
+     * Returns a copy of this configuration carrying different content block-lists.
+     *
+     * <p>Every other setting is taken from {@code this}, so a preset derived through this method
+     * cannot drift away from its base on any setting other than the two named here. Both arguments
+     * are defensively copied by the canonical constructor and may be {@code null}, which is read as
+     * an empty (block-none) list.</p>
+     *
+     * <pre>
+     * // paranoid() is strict() plus the application-layer content detection
+     * SecurityConfiguration paranoid = SecurityConfiguration.strict()
+     *         .withContentBlockLists(SecurityDefaults.SENSITIVE_PATH_PATTERNS,
+     *                 SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES);
+     * </pre>
+     *
+     * @param blockedPathPatterns Block-list of sensitive path literals; empty means block-none
+     * @param blockedParameterNames Block-list of parameter names; empty means block-none
+     * @return A new SecurityConfiguration identical to this one except for the two block-lists
+     */
+    public SecurityConfiguration withContentBlockLists(Set<String> blockedPathPatterns,
+            Set<String> blockedParameterNames) {
+        return new SecurityConfiguration(
+                maxPathLength, allowDoubleEncoding,
+                maxParameterNameLength, maxParameterValueLength,
+                maxHeaderNameLength, maxHeaderValueLength,
+                maxCookieNameLength, maxCookieValueLength,
+                maxBodySize,
+                allowNullBytes, allowControlCharacters, allowExtendedAscii, normalizeUnicode,
+                caseSensitiveComparison, failOnSuspiciousPatterns,
+                requireSecureCookies, requireHttpOnlyCookies,
+                maxParameterCount, maxHeaderCount, maxCookieCount,
+                allowedHeaderNames, blockedHeaderNames, allowedContentTypes, blockedContentTypes,
+                blockedPathPatterns, blockedParameterNames);
+    }
+
+    /**
      * Checks if this configuration is considered "strict" based on key security settings.
      *
      * @return true if this configuration uses strict security policies

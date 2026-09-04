@@ -431,10 +431,13 @@ public final class SecurityDefaults {
      * <p>Single source of truth for paranoid preset semantics -
      * {@link SecurityConfiguration#paranoid()} delegates to this constant.</p>
      *
-     * <p>Identical to {@link #STRICT_CONFIGURATION} on every setting except that it seeds the two
-     * content block-lists: {@code blockedPathPatterns} from {@link #SENSITIVE_PATH_PATTERNS} and
-     * {@code blockedParameterNames} from {@link #SUSPICIOUS_PARAMETER_NAMES}. Because those lists
-     * are orthogonal to the strictness predicate, {@code paranoid().isStrict()} is {@code true}.</p>
+     * <p>Derived from {@link #STRICT_CONFIGURATION} via
+     * {@link SecurityConfiguration#withContentBlockLists(Set, Set)}, so it is identical to it on
+     * every setting except the two content block-lists it seeds: {@code blockedPathPatterns} from
+     * {@link #SENSITIVE_PATH_PATTERNS} and {@code blockedParameterNames} from
+     * {@link #SUSPICIOUS_PARAMETER_NAMES}. Deriving rather than duplicating is what keeps a future
+     * change to the strict preset from silently leaving this one behind. Because those lists are
+     * orthogonal to the strictness predicate, {@code paranoid().isStrict()} is {@code true}.</p>
      *
      * <p><strong>False-positive profile.</strong> The seeded literals are filesystem paths and
      * configuration filenames, so this preset rejects any request whose path carries a matching
@@ -446,16 +449,6 @@ public final class SecurityDefaults {
      * <p>{@code caseSensitiveComparison} stays {@code false} here, per ADR-0012: a security preset
      * must never enable it, since case sensitivity can only reduce detection.</p>
      */
-    public static final SecurityConfiguration PARANOID_CONFIGURATION = new SecurityConfiguration(
-            MAX_PATH_LENGTH_STRICT, false,
-            MAX_PARAMETER_NAME_LENGTH_STRICT, MAX_PARAMETER_VALUE_LENGTH_STRICT,
-            MAX_HEADER_NAME_LENGTH_STRICT, MAX_HEADER_VALUE_LENGTH_STRICT,
-            MAX_COOKIE_NAME_LENGTH_STRICT, MAX_COOKIE_VALUE_LENGTH_STRICT,
-            MAX_BODY_SIZE_STRICT,
-            false, false, false, true, // no null bytes, no control chars, no extended ASCII, normalize Unicode
-            false, true, // case-insensitive comparison (detects a superset), fail on suspicious patterns
-            false, false, // requireSecureCookies, requireHttpOnlyCookies (opt-in)
-            MAX_PARAMETER_COUNT_STRICT, MAX_HEADER_COUNT_STRICT, MAX_COOKIE_COUNT_STRICT,
-            Set.of(), Set.of(), Set.of(), Set.of(), // header/content-type allow/block lists (empty = allow-all)
-            SENSITIVE_PATH_PATTERNS, SUSPICIOUS_PARAMETER_NAMES); // the application-layer content detection
+    public static final SecurityConfiguration PARANOID_CONFIGURATION =
+            STRICT_CONFIGURATION.withContentBlockLists(SENSITIVE_PATH_PATTERNS, SUSPICIOUS_PARAMETER_NAMES);
 }
