@@ -122,12 +122,41 @@ public final class SecurityDefaults {
             "..%c0%af", "..%c1%9c", "%c0%ae%c0%ae%c0%af", "%c0%ae%c0%ae%c1%9c"
     );
 
-    /** Patterns indicating potential directory traversal attempts and protocol handler attacks */
-    public static final Set<String> SUSPICIOUS_PATH_PATTERNS = Set.of(
-            "/etc/", "/proc/", "/sys/", "/dev/", "/boot/", "/root/",
-            "\\windows\\", "\\system32\\", "\\users\\", "\\program files\\",
-            "web.xml", "web.config", ".env", ".htaccess", ".htpasswd",
+    /**
+     * URI scheme prefixes whose presence at the start of a URL path or parameter value is a
+     * <em>structural</em> statement about the input: a path component may never begin with a
+     * protocol handler. Enforced by {@code PatternMatchingStage} whenever
+     * {@link SecurityConfiguration#failOnSuspiciousPatterns()} is enabled (as it is under
+     * {@link SecurityConfiguration#strict()}).
+     */
+    public static final Set<String> PROTOCOL_HANDLER_SCHEMES = Set.of(
             "javascript:", "vbscript:", "data:", "file:"
+    );
+
+    /**
+     * Filesystem paths and configuration filenames whose presence is an <em>application-layer
+     * content judgement</em> rather than a structural defect: whether {@code /etc/} in a URL path
+     * is an attack depends entirely on whether the application maps paths onto a filesystem.
+     *
+     * <p>These literals are therefore <strong>not</strong> enforced by any preset below
+     * {@link SecurityConfiguration#paranoid()}. Feed this set into
+     * {@link SecurityConfigurationBuilder#blockedPathPatterns(Set)} to reproduce the
+     * {@code paranoid()} detection on any other base preset.</p>
+     *
+     * <p>The Windows entries keep their backslash delimiters, and that spelling is load-bearing in
+     * two directions. They are <em>reachable</em> despite {@code CharacterValidationStage} rejecting
+     * a raw backslash, because that stage validates the <em>wire</em> form — where {@code %5C} is a
+     * well-formed escape — and {@code DecodingStage} then yields a literal backslash without
+     * re-checking RFC 3986 character-set membership, so {@code /api/%5cwindows%5csystem32} arrives
+     * here as {@code /api/\windows\system32}. And they are <em>safe</em> to match as substrings
+     * precisely because a decoded backslash cannot occur in a legitimate URL path: respelling them
+     * as bare segments would make {@code users} reject every {@code /users/...} REST route, which is
+     * the false-positive class this tiering exists to remove.</p>
+     */
+    public static final Set<String> SENSITIVE_PATH_PATTERNS = Set.of(
+            "/etc/", "/proc/", "/sys/", "/dev/", "/boot/", "/root/",
+            "web.xml", "web.config", ".env", ".htaccess", ".htpasswd",
+            "\\windows\\", "\\system32\\", "\\users\\", "\\program files\\"
     );
 
     // ========== PARAMETER SECURITY CONSTANTS ==========
@@ -159,7 +188,14 @@ public final class SecurityDefaults {
     /** Maximum parameter value length for lenient configurations */
     public static final int MAX_PARAMETER_VALUE_LENGTH_LENIENT = 8192;
 
-    /** Parameter names that are commonly used in HTTP-layer attacks */
+    /**
+     * Parameter names that are commonly used in HTTP-layer attacks.
+     *
+     * <p>Like {@link #SENSITIVE_PATH_PATTERNS} this is an application-layer content judgement, so
+     * it is enforced only where it seeds
+     * {@link SecurityConfigurationBuilder#blockedParameterNames(Set)} - which
+     * {@link SecurityConfiguration#paranoid()} does.</p>
+     */
     public static final Set<String> SUSPICIOUS_PARAMETER_NAMES = Set.of(
             "script", "include", "require", "file", "path", "url", "redirect", "forward"
     );
@@ -321,8 +357,9 @@ public final class SecurityDefaults {
      * superset of what case-sensitive comparison matches - enabling case sensitivity can only
      * reduce detection. Setting it {@code false} is therefore what makes the strict preset detect
      * at least as much as an equivalent hand-built configuration. Concretely,
-     * {@link #SUSPICIOUS_PATH_PATTERNS} and {@link #SUSPICIOUS_PARAMETER_NAMES} are all-lowercase
-     * literals, so under case-sensitive comparison they cannot match a mixed-case input such as
+     * {@link #PROTOCOL_HANDLER_SCHEMES}, {@link #SENSITIVE_PATH_PATTERNS} and
+     * {@link #SUSPICIOUS_PARAMETER_NAMES} are all-lowercase literals, so under case-sensitive
+     * comparison they cannot match a mixed-case input such as {@code JavaScript:alert(1)} or
      * {@code /ETC/passwd} at all. ({@link #PATH_TRAVERSAL_PATTERNS} is deliberately mixed-case and
      * is unaffected by that particular argument, but it too matches only the case permutations it
      * literally enumerates when comparison is case-sensitive.)</p>
@@ -337,7 +374,8 @@ public final class SecurityDefaults {
             false, true, // case-insensitive comparison (detects a superset), fail on suspicious patterns
             false, false, // requireSecureCookies, requireHttpOnlyCookies (opt-in)
             MAX_PARAMETER_COUNT_STRICT, MAX_HEADER_COUNT_STRICT, MAX_COOKIE_COUNT_STRICT,
-            Set.of(), Set.of(), Set.of(), Set.of()); // allow/block lists (empty = allow-all, opt-in)
+            Set.of(), Set.of(), Set.of(), Set.of(), // allow/block lists (empty = allow-all, opt-in)
+            Set.of(), Set.of()); // blockedPathPatterns, blockedParameterNames (see PARANOID_CONFIGURATION)
 
     /**
      * Configuration preset for balanced security and usability.
@@ -383,5 +421,34 @@ public final class SecurityDefaults {
             false, false, // case-insensitive comparison, no suspicious-pattern failures
             false, false, // requireSecureCookies, requireHttpOnlyCookies (opt-in)
             MAX_PARAMETER_COUNT_LENIENT, MAX_HEADER_COUNT_LENIENT, MAX_COOKIE_COUNT_LENIENT,
-            Set.of(), Set.of(), Set.of(), Set.of()); // allow/block lists (empty = allow-all, opt-in)
+            Set.of(), Set.of(), Set.of(), Set.of(), // allow/block lists (empty = allow-all, opt-in)
+            Set.of(), Set.of()); // blockedPathPatterns, blockedParameterNames (see PARANOID_CONFIGURATION)
+
+    /**
+     * Configuration preset for applications that additionally want the application-layer content
+     * detection this library keeps off by default.
+     *
+     * <p>Single source of truth for paranoid preset semantics -
+     * {@link SecurityConfiguration#paranoid()} delegates to this constant.</p>
+     *
+     * <p>Derived from {@link #STRICT_CONFIGURATION} via
+     * {@link SecurityConfiguration#withContentBlockLists(Set, Set)}, so it is identical to it on
+     * every setting except the two content block-lists it seeds: {@code blockedPathPatterns} from
+     * {@link #SENSITIVE_PATH_PATTERNS} and {@code blockedParameterNames} from
+     * {@link #SUSPICIOUS_PARAMETER_NAMES}. Deriving rather than duplicating is what keeps a future
+     * change to the strict preset from silently leaving this one behind. Because those lists are
+     * orthogonal to the strictness predicate, {@code paranoid().isStrict()} is {@code true}.</p>
+     *
+     * <p><strong>False-positive profile.</strong> The seeded literals are filesystem paths and
+     * configuration filenames, so this preset rejects any request whose path carries a matching
+     * {@code /}-delimited segment ({@code /config/etc/settings}) or whose parameter name is
+     * exactly one of {@code file}, {@code path}, {@code url} and their siblings - all of which are
+     * legitimate vocabulary in many REST APIs. Choose it only where paths and parameters do reach
+     * a filesystem; otherwise seed a narrower list of your own on another base preset.</p>
+     *
+     * <p>{@code caseSensitiveComparison} stays {@code false} here, per ADR-0012: a security preset
+     * must never enable it, since case sensitivity can only reduce detection.</p>
+     */
+    public static final SecurityConfiguration PARANOID_CONFIGURATION =
+            STRICT_CONFIGURATION.withContentBlockLists(SENSITIVE_PATH_PATTERNS, SUSPICIOUS_PARAMETER_NAMES);
 }

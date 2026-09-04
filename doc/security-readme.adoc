@@ -78,7 +78,8 @@ See `de.cuioss.http.security.pipeline.URLParameterValidationPipeline`.
 * Body size: 5MB
 
 See the link:http-security/configuration.adoc[Configuration Reference] for every enforced setting,
-its default across the strict/default/lenient presets, and the stage that enforces it.
+its default across the four presets — `lenient()`, `defaults()`, `strict()` and `paranoid()` — and
+the stage that enforces it.
 
 == Usage Example
 

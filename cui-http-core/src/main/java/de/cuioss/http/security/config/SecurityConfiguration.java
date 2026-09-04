@@ -74,7 +74,13 @@ import java.util.Set;
  *        folds of legitimate international text are preserved, not rejected. Paths use NFKC,
  *        parameter values use the lossless NFC form.
  * @param caseSensitiveComparison Whether string comparisons are case-sensitive
- * @param failOnSuspiciousPatterns Whether validation fails on suspicious (non-attack) patterns
+ * @param failOnSuspiciousPatterns Whether validation fails when a URL path or parameter value
+ *        starts with one of the {@link SecurityDefaults#PROTOCOL_HANDLER_SCHEMES}. That structural
+ *        scheme check is this flag's entire remaining scope: the application-layer content
+ *        judgement (sensitive filesystem paths, suspicious parameter names) is governed by
+ *        {@code blockedPathPatterns} and {@code blockedParameterNames}, which are gated on their
+ *        own non-emptiness and not on this flag. When {@code false} a scheme match is allowed
+ *        through <em>silently</em> - {@code PatternMatchingStage} does not log or count it.
  * @param requireSecureCookies Whether cookies must carry the {@code Secure} attribute
  *        (enforced by {@code CookiePrefixValidationStage.validateCookie}). Opt-in, default
  *        {@code false}. Meaningful only for attribute-bearing (Set-Cookie) cookies, not for
@@ -96,6 +102,16 @@ import java.util.Set;
  *        Enforced by the content-type validator ({@code AllowBlockListStage}).
  * @param blockedContentTypes Case-insensitive block-list of content types (takes precedence over
  *        the allow-list). Enforced by the content-type validator ({@code AllowBlockListStage}).
+ * @param blockedPathPatterns Block-list of sensitive path literals; empty (the default) means
+ *        block-none. Enforced by {@code PatternMatchingStage} for {@code URL_PATH} and
+ *        {@code PARAMETER_VALUE} whenever the set is non-empty, matching a whole {@code /}-delimited
+ *        path segment. Seed it from {@link SecurityDefaults#SENSITIVE_PATH_PATTERNS} to reproduce
+ *        the {@link #paranoid()} detection on any base preset.
+ * @param blockedParameterNames Block-list of parameter names; empty (the default) means block-none.
+ *        Enforced by {@code PatternMatchingStage} for {@code PARAMETER_NAME} whenever the set is
+ *        non-empty, matching by exact string equality. Seed it from
+ *        {@link SecurityDefaults#SUSPICIOUS_PARAMETER_NAMES} to reproduce the {@link #paranoid()}
+ *        detection on any base preset.
  *
  * @since 1.0
  * @see SecurityConfigurationBuilder
@@ -127,7 +143,9 @@ int maxCookieCount,
 Set<String> allowedHeaderNames,
 Set<String> blockedHeaderNames,
 Set<String> allowedContentTypes,
-Set<String> blockedContentTypes
+Set<String> blockedContentTypes,
+Set<String> blockedPathPatterns,
+Set<String> blockedParameterNames
 ) {
 
     /**
@@ -136,44 +154,50 @@ Set<String> blockedContentTypes
      * @throws IllegalArgumentException if any length limit is invalid
      */
     public SecurityConfiguration {
-        if (maxPathLength <= 0) {
-            throw new IllegalArgumentException("maxPathLength must be positive, got: " + maxPathLength);
-        }
-        if (maxParameterNameLength <= 0) {
-            throw new IllegalArgumentException("maxParameterNameLength must be positive, got: " + maxParameterNameLength);
-        }
-        if (maxParameterValueLength <= 0) {
-            throw new IllegalArgumentException("maxParameterValueLength must be positive, got: " + maxParameterValueLength);
-        }
-        if (maxHeaderNameLength <= 0) {
-            throw new IllegalArgumentException("maxHeaderNameLength must be positive, got: " + maxHeaderNameLength);
-        }
-        if (maxHeaderValueLength <= 0) {
-            throw new IllegalArgumentException("maxHeaderValueLength must be positive, got: " + maxHeaderValueLength);
-        }
-        if (maxCookieNameLength <= 0) {
-            throw new IllegalArgumentException("maxCookieNameLength must be positive, got: " + maxCookieNameLength);
-        }
-        if (maxCookieValueLength <= 0) {
-            throw new IllegalArgumentException("maxCookieValueLength must be positive, got: " + maxCookieValueLength);
-        }
-        if (maxBodySize < 0) {
-            throw new IllegalArgumentException("maxBodySize must be non-negative, got: " + maxBodySize);
-        }
-        if (maxParameterCount <= 0) {
-            throw new IllegalArgumentException("maxParameterCount must be positive, got: " + maxParameterCount);
-        }
-        if (maxHeaderCount <= 0) {
-            throw new IllegalArgumentException("maxHeaderCount must be positive, got: " + maxHeaderCount);
-        }
-        if (maxCookieCount <= 0) {
-            throw new IllegalArgumentException("maxCookieCount must be positive, got: " + maxCookieCount);
-        }
+        validatePositive("maxPathLength", maxPathLength);
+        validatePositive("maxParameterNameLength", maxParameterNameLength);
+        validatePositive("maxParameterValueLength", maxParameterValueLength);
+        validatePositive("maxHeaderNameLength", maxHeaderNameLength);
+        validatePositive("maxHeaderValueLength", maxHeaderValueLength);
+        validatePositive("maxCookieNameLength", maxCookieNameLength);
+        validatePositive("maxCookieValueLength", maxCookieValueLength);
+        validateNonNegative("maxBodySize", maxBodySize);
+        validatePositive("maxParameterCount", maxParameterCount);
+        validatePositive("maxHeaderCount", maxHeaderCount);
+        validatePositive("maxCookieCount", maxCookieCount);
         // Defensive, null-tolerant immutable copies of the allow/block lists.
         allowedHeaderNames = allowedHeaderNames == null ? Set.of() : Set.copyOf(allowedHeaderNames);
         blockedHeaderNames = blockedHeaderNames == null ? Set.of() : Set.copyOf(blockedHeaderNames);
         allowedContentTypes = allowedContentTypes == null ? Set.of() : Set.copyOf(allowedContentTypes);
         blockedContentTypes = blockedContentTypes == null ? Set.of() : Set.copyOf(blockedContentTypes);
+        blockedPathPatterns = blockedPathPatterns == null ? Set.of() : Set.copyOf(blockedPathPatterns);
+        blockedParameterNames = blockedParameterNames == null ? Set.of() : Set.copyOf(blockedParameterNames);
+    }
+
+    /**
+     * Rejects a limit that is not strictly positive.
+     *
+     * @param name  the record component name, used verbatim in the failure message
+     * @param value the configured limit
+     * @throws IllegalArgumentException if {@code value} is zero or negative
+     */
+    private static void validatePositive(String name, long value) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(name + " must be positive, got: " + value);
+        }
+    }
+
+    /**
+     * Rejects a limit that is negative.
+     *
+     * @param name  the record component name, used verbatim in the failure message
+     * @param value the configured limit
+     * @throws IllegalArgumentException if {@code value} is negative
+     */
+    private static void validateNonNegative(String name, long value) {
+        if (value < 0) {
+            throw new IllegalArgumentException(name + " must be non-negative, got: " + value);
+        }
     }
 
     /**
@@ -196,6 +220,29 @@ Set<String> blockedContentTypes
      */
     public static SecurityConfiguration strict() {
         return SecurityDefaults.STRICT_CONFIGURATION;
+    }
+
+    /**
+     * Creates a paranoid security configuration: {@link #strict()} plus the application-layer
+     * content detection that no lower preset performs.
+     *
+     * <p>Delegates to {@link SecurityDefaults#PARANOID_CONFIGURATION}, the single source of truth
+     * for preset semantics. It differs from {@code strict()} in exactly two settings - it seeds
+     * {@code blockedPathPatterns} from {@link SecurityDefaults#SENSITIVE_PATH_PATTERNS} and
+     * {@code blockedParameterNames} from {@link SecurityDefaults#SUSPICIOUS_PARAMETER_NAMES}.</p>
+     *
+     * <p><strong>False-positive profile.</strong> Those literals are filesystem paths and
+     * configuration filenames, so this preset rejects a request whose path carries a matching
+     * {@code /}-delimited segment (for example {@code /config/etc/settings}) and a request whose
+     * parameter name is exactly {@code file}, {@code path}, {@code url} or one of their siblings -
+     * all legitimate vocabulary in many REST APIs. Choose it where paths and parameters really do
+     * reach a filesystem; otherwise seed a narrower list of your own via
+     * {@link SecurityConfigurationBuilder#blockedPathPatterns(Set)} on another base preset.</p>
+     *
+     * @return A SecurityConfiguration with strict policies plus content block-lists
+     */
+    public static SecurityConfiguration paranoid() {
+        return SecurityDefaults.PARANOID_CONFIGURATION;
     }
 
     /**
@@ -223,6 +270,41 @@ Set<String> blockedContentTypes
      */
     public static SecurityConfiguration defaults() {
         return SecurityDefaults.DEFAULT_CONFIGURATION;
+    }
+
+    /**
+     * Returns a copy of this configuration carrying different content block-lists.
+     *
+     * <p>Every other setting is taken from {@code this}, so a preset derived through this method
+     * cannot drift away from its base on any setting other than the two named here. Both arguments
+     * are defensively copied by the canonical constructor and may be {@code null}, which is read as
+     * an empty (block-none) list.</p>
+     *
+     * <pre>
+     * // paranoid() is strict() plus the application-layer content detection
+     * SecurityConfiguration paranoid = SecurityConfiguration.strict()
+     *         .withContentBlockLists(SecurityDefaults.SENSITIVE_PATH_PATTERNS,
+     *                 SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES);
+     * </pre>
+     *
+     * @param blockedPathPatterns Block-list of sensitive path literals; empty means block-none
+     * @param blockedParameterNames Block-list of parameter names; empty means block-none
+     * @return A new SecurityConfiguration identical to this one except for the two block-lists
+     */
+    public SecurityConfiguration withContentBlockLists(Set<String> blockedPathPatterns,
+            Set<String> blockedParameterNames) {
+        return new SecurityConfiguration(
+                maxPathLength, allowDoubleEncoding,
+                maxParameterNameLength, maxParameterValueLength,
+                maxHeaderNameLength, maxHeaderValueLength,
+                maxCookieNameLength, maxCookieValueLength,
+                maxBodySize,
+                allowNullBytes, allowControlCharacters, allowExtendedAscii, normalizeUnicode,
+                caseSensitiveComparison, failOnSuspiciousPatterns,
+                requireSecureCookies, requireHttpOnlyCookies,
+                maxParameterCount, maxHeaderCount, maxCookieCount,
+                allowedHeaderNames, blockedHeaderNames, allowedContentTypes, blockedContentTypes,
+                blockedPathPatterns, blockedParameterNames);
     }
 
     /**

@@ -1,0 +1,192 @@
+= ADR-0015: A pattern literal enforced by a named preset must be decidable from the HTTP component alone
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// Progressive-disclosure metadata block (see manage-adr SKILL.md → "ADR Template
+// Structure"). Read by `manage-adr.py scan` so a caller can assess an ADR's
+// relevance without reading the full file. List fields are comma-separated.
+// summary: A pattern literal may be enforced by defaults() or strict() only when it is decidable from the HTTP component alone; a literal that requires knowledge of the application's sink is reachable only via the opt-in paranoid() preset or a caller-supplied block-list
+// tags: security-configuration, presets, pattern-matching, trust-boundary, scope
+// affects: cui-http-core
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+A pattern-matching security library that ships named presets has to decide, for every attack
+literal it carries, which preset is allowed to enforce it. The decision looks like a tuning
+question and is not: it is a question about what the library can actually know.
+
+Some literals are decidable from the HTTP component under validation and nothing else. A URL path
+component that begins with `javascript:` is a scheme-bearing URI, and a path component is
+structurally not allowed to be one — no information about the receiving application changes that
+verdict. Other literals are only meaningful relative to the sink the value eventually flows into.
+`/root/` in a URL path signals an attack when, and only when, the application concatenates that
+path onto a filesystem root, on a Unix host, and serves files at all. The library sees a URL path
+component; it cannot see the sink. This is the same boundary the codebase already states at the
+character-validation layer — only the application knows the sink a value flows into — and the same
+boundary that removed signature-based XSS detection from the pattern stage.
+
+Mixing the two classes behind one enforcement switch produces a specific, predictable failure. The
+content-judgement literals have a false-positive rate that is not a defect of the matcher but a
+property of the judgement: `root`, `dev`, `etc`, `sys` and `boot` are ordinary REST vocabulary, so
+any preset enforcing them rejects a realistic API surface. When those literals sit behind the same
+boolean as the structural ones, a caller who hits a single false positive has no move except to
+abandon the entire tier — including the detection that was decidable and correct. The observed
+outcome is a downgrade to the loosest preset, which costs the caller far more detection than the
+literal they were trying to escape.
+
+The choice point this creates is therefore not "which literals do we keep" but "what is the
+admission rule for a literal into a named preset", and that rule has to be stated where a future
+contributor will read it before re-adding a literal that reads, in isolation, like an obvious win.
+
+== Decision
+
+**A pattern literal may be enforced by `defaults()` or `strict()` only if the verdict it produces
+is decidable from the HTTP component alone.** A literal whose verdict depends on knowledge of the
+application's sink is a content judgement and MUST NOT be enforced by either preset. It is
+reachable only through the opt-in `paranoid()` preset or through an explicit, caller-supplied
+block-list.
+
+Applying the rule to this library's pattern set:
+
+* **Structural — stays in `strict()`.** The protocol-handler schemes (`javascript:`, `vbscript:`,
+  `data:`, `file:`), held in `SecurityDefaults.PROTOCOL_HANDLER_SCHEMES`. A path component that
+  *is* a scheme-bearing URI violates what a path component may structurally be.
++
+The anchor that decides "begins with a scheme" is applied to the value a *URL parser* would read,
+not to the raw decoded string. A parser removes ASCII TAB, CR and LF from anywhere in its input and
+skips leading C0 controls and spaces before it reads the scheme, so `%09javascript:alert(1)` is a
+`javascript:` URL to every browser. Those characters reach `PatternMatchingStage` intact for a
+`PARAMETER_VALUE`, where `DecodingStage` treats CR, LF and TAB as legitimate form-data content, so
+anchoring on the raw string would let one leading whitespace byte smuggle the scheme past the check
+— which the substring matcher this decision replaced happened to be immune to. Normalising for the
+anchor is not a widening of it: the anchor still fires only at the start, and the value that flows
+on is always the caller's, never the stripped view.
+* **Content judgement — opt-in only.** The Unix filesystem paths and sensitive filenames, held in
+  `SecurityDefaults.SENSITIVE_PATH_PATTERNS`, and the parameter names in
+  `SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES`. Whether a path segment named `etc` or a parameter
+  named `file` is hostile is the application's call, not the library's.
+
+The filesystem-path and sensitive-filename literals must not be re-added to `strict()`. Their
+absence is this decision, not an oversight.
+
+=== Corollary: two block-lists, not one
+
+The content judgement is carried by two separate lists — `blockedPathPatterns` and
+`blockedParameterNames` — and they cannot be collapsed into one. They apply *different matching
+semantics to different HTTP components*: a path pattern matches a whole `/`-delimited segment of a
+`URL_PATH` or `PARAMETER_VALUE`, while a parameter name matches a `PARAMETER_NAME` by exact string
+equality. A single combined list would have to pick one semantics and would then misapply it to the
+other component — seeding it with the parameter name `file` would also reject every path carrying a
+`file` segment.
+
+A second forcing constraint comes from the gate. The scheme check keeps `failOnSuspiciousPatterns`
+as its gate, and `strict()` sets that flag to `true`. Parameter-name detection must *not* fire
+under `strict()`, so it cannot be gated on the same boolean and needs a gate of its own. Both lists
+are therefore gated on their own non-emptiness, mirroring the existing `blockedHeaderNames` /
+`blockedContentTypes` lists, which are likewise not gated by any boolean.
+
+== Consequences
+
+=== Positive
+
+* `strict()` becomes usable as a production posture. A realistic REST API vocabulary passes it, so
+  a caller no longer has to choose between a working application and the hardened preset.
+* The false-positive profile of every preset becomes explainable from the admission rule rather
+  than from the accident of which literals a database happened to accumulate.
+* Callers gain a per-application tuning mechanism the library previously lacked. The content
+  literals remain available, seeded from `SecurityDefaults`, on any base preset — so a caller can
+  keep the parts of the judgement that match their sink and drop the parts that do not, instead of
+  taking the whole tier or none of it.
+* `paranoid()` gives existing `strict()` consumers a named migration target, so no detection is
+  silently lost by the re-tiering.
+
+=== Negative
+
+* The library ships strictly less detection by default. An application whose URL paths really do
+  reach a filesystem must now opt into `paranoid()` or seed a block-list; if it does neither, it
+  loses a layer it previously had without asking for it.
+* The preset ladder grows a fourth rung, so every preset-comparison table, and every document that
+  enumerated three presets, carries one more column to keep correct.
+
+=== Risks
+
+* A future contributor reads the absent filesystem literals as an oversight and re-adds them to
+  `strict()` — the literals look obviously security-relevant in isolation, and nothing in the code
+  itself explains why they are missing. This record exists primarily to make that re-addition a
+  visible contradiction of a stated decision rather than a plausible improvement.
+* The admission rule requires a judgement call per literal. A literal that is genuinely ambiguous —
+  decidable from the component in some deployments and not in others — has no mechanical
+  classifier, and the safe answer (treat it as a content judgement) costs default detection.
+
+== Alternatives Considered
+
+**Delete the content-judgement literals outright.** The cleanest possible surface: the library
+would carry only what it can decide, and the false positives would be structurally impossible. It
+is rejected because it leaves every existing `strict()` consumer with no migration target and no
+tuning knob. A consumer whose application does map URL paths onto a filesystem would lose a real
+layer with nothing to opt back into, and would have to re-author the literal set themselves from
+scratch to recover it.
+
+**Keep the literals in `strict()` and only fix the substring matcher.** Superficially attractive,
+because the reported symptoms — `profile:` matching `file:`, `document.envelope` matching `.env` —
+are genuine matcher defects that a precise matcher does eliminate. It is rejected because the
+matcher is not the whole cause. A correctly segment-anchored `/etc/` still rejects
+`/config/etc/settings`, and a correctly segment-anchored `/root/` still rejects
+`/api/v1/root/children`. Those are not matcher errors; they are the content judgement being wrong
+for that application. Fixing only the matcher would keep an inherent false-positive class inside
+the preset that is supposed to be usable in production.
+
+**Carry a single combined block-list instead of two.** It would present a smaller configuration
+surface and read as the simpler design. It is rejected because the two lists do not describe the
+same thing: they match different HTTP components under different equality rules, so a single list
+forces one semantics onto both and silently mis-applies it to whichever component did not define
+it.
+
+The three rejected options fail in the same way: each one preserves a coupling that the admission
+rule exists to break — outright deletion couples "the library cannot decide this" to "no caller may
+have it", matcher-only repair couples a decidable check to an undecidable one behind a single
+switch, and the combined list couples two components' matching semantics to a single spelling.
+
+== References
+
+* link:0012-A_security_preset_must_never_set_caseSensitiveComparison_to_true.adoc[ADR-0012: A
+  security preset must never set caseSensitiveComparison to true] — the sibling preset-governance
+  decision. `paranoid()` is subject to it: it keeps `caseSensitiveComparison=false`, so its
+  all-lowercase literals still match mixed-case input.
+* link:0006-PatternMatchingStage_does_not_observe_non-failing_suspicious-pattern_matches.adoc[ADR-0006:
+  PatternMatchingStage does not observe non-failing suspicious-pattern matches] — the record whose
+  scope this decision narrows. Its silent-permit contract now covers the protocol-handler scheme
+  check alone, since the content judgement is gated on list non-emptiness rather than on
+  `failOnSuspiciousPatterns`.
+* Constant lineage: `SUSPICIOUS_PATH_PATTERNS` was split into
+  `SecurityDefaults.PROTOCOL_HANDLER_SCHEMES` (structural) and
+  `SecurityDefaults.SENSITIVE_PATH_PATTERNS` (content judgement). Its four Windows filesystem
+  literals moved into `SENSITIVE_PATH_PATTERNS` alongside the Unix ones, keeping their
+  backslash-delimited spelling. They were briefly deleted as unreachable on the premise that
+  `CharacterValidationStage` rejects the backslash character under every preset; that premise is
+  false for the encoded form. `CharacterValidationStage` judges the *wire* form, in which `%5C` is a
+  well-formed escape, and `DecodingStage` then yields a literal backslash without re-checking
+  RFC 3986 membership — so `/api/%5cwindows%5csystem32` reaches `PatternMatchingStage` as
+  `/api/\windows\system32`.
++
+`checkBlockedPathPatterns` therefore matches a backslash-bearing pattern as a substring rather than
+as a `/`-delimited segment. That is not a weaker rule taken for convenience — it is the rule the
+delimiters already encode, and it is safe for exactly the reason segment matching is necessary
+elsewhere: a decoded backslash cannot occur in a legitimate URL path, so a substring match on
+`\users\` has no false-positive surface, whereas the bare segment `users` would reject every
+`/users/...` route. The tiering rule this ADR states is about *which preset* enforces a literal; the
+matcher a literal needs follows from its own spelling.
+* link:../http-security/specification/specification.adoc[HTTP security specification] — records the
+  precedent this decision follows: signature/pattern-based application-layer injection detection
+  (XSS) was deliberately removed from `PatternMatchingStage` for the same reason, and the same
+  passage now records the re-tiering of the filesystem and sensitive-filename judgement.
+* link:../http-security/configuration.adoc[Configuration reference] — documents the four-preset
+  ladder, the two block-lists and their matcher semantics.

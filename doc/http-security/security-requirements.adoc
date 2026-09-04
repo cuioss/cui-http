@@ -183,6 +183,11 @@ These requirements are derived from:
 === SEC-12: Attack Pattern Recognition
 
 * The system recognizes individual attack patterns per request (`PatternMatchingStage`)
+* Which patterns a given preset enforces is governed by the tiering rule in
+  xref:../adr/0015-A_pattern_literal_enforced_by_a_named_preset_must_be_decidable_from_the_HTTP_component_alone.adoc[ADR-0015]:
+  path traversal is unconditional, the protocol-handler scheme check is gated on
+  `failOnSuspiciousPatterns`, and the application-layer content judgement is reachable only via
+  `paranoid()` or an explicit block-list.
 * NOTE: Cross-request correlation and active response are *not implemented*.
   `SecurityEventCounter` provides raw per-failure-type counts only; the library performs
   *no* rate limiting, blocking, or alerting. The following are therefore the caller's
@@ -231,8 +236,15 @@ These requirements are derived from:
 The shipped out-of-the-box default (`SecurityConfiguration.defaults()`, identical to
 `builder().build()`) is the *balanced* preset: it is secure by default and requires an explicit,
 opt-in change to relax, but it is not the maximum-security preset (for example it ships
-`failOnSuspiciousPatterns=false`). Use `SecurityConfiguration.strict()` for the maximum-security
-posture with "strict validation / maximum checks" described above. See
+`failOnSuspiciousPatterns=false`). `SecurityConfiguration.strict()` is the *recommended production
+posture*: it turns on the structural checks — including the protocol-handler scheme detection — and
+accepts a realistic REST API vocabulary. `SecurityConfiguration.paranoid()` is the
+*maximum-security* posture: it is `strict()` plus the application-layer content detection, seeding
+`blockedPathPatterns` and `blockedParameterNames` from `SecurityDefaults`. That extra detection
+carries a real false-positive cost — it rejects paths whose segments are ordinary API vocabulary
+such as `root`, `dev` or `etc`, and parameter names such as `file` or `url` — so choose it only
+where URL paths and parameters really do reach a filesystem, or seed a narrower block-list of your
+own on any base preset. See
 xref:specification/specification.adoc#_default_security_posture[Default Security Posture] and
 xref:configuration.adoc[Configuration Reference] for the exact per-preset values.
 ====
@@ -284,12 +296,19 @@ xref:configuration.adoc[Configuration Reference] for the exact per-preset values
 [#SEC-18]
 === SEC-18: Attack Pattern Configuration
 
-* NOTE: Runtime-configurable attack patterns are *not implemented*. The attack patterns in
-  `PatternMatchingStage` / `SecurityDefaults` are `static final` compile-time constants, and
-  `SecurityConfiguration` exposes *no* pattern knob. Updating patterns therefore requires a
-  code change and a new release.
-* `SecurityConfiguration` does expose configurable *policy* toggles (length limits,
-  encoding/character policy, allow/block lists), but not the attack-pattern set itself.
+* The attack-pattern set is *partly* configurable. The sensitive-path and parameter-name
+  block-lists ARE caller-supplied: `SecurityConfiguration.blockedPathPatterns()` and
+  `blockedParameterNames()` accept any set, and `SecurityDefaults.SENSITIVE_PATH_PATTERNS` /
+  `SUSPICIOUS_PARAMETER_NAMES` are only the reference values `paranoid()` happens to seed them
+  with.
+* NOTE: The remaining pattern sets are *not* runtime-configurable. `PATH_TRAVERSAL_PATTERNS`, the
+  encoded-traversal regexes and `PROTOCOL_HANDLER_SCHEMES` are `static final` compile-time
+  constants with no configuration knob, so changing them requires a code change and a new release.
+  This is deliberate: they encode structural violations that hold independently of any
+  application's sink (see
+  xref:../adr/0015-A_pattern_literal_enforced_by_a_named_preset_must_be_decidable_from_the_HTTP_component_alone.adoc[ADR-0015]).
+* `SecurityConfiguration` additionally exposes configurable *policy* toggles (length limits,
+  encoding/character policy, header-name and content-type allow/block lists).
 * Reference: xref:analysis/cve-analysis.adoc[Attack Pattern Analysis]
 
 == Implementation References

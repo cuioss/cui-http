@@ -182,6 +182,47 @@ public class EdgeCaseValidURLsDatabase implements LegitimatePatternDatabase {
             "Compatibility folds to letters (no structural separator) are legitimate and accepted"
     );
 
+    // Scheme-lookalike segments: a colon mid-path is ordinary OAuth-scope / verb-suffix
+    // vocabulary. The protocol-handler check is start-anchored on the whole value precisely so
+    // these survive; a segment-anchored check would reject every one of them.
+    public static final LegitimateTestCase SCHEME_LOOKALIKE_VERB_SUFFIX = new LegitimateTestCase(
+            "/api/profile:read",
+            "Resource with a colon-delimited verb suffix",
+            "A colon mid-path is a verb suffix, not a protocol handler, and must be accepted"
+    );
+
+    public static final LegitimateTestCase SCHEME_LOOKALIKE_OAUTH_SCOPE = new LegitimateTestCase(
+            "/scopes/user.profile:write",
+            "OAuth 2.0 scope identifier in a path segment",
+            "OAuth scope names embed dots and colons and must be accepted"
+    );
+
+    public static final LegitimateTestCase SCHEME_LOOKALIKE_DATA_VERB = new LegitimateTestCase(
+            "/v1/data:export",
+            "Google-API-style custom method on a data resource",
+            "'data:' mid-path is a custom method, not the data: URI scheme, and must be accepted"
+    );
+
+    public static final LegitimateTestCase SCHEME_LOOKALIKE_METADATA_VERB = new LegitimateTestCase(
+            "/api/metadata:refresh",
+            "Custom method invoked on a metadata resource",
+            "Custom-method syntax must not be confused with a protocol handler prefix"
+    );
+
+    // Filename-lookalike segments: a blocked filename literal embedded in a longer segment.
+    // Whole-segment equality is what keeps these accepted even under the paranoid preset.
+    public static final LegitimateTestCase FILENAME_LOOKALIKE_ENVELOPE = new LegitimateTestCase(
+            "/documents/document.envelope",
+            "Document with an .envelope extension embedding the '.env' literal",
+            "Block-list matching is whole-segment equality, so a mere substring must be accepted"
+    );
+
+    public static final LegitimateTestCase FILENAME_LOOKALIKE_REVENUE = new LegitimateTestCase(
+            "/reports/2024/revenue.env",
+            "Report filename whose stem ends in the '.env' literal",
+            "'revenue.env' is not the '.env' file and must be accepted"
+    );
+
     private static final List<LegitimateTestCase> ALL_LEGITIMATE_TEST_CASES = List.of(
             SINGLE_CHAR_PATH,
             ROOT_ONLY,
@@ -204,7 +245,13 @@ public class EdgeCaseValidURLsDatabase implements LegitimatePatternDatabase {
             COLON_IN_PATH,
             COMMA_SEPARATED,
             NFKC_FULLWIDTH_LETTER_FOLD,
-            NFKC_ROMAN_NUMERAL_FOLD
+            NFKC_ROMAN_NUMERAL_FOLD,
+            SCHEME_LOOKALIKE_VERB_SUFFIX,
+            SCHEME_LOOKALIKE_OAUTH_SCOPE,
+            SCHEME_LOOKALIKE_DATA_VERB,
+            SCHEME_LOOKALIKE_METADATA_VERB,
+            FILENAME_LOOKALIKE_ENVELOPE,
+            FILENAME_LOOKALIKE_REVENUE
     );
 
     @Override

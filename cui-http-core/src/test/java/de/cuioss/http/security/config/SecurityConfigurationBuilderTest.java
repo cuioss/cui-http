@@ -17,6 +17,9 @@ package de.cuioss.http.security.config;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.HashSet;
+import java.util.Set;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -251,6 +254,58 @@ class SecurityConfigurationBuilderTest {
         assertTrue(config.caseSensitiveComparison());
         assertTrue(config.failOnSuspiciousPatterns());
         assertTrue(config.isStrict());
+    }
+
+    @Test
+    void shouldSetContentBlockLists() {
+        SecurityConfiguration config = SecurityConfiguration.builder()
+                .blockedPathPatterns(SecurityDefaults.SENSITIVE_PATH_PATTERNS)
+                .blockedParameterNames(SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES)
+                .build();
+
+        assertEquals(SecurityDefaults.SENSITIVE_PATH_PATTERNS, config.blockedPathPatterns());
+        assertEquals(SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES, config.blockedParameterNames());
+    }
+
+    @Test
+    void contentBlockListsShouldDefaultToEmpty() {
+        SecurityConfiguration config = SecurityConfiguration.builder().build();
+
+        assertTrue(config.blockedPathPatterns().isEmpty());
+        assertTrue(config.blockedParameterNames().isEmpty());
+    }
+
+    @Test
+    void contentBlockListsShouldTreatNullAsEmpty() {
+        SecurityConfiguration config = SecurityConfiguration.builder()
+                .blockedPathPatterns(Set.of("/etc/"))
+                .blockedParameterNames(Set.of("file"))
+                .blockedPathPatterns(null)
+                .blockedParameterNames(null)
+                .build();
+
+        assertTrue(config.blockedPathPatterns().isEmpty());
+        assertTrue(config.blockedParameterNames().isEmpty());
+    }
+
+    @Test
+    void contentBlockListsShouldBeDefensivelyCopied() {
+        Set<String> paths = new HashSet<>(Set.of("/etc/"));
+        Set<String> names = new HashSet<>(Set.of("file"));
+        SecurityConfiguration config = SecurityConfiguration.builder()
+                .blockedPathPatterns(paths)
+                .blockedParameterNames(names)
+                .build();
+
+        paths.add("/proc/");
+        names.add("url");
+
+        assertEquals(Set.of("/etc/"), config.blockedPathPatterns());
+        assertEquals(Set.of("file"), config.blockedParameterNames());
+        Set<String> copiedPaths = config.blockedPathPatterns();
+        Set<String> copiedNames = config.blockedParameterNames();
+        assertThrows(UnsupportedOperationException.class, () -> copiedPaths.add("/sys/"));
+        assertThrows(UnsupportedOperationException.class, () -> copiedNames.add("path"));
     }
 
     @Test

@@ -31,7 +31,7 @@ xref:specification/pipeline-architecture-standards.adoc[Pipeline Architecture St
 Detailed standards for validation pipeline selection, configuration, and implementation patterns.
 
 xref:configuration.adoc[Configuration Reference]::
-Central reference for every enforced `SecurityConfiguration` setting: its default across the three presets (`defaults()`, `strict()`, `lenient()`) and the stage or validator that enforces it.
+Central reference for every enforced `SecurityConfiguration` setting: its default across the four presets (`lenient()`, `defaults()`, `strict()`, `paranoid()`) and the stage or validator that enforces it.
 
 === Security Analysis
 

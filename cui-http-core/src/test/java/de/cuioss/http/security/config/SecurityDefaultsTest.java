@@ -17,6 +17,8 @@ package de.cuioss.http.security.config;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.Set;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -98,14 +100,64 @@ class SecurityDefaultsTest {
     }
 
     @Test
-    void shouldHaveSuspiciousPathPatterns() {
-        assertNotNull(SecurityDefaults.SUSPICIOUS_PATH_PATTERNS);
-        assertFalse(SecurityDefaults.SUSPICIOUS_PATH_PATTERNS.isEmpty());
+    void shouldHaveProtocolHandlerSchemes() {
+        assertEquals(4, SecurityDefaults.PROTOCOL_HANDLER_SCHEMES.size());
 
-        assertTrue(SecurityDefaults.SUSPICIOUS_PATH_PATTERNS.contains("/etc/"));
-        assertTrue(SecurityDefaults.SUSPICIOUS_PATH_PATTERNS.contains("\\windows\\"));
-        assertTrue(SecurityDefaults.SUSPICIOUS_PATH_PATTERNS.contains("web.xml"));
-        assertTrue(SecurityDefaults.SUSPICIOUS_PATH_PATTERNS.contains(".env"));
+        assertAll("protocol handler schemes",
+                () -> assertTrue(SecurityDefaults.PROTOCOL_HANDLER_SCHEMES.contains("javascript:")),
+                () -> assertTrue(SecurityDefaults.PROTOCOL_HANDLER_SCHEMES.contains("vbscript:")),
+                () -> assertTrue(SecurityDefaults.PROTOCOL_HANDLER_SCHEMES.contains("data:")),
+                () -> assertTrue(SecurityDefaults.PROTOCOL_HANDLER_SCHEMES.contains("file:")),
+                () -> assertTrue(SecurityDefaults.PROTOCOL_HANDLER_SCHEMES.stream().allMatch(s -> s.endsWith(":")),
+                        "every scheme literal must carry its ':' so start-anchored matching is exact"));
+    }
+
+    @Test
+    void shouldHaveSensitivePathPatterns() {
+        assertEquals(15, SecurityDefaults.SENSITIVE_PATH_PATTERNS.size());
+
+        assertAll("sensitive path patterns",
+                () -> assertTrue(SecurityDefaults.SENSITIVE_PATH_PATTERNS.contains("/etc/")),
+                () -> assertTrue(SecurityDefaults.SENSITIVE_PATH_PATTERNS.contains("web.xml")),
+                () -> assertTrue(SecurityDefaults.SENSITIVE_PATH_PATTERNS.contains(".env")),
+                () -> assertTrue(SecurityDefaults.SENSITIVE_PATH_PATTERNS.contains("\\windows\\"),
+                        "the Windows literals are reachable post-decode via %5C and must be carried"),
+                () -> assertTrue(SecurityDefaults.SENSITIVE_PATH_PATTERNS.contains("\\users\\"),
+                        "the backslash delimiters are load-bearing - the bare segment 'users' would "
+                                + "reject every /users/... REST route"));
+    }
+
+    @Test
+    void shouldHaveParanoidConfigurationDifferingFromStrictOnlyInBlockLists() {
+        SecurityConfiguration paranoid = SecurityDefaults.PARANOID_CONFIGURATION;
+        SecurityConfiguration strict = SecurityDefaults.STRICT_CONFIGURATION;
+
+        assertAll("paranoid preset",
+                () -> assertEquals(SecurityDefaults.SENSITIVE_PATH_PATTERNS, paranoid.blockedPathPatterns()),
+                () -> assertEquals(SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES, paranoid.blockedParameterNames()),
+                () -> assertTrue(strict.blockedPathPatterns().isEmpty()),
+                () -> assertTrue(strict.blockedParameterNames().isEmpty()),
+                () -> assertFalse(paranoid.caseSensitiveComparison(),
+                        "ADR-0012: a security preset must never set caseSensitiveComparison to true"),
+                () -> assertEquals(strict, withEmptyContentBlockLists(paranoid),
+                        "paranoid() must equal strict() on every setting except the two block-lists"));
+    }
+
+    private static SecurityConfiguration withEmptyContentBlockLists(SecurityConfiguration config) {
+        return new SecurityConfiguration(
+                config.maxPathLength(), config.allowDoubleEncoding(),
+                config.maxParameterNameLength(), config.maxParameterValueLength(),
+                config.maxHeaderNameLength(), config.maxHeaderValueLength(),
+                config.maxCookieNameLength(), config.maxCookieValueLength(),
+                config.maxBodySize(),
+                config.allowNullBytes(), config.allowControlCharacters(),
+                config.allowExtendedAscii(), config.normalizeUnicode(),
+                config.caseSensitiveComparison(), config.failOnSuspiciousPatterns(),
+                config.requireSecureCookies(), config.requireHttpOnlyCookies(),
+                config.maxParameterCount(), config.maxHeaderCount(), config.maxCookieCount(),
+                config.allowedHeaderNames(), config.blockedHeaderNames(),
+                config.allowedContentTypes(), config.blockedContentTypes(),
+                Set.of(), Set.of());
     }
 
     @Test
@@ -298,7 +350,8 @@ class SecurityDefaultsTest {
     @Test
     void shouldHaveNonEmptySets() {
         assertTrue(SecurityDefaults.PATH_TRAVERSAL_PATTERNS.size() > 5);
-        assertTrue(SecurityDefaults.SUSPICIOUS_PATH_PATTERNS.size() > 5);
+        assertTrue(SecurityDefaults.SENSITIVE_PATH_PATTERNS.size() > 5);
+        assertTrue(SecurityDefaults.PROTOCOL_HANDLER_SCHEMES.size() > 3);
         assertTrue(SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES.size() > 5);
         assertTrue(SecurityDefaults.DANGEROUS_HEADER_NAMES.size() > 3);
         assertTrue(SecurityDefaults.SAFE_CONTENT_TYPES.size() > 5);

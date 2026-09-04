@@ -42,7 +42,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * <ol>
  *   <li>a percent-encoded control character is rejected after decoding, and the guard is governed
  *       by {@code allowControlCharacters} rather than hard-coded (SV-3 / SV-5);</li>
- *   <li>the strict preset detects a mixed-case suspicious path, because it no longer compares
+ *   <li>the paranoid preset detects a mixed-case sensitive path, because it no longer compares
  *       case-sensitively against an all-lowercase pattern set (SV-4);</li>
  *   <li>every case permutation of the encoded double dot is detected as traversal (SV-10);</li>
  *   <li>URL path decoding follows RFC 3986 and preserves a literal {@code +} instead of rewriting
@@ -97,21 +97,58 @@ class PostDecodeEnforcementRegressionTest {
     }
 
     @Nested
-    @DisplayName("(2) SV-4: the strict preset is no longer case-weakened")
-    class StrictPresetCaseSensitivity {
+    @DisplayName("(2) SV-4: the paranoid preset is no longer case-weakened")
+    class ParanoidPresetCaseSensitivity {
 
         @ParameterizedTest
-        @DisplayName("SV-4: strict() rejects a suspicious path in either case")
+        @DisplayName("SV-4: paranoid() rejects a sensitive path in either case")
         @ValueSource(strings = {"/ETC/passwd", "/etc/passwd"})
-        void strictRejectsSuspiciousPathRegardlessOfCase(String path) {
-            HttpSecurityValidator pipeline = pipeline(SecurityConfiguration.strict());
+        void paranoidRejectsSensitivePathRegardlessOfCase(String path) {
+            HttpSecurityValidator pipeline = pipeline(SecurityConfiguration.paranoid());
 
             UrlSecurityException exception = assertThrows(UrlSecurityException.class,
                     () -> pipeline.validate(path),
-                    "strict() must detect '" + path + "' - SUSPICIOUS_PATH_PATTERNS is all-lowercase, "
+                    "paranoid() must detect '" + path + "' - SENSITIVE_PATH_PATTERNS is all-lowercase, "
                             + "so case-sensitive comparison would let the mixed-case spelling through");
 
             assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType());
+        }
+
+        /**
+         * A percent-encoded backslash is <em>not</em> stopped by character validation:
+         * {@code CharacterValidationStage} judges the wire form, where {@code %5C} is a well-formed
+         * escape, and {@code DecodingStage} then yields a literal backslash without re-checking
+         * RFC 3986 membership. The Windows literals therefore have to survive the re-tiering and be
+         * matched in their backslash-delimited spelling, or a Windows filesystem path reaches the
+         * application unexamined.
+         */
+        @ParameterizedTest
+        @DisplayName("paranoid() rejects a Windows filesystem path smuggled in as %5C")
+        @ValueSource(strings = {
+                "/api/%5cwindows%5csystem32%5cconfig",
+                "/%5cWindows%5cwin.ini",
+                "%5cusers%5cadmin"})
+        void paranoidRejectsPercentEncodedBackslashPath(String path) {
+            HttpSecurityValidator pipeline = pipeline(SecurityConfiguration.paranoid());
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                    () -> pipeline.validate(path),
+                    "paranoid() must detect '" + path + "' - %5C survives wire-form character "
+                            + "validation and decodes to a literal backslash, so dropping the "
+                            + "Windows literals would let the whole path through unexamined");
+
+            assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType());
+        }
+
+        @ParameterizedTest
+        @DisplayName("paranoid() still accepts a slash-delimited segment sharing a Windows literal's name")
+        @ValueSource(strings = {"/users/42/profile", "/api/v1/users", "/windows/tint-preview"})
+        void paranoidAcceptsSlashDelimitedNamesakes(String path) {
+            HttpSecurityValidator pipeline = pipeline(SecurityConfiguration.paranoid());
+
+            assertDoesNotThrow(() -> pipeline.validate(path),
+                    "the Windows literals are backslash-delimited, so '" + path + "' - an ordinary "
+                            + "REST route - must not be caught by them");
         }
     }
 
@@ -178,6 +215,68 @@ class PostDecodeEnforcementRegressionTest {
 
             assertEquals("/search/c++", result.orElseThrow(),
                     "%2B still decodes to + regardless of the literal-plus handling");
+        }
+    }
+
+    /**
+     * The protocol-handler check anchors the scheme to the start of the whole value. That anchor
+     * has to be applied to the value a <em>URL parser</em> would read: a parser strips TAB, CR and
+     * LF from anywhere in its input and skips leading C0 controls and spaces before it reads the
+     * scheme. Those characters reach {@code PatternMatchingStage} intact for a parameter value,
+     * where {@code DecodingStage} treats CR, LF and TAB as legitimate form-data content, so
+     * anchoring on the raw decoded string would let one leading whitespace byte smuggle a
+     * {@code javascript:} URL past both {@code strict()} and {@code paranoid()}.
+     */
+    @Nested
+    @DisplayName("(5) the scheme anchor is applied to the value a URL parser would read")
+    class SchemeAnchorParserView {
+
+        private HttpSecurityValidator parameterPipeline(SecurityConfiguration config) {
+            return PipelineFactory.createUrlParameterPipeline(config, eventCounter);
+        }
+
+        @ParameterizedTest
+        @DisplayName("strict() rejects a scheme hidden behind parser-ignored leading whitespace")
+        @ValueSource(strings = {
+                "%09javascript%3Aalert(1)",
+                "%0d%0ajavascript%3Aalert(1)",
+                "%20javascript%3Aalert(1)",
+                "ja%09vascript%3Aalert(1)",
+                "%09data%3Atext"})
+        void strictRejectsSchemeBehindParserIgnoredWhitespace(String parameterValue) {
+            HttpSecurityValidator pipeline = parameterPipeline(SecurityConfiguration.strict());
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                    () -> pipeline.validate(parameterValue),
+                    "strict() must detect '" + parameterValue + "' - a URL parser removes TAB/CR/LF "
+                            + "and skips leading spaces before reading the scheme, so this IS a "
+                            + "protocol-handler URL to every browser");
+
+            assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType());
+        }
+
+        @ParameterizedTest
+        @DisplayName("the parser view does not widen the anchor - a mid-value scheme still passes")
+        @ValueSource(strings = {
+                "report-for-data%3A2024-01-01",
+                "see-file%3Athe-attached-one",
+                "x%09javascript%3Anotes"})
+        void anchorStaysAtTheStartOfTheParserView(String parameterValue) {
+            HttpSecurityValidator pipeline = parameterPipeline(SecurityConfiguration.strict());
+
+            assertDoesNotThrow(() -> pipeline.validate(parameterValue),
+                    "'" + parameterValue + "' does not START with a scheme once the parser-ignored "
+                            + "characters are removed, so the anchor must not fire on it");
+        }
+
+        @Test
+        @DisplayName("the value that flows on is the caller's, not the stripped parser view")
+        void returnsTheCallerValueNotTheParserView() {
+            Optional<String> result =
+                    parameterPipeline(SecurityConfiguration.strict()).validate("a%09b");
+
+            assertEquals("a\tb", result.orElseThrow(),
+                    "the parser view positions the anchor only - it must never replace the value");
         }
     }
 

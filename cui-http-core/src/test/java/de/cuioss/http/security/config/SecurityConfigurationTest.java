@@ -56,8 +56,9 @@ class SecurityConfigurationTest {
         assertTrue(config.normalizeUnicode());
         // Case-insensitive on purpose: comparison lowercases both the input and the pattern set,
         // so it matches a superset of what case-sensitive comparison matches. Case-sensitive
-        // comparison would let a mixed-case input such as /ETC/passwd slip past the all-lowercase
-        // SUSPICIOUS_PATH_PATTERNS set, weakening the strict preset rather than tightening it.
+        // comparison would let a mixed-case input such as JavaScript:alert(1) slip past the
+        // all-lowercase PROTOCOL_HANDLER_SCHEMES set (and /ETC/passwd past a block-list seeded
+        // from SENSITIVE_PATH_PATTERNS), weakening the strict preset rather than tightening it.
         assertFalse(config.caseSensitiveComparison());
         assertTrue(config.failOnSuspiciousPatterns());
     }
@@ -94,6 +95,31 @@ class SecurityConfigurationTest {
         assertSame(SecurityDefaults.STRICT_CONFIGURATION, SecurityConfiguration.strict());
         assertSame(SecurityDefaults.DEFAULT_CONFIGURATION, SecurityConfiguration.defaults());
         assertSame(SecurityDefaults.LENIENT_CONFIGURATION, SecurityConfiguration.lenient());
+        assertSame(SecurityDefaults.PARANOID_CONFIGURATION, SecurityConfiguration.paranoid());
+    }
+
+    @Test
+    void shouldCreateParanoidConfiguration() {
+        SecurityConfiguration config = SecurityConfiguration.paranoid();
+
+        assertAll("paranoid preset",
+                () -> assertEquals(SecurityDefaults.SENSITIVE_PATH_PATTERNS, config.blockedPathPatterns()),
+                () -> assertEquals(SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES, config.blockedParameterNames()),
+                () -> assertTrue(config.failOnSuspiciousPatterns()),
+                () -> assertFalse(config.caseSensitiveComparison()),
+                () -> assertTrue(config.isStrict(),
+                        "the two block-lists are orthogonal to the strictness predicate"));
+    }
+
+    @Test
+    void lowerPresetsShouldCarryEmptyContentBlockLists() {
+        assertAll("content block-lists are opt-in below paranoid()",
+                () -> assertTrue(SecurityConfiguration.defaults().blockedPathPatterns().isEmpty()),
+                () -> assertTrue(SecurityConfiguration.defaults().blockedParameterNames().isEmpty()),
+                () -> assertTrue(SecurityConfiguration.strict().blockedPathPatterns().isEmpty()),
+                () -> assertTrue(SecurityConfiguration.strict().blockedParameterNames().isEmpty()),
+                () -> assertTrue(SecurityConfiguration.lenient().blockedPathPatterns().isEmpty()),
+                () -> assertTrue(SecurityConfiguration.lenient().blockedParameterNames().isEmpty()));
     }
 
     @Test
@@ -176,7 +202,7 @@ class SecurityConfigurationTest {
                 headerNameLength, headerValueLength, cookieNameLength, cookieValueLength,
                 bodySize, false, false, true, false, false, false,
                 false, false, 100, 50, 20,
-                Set.of(), Set.of(), Set.of(), Set.of()));
+                Set.of(), Set.of(), Set.of(), Set.of(), Set.of(), Set.of()));
     }
 
     @Test

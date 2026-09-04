@@ -83,9 +83,11 @@ class ProtocolHandlerAttackTest {
 
     @BeforeEach
     void setUp() {
-        config = SecurityConfiguration.builder()
-                .failOnSuspiciousPatterns(true)  // Enable failing on suspicious patterns
-                .build();
+        // paranoid() inherits failOnSuspiciousPatterns=true from strict() - which drives the
+        // start-anchored protocol-handler scheme check - and additionally seeds
+        // blockedPathPatterns, so a scheme that appears mid-value is still caught by the
+        // whole-segment match on the sensitive path it targets.
+        config = SecurityConfiguration.paranoid();
         eventCounter = new SecurityEventCounter();
         pipeline = new URLPathValidationPipeline(config, eventCounter);
     }

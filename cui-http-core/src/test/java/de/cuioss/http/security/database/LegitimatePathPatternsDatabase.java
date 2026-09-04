@@ -166,6 +166,45 @@ public class LegitimatePathPatternsDatabase implements LegitimatePatternDatabase
             "File downloads with extensions are standard and must be accepted"
     );
 
+    // Segments that read like a Unix filesystem path but are ordinary API vocabulary. These are
+    // the false-positive class the application-layer blocklist produced while it lived in strict; // NOSONAR java:S125 - prose referencing preset names, not commented-out code
+    // the content judgement now belongs to paranoid / an explicit block-list.
+    public static final LegitimateTestCase API_ROOT_SEGMENT = new LegitimateTestCase(
+            "/api/v1/root/children",
+            "Tree-structured API exposing the root node's children",
+            "'root' is a universal tree-API noun and must not be read as the Unix /root/ directory"
+    );
+
+    public static final LegitimateTestCase DEPLOYMENT_ENVIRONMENT_SEGMENT = new LegitimateTestCase(
+            "/deployments/dev/status",
+            "Deployment status for the dev environment",
+            "'dev' names a deployment environment, not the Unix /dev/ device directory"
+    );
+
+    public static final LegitimateTestCase TENANT_ENVIRONMENT_SEGMENT = new LegitimateTestCase(
+            "/tenants/acme/dev/config",
+            "Per-tenant configuration for the dev environment",
+            "Environment names recur mid-path in multi-tenant APIs and must be accepted"
+    );
+
+    public static final LegitimateTestCase CONFIG_ETC_SEGMENT = new LegitimateTestCase(
+            "/config/etc/settings",
+            "Configuration namespace using 'etc' in its literal 'et cetera' sense",
+            "'etc' is a legitimate namespace segment, not necessarily the Unix /etc/ directory"
+    );
+
+    public static final LegitimateTestCase HARDWARE_SYS_SEGMENT = new LegitimateTestCase(
+            "/hardware/sys/temperature",
+            "Hardware telemetry endpoint using a 'sys' namespace",
+            "'sys' abbreviates 'system' in many API vocabularies and must be accepted"
+    );
+
+    public static final LegitimateTestCase WIKI_BOOT_SEGMENT = new LegitimateTestCase(
+            "/wiki/boot/procedure",
+            "Wiki article about a boot procedure",
+            "'boot' as a documentation topic must not be read as the Unix /boot/ directory"
+    );
+
     private static final List<LegitimateTestCase> ALL_LEGITIMATE_TEST_CASES = List.of(
             REST_API_VERSION,
             REST_RESOURCE_ID,
@@ -186,7 +225,13 @@ public class LegitimatePathPatternsDatabase implements LegitimatePatternDatabase
             PACKAGE_NAMESPACE,
             DEEP_TAXONOMY,
             DOCUMENTATION_PATH,
-            PATH_WITH_EXTENSION
+            PATH_WITH_EXTENSION,
+            API_ROOT_SEGMENT,
+            DEPLOYMENT_ENVIRONMENT_SEGMENT,
+            TENANT_ENVIRONMENT_SEGMENT,
+            CONFIG_ETC_SEGMENT,
+            HARDWARE_SYS_SEGMENT,
+            WIKI_BOOT_SEGMENT
     );
 
     @Override

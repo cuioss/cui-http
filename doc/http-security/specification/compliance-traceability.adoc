@@ -682,7 +682,7 @@ than counted here.
 * 7 Validation Stages (Length, Character, Decoding, Normalization, Pattern Matching, AllowBlockList, CookiePrefix) plus `RequestCollectionValidator`
 * 5 concrete Validation Pipelines (URL Path, URL Parameter Value, URL Parameter Name, Header, Content-Type)
 * 1 in-memory Security Event Counter (counting only — no logging/alerting)
-* 1 Configuration System with three presets (strict / default / lenient)
+* 1 Configuration System with four presets (lenient / default / strict / paranoid)
 
 ==== Test Framework
 
@@ -733,6 +733,14 @@ This library focuses on *HTTP/URL protocol layer security*. The following are *o
 * *LDAP Injection*: Application must sanitize LDAP queries
 * *XSS in HTML*: Application must encode HTML output
 * *XML/JSON Injection*: Application must validate structured data
+* *Sensitive filesystem paths and filenames*: whether a URL path segment such as `etc`, `root` or
+  `dev`, or a filename such as `web.xml` or `.env`, denotes an attack depends on whether the
+  application maps URL paths onto a filesystem — knowledge this library does not have. The same
+  holds for generic parameter names such as `file`, `path` or `url`. This judgement is therefore
+  *not* enforced by `defaults()` or `strict()`. It remains *available opt-in*, either via
+  `SecurityConfiguration.paranoid()` or via a caller-supplied `blockedPathPatterns` /
+  `blockedParameterNames` block-list seeded from `SecurityDefaults`. The admission rule is recorded
+  in xref:../../adr/0015-A_pattern_literal_enforced_by_a_named_preset_must_be_decidable_from_the_HTTP_component_alone.adoc[ADR-0015].
 
 === What This Library DOES Provide
 
@@ -741,7 +749,10 @@ This library focuses on *HTTP/URL protocol layer security*. The following are *o
 * ✅ HTTP header injection prevention
 * ✅ URL encoding attack detection
 * ✅ Unicode security validation
-* ✅ Protocol-level attack pattern detection
+* ✅ Protocol-level attack pattern detection (including the structural protocol-handler scheme
+  check enforced by `strict()`)
+* ✅ Opt-in application-layer content block-lists for callers that can supply the missing sink
+  knowledge (`paranoid()`, or `blockedPathPatterns` / `blockedParameterNames` on any base preset)
 
 == Maintenance
 

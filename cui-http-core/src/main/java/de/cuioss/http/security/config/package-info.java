@@ -65,12 +65,14 @@
  * </ul>
  * <p>What it deliberately leaves off, so it must be opted into when required:</p>
  * <ul>
- *   <li>{@code failOnSuspiciousPatterns} is {@code false} - a suspicious-pattern match is
- *       allowed through silently</li>
+ *   <li>{@code failOnSuspiciousPatterns} is {@code false} - a value starting with a protocol
+ *       handler scheme such as {@code javascript:} is allowed through silently</li>
  *   <li>{@code allowExtendedAscii} is {@code true} - characters 128-255 are permitted</li>
  *   <li>{@code requireSecureCookies} and {@code requireHttpOnlyCookies} are {@code false}</li>
  *   <li>The header-name and content-type allow/block lists are empty, which means
- *       allow-all / block-none</li>
+ *       allow-all / block-none - and so are {@code blockedPathPatterns} and
+ *       {@code blockedParameterNames}, the two application-layer content block-lists that
+ *       {@link de.cuioss.http.security.config.SecurityConfiguration#paranoid()} seeds</li>
  * </ul>
  *
  * <h3>Package Nullability</h3>
