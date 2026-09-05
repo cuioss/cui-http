@@ -133,13 +133,50 @@ class NormalizationStageTest {
         assertTrue(exception.getDetail().isPresent());
     }
 
-    @Test
-    void validate_withAbsolutePathEscape_normalizesCorrectly() {
-        // This should normalize to "/etc/passwd" (not throw) since it's a valid absolute path after normalization
-        Optional<String> optionalResult = stage.validate("/api/../../../etc/passwd");
-        assertTrue(optionalResult.isPresent());
-        String result = optionalResult.get();
-        assertEquals("/etc/passwd", result);
+    /**
+     * An absolute path whose {@code ..} segments outnumber the directories available to consume
+     * reaches root with no parent left. RFC 3986 Section 5.2.4 discards such a segment; this stage
+     * rejects it instead, so the caller is never handed a resolvable path other than the one the
+     * input named (ADR-0016).
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "/api/../../../etc/passwd",  // more .. than available parents
+            "/../../../still/valid",     // walks past root before any real segment
+            "/../"                       // minimal form
+    })
+    void validate_withAbsolutePathWalkingPastRoot_throwsException(String input) {
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> stage.validate(input),
+                "Absolute path '" + input + "' walks past root and must be rejected, not clamped");
+
+        assertAll("absolute path walking past root",
+                () -> assertEquals(UrlSecurityFailureType.DIRECTORY_ESCAPE_ATTEMPT,
+                        exception.getFailureType()),
+                () -> assertEquals(ValidationType.URL_PATH, exception.getValidationType()),
+                () -> assertEquals(input, exception.getOriginalInput()),
+                () -> assertTrue(exception.getDetail().orElse("").contains("walks past root"),
+                        "Detail must name the root walk"));
+    }
+
+    /**
+     * A {@code ?} opens the query component and a {@code #} opens the fragment, so neither belongs
+     * inside a path value. {@code DecodingStage} can surface either from {@code %3F} / {@code %23},
+     * and the decoded form is what this stage receives.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"/a?b", "/a#b"})
+    void validate_withDecodedComponentDelimiter_throwsException(String input) {
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> stage.validate(input),
+                "Path '" + input + "' carries a URI component delimiter and must be rejected");
+
+        assertAll("component delimiter in path",
+                () -> assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType()),
+                () -> assertEquals(ValidationType.URL_PATH, exception.getValidationType()),
+                () -> assertEquals(input, exception.getOriginalInput()),
+                () -> assertTrue(exception.getDetail().orElse("").contains("component delimiter"),
+                        "Detail must name the component delimiter"));
     }
 
     /**
@@ -202,8 +239,7 @@ class NormalizationStageTest {
     @CsvSource({
             "'./././api/users', 'api/users'",
             "'/./././api/users', '/api/users'",
-            "'/api/././users/././data', '/api/users/data'",
-            "'/../../../still/valid', '/still/valid'"
+            "'/api/././users/././data', '/api/users/data'"
     })
     @SuppressWarnings("java:S4144")
     void validate_withComplexDotPatterns_handlesCorrectly(String input, String expected) {
@@ -342,8 +378,7 @@ class NormalizationStageTest {
     @CsvSource({
             "'/', '/'",
             "'/./././', '/'",
-            "'/.', '/'",
-            "'/../', '/'"  // This goes above root but is normalized to root
+            "'/.', '/'"
     })
     @SuppressWarnings("java:S4144")
     void validate_withRootPaths_handlesCorrectly(String input, String expected) {

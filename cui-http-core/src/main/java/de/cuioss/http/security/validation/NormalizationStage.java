@@ -65,7 +65,9 @@ import java.util.regex.Pattern;
  * <h3>Security Validations</h3>
  * <ul>
  *   <li><strong>Path Traversal</strong> - Detects ../ patterns that remain after normalization</li>
- *   <li><strong>Root Escape</strong> - Prevents paths from escaping the application root</li>
+ *   <li><strong>Root Escape</strong> - Prevents paths from escaping the application root, including
+ *       an absolute path whose .. walks past root</li>
+ *   <li><strong>Component Delimiters</strong> - Rejects a decoded ? or # inside a path value</li>
  *   <li><strong>Excessive Nesting</strong> - Limits path depth to prevent resource exhaustion</li>
  *   <li><strong>Malicious Patterns</strong> - Identifies suspicious path construction</li>
  * </ul>
@@ -81,10 +83,21 @@ import java.util.regex.Pattern;
  *         .orElseThrow(() -&gt; new IllegalArgumentException("input must not be null"));
  * // normalized is: "/api/users/456"
  *
- * // An absolute path whose .. segments are consumed at root is CLAMPED, not rejected
- * String clamped = normalizer.validate("/api/../../etc/passwd")
- *         .orElseThrow(() -&gt; new IllegalArgumentException("input must not be null"));
- * // clamped is: "/etc/passwd" — this returns normally; no exception is thrown
+ * // An absolute path whose .. segments walk past root is REJECTED, not clamped
+ * try {
+ *     normalizer.validate("/api/../../etc/passwd");
+ *     // Throws UrlSecurityException with DIRECTORY_ESCAPE_ATTEMPT
+ * } catch (UrlSecurityException e) {
+ *     logger.warn("Root escape blocked: {}", e.getFailureType());
+ * }
+ *
+ * // A decoded query or fragment delimiter is REJECTED — a path carrying one is not a path
+ * try {
+ *     normalizer.validate("/a?b");
+ *     // Throws UrlSecurityException with INVALID_CHARACTER
+ * } catch (UrlSecurityException e) {
+ *     logger.warn("Component delimiter in path: {}", e.getFailureType());
+ * }
  *
  * // Detect path traversal attack (LAYER 1, single-component traversal)
  * try {
@@ -111,9 +124,14 @@ import java.util.regex.Pattern;
  * }
  * </pre>
  *
- * <h3>What this stage rejects, and what it silently clamps</h3>
+ * <h3>What this stage rejects</h3>
  *
- * <p><strong>What it rejects.</strong> {@code validate} runs two throwing checks:</p>
+ * <p><strong>Component delimiters.</strong> Before any normalization runs, a path value carrying a
+ * {@code ?} or {@code #} is rejected with {@link UrlSecurityFailureType#INVALID_CHARACTER}. Both
+ * open a different URI component, and {@code DecodingStage} can surface either from {@code %3F} or
+ * {@code %23}, so a path that contains one is not a path and must not be resolved as one.</p>
+ *
+ * <p><strong>Traversal.</strong> {@code validate} runs three throwing checks:</p>
  * <ul>
  *   <li><strong>LAYER 1</strong> ({@code containsDirectoryTraversalIntent}, before
  *       normalization) raises {@link UrlSecurityFailureType#PATH_TRAVERSAL_DETECTED} for five
@@ -130,21 +148,22 @@ import java.util.regex.Pattern;
  *       that survive normalization, and {@code escapesRoot} raises
  *       {@link UrlSecurityFailureType#DIRECTORY_ESCAPE_ATTEMPT} for a normalized path that
  *       escapes root.</li>
+ *   <li><strong>Root-consumed {@code ..}</strong> ({@code processPathSegment}, during
+ *       normalization) raises {@link UrlSecurityFailureType#DIRECTORY_ESCAPE_ATTEMPT} when an
+ *       absolute path's {@code ..} reaches root with no parent left to consume.
+ *       {@code /api/../../etc/passwd} is exactly this case.</li>
  * </ul>
  *
- * <p><strong>What it silently clamps.</strong> An absolute path whose {@code ..} segments are
- * consumed at root is clamped per RFC 3986 and <em>returns normally with no throw</em>.
- * {@code /api/../../etc/passwd} is exactly this case: the leading {@code /} prevents
- * {@code SINGLE_COMPONENT_TRAVERSAL_PATTERN} from matching, no encoded or multi-dot pattern
- * fires, {@code processPathSegment} discards {@code ..} at root for an absolute path,
- * {@code escapesRoot("/etc/passwd")} is false, and the method returns {@code /etc/passwd}.</p>
+ * <p><strong>A segment that merely contains {@code ..} is not a dot-segment.</strong> Only the
+ * complete segment {@code ..} navigates; {@code a/..c}, {@code file..txt}, {@code ..config} and
+ * {@code path/sub..dir/file} are ordinary names and are returned verbatim.</p>
  *
- * <p><strong>Standalone-use caveat.</strong> Because the clamping path returns a normalized
- * value rather than throwing, a caller MUST NOT treat a successful return from this stage
- * alone as proof that the input carried no traversal intent. The clamped result must still be
- * authorized against the caller's own root before it is used to resolve a resource. This is a
- * caveat about the clamping path specifically — the stage does reject the traversal classes
- * enumerated above.</p>
+ * <p><strong>Deliberately stricter than RFC 3986 Section 5.2.4.</strong> The RFC discards a
+ * root-consumed {@code ..} so that resolution is total over syntactically valid absolute paths.
+ * This stage rejects it instead: clamping would hand the caller a different, resolvable path than
+ * the input named, which is the wrong default for a security-validation stage. The cost is a
+ * false-positive class — a reverse proxy or templated client that emits a {@code ..} count
+ * exceeding its nesting depth is now rejected. See ADR-0016.</p>
  *
  * <h3>Performance Characteristics</h3>
  * <ul>
@@ -162,6 +181,8 @@ import java.util.regex.Pattern;
  *   <li>Trailing slashes are preserved</li>
  *   <li>Leading slashes are preserved</li>
  * </ul>
+ * <p>with one deliberate divergence: a double dot segment with no previous segment to remove is
+ * rejected rather than discarded (ADR-0016).</p>
  * <p>
  * Implements: Task V2 from HTTP verification specification
  *
@@ -281,9 +302,11 @@ ValidationType validationType) implements HttpSecurityValidator {
      * @return The validated and normalized path wrapped in Optional, or Optional.empty() if input was null
      * @throws UrlSecurityException if any security violations are detected:
      *                              <ul>
+     *                                <li>INVALID_CHARACTER - if the path carries a ? or # component delimiter</li>
      *                                <li>EXCESSIVE_NESTING - if path contains too many segments or depth</li>
      *                                <li>PATH_TRAVERSAL_DETECTED - if ../ patterns remain after normalization</li>
-     *                                <li>DIRECTORY_ESCAPE_ATTEMPT - if normalized path tries to escape root</li>
+     *                                <li>DIRECTORY_ESCAPE_ATTEMPT - if the path escapes root, either by
+     *                                    surviving normalization or by walking past root during it</li>
      *                              </ul>
      */
     @Override
@@ -310,6 +333,21 @@ ValidationType validationType) implements HttpSecurityValidator {
         // Save original for comparison and error reporting
         @SuppressWarnings("UnnecessaryLocalVariable") // Used in exception handling below
         String original = value;
+
+        // A path is one URI component: '?' opens the query and '#' opens the fragment, so neither
+        // belongs inside a path value. DecodingStage can surface either from %3F / %23, and a path
+        // that carries one is no longer a path -- normalizing it would resolve segments that the
+        // recipient will read as a different component altogether.
+        int delimiterIndex = indexOfComponentDelimiter(original);
+        if (delimiterIndex >= 0) {
+            throw UrlSecurityException.builder()
+                    .failureType(UrlSecurityFailureType.INVALID_CHARACTER)
+                    .validationType(validationType)
+                    .originalInput(original)
+                    .detail("URI component delimiter '" + original.charAt(delimiterIndex)
+                            + "' at position " + delimiterIndex + " in path")
+                    .build();
+        }
 
         // LAYER 1: Semantic Intent Validation - Detect directory traversal patterns BEFORE normalization
         // This follows OWASP/CISA best practices for defense in depth
@@ -348,6 +386,22 @@ ValidationType validationType) implements HttpSecurityValidator {
         }
 
         return Optional.of(normalized);
+    }
+
+    /**
+     * Reports the offset of the first {@code ?} or {@code #} in a path value.
+     *
+     * @param value the path value to scan
+     * @return the offset of the first URI component delimiter, or {@code -1} if there is none
+     */
+    private static int indexOfComponentDelimiter(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == '?' || c == '#') {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /**
@@ -421,11 +475,23 @@ ValidationType validationType) implements HttpSecurityValidator {
                 if (!outputSegments.isEmpty() && !"..".equals(outputSegments.getLast())) {
                     // Can resolve this .. by removing the previous segment
                     outputSegments.removeLast();
-                } else if (!isAbsolute) {
-                    // For relative paths, keep .. if we can't resolve it
+                } else if (isAbsolute) {
+                    // RFC 3986 Section 5.2.4 discards a ".." that reaches the root of an absolute
+                    // path, so resolution stays total. This stage deliberately runs stricter: the
+                    // walk asked for a parent that does not exist, and clamping would hand the
+                    // caller a different, resolvable path than the one the input named. Rejecting
+                    // is the only outcome that does not silently rewrite an escape into a hit.
+                    throw UrlSecurityException.builder()
+                            .failureType(UrlSecurityFailureType.DIRECTORY_ESCAPE_ATTEMPT)
+                            .validationType(validationType)
+                            .originalInput(originalInput)
+                            .detail("Absolute path walks past root with a '..' segment")
+                            .build();
+                } else {
+                    // For a relative path the unresolved ".." is kept, so escapesRoot reports it
+                    // once normalization finishes.
                     outputSegments.add("..");
                 }
-                // For absolute paths, .. at root is ignored
             }
             case "" -> {
                 // Empty segment - only preserve for leading slash or trailing slash
