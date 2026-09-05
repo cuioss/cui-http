@@ -243,7 +243,19 @@ ValidationType validationType) implements HttpSecurityValidator {
                     .build();
         }
 
-        // Step 2.25: Reject a percent-encoding layer that survived the decode. The wire-form
+        // Ordering note: the decoded-character validation below runs BEFORE the
+        // surviving-encoding check that follows it, so no exception attaches an
+        // unvalidated 'decoded' value to sanitizedInput. An input can trip both
+        // properties at once ("%0D%0A%25%32%66" decodes to "\r\n%2f"), and every other
+        // throw site in this class only exposes a value after it has cleared this check.
+        // Step 2.5: Re-validate security-critical characters in the DECODED output.
+        // Character validation runs before decoding, so a percent-encoded sequence
+        // (e.g. %CC%80 for a combining grave accent, or %0D%0A for CRLF) is only
+        // seen as valid percent-encoding. The decoded characters must be checked
+        // again or encoding becomes a bypass for the character rules.
+        validateDecodedCharacters(value, decoded);
+
+        // Step 2.75: Reject a percent-encoding layer that survived the decode. The wire-form
         // gate in step 1 only recognises the literal spelling %25XX, so a nested spelling such
         // as %25%32%66 walks past it and decodes to the literal "%2f" -- a still-encoded path
         // separator that would reach NormalizationStage undecoded. Checking the DECODED output
@@ -260,13 +272,6 @@ ValidationType validationType) implements HttpSecurityValidator {
                     .detail("Percent-encoding layer survived decoding in decoded output")
                     .build();
         }
-
-        // Step 2.5: Re-validate security-critical characters in the DECODED output.
-        // Character validation runs before decoding, so a percent-encoded sequence
-        // (e.g. %CC%80 for a combining grave accent, or %0D%0A for CRLF) is only
-        // seen as valid percent-encoding. The decoded characters must be checked
-        // again or encoding becomes a bypass for the character rules.
-        validateDecodedCharacters(value, decoded);
 
         // Step 3: Unicode normalization - canonicalize-then-validate (OWASP model).
         // Normalize and CONTINUE rather than reject on any fold, failing only when the
@@ -398,7 +403,8 @@ ValidationType validationType) implements HttpSecurityValidator {
         int low = Character.digit(value.charAt(index + 2), 16);
         if (high < 0 || low < 0) {
             throw new IllegalArgumentException(
-                    "Illegal hex characters in escape (%) pattern: " + value.substring(index, index + 3));
+                    "Illegal hex characters in escape (%) pattern at index " + index + ": "
+                            + escaped(value.charAt(index + 1)) + " " + escaped(value.charAt(index + 2)));
         }
         return (high << 4) | low;
     }

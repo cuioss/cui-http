@@ -1013,6 +1013,56 @@ class DecodingStageTest {
         }
     }
 
+    /**
+     * No exception field ever renders a raw control character from attacker-controlled input.
+     *
+     * <p>{@code UrlSecurityException#getMessage()} is what callers log, so a raw CR or LF
+     * reaching {@code detail} or {@code sanitizedInput} is a log-forging primitive
+     * (CWE-117 / CWE-93). Two throw sites carried one before: the malformed-escape branch
+     * copied three raw characters of the still-encoded input into its message, and the
+     * surviving-encoding branch attached the decoded value before the decoded-character
+     * validation had cleared it.</p>
+     */
+    @Nested
+    @DisplayName("Exception fields never carry a raw control character")
+    class ExceptionFieldsNeverCarryRawControlCharacters {
+
+        @Test
+        @DisplayName("a malformed escape whose hex digits are CR/LF is reported without them")
+        void malformedEscapeWithControlCharactersIsRenderedEscaped() {
+            UrlSecurityException thrown = assertThrows(UrlSecurityException.class,
+                    () -> pathDecoder.validate("/a%\r\nb"));
+
+            assertEquals(UrlSecurityFailureType.INVALID_ENCODING, thrown.getFailureType());
+            String detail = thrown.getDetail().orElseThrow();
+            assertFalse(detail.contains("\r"), "detail must not render a raw CR: " + detail);
+            assertFalse(detail.contains("\n"), "detail must not render a raw LF: " + detail);
+            assertTrue(detail.contains("U+000D"),
+                    "detail must name the offending character in escaped form: " + detail);
+        }
+
+        @Test
+        @DisplayName("an input that both survives decoding and decodes to CRLF is rejected on the control-character rule")
+        void survivingEncodingWithDecodedCrlfIsRejectedBeforeSanitizedInputIsAttached() {
+            UrlSecurityException thrown = assertThrows(UrlSecurityException.class,
+                    () -> pathDecoder.validate("/%0D%0A%25%32%66"));
+
+            assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, thrown.getFailureType());
+            assertTrue(thrown.getSanitizedInput().isEmpty(),
+                    "the decoded value must not be attached before the character rule has cleared it");
+        }
+
+        @Test
+        @DisplayName("a surviving encoding layer with no control character still reports DOUBLE_ENCODING")
+        void survivingEncodingWithoutControlCharacterKeepsItsVerdict() {
+            UrlSecurityException thrown = assertThrows(UrlSecurityException.class,
+                    () -> pathDecoder.validate("/%25%32%66"));
+
+            assertEquals(UrlSecurityFailureType.DOUBLE_ENCODING, thrown.getFailureType());
+            assertEquals("/%2f", thrown.getSanitizedInput().orElseThrow());
+        }
+    }
+
     // Architectural decision: Application-layer encodings (HTML entities, JS escapes, Base64)
     // are handled by higher application layers where they have proper context.
 }
