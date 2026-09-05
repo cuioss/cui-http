@@ -1,0 +1,691 @@
+= Documentation
+:toc: left
+:toclevels: 3
+:sectnums:
+:icons: font
+
+== Consolidation notes
+
+This document is review stream F (`F-documentation-`), covering every AsciiDoc and Markdown file, all 14 `package-info.java` files and the class-level Javadoc of every public type. Documentation defects that were found by the code-area streams are cross-referenced rather than repeated:
+
+* F-documentation-2 = F-client-6 (and part of F-B-12): the non-compiling, security-inverted "Security Integration" samples.
+* F-documentation-3, -16 = parts of F-B-12: Javadoc examples with wrong constructors or whole query strings fed to the value pipeline.
+* F-documentation-4 = F-client-5 + F-D-9: the false log-coverage claim; this document carries the complete identifier table, which shows the catalogue itself is exact.
+* F-documentation-5 = F-D-8; F-documentation-7 = F-E-8; F-documentation-8 overlaps F-E-1 and F-E-8; F-documentation-10 = F-B-11.
+* Severity adjustment: F-documentation-1 was proposed as High and is recorded as Medium. The `.plan/` directory does exist in the clone (with `marshal.json` and `project-architecture/`), and `.gitignore` documents that the executor is runtime tooling "managed by plan-marshall", so the situation is intentional. The defect that remains is that the four documents forbid the working fallback (`./mvnw`) without saying what to do when the executor is absent, which is exactly the situation in this review environment.
+* The most consequential documentation findings for a *user* of the library are F-documentation-2, -8, -10, -14, -15 and -16: each of them describes a protection or a usage that the code does not deliver.
+* The "Verified strengths" list is long on purpose: configuration tables, stage orders, TLS and redirect claims, every link and anchor, and every class name mentioned in the documentation were checked and are correct.
+
+== Scope reviewed
+
+Read in full (line counts from `+wc -l+`):
+
+[cols="1,1",options="header"]
+|===
+| File
+| Lines
+
+| README.adoc
+| 166
+
+| CLAUDE.md
+| 165
+
+| agents.md
+| 164
+
+| .claude/skills/release/SKILL.md
+| 254
+
+| cui-http-core/src/site/asciidoc/about.adoc, site.xml
+| 30 + 31
+
+| doc/LogMessages.adoc
+| 157
+
+| doc/security-readme.adoc
+| 157
+
+| doc/client-handlers-readme.adoc
+| 411
+
+| doc/forwarded-header-resolution.adoc
+| 504
+
+| doc/http-result-pattern.adoc
+| 430
+
+| doc/test-generators-readme.adoc
+| 119
+
+| doc/test-framework-structure.adoc
+| 39
+
+| doc/http-security/README.adoc
+| 168
+
+| doc/http-security/Requirements.adoc
+| 113
+
+| doc/http-security/functional-requirements.adoc
+| 345
+
+| doc/http-security/security-requirements.adoc
+| 368
+
+| doc/http-security/configuration.adoc
+| 277
+
+| doc/http-security/specification/specification.adoc
+| 355
+
+| doc/http-security/specification/pipeline-architecture-standards.adoc
+| 238
+
+| doc/http-security/specification/compliance-traceability.adoc
+| 787
+
+| doc/http-security/specification/testing.adoc
+| 478
+
+| doc/adr/0001 … 0015 (all 15 ADRs)
+| 1 916 total
+
+| doc/adr/README.md
+| 86
+
+| doc/http-security/analysis/{cookie-chaos,cve,http1-vulnerabilities,owasp-best-practices}.adoc
+| grep-scanned for library references and test-count claims (1 652 lines)
+
+| All 14 `+package-info.java+` under cui-http-core/src/main/java
+| full
+
+| Class-level Javadoc of all 72 main sources (full read of the pipelines, SecurityConfiguration, SecurityDefaults, HttpHandler, RedirectPolicy, RedirectNotAllowedException, HttpResult, HttpStatusFamily, RetryConfig, SecureSSLContextProvider, HttpSecurityValidator, CookiePrefixValidationStage, CharacterValidationStage/Constants, NormalizationStage, PatternMatchingStage, DecodingStage excerpts; signature-level scan of the rest)
+| —
+
+| Code used for verification: SecurityDefaults.java (457), SecurityConfigurationBuilder.java (590), HttpLogMessages.java (147), ForwardedLogMessages.java (84), PipelineFactory.java (309), module-info.java (45), .github/workflows/{release,maven}.yml, .github/project.yml, pom.xml, cui-http-core/pom.xml, cui-http-benchmarking/pom.xml, .gitignore, selected test classes
+| —
+
+|===
+
+
+Automated passes run over the whole tree (scripts under the scratchpad, not in the repo): (a) every `+xref:+`/`+link:+`/`+include::+` and Markdown link target resolved relative to its file; (b) every `+xref:…#anchor+` and `+<<anchor>>+` resolved against explicit `+[#id]+` anchors and auto-generated section ids of the target file; (c) every class-like identifier mentioned in any adoc/md file checked for existence in the source tree; (d) inbound-link graph to find orphan documents; (e) public-type Javadoc presence / `+<pre>+` example / `+@since+` scan; (f) `+@param+`-name vs. signature scan (hits reviewed manually — all were false positives from record-component docs, see Verified strengths).
+
+== Findings
+
+=== F-documentation-1: Canonical build command in CLAUDE.md / agents.md / README / testing.adoc points at a script that is not in the repository
+* Severity: Medium (reviewer proposed High; adjusted, see consolidation notes)
+* Category: documentation
+* Status: CONFIRMED
+* Location: CLAUDE.md:20-27; agents.md:10,18-21,42-44,127-129; README.adoc:132-133; doc/http-security/specification/testing.adoc:262-271
+* Evidence: CLAUDE.md:20 `+Never hard-code build tool commands (./mvnw, mvn) — invoke builds via the canonical executor commands below:+` … `+python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "compile"+`. Shell: `+ls .plan/execute-script.py+` → `+No such file or directory+`; `+.plan/+` itself exists (it carries `+marshal.json+` and `+project-architecture/+`), but `+execute-script.py+` does not. `+.gitignore:16-21+` ignores `+.plan/*+` and whitelists only `+marshal.json+`, `+project-architecture/+`, `+plugin-doctor.yml+`, `+project-structure.json+` — `+execute-script.py+` is not whitelisted.
+* Analysis: Every build/test/quality-gate instruction the project gives to agents (and the README's note to agents) depends on a tool that a fresh clone does not contain and that Git will never carry. The same documents simultaneously forbid the working fallback (`+./mvnw+`, which does exist). An agent following the docs literally cannot run the mandatory pre-commit gate. `+.plan/temp/+` (CLAUDE.md:156, agents.md:153) is likewise a directory that does not exist.
+* Recommendation: Either commit the executor (or a bootstrap that fetches it) and whitelist it in `+.gitignore+`, or document `+./mvnw …+` as the fallback when `+.plan/execute-script.py+` is absent. Say explicitly that `+.plan/+` is created by external tooling.
+
+=== F-documentation-2: "Security Integration" code samples in `+client+` and `+client.adapter+` package-info do not compile and give security-wrong guidance
+* Severity: High
+* Category: false-security / documentation
+* Status: CONFIRMED
+* Location: cui-http-core/src/main/java/de/cuioss/http/client/package-info.java:220-236; cui-http-core/src/main/java/de/cuioss/http/client/adapter/package-info.java:459-568, 580-591
+* Evidence (client/package-info):
+----
+  HTTPHeaderValidationPipeline headerValidator = new HTTPHeaderValidationPipeline();
+  headerValidator.validate(headerName).orElseThrow(() -> new UrlSecurityException("Header injection detected"));
+  URLParameterValidationPipeline paramValidator = new URLParameterValidationPipeline();
+  paramValidator.validate(paramValue).orElseThrow(() -> new UrlSecurityException("XSS attack detected"));
+----
+  adapter/package-info additionally: `+import de.cuioss.http.security.UrlSecurityException;+` (line 464), `+URLParameterValidationPipeline bodyValidator = new URLParameterValidationPipeline(); … bodyValidator.validate(jsonBody)+` (486-490), "This prevents SQL injection, XSS scripts, path traversal, and malicious Unicode" (483), checklist "All request bodies validated with URLParameterValidationPipeline" (583).
+  Code: `+HTTPHeaderValidationPipeline+` has exactly one constructor `+(SecurityConfiguration, SecurityEventCounter, ValidationType)+` (HTTPHeaderValidationPipeline.java:105); `+URLParameterValidationPipeline+` only `+(SecurityConfiguration, SecurityEventCounter)+` (URLParameterValidationPipeline.java:99); `+UrlSecurityException+` has a single `+private+` constructor (UrlSecurityException.java:106) and lives in `+de.cuioss.http.security.exceptions+`; `+validate()+` returns `+Optional.empty()+` only for `+null+` input and throws on violations (HttpSecurityValidator.java:107-126).
+* Analysis: Four independent compile errors (no-arg constructors ×2, String constructor, wrong package). Semantically the `+.orElseThrow(...)+` branch can only fire for a `+null+` input, so the "XSS attack detected"/"Header injection detected" messages describe something that never happens; real violations propagate as the pipeline's own exception. The body-validation advice contradicts functional-requirements.adoc HTTP-1 ("Body validation is not provided"), specification.adoc:318-324 (XSS/SQL signature detection deliberately removed) and compliance-traceability.adoc §Limitations; and because `+PARAMETER_VALUE+` uses `+RFC3986_QUERY_CHARS+` (CharacterValidationConstants.java:122-133: unreserved + `+? & = ! $ ' ( ) * + , ;+`), any JSON body containing `+"+`, `+{+`, `+}+` or a space is rejected as `+INVALID_CHARACTER+` — a caller who follows the checklist either gets 100% rejection or, if they drop it, believes they had SQL/XSS protection that never existed.
+* Recommendation: Rewrite both sections using `+PipelineFactory.createHeaderValuePipeline(config, counter)+` / `+createUrlParameterPipeline(...)+`, catch `+UrlSecurityException+` instead of `+orElseThrow+`, delete the "request body validation" subsection and checklist item (or point to the HTTP-1 statement that bodies are an application-layer concern), and fix the import.
+
+=== F-documentation-3: `+HTTPHeaderValidationPipeline+` class Javadoc example calls a constructor that does not exist
+* Severity: Medium
+* Category: documentation
+* Status: CONFIRMED
+* Location: cui-http-core/src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java:62 vs 105-108
+* Evidence: Javadoc: `+HTTPHeaderValidationPipeline pipeline = new HTTPHeaderValidationPipeline(config, counter);+` — only constructor: `+public HTTPHeaderValidationPipeline(SecurityConfiguration config, SecurityEventCounter eventCounter, ValidationType validationType)+`.
+* Analysis: The example silently hides the one decision the pipeline requires (name vs. value), which is the thing configuration.adoc and the spec say matters (allow/block list only for `+HEADER_NAME+`).
+* Recommendation: `+new HTTPHeaderValidationPipeline(config, counter, ValidationType.HEADER_VALUE)+` and mention `+PipelineFactory.createHeaderNamePipeline/createHeaderValuePipeline+`.
+
+=== F-documentation-4: LogMessages.adoc test-coverage statement is false for 7 of 12 WARN records (identifiers/templates themselves are exact)
+* Severity: Medium
+* Category: documentation / test-quality
+* Status: CONFIRMED
+* Location: doc/LogMessages.adoc:151-157
+* Evidence: "All WARN-level LogRecords have test coverage except for: HTTP-107". Grep of every `+LogAsserts.assert*+` call in cui-http-core/src/test (5 files use LogAsserts: ForwardedHeaderResolverTest, ForwardedTrustBoundaryTest, ForwardedResolverConfigTest, HttpHandlerTest, HttpHandlerRedirectTest) and of all message fragments/IDs: asserted are HTTP-106 (`+WARN.HTTP_PING_IO_ERROR+`), 115 (`+allowInsecureHttp=true+`), 116 (`+verifyHostname=false+`), 117 (`+"HTTP-117"+`), 121, 122, 123, 124, 125, 126. Not asserted anywhere: HTTP-108, 110, 111, 112, 113, 114, 120 (and ERROR 200/201). The only "control characters" test (ResolvedForwardingTest.java:80-85) asserts `+IllegalArgumentException+`, not the HTTP-120 log line.
+* Analysis: The catalogue is otherwise exact — see diff table below — but the coverage claim will lead a maintainer to trust that retry/adapter log paths are pinned by tests when none are.
+* Diff table (doc vs `+HttpLogMessages.java+` / `+ForwardedLogMessages.java+`):
+
+[cols="1,1,1,1,1,1,1",options="header"]
+|===
+| ID
+| Doc level
+| Code holder
+| Doc template
+| Code template
+| Match
+| Test asserts it
+
+| HTTP-106
+| WARN
+| WARN.HTTP_PING_IO_ERROR
+| IO error while pinging URI %s: %s
+| same
+| ✓
+| ✓ HttpHandlerTest
+
+| HTTP-107
+| WARN
+| WARN.HTTP_PING_INTERRUPTED
+| Interrupted while pinging URI %s: %s
+| same
+| ✓
+| ✗ (documented)
+
+| HTTP-108
+| WARN
+| WARN.REQUEST_SERIALIZATION_FAILED
+| Failed to serialize request body for %s request: %s
+| same
+| ✓
+| ✗
+
+| HTTP-110
+| WARN
+| WARN.RETRY_SKIPPED_NON_IDEMPOTENT
+| Skipping retry for non-idempotent method: %s (idempotentOnly=true)
+| same
+| ✓
+| ✗
+
+| HTTP-111
+| WARN
+| WARN.REQUEST_FAILED_MAX_ATTEMPTS
+| %s request failed after %s attempts
+| same
+| ✓
+| ✗
+
+| HTTP-112
+| WARN
+| WARN.REQUEST_RETRY_AFTER_FAILURE
+| %s request failed on attempt %s, retrying after %sms
+| same
+| ✓
+| ✗
+
+| HTTP-113
+| WARN
+| WARN.RESPONSE_CONVERSION_FAILED
+| Response conversion failed for status %s
+| same
+| ✓
+| ✗
+
+| HTTP-114
+| WARN
+| WARN.NETWORK_ERROR_DURING_REQUEST
+| Network error during %s request: %s
+| same
+| ✓
+| ✗
+
+| HTTP-115
+| WARN
+| WARN.INSECURE_HTTP_CONNECTION
+| Using cleartext HTTP for %s (allowInsecureHttp=true); …
+| same
+| ✓
+| ✓
+
+| HTTP-116
+| WARN
+| WARN.HOSTNAME_VERIFICATION_DISABLED
+| TLS hostname verification disabled for %s (verifyHostname=false); …
+| same
+| ✓
+| ✓
+
+| HTTP-117
+| WARN
+| WARN.REDIRECT_REFUSED
+| Refusing to follow redirect from %s to %s: %s
+| same
+| ✓
+| ✓
+
+| HTTP-200
+| ERROR
+| ERROR.CONFIGURATION_ERROR_DURING_REQUEST
+| Configuration error during %s request: %s
+| same
+| ✓
+| ✗
+
+| HTTP-201
+| ERROR
+| ERROR.REQUEST_BUILD_FAILED
+| Failed to build HTTP request for %s: %s
+| same
+| ✓
+| ✗
+
+| HTTP-120
+| WARN
+| WARN.CONTEXT_PATH_CONTROL_CHARACTERS_REJECTED
+| Rejecting proxy context path with control characters: %s
+| same
+| ✓
+| ✗
+
+| HTTP-121
+| WARN
+| WARN.CONTEXT_PATH_PROTOCOL_RELATIVE_REJECTED
+| Rejecting proxy context path to prevent protocol-relative URL injection: %s
+| same
+| ✓
+| ✓
+
+| HTTP-122
+| WARN
+| WARN.FORWARDED_VALUE_SANITIZATION_REJECTED
+| Rejecting forwarded header %s: value failed security sanitization: %s
+| same
+| ✓
+| ✓
+
+| HTTP-123
+| WARN
+| WARN.CLIENT_IP_ENTRY_UNPARSEABLE
+| Ignoring client IP: forwarded chain carries an unparseable entry: %s
+| same
+| ✓
+| ✓
+
+| HTTP-124
+| WARN
+| WARN.FORWARDED_SOURCES_DISAGREE
+| Dropping forwarded %s: sources disagree: %s resolves to %s but Forwarded resolves to %s
+| same
+| ✓
+| ✓
+
+| HTTP-125
+| WARN
+| WARN.FORWARDED_DIRECTIVE_MALFORMED
+| Rejecting Forwarded header: malformed forwarded-pair: %s
+| same
+| ✓
+| ✓
+
+| HTTP-126
+| WARN
+| WARN.TRUSTED_PROXY_ENTRY_BLANK
+| Ignoring blank trusted-proxy entry in configuration
+| same
+| ✓
+| ✓
+
+|===
+
+
+  Prefix `+HTTP+` and the ranges stated at LogMessages.adoc:16-17 match; no record exists in code that is missing from the doc and vice versa. The "Component" column is consistent with the actual call sites (HttpHandler, ETagAwareHttpAdapter, ResilientHttpAdapter, ForwardedHeaderResolver/IpAddresses/ForwardedResolverConfig).
+* Recommendation: Replace the coverage note with the real list (or drop it, per ADR-0004's spirit), and add log assertions for 108/110–114/120/200/201 or state they are untested.
+
+=== F-documentation-5: forwarded-header-resolution.adoc still describes the log catalogue as HTTP-120..HTTP-125
+* Severity: Low
+* Category: documentation
+* Status: CONFIRMED
+* Location: doc/forwarded-header-resolution.adoc:166-171
+* Evidence: "`+HTTP-120+`..`+HTTP-125+` WARN records …" — `+ForwardedLogMessages.java:78-82+` defines HTTP-126 `+TRUSTED_PROXY_ENTRY_BLANK+`, which is documented in LogMessages.adoc:143-146.
+* Recommendation: Extend the range and the enumeration (blank trusted-proxy entry).
+
+=== F-documentation-6: compliance-traceability.adoc carries stale evidence rows (CWE references that do not exist, off-by-one line references)
+* Severity: Medium
+* Category: documentation
+* Status: CONFIRMED
+* Location: doc/http-security/specification/compliance-traceability.adoc:199, 330, 255, 282, 306, 722
+* Evidence: line 199 "`+HomographAttackDatabaseTest+`: Homograph attacks (CWE-20, CWE-178)" — `+grep -o 'CWE-[0-9]*' tests/HomographAttackDatabaseTest.java+` → no match. Line 330 "`+ProtocolHandlerAttackTest+`: References CWE-73" — no `+CWE-+` in that file. Line 255 "References CVE-2019-5418, CVE-2018-1000671, CVE-2020-5398 (lines 64)" → actual line 65. Line 282 "`+../../../etc/passwd+` (line 209)" → line 210; line 306 "`+....//....//etc/passwd+` (line 217)" → line 218. Line 722 asserts "✅ Line number references for verification" as an evidence class.
+* Analysis: Line-number references drift on every edit (exactly the class of positional reference ADR-0005 forbids for prose), and two of the eight CWE attributions checked are unsupported by the referenced file. Spot-check summary (≥20 rows) is in the table at the end of this report.
+* Recommendation: Drop line numbers; reference method names/constants; remove or substantiate the CWE-178/CWE-73 attributions (add the CWE tags to the test Javadoc if they are meant).
+
+=== F-documentation-7: Analysis documents state test counts that are stale and self-contradictory
+* Severity: Low
+* Category: documentation / duplication
+* Status: CONFIRMED (counts recomputed from annotations) 
+* Location: doc/http-security/analysis/cookie-chaos-analysis.adoc:84, 121, 156, 304-307, 337; doc/http-security/analysis/http1-vulnerabilities-analysis.adoc:65, 73, 119, 262, 351-354, 489, 585
+* Evidence: cookie-chaos:84 "CookieChaosAttackTest (50 tests)" vs :306 "CookieChaosAttackTest (213 tests)"; actual: 5 `+@ParameterizedTest+` with `+count = 50,30,40,20,20+` (=160) + 4 `+@Test+` = 164. cookie-chaos:305 "CookiePrefixValidationStageTest (71 tests)" — 24 annotated test methods (35 annotations incl. sources); 71 not derivable. http1:353 "HttpRequestSmugglingAttackTest (395 tests)" — 8 parameterized methods with `+count+` summing to 1 435; http1:351/585 "553 tests total" therefore also stale. (http1:354 "158 tests: 150 generated + 8 fixed" and :352 "11 parameterized methods" are correct.)
+* Analysis: ADR-0004 explicitly bans incidental counts in prose because of exactly this drift; these documents were not brought under it.
+* Recommendation: Remove the counts or replace with "see the class".
+
+=== F-documentation-8: http1-vulnerabilities-analysis attributes detections to `+CharacterValidationStage+` that it does not perform
+* Severity: Medium
+* Category: false-security
+* Status: CONFIRMED
+* Location: doc/http-security/analysis/http1-vulnerabilities-analysis.adoc:63, 152, 347
+* Evidence: ":63 CharacterValidationStage - Detects CRLF injection patterns (`+%0d%0a+`)"; ":152 CharacterValidationStage - Detects embedded HTTP verbs and CRLF patterns". Code: CharacterValidationStage.java:167-170 — for `+HEADER_NAME+`/`+HEADER_VALUE+` `+allowPercentEncoding = false+`, so `+%+` is checked as a plain character (`+RFC7230_HEADER_CHARS+` = 32–126, which contains `+%+`, `+0+`, `+d+`, `+a+`); the stage rejects only raw CR/LF for header types (lines 341-343). `+grep -n "GET\|POST\|verb" CharacterValidationStage.java+` → nothing but a comment about rendering. The header pipeline has no `+DecodingStage+` (HTTPHeaderValidationPipeline.java:141-146), so `+%0d%0a+` in a header value passes the header pipeline unchanged.
+* Analysis: A reader of the analysis doc will believe percent-encoded CRLF in header values is caught. It is not: the referenced test (`+HttpRequestSmugglingAttackTest+`) drives the URL *path* pipeline (line 179/218) where the payloads fail for other reasons (`+?+`, space, `+:+` rejected on the wire form, or CR/LF after decoding).
+* Recommendation: Reword to "rejects raw CR/LF and other control characters; percent-encoded CRLF is only decoded and rejected in the path/parameter pipelines, never in the header pipeline"; delete the "embedded HTTP verbs" claim.
+
+=== F-documentation-9: specification.adoc contradicts itself and the code on presets and body support
+* Severity: Low
+* Category: consistency
+* Status: CONFIRMED
+* Location: doc/http-security/specification/specification.adoc:124, 297 vs 339-342
+* Evidence: ":124 *Security Levels*: STRICT, DEFAULT, and LENIENT security profiles" — same file :339 "Four presets ship … lenient(), defaults(), strict(), paranoid()"; `+SecurityDefaults.java:456+` defines `+PARANOID_CONFIGURATION+`. ":297 Create validators optimized for specific HTTP components (paths, parameters, headers, bodies)" — `+PipelineFactory.java:253-254+` throws for `+BODY+` ("BODY validation pipeline has been removed…"), as functional-requirements HTTP-1 documents.
+* Recommendation: Update both lines.
+
+=== F-documentation-10: pipeline-architecture-standards.adoc describes `+URLPathValidationPipeline+` as validating hosts/domains/IPv6, contradicting the package Javadoc and the code
+* Severity: Medium
+* Category: documentation (ambiguity)
+* Status: CONFIRMED
+* Location: doc/http-security/specification/pipeline-architecture-standards.adoc:14, 20, 22, 27, 38
+* Evidence: "*Purpose*: Validates URL path components, directory traversal, and host-based attacks", "Host/domain-based exploits", "IPv6 address parsing in path context", "HomographAttackDatabaseTest - Domain spoofing attacks", example `+"[::ffff:127.0.0.1]/../../../etc/passwd"+`. pipeline/package-info.java:29-36: the pipeline "is *not* a validator for a full absolute URL … Extract the path component … and pass that". Code: `+RFC3986_PATH_CHARS+` excludes `+[+`/`+]+` (CharacterValidationConstants.java:115-119), so the IPv6 example fails as `+INVALID_CHARACTER+` before any host logic — there is no host parsing anywhere in the pipeline (ADR-0009 §Context documents precisely this short-circuit).
+* Analysis: The "authoritative selection matrix" (CLAUDE.md:96-99 says to consult it rather than guess) tells readers to route host/domain/IPv6 concerns to a pipeline that only character-checks them.
+* Recommendation: Remove "host-based attacks", "Host/domain-based exploits", "IPv6 address parsing"; describe Homograph/IPv6 databases as "payloads that the path pipeline rejects at character validation (see ADR-0009)".
+
+=== F-documentation-11: ADR-0006 and ADR-0015 contradict each other (and the code) about the Windows literals
+* Severity: Low
+* Category: consistency
+* Status: CONFIRMED
+* Location: doc/adr/0006-…adoc:153-156 vs doc/adr/0015-…adoc:171-178; SecurityDefaults.java:166-168
+* Evidence: ADR-0006: "its four Windows filesystem literals moved into `+SENSITIVE_PATH_PATTERNS+` as bare segments". ADR-0015: "keeping their backslash-delimited spelling … `+checkBlockedPathPatterns+` therefore matches a backslash-bearing pattern as a substring". Code: `+"\\windows\\", "\\system32\\", "\\users\\", "\\program files\\"+`.
+* Recommendation: Correct ADR-0006's reference paragraph.
+
+=== F-documentation-12: ADR index is stale, orphaned, and every ADR is still "Proposed"
+* Severity: Low
+* Category: documentation / consistency
+* Status: CONFIRMED
+* Location: doc/adr/README.md:35, 71; doc/adr/*.adoc:13-15; README.adoc:135-159
+* Evidence: README.md:71 "That is why the index above runs to 14" — the index (lines 19-33) and line 35 say 15. Inbound-link scan: `+doc/adr/README.md+` has zero inbound links (README.adoc's Documentation section does not mention ADRs; individual ADRs are reached only from configuration.adoc, security-requirements.adoc, specification.adoc). All 15 ADRs carry `+== Status / Proposed+` although each describes behaviour that is implemented and pinned by tests (e.g. ADR-0010 → `+NfkcFoldClaimInvariantTest+` exists; ADR-0011 → `+PostDecodeEnforcementRegressionTest+` exists; ADR-0014's five LAYER-1 classes exist at NormalizationStage.java:509-544).
+* Recommendation: Fix "14"→"15"; link `+doc/adr/README.md+` from README.adoc; move implemented ADRs to Accepted.
+
+=== F-documentation-13: `+validation+` package-info misattributes depth validation and omits three public stages; the nesting limits are undocumented in the "every enforced setting" reference
+* Severity: Low
+* Category: documentation
+* Status: CONFIRMED
+* Location: cui-http-core/src/main/java/de/cuioss/http/security/validation/package-info.java:8-14; doc/http-security/configuration.adoc:5-12
+* Evidence: package-info: "`+LengthValidationStage+` - Input length and depth validation (first stage)". `+grep EXCESSIVE_NESTING+` in main → only NormalizationStage.java:397, 452 (`+MAX_PATH_SEGMENTS = 1000+`, `+MAX_DIRECTORY_DEPTH = 100+`, lines 182/188); LengthValidationStage.java has no depth logic. The package list names five stages + constants; `+AllowBlockListStage+`, `+CookiePrefixValidationStage+`, `+RequestCollectionValidator+` (all public, same package) are absent. configuration.adoc claims to list "every *enforced* setting" but never mentions the two hard-coded nesting limits.
+* Recommendation: Move "depth" to NormalizationStage, add the three missing types, and document the two fixed limits (and that they are not configurable) in configuration.adoc.
+
+=== F-documentation-14: functional-requirements.adoc states character sets and resource limits the code does not implement, while the spec marks the areas IMPLEMENTED
+* Severity: Medium
+* Category: documentation / false-security
+* Status: CONFIRMED
+* Location: doc/http-security/functional-requirements.adoc:145-152 (HTTP-10), 280-287 (HTTP-19); specification.adoc:142 "Status: IMPLEMENTED"
+* Evidence: HTTP-10 "Path segments: alphanumeric, hyphen, underscore, period" — `+RFC3986_PATH_CHARS+` = unreserved + `+/ @ : ! $ & ' ( ) * + , ; =+` (CharacterValidationConstants.java:115) and, with the default `+allowExtendedAscii=true+`, bytes 128–255 (CharacterValidationStage.java:359-368). HTTP-10 "Header values: visible ASCII (32-126) plus horizontal tab" — with the default `+allowExtendedAscii=true+`, 128–255 *and* Unicode > 255 are accepted for `+HEADER_VALUE+` (CharacterValidationStage.java:368, 380, 422). HTTP-19 "Maximum decoding iterations", "Maximum normalization passes" — DecodingStage performs a single `+URLDecoder.decode+` (DecodingStage.java:270) and a regex double-encoding check (:117,178); there is no iteration counter or cap anywhere.
+* Analysis: The requirement text is stricter than the shipped default; a reader assessing the default posture for header values (e.g. to decide whether the forwarded-header sanitisation blocks non-ASCII) is misled — forwarded-header-resolution.adoc:129-130 gets it right ("when so configured — extended ASCII").
+* Recommendation: Rewrite HTTP-10 to the real sets and to the `+allowExtendedAscii+` semantics; rewrite HTTP-19 to what exists (length limits, `+MAX_PATH_SEGMENTS+`/`+MAX_DIRECTORY_DEPTH+`, single-pass decode with double-encoding rejection).
+
+=== F-documentation-15: security-requirements.adoc asserts properties the library does not provide, and the traceability matrix marks the containing standards VERIFIED
+* Severity: Medium
+* Category: false-security / documentation
+* Status: CONFIRMED
+* Location: doc/http-security/security-requirements.adoc:25 (SEC-1), 37-40 (SEC-2), 103 (SEC-6), 145-148 (SEC-9), 163 (SEC-10), 224-231 vs 234-250 (SEC-14), 274 (SEC-16); compliance-traceability.adoc:96, 124, 149, 496, 520
+* Evidence: SEC-1 "Must use positive validation (allowlisting) rather than negative validation" — PatternMatchingStage is a block-list matcher (PATH_TRAVERSAL_PATTERNS, PROTOCOL_HANDLER_SCHEMES, blockedPathPatterns). SEC-2 "Must use multiple validation layers: … Output encoding, Access control verification" — neither exists (spec:318-324 says output-context escaping is out of scope). SEC-6 "Semantic validity (business logic)". SEC-9 "Processing time … Regex complexity (prevent ReDoS)" — no timer, no regex budget. SEC-10 "Must implement circuit breakers for long-running operations" — none. SEC-14 bullets "Strict validation enabled, Maximum security checks active, Minimal allowed character sets" are directly contradicted by the NOTE beneath (defaults() ships `+failOnSuspiciousPatterns=false+`, `+allowExtendedAscii=true+`). SEC-16 "Penetration testing hooks" — none. Yet compliance-traceability marks A03 (SEC-1/6), A04 (SEC-2/14), A05 (SEC-14), SI-10 (SEC-6) and A.12.2 as "✅ VERIFIED".
+* Analysis: Unlike SEC-11/12/13/15/18, which were annotated with honest "NOT IMPLEMENTED" notes, these requirements were left as unqualified "must" statements and then traced as verified; a compliance reader gets a false picture.
+* Recommendation: Apply the same NOTE pattern (implemented / not implemented) to SEC-1, 2, 6, 9, 10, 14, 16 and downgrade the affected traceability statuses to PARTIAL where a bullet is unmet.
+
+=== F-documentation-16: Usage examples feed whole query strings to the parameter-*value* pipeline
+* Severity: Medium
+* Category: false-security (ambiguity)
+* Status: CONFIRMED
+* Location: cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java:56 (`+pipeline.validate("user_id=123")+`); pipeline/package-info.java:51 (`+paramValidator.validate("search=test&amp;page=1")+`); doc/http-security/functional-requirements.adoc:25 (HTTP-1 "Query parameters (e.g., `+?search=term&page=1+`)")
+* Evidence: `+PARAMETER_VALUE+` → `+RFC3986_QUERY_CHARS+`, which includes `+=+` and `+&+` (CharacterValidationConstants.java:122-133), so such strings pass character validation; the name-only rules (decoded `+= & ;+` and CR/LF rejection, `+blockedParameterNames+`) live in `+URLParameterNameValidationPipeline+` (URLParameterNameValidationPipeline.java:31-56) and never run on a value.
+* Analysis: The examples teach callers to validate an un-split query string with the value pipeline and believe the keys were checked; the delimiter-injection gap that the name pipeline was introduced to close (its own Javadoc, :34-36) is reopened by the documentation.
+* Recommendation: Use a bare value in the examples (`+"123"+`, `+"john%20doe"+`), and add one sentence: "split `+name=value&…+` first; validate names with `+URLParameterNameValidationPipeline+` and values with this pipeline".
+
+=== F-documentation-17: `+monitoring+` package-info example double-counts events when used with a factory pipeline
+* Severity: Low
+* Category: documentation
+* Status: CONFIRMED
+* Location: cui-http-core/src/main/java/de/cuioss/http/security/monitoring/package-info.java:17-31
+* Evidence: example catches `+UrlSecurityException+` and calls `+eventCounter.increment(e.getFailureType())+`. `+AbstractValidationPipeline.java:93-95+` already does `+eventCounter.increment(e.getFailureType())+` on the same exception before rethrowing.
+* Recommendation: State that pipelines built by `+PipelineFactory+`/the concrete pipelines count automatically and the manual increment is for hand-written validators only.
+
+=== F-documentation-18: Package-info examples reference APIs that do not exist, and the handler package inventory is incomplete
+* Severity: Low
+* Category: documentation
+* Status: CONFIRMED
+* Location: client/result/package-info.java:12, 22, 42 (`+httpClient.get("https://…")+` returning `+HttpResult+`, `+jwksLoader.loadWithETag(previousETag)+`, `+httpHandler.loadConfig()+`); client/package-info.java:76 (`+new JsonResponseConverter<>(User.class)+`); client/handler/package-info.java:4-8 (lists HttpHandler, HttpStatusFamily, SecureSSLContextProvider only — omits public `+RedirectPolicy+`, `+RedirectNotAllowedException+`)
+* Evidence: `+grep -rn "loadConfig\|loadWithETag\|JsonResponseConverter" cui-http-core/src/main+` → none. `+HttpHandler+` exposes `+send/sendAsync/pingGet/pingHead/createHttpClient+`, not `+loadConfig()+`.
+* Recommendation: Mark pseudo-APIs as illustrative or replace with `+ETagAwareHttpAdapter+`-based snippets; add the two redirect types to the handler package list.
+
+=== F-documentation-19: Public types without a usage example (CLAUDE.md:158 "All public APIs must have Javadoc with usage examples")
+* Severity: Low
+* Category: documentation
+* Status: CONFIRMED (scan + manual check for `+<pre+`/`+{@code+` blocks)
+* Location: StringContentConverter.java (class doc :30-47), SecureSSLContextProvider.java (:30-56), AllowBlockListStage.java (:30-57), AbstractValidationPipeline.java, ContentTypeValidationPipeline.java, URLParameterNameValidationPipeline.java, HttpLogMessages.java, ForwardedLogMessages.java; nested public `+Builder+`s (ETagAwareHttpAdapter.Builder, RetryConfig.Builder, ForwardedResolverConfig.Builder, HttpHandler.HttpHandlerBuilder, RedirectPolicy.RedirectPolicyBuilder), `+PipelineFactory.PipelineSet+`, `+ETagAwareHttpAdapter.CacheEntry+`
+* Evidence: none of these class-level Javadocs contains a `+<pre>+`/`+{@code+` block. All 72 public top-level types do have class-level Javadoc and `+@since+` (the scanner's three "missing Javadoc" hits — SecurityConfiguration, UrlSecurityException, VoidResponseConverter — were false positives caused by comment lines between the Javadoc and the declaration; verified manually).
+* Recommendation: Add a short example to at least the two user-facing ones (`+SecureSSLContextProvider+`, `+StringContentConverter+`) or relax the CLAUDE.md rule to "complex classes" as agents.md:110 already says.
+
+=== F-documentation-20: 18 class Javadocs reference a non-existent "HTTP verification specification"
+* Severity: Low
+* Category: documentation (dangling reference)
+* Status: CONFIRMED
+* Location: `+Implements: Task P1/P2/P3/C1/C2/S1/B1/B2/B3/V1–V5 from HTTP verification specification+` in URLPathValidationPipeline.java:93, URLParameterValidationPipeline.java:85, HTTPHeaderValidationPipeline.java:96, SecurityConfiguration.java:56, SecurityConfigurationBuilder.java:68, SecurityEventCounter.java:74, UrlSecurityException.java:66, PatternMatchingStage.java:178, NormalizationStage.java:166, CharacterValidationConstants.java:91, LengthValidationStage.java:105, DecodingStage.java:100, URLParameter.java:62, HTTPBody.java:109, Cookie.java:77, UrlSecurityFailureType.java:41, HttpSecurityValidator.java:93, ValidationType.java:50
+* Evidence: `+grep -rn "Task [A-Z][0-9] \|verification specification" doc README.adoc CLAUDE.md+` → no match; no document in the repo defines these task ids.
+* Recommendation: Delete the lines or point at the requirement ids that do exist (HTTP-n / SEC-n).
+
+=== F-documentation-21: Same content maintained in several places, with one divergence and two incomplete copies
+* Severity: Low
+* Category: duplication
+* Status: CONFIRMED
+* Location: presets: configuration.adoc:16-36, security-readme.adoc:72-82, config/package-info.java:33-56, SecurityDefaults.java Javadoc, specification.adoc:124 (diverged, F-9) and :337-356, security-requirements.adoc:234-250; pipeline stage orders: http-security/README.adoc:109-134, specification.adoc:202-218, pipeline-architecture-standards.adoc:92,117, configuration.adoc:78-93, each pipeline's Javadoc, CLAUDE.md:49-60 (all consistent with the code — verified against the five `+createStages+`); TLS floor: security-readme.adoc:136-148 (a client-handler topic inside the security-validation doc), client-handlers-readme.adoc:52-54, HttpHandler.java Javadoc, SecureSSLContextProvider.java:112-125; component inventories: security-readme.adoc:33-68 lists 3 of 5 pipelines and 5 of 8 stage/validator classes, doc/test-generators-readme.adoc:33-65 says "All databases implement `+AttackDatabase+`" but the three "Legitimate Pattern Databases" implement `+LegitimatePatternDatabase+`, and `+PathParameterTraversalAttackDatabase+` is missing from the list; CLAUDE.md vs agents.md: agents.md deliberately defers to CLAUDE.md (no divergence found).
+* Recommendation: Make configuration.adoc the single preset table and link to it from the other five; move the TLS-floor paragraph out of security-readme.adoc; either complete security-readme.adoc's inventories or replace them with a pointer (ADR-0004).
+
+=== F-documentation-22: Release skill misstates when the CI build check runs
+* Severity: Low
+* Category: documentation
+* Status: CONFIRMED
+* Location: .claude/skills/release/SKILL.md:81-83, 251-252
+* Evidence: "the Maven CI workflow only triggers on main, feature/*, fix/*, chore/*, release/*, dependabot/**; other prefixes skip the build check and block auto-merge". `+.github/workflows/maven.yml:8-11+`: the branch filter applies to `+push:+` only; `+pull_request: branches: [main]+` runs on every PR targeting main regardless of source-branch name.
+* Analysis: The `+chore/+` requirement is harmless but the justification is wrong; the rest of the skill (project.yml keys, Java 21/25 matrix, `+pages.deploy-at-release+`, release.yml trigger, two-segment versioning 3.0 → 3.1-SNAPSHOT) matches the repository.
+* Recommendation: Say "push-triggered builds run only for these prefixes; PR builds always run".
+
+=== F-documentation-23: `+about.adoc+` links to `+index.html+`, which has no source in `+src/site+`
+* Severity: Info
+* Category: documentation
+* Status: SUSPECTED
+* Location: cui-http-core/src/site/asciidoc/about.adoc:31; site.xml:20-26
+* Evidence: `+link:index.html[project documentation]+`; `+ls cui-http-core/src/site/asciidoc+` → only `+about.adoc+`. maven-site-plugin normally synthesises `+index.html+` from the POM description when no index document exists, so the link may resolve at site time; it is the only unresolved file link in the whole tree.
+* Recommendation: Add an `+index.adoc+` or link to `+about.html+`/the GitHub Pages root explicitly.
+
+=== F-documentation-24: AsciiDoc-standard deviations (agents.md:114-121)
+* Severity: Info
+* Category: consistency
+* Status: CONFIRMED
+* Location: doc/http-security/configuration.adoc:1-3 (no `+:sectnums:+`, no `+:source-highlighter:+`; uses `+<<Seeding the lists>>+` at :35); doc/http-security/specification/compliance-traceability.adoc:14-18 (five `+<<…>>+` cross-references although agents.md says "Use xref: syntax (not <<>>)")
+* Recommendation: Normalise headers; convert `+<<>>+` to `+xref:+`.
+
+=== F-documentation-25: Examples suggest the library sanitises/repairs input, contradicting SEC-6
+* Severity: Low
+* Category: consistency
+* Status: CONFIRMED
+* Location: UrlSecurityException.java:46-53 (`+.sanitizedInput("userscripttest1script").detail("Removed script tags and special characters")+`); security/exceptions/package-info.java:44 (`+case INVALID_CHARACTER -> sanitizeAndRetry();+`); security-requirements.adoc:105 ("Must not attempt to 'fix' invalid input"); owasp-best-practices.adoc:103 ("input is never stripped or repaired")
+* Recommendation: Replace the sanitisation example with the normalised-form use (`+sanitizedInput+` carries the decoded/normalised value, not a repaired one) and drop `+sanitizeAndRetry()+`.
+
+=== F-documentation-26: Configuration docs overclaim configurable "character sets" and "attack pattern definitions"
+* Severity: Low
+* Category: documentation
+* Status: CONFIRMED
+* Location: security/config/package-info.java:14-17 ("Character Sets - Allowed characters for validation types", "Pattern Configuration - Custom attack pattern definitions"); functional-requirements.adoc:182-185 (HTTP-13 "Allowed character sets", "Encoding strictness levels")
+* Evidence: `+SecurityConfigurationBuilder+` exposes only the boolean toggles `+allowNullBytes/allowControlCharacters/allowExtendedAscii/normalizeUnicode+` and the literal block-lists `+blockedPathPatterns/blockedParameterNames+`; the RFC character sets are `+static final+` (CharacterValidationConstants.java:108-149) and SEC-18 itself states the pattern sets are compile-time constants.
+* Recommendation: Reword to "character policy toggles" and "literal block-lists".
+
+=== F-documentation-27: README.adoc's documentation index does not reach every document directly
+* Severity: Low
+* Category: documentation (structure)
+* Status: CONFIRMED
+* Location: README.adoc:135-159
+* Evidence: Not linked from README.adoc: doc/http-security/configuration.adoc (reachable only via security-readme/http-security README), doc/adr/README.md (orphan, F-12), doc/test-framework-structure.adoc (reachable only via test-generators-readme), functional-/security-requirements.adoc and compliance-traceability.adoc (reachable via Requirements.adoc / http-security README). Inbound-link scan shows no fully orphaned adoc besides about.adoc (site) and the ADR index.
+* Recommendation: Add "Configuration Reference" and "Architecture Decision Records" entries to README.adoc §Documentation.
+
+=== F-documentation-28: functional-requirements HTTP-2 omits that `+org.jspecify+` is `+requires transitive+`
+* Severity: Info
+* Category: documentation
+* Status: CONFIRMED
+* Location: doc/http-security/functional-requirements.adoc:44-47 vs cui-http-core/src/main/java/module-info.java:20-23
+* Evidence: doc marks only `+de.cuioss.java.tools+` and `+java.net.http+` as transitive; module-info: `+requires transitive org.jspecify;+` with the comment "JSpecify annotations … appear in exported public API signatures".
+* Recommendation: Add "transitive" to the jspecify bullet.
+
+== Verified strengths
+
+* doc/LogMessages.adoc: every identifier, prefix, level and template matches `+HttpLogMessages.java+` / `+ForwardedLogMessages.java+` exactly (table in F-4); no undocumented `+LOGGER.warn/error+` literals exist in main (only two Javadoc samples).
+* doc/http-security/configuration.adoc numeric tables (length limits, counts, body sizes, flags per preset) match `+SecurityDefaults.java:96-292, 370-457+` and `+SecurityConfigurationBuilder.java:76-121+` cell for cell; `+SENSITIVE_PATH_PATTERNS+` = 6 Unix + 5 filenames + 4 Windows and `+SUSPICIOUS_PARAMETER_NAMES+` = 8 as stated (:207-209); `+PROTOCOL_HANDLER_SCHEMES+` = the four listed (:105).
+* Pipeline stage orders in http-security/README.adoc:116-131, specification.adoc:202-218, configuration.adoc, pipeline Javadocs and CLAUDE.md all match the five `+createStages+` implementations (path = 6 invocations with two `+PatternMatchingStage+`s; header = Length → Character (+ AllowBlockList for HEADER_NAME); content-type = single AllowBlockList).
+* functional-requirements HTTP-14 exception messages match PipelineFactory.java:253-258 verbatim; HTTP-2 module requires match module-info (modulo F-28).
+* client-handlers-readme.adoc / README.adoc / HttpHandler Javadoc: `+DEFAULT_CONNECTION_TIMEOUT_SECONDS+`/`+DEFAULT_READ_TIMEOUT_SECONDS+` = 10 (HttpHandler.java:266-267); `+followableStatusCodes()+` = {301,302,303,307,308}; `+RedirectPolicy.DEFAULT_MAX_HOPS+` = 10; refusal reasons and `+CredentialForwarding+` constants exist; `+RedirectNotAllowedException.getFrom/getTo/getReason+` (Lombok `+@Getter+`); `+RetryConfig.defaults()+` = 5 attempts / 1 s / ×2 / 60 s / 0.1 / idempotentOnly=true (RetryConfig.java:225-230); idempotent set GET/HEAD/OPTIONS/PUT/DELETE matches `+HttpMethod+`; `+HttpErrorCategory+` constants; `+ContentType.APPLICATION_JSON+`; `+CacheKeyHeaderFilter.ALL/NONE/excluding+`; `+HttpResponseConverter.convert/getBodyHandler/contentType+`; `+StringContentConverter.identity()+`/`+convertString+`; `+HttpAdapter.*Blocking()+` variants; `+ETagAwareHttpAdapter.builder()...httpHandler/responseConverter/requestConverter/cacheKeyHeaderFilter/etagCachingEnabled+`, `+statusCodeOnly+`.
+* doc/http-result-pattern.adoc: `+Success(content, etag, httpStatus)+` and `+Failure(errorMessage, cause, fallbackContent, category, etag, httpStatus)+` record shapes and the three factory signatures match HttpResult.java:256-320, 332-405.
+* doc/forwarded-header-resolution.adoc: API names (`+resolve(Function<String,List<String>>)+`, `+ResolvedForwarding.empty()/toXForwardedHeaders()/toForwardedHeader()+`, `+ForwardedResolverConfig.secureDefault()/builder().trustAll/allowedContextPaths/trustedProxies/securityConfig+`, `+parseAllowlist+`) exist; default `+securityConfig = SecurityConfiguration.defaults()+`; DEBUG-only log for untrusted context path confirmed (ForwardedHeaderResolver.java:422); header-value pipeline composition claim (:386-392) matches the code.
+* TLS floor claims (security-readme, client-handlers-readme, HttpHandler) match `+SecureSSLContextProvider.getEnabledProtocols()+` (:126-131). ADR-0007's mechanism matches `+HostnameVerificationRelaxingTrustManager+` (package-private, delegates with `+(Socket) null+`).
+* ADR-0013's description of `+when()+` (skips on `+null+` input or false predicate, returns input) matches HttpSecurityValidator.java:211-216; ADR-0014's "five literal traversal-pattern classes" matches NormalizationStage.java:509-544; ADR-0015's `+checkBlockedPathPatterns+` exists (PatternMatchingStage.java:456); ADR-0010/0011 cite tests that exist (`+NfkcFoldClaimInvariantTest+`, `+PostDecodeEnforcementRegressionTest+`).
+* All 37 adoc/md files: every `+xref:+`/`+link:+`/`+include::+`/Markdown file target resolves except about.adoc `+index.html+` (F-23); every `+xref:file#anchor+` anchor (incl. `+#_two_pass_pattern_matching+`, `+#_core_prevention_principles+`, `+#_attack_pattern_evolution+`, `+#_test_data_categories+`, `+#_limitations_and_scope+`, all `+#HTTP-n+`/`+#SEC-n+`) resolves; `+<<Seeding the lists>>+` is a valid Asciidoctor natural cross-reference.
+* Class-name inventory: every library class named in any adoc/md exists (the only unmatched tokens are JDK types, JUnit annotations, illustrative names, and the intentionally-removed `+HTTPBodyValidationPipeline+`/`+PerformanceValidationBenchmark+`, both described as removed/non-existent).
+* testing.adoc / pipeline-architecture-standards.adoc / compliance-traceability.adoc test and generator class names all exist (`+URLParameterNameValidationPipelineBehaviorTest+`, `+HeaderAndContentTypeEnforcementRegressionTest+`, `+ContentTypeValidationPipelineTest+`, `+AllGeneratorsIntegrationTest+`, `+PathTraversalURLGenerator+`, `+EncodingCombinationGenerator+`, `+UnicodeAttackGenerator+`, `+BoundaryFuzzingGenerator+`, `+ValidURLPathGenerator+`, `+PathTraversalGenerator+`, `+PathTraversalParameterGeneratorTest+`); `+PipelineSet+` has `+urlPathPipeline/urlParameterPipeline/headerNamePipeline/headerValuePipeline+`; benchmark class names and `+jmh.threads+`/`+jmh.include+`/`+skip.benchmark+` properties exist in cui-http-benchmarking.
+* Repo facts stated in docs: `+generators+` classifier produced by maven-jar-plugin (cui-http-core/pom.xml:79-98); surefire `+useModulePath=false+` (pom.xml:45); every Java file in both modules carries the Apache-2.0 header; `+LICENSE+` present; `+cve-analysis.adoc+` documents exactly 8 CVEs; `+.github/project.yml+` matches the release skill.
+* Javadoc `+@param+` scan: all 60 scanner hits were false positives (record-component `+@param+`s on `+SecurityConfiguration+`, `+DecodingStage+`, `+NormalizationStage+`, `+PatternMatchingStage+`, `+HttpResult.Success+`, `+SecureSSLContextProvider+`, adjacency of private helpers); manual review of RetryConfig.Builder and CookiePrefixValidationStage confirmed correct `+@param+`/`+@return+`/`+@throws+`.
+
+== Test inventory for the area
+
+Documentation area — "tests" here are the verification performed against code/tests. Traceability spot-check (compliance-traceability.adoc, functional/security requirements, analysis docs): 31 rows checked.
+
+[cols="1,1,1",options="header"]
+|===
+| Doc claim (location)
+| Checked against
+| Result
+
+| OWASPTop10AttackDatabase `+CLASSIC_PATH_TRAVERSAL_UNIX+`, `+URL_ENCODED_TRAVERSAL+`, `+DOUBLE_ENCODED_TRAVERSAL+`, `+UTF8_OVERLONG_TRAVERSAL+`, `+STRUTS2_COMPONENT_TRAVERSAL+`, `+AUTH_BYPASS_TRAVERSAL+` (traceability:50-55)
+| database/OWASPTop10AttackDatabase.java:51-136
+| all 6 exist ✓
+
+| `+PathTraversalAttackTest.shouldRejectAllPathTraversalPatterns()+` "64 generated patterns" (:58)
+| `+@TypeGeneratorSource(count = 64)+` at :99-101
+| ✓
+
+| `+shouldBlockCVEStylePatterns()+` (:59)
+| :161-163
+| ✓
+
+| "References CVE-2019-5418, CVE-2018-1000671, CVE-2020-5398 (lines 64)" (:255)
+| :65
+| stale line no.
+
+| "`+../../../etc/passwd+` (line 209)" (:282)
+| :210
+| stale line no.
+
+| "`+....//....//etc/passwd+` (line 217)" (:306)
+| :218
+| stale line no.
+
+| DoubleEncodingAttackTest CWE-20, CWE-22 (:90, :261)
+| grep
+| ✓
+
+| MixedEncodingAttackTest CWE-20/116/838 (:91)
+| grep
+| ✓
+
+| UnicodeNormalizationAttackTest CWE-20/176/838 (:197)
+| grep
+| ✓
+
+| UnicodeControlCharacterAttackTest CWE-74/20/176 (:198)
+| grep
+| ✓
+
+| HomographAttackDatabaseTest CWE-20, CWE-178 (:199)
+| grep → none
+| *stale*
+
+| HttpHeaderInjectionAttackTest CWE-113, CWE-116 (:172)
+| grep
+| ✓
+
+| HttpRequestSmugglingAttackTest CWE-444 (:556)
+| grep
+| ✓
+
+| ProtocolHandlerAttackTest "References CWE-73" (:330)
+| grep → none
+| *stale*
+
+| "All attack database tests verify … `+getTotalCount() > initialEventCount+`" (:226-227)
+| 22 test files contain the idiom
+| ✓
+
+| AllGeneratorsIntegrationTest exists (:580)
+| generators/AllGeneratorsIntegrationTest.java
+| ✓
+
+| `+generators/encoding/PathTraversalGenerator+` (:308)
+| exists
+| ✓
+
+| `+generators/url/PathTraversalParameterGeneratorTest+` (:328)
+| exists
+| ✓
+
+| "Test coverage > 80% (enforced by build)" (:582, :676)
+| no jacoco `+check+` rule in pom.xml / cui-http-core/pom.xml (may live in parent POM)
+| UNVERIFIED
+
+| "CVE Analysis with 8 CVEs documented in detail" (:701)
+| cve-analysis.adoc distinct CVE ids = 8
+| ✓
+
+| Every `+link:+` to a test/main class in traceability, spec, requirements, analysis docs
+| file-existence scan
+| all resolve ✓
+
+| SEC-3 CVE-2021-41773 / CVE-2021-42013 "encoded in ApacheCVEAttackDatabase"
+| `+CVE_2021_41773_PATH_TRAVERSAL_PASSWD+` + 8 mentions of 42013
+| ✓
+
+| HTTP-14 factory error messages for BODY / COOKIE_*
+| PipelineFactory.java:253-258
+| ✓
+
+| HTTP-2 module `+requires+` list
+| module-info.java
+| ✓ (jspecify transitivity omitted, F-28)
+
+| HTTP-10 character sets
+| CharacterValidationConstants / CharacterValidationStage
+| *stale/overstated* (F-14)
+
+| HTTP-19 decoding-iteration / normalization-pass caps
+| DecodingStage (single pass)
+| *not implemented* (F-14)
+
+| SEC-14 "Maximum security checks active" by default
+| SecurityConfigurationBuilder defaults
+| *contradicted* (F-15)
+
+| pipeline-architecture-standards test classes (:54-55, :78-79, :102-104, :126-127)
+| pipeline/ package
+| ✓
+
+| testing.adoc benchmark classes and JMH properties (:251-257)
+| cui-http-benchmarking
+| ✓
+
+| cookie-chaos "CookieChaosAttackTest (213 tests)" / "(50 tests)"
+| 160 generated + 4 fixed = 164
+| *stale/inconsistent* (F-7)
+
+| http1 "HttpRequestSmugglingAttackTest (395 tests)", "553 total"
+| 1 435 generated (8 methods)
+| *stale* (F-7)
+
+| http1 "HttpHeaderInjectionAttackTest 158 = 150 + 8", "Http1VulnerabilitiesTest 11 methods"
+| 150 + 8; 11
+| ✓
+
+|===
+
+
+Summary: of 31 spot-checked rows, 22 verified, 8 stale/incorrect, 1 unverifiable from this repository.

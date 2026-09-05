@@ -1,0 +1,572 @@
+= HTTP Client
+:toc: left
+:toclevels: 3
+:sectnums:
+:icons: font
+
+== Consolidation notes
+
+This document is review stream C (`F-client-`), covering `de.cuioss.http.client` and its sub-packages.
+
+* F-client-1 is the single highest-impact code finding of the whole review: with the cache-key filter the Javadoc itself recommends for token refresh, an authorisation failure for one principal is answered with another principal's cached body. The lead reviewer traced the same three code locations and agrees with High.
+* F-client-2 was raised independently by the lead reviewer as a suspicion (L-12); this stream confirmed it against the JDK 21u sources of `X509TrustManagerImpl` and `PKIXValidator`. The lead's item is therefore superseded by F-client-2.
+* F-client-6 (non-compiling, security-inverted "Security Integration" samples) is the same defect as F-documentation-2 and part of F-B-12. It is kept here because the samples live in this package's `package-info.java`.
+* F-client-5 (log-coverage claim) overlaps F-documentation-4, which carries the full identifier-by-identifier table.
+* The lead reviewer independently read `SecureSSLContextProvider`, `HostnameVerificationRelaxingTrustManager`, `RedirectPolicy` and the redirect follow loop of `HttpHandler` and confirms the "Verified strengths" on the TLS floor, the absence of any trust-all path, the downgrade-before-allow-list ordering and the credential stripping.
+
+== Scope reviewed
+
+Production (`+cui-http-core/src/main/java/de/cuioss/http/client/+`):
+
+[cols="1,1",options="header"]
+|===
+| File
+| Lines
+
+| ContentType.java
+| 171
+
+| HttpLogMessages.java
+| 147
+
+| HttpMethod.java
+| 222
+
+| package-info.java
+| 330
+
+| adapter/CacheKeyHeaderFilter.java
+| 257
+
+| adapter/ETagAwareHttpAdapter.java
+| 1299
+
+| adapter/HttpAdapter.java
+| 599
+
+| adapter/ResilientHttpAdapter.java
+| 486
+
+| adapter/RetryConfig.java
+| 346
+
+| adapter/package-info.java
+| 454
+
+| converter/HttpRequestConverter.java
+| 118
+
+| converter/HttpResponseConverter.java
+| 186
+
+| converter/StringContentConverter.java
+| 176
+
+| converter/VoidResponseConverter.java
+| 167
+
+| converter/package-info.java
+| 41
+
+| handler/HostnameVerificationRelaxingTrustManager.java
+| 180
+
+| handler/HttpHandler.java
+| 1348
+
+| handler/HttpStatusFamily.java
+| 269
+
+| handler/RedirectNotAllowedException.java
+| 121
+
+| handler/RedirectPolicy.java
+| 432
+
+| handler/SecureSSLContextProvider.java
+| 254
+
+| handler/package-info.java
+| 62
+
+| result/HttpErrorCategory.java
+| 158
+
+| result/HttpResult.java
+| 446
+
+| result/package-info.java
+| 118
+
+|===
+
+
+Tests (`+cui-http-core/src/test/java/de/cuioss/http/client/+`): ContentTypeTest (305), HttpMethodTest (189), adapter/CacheKeyHeaderFilterTest (394), adapter/ETagAwareHttpAdapterIntegrationTest (964), adapter/ETagAwareHttpAdapterTest (914), adapter/HttpAdapterTest (413), adapter/ResilientHttpAdapterIntegrationTest (388), adapter/ResilientHttpAdapterTest (806), adapter/RetryConfigTest (593), adapter/TestApiDispatcher (401), converter/HttpRequestConverterTest (204), converter/HttpResponseConverterTest (267), converter/StringContentConverterTest (279), converter/VoidResponseConverterTest (242), dispatcher/RedirectDispatcher (351), dispatcher/TestContentDispatcher (211), handler/HostnameVerificationRelaxingTrustManagerTest (220), handler/HttpHandlerHostnameVerificationTest (106), handler/HttpHandlerHttpsIntegrationTest (323), handler/HttpHandlerIntegrationTest (216), handler/HttpHandlerRedirectTest (815), handler/HttpHandlerTest (1077), handler/HttpStatusFamilyTest (335), handler/OneShotTlsServer (84), handler/RedirectPolicyTest (447), handler/SecureSSLContextProviderTest (273), result/HttpErrorCategoryTest (205), result/HttpResultFailureGenerator (70), result/HttpResultSuccessGenerator (59), result/HttpResultTest (451).
+
+Docs: doc/client-handlers-readme.adoc (411), doc/http-result-pattern.adoc (430), doc/LogMessages.adoc (157), doc/adr/0007-*.adoc (144), doc/adr/0008-*.adoc (115), doc/adr/0013-*.adoc (134). Cross-checked against `+security/pipeline/HTTPHeaderValidationPipeline.java+` (ctor, l.121-123), `+security/core/HttpSecurityValidator.java+` (l.109,119) and `+security/exceptions/UrlSecurityException.java+` (l.106) for the sample-code findings.
+
+== Findings
+
+=== F-client-1: ETag cache hands one principal's cached body to another principal as "fallback content" once `+Authorization+` is excluded from the cache key — exactly the configuration the docs recommend
+* Severity: High
+* Category: false-security / security-gap
+* Status: CONFIRMED (line-by-line trace; every referenced line quoted)
+* Location:
+** `+adapter/ETagAwareHttpAdapter.java:1135-1142+` (key/entry lookup), `+:608-611+` (foreign ETag sent as `+If-None-Match+`), `+:986-996+` (fallback decision)
+** `+adapter/CacheKeyHeaderFilter.java:14-15+`, `+:103-107+`, `+:19-32+`
+** `+adapter/ETagAwareHttpAdapter.java:127-143+` (class-level "Token Refresh" example), `+:1229-1234+` (Builder recommendations)
+** `+adapter/package-info.java:115-133+`, `+client/package-info.java:271-294+`
+** `+doc/http-result-pattern.adoc:100-105+`, `+:209-213+`
+* Evidence:
+[source,java]
+----
+  // ETagAwareHttpAdapter.java:1139-1142
+  String cacheKey = generateCacheKey(httpHandler.getUri(), headers, cacheKeyHeaderFilter);
+  return new CacheContext<>(cacheKey, cache.get(cacheKey));
+  // :608-609
+  if (cachedEntry != null && method == HttpMethod.GET) {
+      requestBuilder.setHeader("If-None-Match", cachedEntry.etag());
+  // :987-995
+  boolean canUseCachedFallback = method == HttpMethod.GET && cachedEntry != null;
+  return HttpResult.<T>failureWithFallback(
+          "HTTP %d: %s".formatted(statusCode, method.methodName()), null,
+          canUseCachedFallback ? cachedEntry.content() : null, ...
+          canUseCachedFallback ? cachedEntry.etag() : null, statusCode);
+----
+[source,java]
+----
+  // CacheKeyHeaderFilter.java:14-15
+  * This functional interface allows fine-grained control beyond simple all-or-nothing
+  * choices, solving the token refresh cache bloat problem while maintaining security.
+  // :106-107 (excluding(...))
+  * <p><b>Solves token refresh cache bloat</b> by excluding Authorization
+----
+----
+  // http-result-pattern.adoc:102-104
+  // Use fallback if available
+  result.getContent().ifPresent(fallback ->
+      logger.warn("Using cached fallback content"));
+----
+* Analysis: The fallback branch at `+:987+` is gated on *method == GET and a cache entry exists*, not on *who* populated the entry or on the error class. With `+CacheKeyHeaderFilter.excluding("Authorization")+`, `+NONE+`, or any `+including(...)+` that omits `+Authorization+` — all of which the Javadoc actively recommends for "token refresh" — the key is identical for every principal calling the same URI. Concrete scenario, fully traced through the code: (1) user A, `+Authorization: Bearer A+`, GET → 200 + ETag → `+putInCache(key, contentA)+` (`+:945-948+`). (2) user B, `+Authorization: Bearer B+`, same adapter → `+prepareCacheContext+` yields `+cachedEntry = contentA+` → the request carries `+If-None-Match: <A's ETag>+` (`+:608+`). (3) Server answers `+403+` (B is not authorised) → `+handleHttpResponse+` reaches `+:986-996+` with `+canUseCachedFallback == true+` → B receives `+HttpResult.Failure+` whose `+getContent()+` is *A's body* and `+getETag()+` is A's validator. The project's own consumption guidance (`+http-result-pattern.adoc:100-105+`, `+:209-213+`, `+HttpResult.java:76-86+`) tells callers to use `+getContent()+` on a failure as degraded content, so a caller following the docs serves A's data to B. The only caveat in the codebase is one bullet in `+Builder#cacheKeyHeaderFilter+` ("Multi-user shared adapters: Use default ALL for security", `+:1232+`) and the `+NONE+` Javadoc's "may cache wrong content" (`+:97+`); neither mentions that a *4xx authorisation failure* is answered with the *other user's content*, and `+excluding("Authorization")+` is explicitly sold as "maintaining security" (`+:15+`). Secondary, present even with `+ALL+`: a token that has expired/been revoked but is still presented unchanged hits the same key, gets `+401+`, and the adapter returns the cached body as fallback — the client keeps "reading" a resource its credential no longer grants. The "Failure with fallback" state was designed around `+503, using cached JWKS+` (`+HttpResult.java:291-298+`); the code applies it to every non-2xx/304 status including 401/403/404/410.
+* Recommendation: (a) Restrict fallback to retryable / availability failures: `+canUseCachedFallback = method == GET && cachedEntry != null && errorCategory.isRetryable()+` (SERVER_ERROR only from the status path; NETWORK_ERROR is handled in `+.exceptionally+` at `+:690-704+` and today gets *no* fallback at all — the opposite of what the docs describe). Never surface fallback for 401/403. (b) Make credential-bearing headers part of the *entry identity* even when they are excluded from the *key*: store e.g. a SHA-256 of the `+Authorization+` value in `+CacheEntry+` and treat a mismatch as "no entry" (no `+If-None-Match+`, no fallback). (c) Rewrite the `+CacheKeyHeaderFilter+` / class-level / package-info "token refresh" guidance to state the leak explicitly and restrict the recommendation to single-principal adapters. (d) Add an integration test: two `+Authorization+` values, second one answered 403, assert `+getContent().isEmpty()+` and that no `+If-None-Match+` was sent.
+
+=== F-client-2: "Only hostname verification is relaxed" is over-stated — the `+null+`-engine delegation also drops TLS-level algorithm constraints and stapled OCSP responses
+* Severity: Medium
+* Category: documentation / false-security
+* Status: CONFIRMED (against JDK 21u source)
+* Location:
+** `+handler/HostnameVerificationRelaxingTrustManager.java:281-297+` (esp. `+:294-296+`), `+:401-403+`
+** `+handler/SecureSSLContextProvider.java:177-182+`
+** `+handler/HttpHandler.java:197-203+`, `+:1038-1046+` (`+verifyHostname+` Javadoc)
+** `+doc/client-handlers-readme.adoc:56-67+`
+** `+doc/adr/0007-*.adoc:43-51+`, `+:75-78+`
+* Evidence (project):
+[source,java]
+----
+  // HostnameVerificationRelaxingTrustManager.java:294-296
+  *   <li>revocation posture - whatever revocation checking the delegate is configured for still applies</li>
+  *   <li>algorithm constraints - the JDK's disabled-algorithm and key-size policies still apply</li>
+  // :401-403
+  public void checkServerTrusted(X509Certificate[] chain, String authType, SSLEngine engine) ... {
+      delegate.checkServerTrusted(chain, authType, (SSLEngine) null);
+----
+  Evidence (JDK 21u, `+sun/security/ssl/X509TrustManagerImpl.java+`, engine overload, lines 257-297):
+[source,java]
+----
+  if (engine != null) {
+      ... constraints = SSLAlgorithmConstraints.forEngine(engine, localSupportedSignAlgs, false);
+      ... responseList = ((ExtendedSSLSession)session).getStatusResponses();
+      trustedChain = v.validate(chain, null, responseList, constraints, ...);
+      ... checkIdentity(session, trustedChain, identityAlg, checkClientTrusted);
+  } else {
+      trustedChain = v.validate(chain, null, Collections.emptyList(), null, ...);
+  }
+----
+  `+sun/security/validator/PKIXValidator.java:218-220+`: `+if (constraints != null) { pkixParameters.addCertPathChecker(new AlgorithmChecker(constraints, variant)); }+`.
+* Analysis: With a `+null+` engine the JDK skips more than `+checkIdentity+`. It passes `+constraints = null+` (so `+SSLAlgorithmConstraints+` — which merges `+jdk.tls.disabledAlgorithms+`, any `+SSLParameters.setAlgorithmConstraints(...)+` the client set, and the "peer certificate signature must be among the locally supported signature schemes" check for TLS 1.2+ — is *not* added as a `+CertPathChecker+`), and passes an empty `+responseList+` (so stapled OCSP responses from the handshake are discarded). What survives is only what `+PKIXCertPathValidator+` applies on its own: chain trust, validity period, and `+jdk.certpath.disabledAlgorithms+`. In JDK 21 defaults the two disabled-algorithm lists overlap heavily, so the practical exposure is small today, but the statements "algorithm constraints … still apply" and "revocation posture … unchanged" are not literally true: a deployment that enables revocation checking and relies on OCSP stapling (`+jdk.tls.client.enableStatusRequestExtension+`) will, under `+verifyHostname(false)+`, silently fall back to a live OCSP/CRL fetch or, with hard-fail, to a handshake failure — a behaviour change the caller was told does not happen. ADR-0007 (`+:75-78+`) states the mechanism "performs no logic of its own beyond substituting the engine/socket argument", which is accurate; the *consequence* of that substitution is what the ADR and all Javadoc understate.
+* Recommendation: Correct the four documentation sites to say: "skips endpoint identification; additionally, because the platform trust manager receives no `+SSLEngine+`, the TLS-layer algorithm constraints (`+jdk.tls.disabledAlgorithms+`, `+SSLParameters.setAlgorithmConstraints+`, signature-scheme conformance) and stapled OCSP responses are not consulted — certificate-path constraints (`+jdk.certpath.disabledAlgorithms+`), chain trust and validity remain enforced." Add the stapled-OCSP point to ADR-0007 "Risks". If the stricter behaviour is wanted, a wrapper can re-apply the constraints itself: call `+delegate.checkServerTrusted(chain, authType, (SSLEngine) null)+` and then run `+new AlgorithmChecker(SSLAlgorithmConstraints.forEngine(engine, false), ...)+` over the chain — but that pulls in `+sun.security.*+` internals, so the documentation fix is the realistic one.
+
+=== F-client-3: 301/302 rewrite every non-GET/HEAD method to GET (RFC 9110 sanctions only POST→GET; the JDK preserves the method) — a redirected DELETE/PUT is reported as a *successful* DELETE/PUT after issuing a GET
+* Severity: Medium
+* Category: correctness
+* Status: CONFIRMED (line-by-line trace; not exercised by any test)
+* Location: `+handler/HttpHandler.java:780-804+` (`+rebuildForHop+`), Javadoc `+:763-766+`; consumer at `+adapter/ETagAwareHttpAdapter.java:688-689+`, `+:976-977+`
+* Evidence:
+[source,java]
+----
+  // HttpHandler.java:782-784
+  boolean preserveMethodAndBody = statusCode == 307 || statusCode == 308;
+  boolean bodylessMethod = METHOD_GET.equals(method) || METHOD_HEAD.equals(method);
+  boolean dropBody = !preserveMethodAndBody && !(statusCode != 303 && bodylessMethod);
+  // :796-800
+  if (!preserveMethodAndBody && (statusCode == 303 || !bodylessMethod)) {
+      // GET() also clears the body publisher carried over from the original request.
+      builder.GET();
+  }
+----
+  RFC 9110 §15.4.2/§15.4.3: "For historical reasons, a user agent MAY change the request method from POST to GET for the subsequent request." (POST only). JDK 21u `+jdk/internal/net/http/RedirectFilter.java:89-97+`: `+case 301, 302 -> orig.equals("POST") ? "GET" : orig; case 303 -> "GET"; case 307, 308 -> orig;+` — the JDK keeps the original method on 301/302 unless it is POST.
+* Analysis: For `+DELETE+`, `+PUT+`, `+PATCH+`, `+OPTIONS+` the condition `+!bodylessMethod+` is true, so a 301/302 turns the request into a body-less `+GET+` at the new location. Through `+ETagAwareHttpAdapter+`, `+adapter.delete()+` → 301 → GET → 200 with a body → `+handleHttpResponse(method=DELETE, 200)+` → `+HttpResult.success(...)+`: the caller is told the delete succeeded although nothing was deleted, and a `+PUT+` body is silently discarded while the PUT is reported as success. 303 additionally rewrites `+HEAD+` to `+GET+` (`+statusCode == 303+` short-circuits `+bodylessMethod+`), so `+pingHead()+` following a 303 downloads a body; RFC 9110 §15.4.4 permits either GET or HEAD and the JDK's `+RedirectFilter+` makes the same HEAD→GET choice (`+:92+`), so that part is a defensible design choice rather than a defect — only the PUT/DELETE/PATCH/OPTIONS→GET rewrite on 301/302 deviates from both the RFC and the JDK. The Javadoc (`+:763-766+`) documents the behaviour, but that does not make it correct, and the redirect tests only cover POST→GET (`+HttpHandlerRedirectTest.java:490-503+`) and GET/HEAD preserved (`+:558-572+`); there is no DELETE/PUT/PATCH case and no HEAD-on-303 case.
+* Recommendation: Rewrite only `+POST+` to `+GET+` on 301/302 (`+boolean rewriteToGet = statusCode == 303 ? !METHOD_HEAD.equals(method) : METHOD_POST.equals(method)+`), keep every other method and its body (as for 307/308); optionally keep HEAD on 303 (RFC-permitted; the JDK does not). Add parameterised tests for `+{301,302} × {PUT,DELETE,PATCH}+` asserting the method reaches the target unchanged, and a `+303 × HEAD+` case pinning whichever choice is made.
+
+=== F-client-4: `+SSLHandshakeException+` carve-out classifies the JDK's transient "Remote host terminated the handshake" as non-retryable — contradicting the Javadoc's own rationale
+* Severity: Medium
+* Category: correctness
+* Status: CONFIRMED (JDK 21u `+sun/security/ssl/SSLSocketImpl.java:1713-1716+` + probe `+5b+`)
+* Location: `+result/HttpErrorCategory.java:103-118+`, `+:150-155+`; `+adapter/ResilientHttpAdapter.java:394-396+`
+* Evidence:
+[source,java]
+----
+  // HttpErrorCategory.java:115-117
+  * <p>The bare {@link javax.net.ssl.SSLException} base type deliberately stays on the retryable
+  * {@link #NETWORK_ERROR} path: it also covers genuinely transient conditions such as a
+  * connection reset mid-handshake.
+  // :150-154
+  if (unwrapped instanceof SSLHandshakeException || ... ) { return CONFIGURATION_ERROR; }
+----
+[source,java]
+----
+  // JDK SSLSocketImpl.java:1713-1716
+  if (conContext.handshakeContext != null) {
+      throw new SSLHandshakeException("Remote host terminated the handshake",  eofe);
+----
+  Probe: `+HttpErrorCategory.fromException(new SSLHandshakeException("Remote host terminated the handshake")) -> CONFIGURATION_ERROR+`.
+* Analysis: The JDK reports a peer closing the socket during the handshake (load-balancer rotation, server restart, connection-limit shedding — the textbook transient) as `+SSLHandshakeException+`, not as a bare `+SSLException+`. `+ResilientHttpAdapter.decideNextStep+` therefore stops after one attempt for precisely the case the Javadoc says it wants to retry. `+ResilientHttpAdapterTest.handshakeFailureIsNotRetried+` (`+:556-578+`) pins the non-retry with a `+"PKIX path building failed"+` message and so does not detect this.
+* Recommendation: Treat `+SSLHandshakeException+` as non-retryable only when its cause chain contains a `+CertificateException+` / `+CertPathValidatorException+` (trust/identity problem) and otherwise (cause `+EOFException+`, `+SocketException+`, or no cause) keep `+NETWORK_ERROR+`. Add a test for the `+"Remote host terminated the handshake"+` shape.
+
+=== F-client-5: LogMessages.adoc coverage claim is false, and HTTP-117 is only emitted on the ping path
+* Severity: Medium
+* Category: documentation / test-quality
+* Status: CONFIRMED (grep of all `+LogAsserts+` calls under `+src/test/java/de/cuioss/http/client+`)
+* Location: `+doc/LogMessages.adoc:151-158+`, `+:78-81+`; `+HttpLogMessages.java:49-53+`; `+handler/HttpHandler.java:849-851+`; `+adapter/ETagAwareHttpAdapter.java:690-697+`
+* Evidence:
+----
+  // LogMessages.adoc:153-155
+  All WARN-level LogRecords have test coverage except for:
+  - HTTP-107 (HTTP_PING_INTERRUPTED) - InterruptedException scenarios
+----
+  Actual `+LogAsserts+` usages (complete list): `+HttpHandlerTest.java:395,408+` (HTTP-106 via `+resolveIdentifierString()+`), `+:580+` (`+"allowInsecureHttp=true"+`, i.e. HTTP-115 text), `+:645+` (`+"verifyHostname=false"+`, HTTP-116 text), `+HttpHandlerRedirectTest.java:429,483,497+` (`+"HTTP-117"+`). Nothing asserts HTTP-108, 110, 111, 112, 113, 114, 200 or 201.
+* Analysis: Six WARN records and both ERROR records have no log assertion anywhere; the "Test Coverage" note misleads a maintainer into believing a broken template/identifier would be caught. Separately, `+LogMessages.adoc:81+` describes HTTP-117 as "Logged when a redirect hop is refused by the handler's RedirectPolicy", but the only emitter is `+pingWithMethod+` (`+HttpHandler.java:849-851+`); a refused hop through `+send()+`/`+sendAsync()+`/the adapters produces no HTTP-117 — the adapter logs HTTP-200 `+CONFIGURATION_ERROR_DURING_REQUEST+` at ERROR level instead (`+ETagAwareHttpAdapter.java:696+`). For `+TOO_MANY_HOPS+`/`+MALFORMED_LOCATION+` the HTTP-117 line renders the target as `+null+`.
+* Recommendation: Either add `+LogAsserts+` for 108/110/111/112/113/114/200/201 in the existing adapter tests (all scenarios are already exercised: serialization failure, non-idempotent skip, max attempts, retry scheduled, conversion failure, network error, configuration error, request build failure) or rewrite the note to list what is actually asserted. Clarify in LogMessages.adoc that HTTP-117 is ping-only and that adapter-level refusals surface as HTTP-200.
+
+=== F-client-6: The "Security Integration" sample code in both `+package-info.java+` files does not compile and encodes the wrong contract — a reader who copies it believes headers are validated when nothing is
+* Severity: Medium
+* Category: documentation / false-security
+* Status: CONFIRMED (against `+security/pipeline/HTTPHeaderValidationPipeline.java:121-123+`, `+security/exceptions/UrlSecurityException.java:106+`, `+security/core/HttpSecurityValidator.java:109,119+`)
+* Location: `+adapter/package-info.java:283-302+`, `+:313-328+`, `+:362-415+`, `+:434-435+`; `+client/package-info.java:300-317+`
+* Evidence:
+[source,java]
+----
+  // adapter/package-info.java:286, :293-297
+  * HTTPHeaderValidationPipeline headerValidator = new HTTPHeaderValidationPipeline();
+  * for (...) { Optional<String> validated = headerValidator.validate(entry.getValue());
+  *     if (validated.isEmpty()) { throw new UrlSecurityException("Invalid header: " + entry.getKey()); } }
+  // client/package-info.java:305-307
+  * HTTPHeaderValidationPipeline headerValidator = new HTTPHeaderValidationPipeline();
+  * headerValidator.validate(headerName).orElseThrow(() -> new UrlSecurityException("Header injection detected"));
+----
+  Real signatures: `+public HTTPHeaderValidationPipeline(SecurityConfiguration config, SecurityEventCounter eventCounter, ValidationType validationType)+`; `+UrlSecurityException+` has only a `+private+` constructor (builder pattern, `+:106+`); `+HttpSecurityValidator+` Javadoc `+:109+` "Return Optional.empty() if the input was null" — violations *throw*, they never return empty (CLAUDE.md "Security Validation Contract").
+* Analysis: Three independent errors: (1) no no-arg constructors exist for either pipeline; (2) `+UrlSecurityException+` cannot be `+new+`-ed with a `+String+`; (3) `+Optional.empty()+` from `+validate+` only means "input was null/empty", so the `+if (validated.isEmpty()) throw+` guard is dead code with respect to attacks — the sample's mental model is inverted relative to the fail-secure contract. The `+ValidatingHttpAdapter+` decorator example (`+:362-415+`) and the "Security Checklist" (`+:434-435+`) repeat the pattern. Additionally the sample recommends `+URLParameterValidationPipeline+` for JSON request bodies (`+:309-328+`); a JSON document routinely contains `+"+`, `+{+`, `+:+` and `+<+`/`+>+` in values, so the recommendation is likely to reject legitimate bodies (SUSPECTED — not executed).
+* Recommendation: Replace the samples with compiling code that uses the real constructors, catches `+UrlSecurityException+` (do not test the `+Optional+`), and drop or qualify the body-validation advice.
+
+=== F-client-7: `+ETagAwareHttpAdapterTest+` is largely assertion-free and issues real outbound HTTPS requests to `+api.example.com+` from unit tests
+* Severity: Low
+* Category: test-quality
+* Status: CONFIRMED
+* Location: `+adapter/ETagAwareHttpAdapterTest.java:33-35+` (fixture URI), `+:58-66+`, `+:68-80+`, `+:105-118+`, `+:131-165+`, `+:169-191+`, `+:193-204+`, `+:206-250+`, `+:252-305+`, `+:309-601+`; `+adapter/ETagAwareHttpAdapterIntegrationTest.java:703-721+`; `+handler/HttpHandlerTest.java:515-527+`
+* Evidence:
+[source,java]
+----
+  // ETagAwareHttpAdapterTest.java:33-35
+  handler = HttpHandler.builder().uri("https://api.example.com/test").build();
+  // :193-204
+  void safeMethodsRejectBody() { ... assertNotNull(adapter); }
+  // :288-305
+  void cacheKeyConsistencyWithSameHeaders() { ... var future1 = adapter.get(headers1); var future2 = adapter.get(headers2);
+      assertNotNull(future1, ...); assertNotNull(future2, ...); }
+  // ETagAwareHttpAdapterIntegrationTest.java:718-720
+  // Connection refused can be NETWORK_ERROR or CONFIGURATION_ERROR depending on JDK implementation
+  assertTrue(result.getErrorCategory().isPresent(), "Should have error category");
+----
+* Analysis: Roughly 40 test methods in `+ETagAwareHttpAdapterTest+` end in `+assertNotNull(adapter)+` or `+assertNotNull(future)+` — they cannot fail for any behavioural regression. Every `+adapter.get()/post()/...+` call in that class actually fires a request against the public host `+api.example.com+` (DNS + TLS), never awaited, results discarded — a sandbox/CI hygiene problem and a source of flakiness. `+safeMethodsRejectBody+` tests nothing about body rejection; `+cacheKeyConsistencyWithSameHeaders+` never compares keys although `+generateCacheKey+` is package-visible and used two hundred lines later (`+:700-747+`). `+connectionRefusedShouldReturnFailure+` accepts any category although `+java.net.ConnectException+` is an `+IOException+` and must classify as `+NETWORK_ERROR+` deterministically. `+HttpHandlerTest.shouldHandleNullPointerExceptionInUriToUrlConversion+` (`+:515-527+`) is `+assertDoesNotThrow+` on a valid URL and documents an NPE path it never exercises.
+* Recommendation: Point the fixture at an unroutable/blackhole URI or a MockWebServer; replace `+assertNotNull+` tests with behaviour assertions (e.g. compare `+generateCacheKey+` outputs for `+Map.of(a,b)+` vs `+Map.of(b,a)+`; assert `+IllegalArgumentException+` for a body on a safe method via a package-private seam); pin `+NETWORK_ERROR+` for connection refused; delete the vacuous NPE test.
+
+=== F-client-8: Negative-path gaps — no timeout, malformed-response, end-to-end 5xx exhaustion, or wire-level TLS-floor test
+* Severity: Low
+* Category: test-quality
+* Status: CONFIRMED (absence verified across all listed test classes)
+* Location: `+adapter/ResilientHttpAdapterIntegrationTest.java+` (whole file), `+handler/HttpHandlerHttpsIntegrationTest.java:50-53+`, `+handler/HttpHandlerTest.java:147-170+`
+* Evidence: `+HttpHandlerHttpsIntegrationTest.java:50-53+` itself states "A client-side flag would still read 'configured for HTTPS' on a handler whose handshake never happened" — yet the TLS floor is asserted only as a client-side flag (`+handler.createHttpClient().sslParameters().getProtocols()+`, `+HttpHandlerTest.java:153-158+`).
+* Analysis: (a) No test provokes `+HttpTimeoutException+`/`+HttpConnectTimeoutException+` end-to-end (MockWebServer can delay a response; `+readTimeoutSeconds+` is never exercised on the wire). (b) No test feeds a malformed HTTP response (garbage status line, truncated body) to observe the `+IOException → NETWORK_ERROR+` path through the adapter. (c) Retry exhaustion against a real server (always-503 → exactly `+maxAttempts+` requests → `+SERVER_ERROR+`, HTTP-111 logged) exists only with the in-memory `+MockAdapter+` (`+ResilientHttpAdapterTest.java:111-131+`); `+ResilientHttpAdapterIntegrationTest+` has no exhaustion case. (d) Nothing proves a TLS 1.0/1.1-only server is refused; only that the protocol list is set. (e) No test for `+RedirectPolicy.forwardsCredentials+` with a non-allowlisted target (see F-client-9) or for method preservation of PUT/DELETE across 301 (see F-client-3).
+* Recommendation: Add a MockWebServer `+setBodyDelay+`/`+setHeadersDelay+` test asserting `+NETWORK_ERROR+` and the HTTP-114 log; an always-503 test asserting `+dispatcher.getCallCounter() == maxAttempts+` and HTTP-111; a `+MockResponse+` with `+SocketPolicy.DISCONNECT_AT_START+`/garbage; and, for the floor, a `+OneShotTlsServer+` variant with `+setEnabledProtocols(new String[]{"TLSv1.1"})+` (re-enabling it via `+Security.setProperty("jdk.tls.disabledAlgorithms", ...)+` in that test only) asserting the handshake fails.
+
+=== F-client-9: `+RedirectPolicy.forwardsCredentials+` returns `+true+` for *any* cross-origin https target under `+FORWARD_TO_ALLOWLISTED+`, ignoring the allowlist
+* Severity: Low
+* Category: false-security (API footgun; not exploitable through `+HttpHandler+`)
+* Status: CONFIRMED (probe 1a/1b)
+* Location: `+handler/RedirectPolicy.java:212-216+`; Javadoc `+:199-202+`; guard that currently prevents impact: `+handler/HttpHandler.java:745-748+`
+* Evidence:
+[source,java]
+----
+  // RedirectPolicy.java:212-216
+  public boolean forwardsCredentials(URI from, URI to) {
+      if (SCHEME_HTTP.equals(asciiLowerCase(to.getScheme()))) { return false; }
+      return isSameOrigin(from, to) || credentialForwarding == CredentialForwarding.FORWARD_TO_ALLOWLISTED;
+  }
+----
+  Probe: `+forwardsCredentials(https://api.example.com/a, https://evil.example.org/b)+` with allowlist `+[cdn.example.net]+` and `+FORWARD_TO_ALLOWLISTED+` → `+true+`; `+refuse(...)+` → `+CROSS_ORIGIN+`.
+* Analysis: The method is public and its Javadoc promises forwarding "only to a host `+refuse+` already permitted", but it never consults `+allowedHosts+`. Inside `+HttpHandler+` the order refuse-then-forward makes this unobservable; any other caller (or a future refactor that reorders the two calls) leaks `+Authorization+`/`+Cookie+` to arbitrary hosts. `+RedirectPolicyTest.ForwardsCredentialsTests+` (`+:287-391+`) never tests a non-allowlisted target.
+* Recommendation: `+return isSameOrigin(from, to) || (credentialForwarding == FORWARD_TO_ALLOWLISTED && toHost != null && allowedHosts.contains(toHost));+` plus a test.
+
+=== F-client-10: `+RetryConfig+` accepts a sub-millisecond `+initialDelay+` and then retries with a 0 ms delay (hot loop) despite "must be positive"
+* Severity: Low
+* Category: correctness
+* Status: CONFIRMED (probe 2: `+initialDelay=500ns → calculateDelay(1) = 0ms+`)
+* Location: `+adapter/RetryConfig.java:111-113+`, `+:176-191+`, `+:240-246+`
+* Evidence:
+[source,java]
+----
+  // RetryConfig.java:112
+  if (initialDelay == null || initialDelay.isNegative() || initialDelay.isZero()) {
+  // :176-177
+  double exponentialDelay = initialDelay.toMillis() * Math.pow(multiplier, (double) attemptNumber - 1);
+----
+* Analysis: `+Duration.ofNanos(1..999_999)+` passes validation (`+isZero()+` false) but `+toMillis()+` truncates to 0, so every retry fires immediately — the exact "zero-millisecond hot-retry loop" `+RetryConfigTest.NonFiniteValidation+` (`+:502-506+`) says the validation exists to prevent. Overflow is fine: `+Math.pow+` → `+Infinity+` → `+Math.min+` → cap (probe 2b).
+* Recommendation: Validate `+initialDelay.toMillis() >= 1+` (and `+maxDelay+`), or compute in nanoseconds and return `+Duration.ofNanos(...)+`.
+
+=== F-client-11: Stale / wrong statements in Javadoc and .adoc
+* Severity: Low
+* Category: documentation
+* Status: CONFIRMED (JDK 21u `+HttpClientImpl.java:469+`; probe 7)
+* Location & evidence:
+** `+handler/HttpHandler.java:161+` — "for the default configuration — a virtual-thread executor". JDK 21 `+HttpClientImpl.java:469+`: `+ex = Executors.newCachedThreadPool(new DefaultThreadFactory(id));+` (platform threads). Probe: `+HttpClient.newHttpClient().executor().isPresent() == false+` (internal default).
+** `+adapter/package-info.java:200+` — "HttpClient: Created once in constructor, reused for all requests" contradicts `+ETagAwareHttpAdapter.java:152-154, 158-166+` ("Not held by the adapter … borrows").
+** `+doc/http-result-pattern.adoc:328-345+` shows a `+CachedHttpResolver+` with a plain, non-volatile `+cachedResult+` field while `+:381+` says "Use AtomicReference for cached result storage" — the example violates the advice two paragraphs below it.
+** `+doc/client-handlers-readme.adoc:270-289+` "Basic HTTP Handler" uses the raw `+client.send(...)+` route that bypasses the redirect policy the same document (`+:96-133+`) presents as the safe path; no note.
+** `+doc/LogMessages.adoc:81+` (HTTP-117) — see F-client-5.
+** `+handler/HttpHandler.java:1140-1141+` builder Javadoc says `+requestBuilder()+` applies the "read timeout"; `+HttpRequest.Builder.timeout+` is a total request/headers timeout in the JDK, not a socket read timeout (`+HttpHandler.java:476-479+`). Minor naming inaccuracy carried into `+DEFAULT_READ_TIMEOUT_SECONDS+`.
+* Recommendation: Fix the five sentences; rename or footnote "read timeout".
+
+=== F-client-12: HEAD reads the cache but the adapter never makes a HEAD conditional — the documented "HEAD 304" branch is reachable only through a header the same Javadoc tells callers not to send
+* Severity: Low
+* Category: consistency
+* Status: CONFIRMED
+* Location: `+adapter/ETagAwareHttpAdapter.java:1000-1015+` (`+canReadCache+`), `+:608+` (`+If-None-Match+` for GET only), `+:57-65+` ("Do not supply your own If-None-Match"), `+:1107-1109+`
+* Evidence:
+[source,java]
+----
+  // :608
+  if (cachedEntry != null && method == HttpMethod.GET) { requestBuilder.setHeader("If-None-Match", ...
+  // :1013-1015
+  private static boolean canReadCache(HttpMethod method) { return method == HttpMethod.GET || method == HttpMethod.HEAD; }
+----
+* Analysis: For HEAD the adapter looks up (and pays for) the cache entry but never sends the validator, so a server can only answer a HEAD with 304 if the caller adds `+If-None-Match+` manually — which `+:57-65+` explicitly discourages. The integration test `+head304ShouldReportStatusAndETagWithoutBody+` (`+ETagAwareHttpAdapterIntegrationTest.java:124-139+`) has to do exactly that, with `+CacheKeyHeaderFilter.NONE+` to make the key line up. The design is internally inconsistent rather than wrong.
+* Recommendation: Either also set `+If-None-Match+` for HEAD (`+method == GET || method == HEAD+`) — then the HEAD-304 branch is the adapter's own behaviour — or drop HEAD from `+canReadCache+` and treat a caller-provoked HEAD 304 like any other unsolicited 304.
+
+=== F-client-13: `+StringContentConverter+` silently mis-decodes when the server writes `+charset = X+` (whitespace around `+=+`)
+* Severity: Low
+* Category: correctness
+* Status: CONFIRMED (probe 6: `+"text/plain; charset = ISO-8859-1"+` → decoded with UTF-8 fallback, body corrupted, no signal)
+* Location: `+converter/StringContentConverter.java:110-118+`
+* Evidence: `+if (trimmed.regionMatches(true, 0, CHARSET_PARAMETER, 0, CHARSET_PARAMETER.length()))+` with `+CHARSET_PARAMETER = "charset="+` (`+:52+`).
+* Analysis: RFC 9110 §8.3.1 forbids whitespace around `+=+`, but such headers are common in the wild (PHP/legacy servers). The class contract says a "bogus charset token never fails the conversion — it falls back silently" (`+:38-39+`), so the caller gets mojibake with no log line. Case-insensitivity, quoting and unsupported names are handled correctly (probe 6, `+StringContentConverterTest.CharsetPrecedence+`).
+* Recommendation: Split each parameter on the first `+=+` and `+strip()+` both sides; optionally log at DEBUG when falling back.
+
+=== F-client-14: `+HttpErrorCategory.fromException(InterruptedException)+` → `+CONFIGURATION_ERROR+`, and the Javadoc sample routes interruption through it
+* Severity: Low
+* Category: correctness / documentation
+* Status: CONFIRMED (probe 5)
+* Location: `+result/HttpErrorCategory.java:130-139+` (sample catches `+IOException | InterruptedException+` and classifies), `+:156+`
+* Analysis: An interrupt is neither a configuration problem nor retryable-by-policy; classifying it `+CONFIGURATION_ERROR+` produces a misleading ERROR log ("Configuration error during GET request") if it ever reaches `+executeAsyncRequest+`'s `+exceptionally+` (it does not on the async path today, but the documented sync usage pattern would).
+* Recommendation: Document that `+InterruptedException+` must be re-thrown / flag restored rather than classified, or map it explicitly.
+
+=== F-client-15: Cache key embeds raw credential values and the cache has no TTL or byte bound
+* Severity: Info
+* Category: security-gap
+* Status: CONFIRMED
+* Location: `+adapter/ETagAwareHttpAdapter.java:731-754+` (key = URI + `+header:value+` for every included header), `+:805-812+`, `+:852-881+`, `+:1164+` (default 1000 entries)
+* Analysis: With the default `+ALL+` filter the literal `+Authorization: Bearer …+` value is part of the `+String+` key kept in the `+ConcurrentHashMap+` for as long as the entry lives (until 1000 entries overflow; no time-based expiry). Heap dumps and `+toString+`-style debugging expose tokens; entry *content* size is unbounded (1000 × arbitrarily large `+T+`). Fallback content (F-client-1) can therefore be arbitrarily old.
+* Recommendation: Hash header values (SHA-256) into the key; add an optional max-age; document the memory model.
+
+=== F-client-16: HTTP (cleartext) handler silently ignores TLS-related builder settings and mis-reports `+isVerifyHostname()+`
+* Severity: Info
+* Category: consistency
+* Status: CONFIRMED
+* Location: `+handler/HttpHandler.java:391-414+` (HTTP constructor hard-codes `+verifyHostname = true+`, discards `+sslContext+`/`+secureSSLContextProvider+`), `+:1252-1262+`
+* Analysis: `+HttpHandler.builder().uri("http://x").allowInsecureHttp(true).verifyHostname(false).sslContext(ctx)+` builds fine (the mutual-exclusion check at `+:1211+` fires only if *both* are set) and the resulting handler reports `+isVerifyHostname() == true+`; `+asBuilder()+` then forgets the opt-in. Harmless for security (no TLS), but surprising. `+javap+` also shows a Lombok-generated, never-used `+private HttpClient httpClient+` builder field/setter (dead code from `+@Builder+` on the class).
+* Recommendation: Reject or WARN on TLS knobs combined with an `+http+` URI; consider moving `+@Builder+` off the class to stop Lombok synthesising unused members.
+
+=== F-client-17: `+HttpResult+` records do not enforce their own invariants
+* Severity: Low
+* Category: correctness
+* Status: CONFIRMED
+* Location: `+result/HttpResult.java:256-258+`, `+:318-338+`, `+:378-403+`, `+:426-428+`
+* Analysis: `+HttpResult.success(x, null, 500)+` and `+HttpResult.failureWithFallback(..., 200)+` are accepted; `+HttpResult.failure(null, cause, cat)+` is accepted and NPEs later in `+getErrorMessage()+` (`+Optional.of(errorMessage)+`, `+:427+`). The docs describe Success as "200 or 304" (`+:315+`, `+http-result-pattern.adoc:44-65+`). `+HttpResultSuccessGenerator+` only emits 2xx with non-null content, so the documented "Success without content" and "304" shapes are never generator-covered.
+* Recommendation: Compact-constructor checks (`+Objects.requireNonNull(errorMessage)+`, optionally `+HttpStatusFamily.isSuccess(httpStatus) || httpStatus == 304+`), and extend the success generator to emit `+null+` content / 304.
+
+=== F-client-18: Generator usage is minimal and never parameterised
+* Severity: Info
+* Category: generator-usage
+* Status: CONFIRMED (grep: generators referenced only in `+HttpResultTest.java:38-39+`)
+* Location: `+result/HttpResultSuccessGenerator.java+`, `+result/HttpResultFailureGenerator.java+`, `+result/HttpResultTest.java:177-190+`, `+:205-219+`, `+:250-256+`, `+:309-318+`; `+handler/HttpHandlerHttpsIntegrationTest.java:133+`
+* Analysis: The two `+TypedGenerator+`s are driven by hand-rolled `+for (i < 10)+` loops rather than `+@ParameterizedTest+` + `+@TypeGeneratorSource+`; nothing else in the client tests uses cui-test-generator except one `+Generators.letterStrings(16, 64)+` payload. Status-code boundary tests (`+HttpStatusFamilyTest+`) and header-filter tests use hard-coded lists — acceptable for enumerable domains, but e.g. `+HttpStatusFamily.fromStatusCode+` over `+Generators.integers(-1000, 1000)+` would cost nothing. No seeded/vacuous generator misuse was found.
+* Recommendation: Convert the loops to `+@ParameterizedTest @TypeGeneratorSource(value = HttpResultSuccessGenerator.class, count = 25)+`; add an `+integers()+`-driven family test.
+
+== Verified strengths
+
+* *TLS floor is real on the wire*: `+HttpHandler.java:441-452+` pins `+SSLParameters.setProtocols(provider.getEnabledProtocols())+` → `+[TLSv1.2, TLSv1.3]+` or `+[TLSv1.3]+`; `+SecureSSLContextProvider.java:126-132+` never returns anything older; asserted in `+HttpHandlerTest.java:147-170+` and `+SecureSSLContextProviderTest.java:105-120+`. TLS 1.0/1.1 cannot be offered by this client.
+* *No trust-all anywhere*: `+createSecureSSLContext()+` / `+createHostnameRelaxedSSLContext()+` (`+SecureSSLContextProvider.java:153-205+`) use `+TrustManagerFactory.init((KeyStore) null)+` (JVM default store); the relaxing wrapper only wraps `+X509ExtendedTrustManager+` instances and forwards everything else verbatim (`+HostnameVerificationRelaxingTrustManager.java:349-359+`). Chain trust, expiry and not-yet-valid rejection under the wrapper are proven with real handshakes (`+HostnameVerificationRelaxingTrustManagerTest.java:83-131+`), with a matched negative control (`+:71-82+`).
+* *Relaxation is opt-in and loud*: only `+verifyHostname(false)+` reaches `+createHostnameRelaxedSSLContext()+` (`+HttpHandler.java:1288-1292+`), always logs HTTP-116, is rejected with a caller-supplied `+sslContext+` (`+:1211-1216+`), survives `+asBuilder()+` only via the package-private `+derivedSslContext+` seam, and is discarded when `+verifyHostname+` is flipped back to `+true+` (`+:1293-1295+`; tests `+HttpHandlerTest.java:619-730+`). `+javap -p+` confirms the Lombok-generated `+sslContextCallerSupplied(boolean)+` / `+secureSSLContextProvider(...)+` builder setters are `+private+`, so the provenance flag cannot be forged from outside the package.
+* *Default hostname verification is proven, not assumed*: `+HttpHandlerHostnameVerificationTest+` connects to a real in-JVM TLS server with a mismatched SAN and asserts rejection, plus a matching-SAN positive control.
+* *Redirects*: JDK client stays on `+Redirect.NEVER+` on both constructor paths (`+HttpHandler.java:411-413, 447-452+`; asserted end-to-end `+HttpHandlerIntegrationTest.java:131-169+`). `+https→http+` is refused before the allowlist (`+RedirectPolicy.java:172-176+`, asserted over a real TLS server `+HttpHandlerHttpsIntegrationTest.java:154-188+`). Default is same-origin only; the policy is consulted before the hop counter (`+HttpHandler.java:744-752+`). Probed bypass candidates all refused: scheme-relative `+//evil.example.org/x+`, userinfo trick `+https://api.example.com@evil.example.org/+`, trailing-dot host `+api.example.com.+`; case-different scheme/host and explicit `+:443+` correctly treated as same-origin; IPv6 literals compare correctly. Malformed `+Location+` → typed `+MALFORMED_LOCATION+` with sanitised, length-bounded message (`+:640-679+`). Intermediate and refused hop bodies are drained, never handed to the caller's handler (`+:583-616+`; tests `+HttpHandlerRedirectTest.java:189-257+`). Credentials never reach an `+http+` target even same-origin (`+RedirectPolicy.java:212-214+`; tests `+:608-626+`).
+* *Retry*: only `+NETWORK_ERROR+`/`+SERVER_ERROR+` retried (`+HttpErrorCategory.java:92-94+`); non-idempotent methods skipped by default (`+ResilientHttpAdapter.java:410-415+`); exceptional completions re-propagated, never swallowed into `+null+` (`+:463-470+`, test `+ResilientHttpAdapterTest.java:514-540+`); cancellation reaches the in-flight call and the pending backoff (`+:272-288, 344-351+`; tests `+:586-636+` and integration `+:283-318+`); `+*Blocking()+` is interrupt-aware and cancels the request (`+HttpAdapter.java:434-445+`; tests). `+NaN+`/`+±Infinity+` jitter and multiplier are rejected on both construction paths; cap is applied before jitter as documented.
+* *ETag adapter*: a 304 with no cache entry is an `+INVALID_CONTENT+` failure, never a fabricated success (`+ETagAwareHttpAdapter.java:1087-1098+`; test `+ETagAwareHttpAdapterIntegrationTest.java:185-205+`); a 304 to POST/PUT/DELETE leaks neither content nor ETag (`+:1074-1085+`; test `+:155-178+`); cache-key delimiters are escaped so header values cannot forge entries (`+:761-772+`; tests `+:700-747+`); an ETag-less or unparseable 200 evicts the superseded entry (`+:945-951+`; tests `+:314-419+`); the cache key is the configured URI, not the terminal hop (`+:1139+`; test `+:770-788+`); caller `+Accept+`/`+Content-Type+` override converter defaults (`+:492-500+`).
+* *Result types*: `+HttpResult+` is `+sealed+` with exactly `+Success+`/`+Failure+`, exhaustively switchable (tests `+HttpResultTest.java:321-381+`); `+HttpErrorCategory.fromException+` unwraps nested `+CompletionException+`/`+ExecutionException+` with a self-cause guard (`+:145-149+`); `+HttpStatusFamily.toErrorCategory()+` is complete (1xx/3xx/UNKNOWN → `+INVALID_CONTENT+`, 2xx throws).
+* *Log catalogue consistency*: all 13 `+HttpLogMessages+` records (106, 107, 108, 110–117, 200, 201) match `+LogMessages.adoc+` in identifier, level and template text exactly; the overview range line (`+:16+`) is correct.
+* *Docs ↔ API signatures* (excluding F-client-6): every other code sample checked (`+HttpHandler+` Javadoc, `+RedirectPolicy+` Javadoc, `+client-handlers-readme.adoc+`, `+http-result-pattern.adoc+`, `+client/package-info.java+` converter/adapter examples) uses methods that exist with the shown signatures (`+tlsVersions(SecureSSLContextProvider)+`, `+RedirectPolicy.builder().maxHops/allowedHosts/credentialForwarding+`, `+HttpResult.Success<T>(var c, var e, var s)+` deconstruction, `+failure.isRetryable()+`, `+StringContentConverter.identity()+`, `+ETagAwareHttpAdapter.statusCodeOnly(handler)+`).
+
+== Test inventory for the area
+
+[cols="1,1,1,1,1,1",options="header"]
+|===
+| Production class
+| Test class(es)
+| Positive cases?
+| Negative cases?
+| Generators used?
+| Notes on quality
+
+| SecureSSLContextProvider
+| SecureSSLContextProviderTest
+| yes (all 3 versions, protocol arrays, caller ctx returned as-is)
+| yes (invalid version)
+| no (MethodSource over production constant — good)
+| Real content tests; `+getProtocol()+` assertions on created contexts. No wire test of the floor (F-8).
+
+| HostnameVerificationRelaxingTrustManager
+| HostnameVerificationRelaxingTrustManagerTest
+| yes (mismatched SAN accepted)
+| yes (untrusted CA, expired, not-yet-valid, control without wrapper)
+| no
+| Strong: real handshakes with matched controls. Does not cover algorithm-constraint / OCSP loss (F-2).
+
+| HttpHandler (builder, lifecycle, scheme, hostname policy)
+| HttpHandlerTest, HttpHandlerHostnameVerificationTest
+| yes
+| yes (null/empty/invalid URL, timeouts ≤0, http without opt-in, ftp/file, verifyHostname+sslContext)
+| no
+| Mostly real; one vacuous test (`+:515-527+`); ping tests hit a real unresolvable domain.
+
+| HttpHandler (redirect loop)
+| HttpHandlerRedirectTest, HttpHandlerHttpsIntegrationTest, HttpHandlerIntegrationTest
+| yes (same-origin, relative, allowlisted, 307/308 replay, TLS same-origin & allowlisted credential forwarding)
+| yes (cross host/port/scheme, downgrade over TLS, malformed/overlong Location, hop bound, no/blank Location, 304 verbatim)
+| `+Generators.letterStrings+` for TLS payload
+| Strong and server-observed. Gaps: PUT/DELETE/PATCH on 301/302 (F-3); HEAD-on-303 behaviour unpinned.
+
+| RedirectPolicy / RedirectNotAllowedException
+| RedirectPolicyTest
+| yes
+| yes (all refusal reasons, builder validation, defensive copies)
+| no
+| Real content tests. Missing: `+forwardsCredentials+` for non-allowlisted target (F-9).
+
+| HttpStatusFamily
+| HttpStatusFamilyTest
+| yes (boundaries 100/199/…/599)
+| yes (-1, 0, 99, 600, 1000; SUCCESS→ISE)
+| no
+| Good boundary coverage; `+allNonSuccessFamiliesShouldMapWithoutException+` (`+:297-305+`) is assertDoesNotThrow padding.
+
+| RetryConfig
+| RetryConfigTest
+| yes (sequence, cap, linear, jitter ranges)
+| yes (≤0, null, NaN/∞ on both paths)
+| no
+| Real. Misses sub-ms delay (F-10). `+shouldBeThreadSafe+` is assertDoesNotThrow only.
+
+| ResilientHttpAdapter
+| ResilientHttpAdapterTest, ResilientHttpAdapterIntegrationTest
+| yes (retry on NETWORK/SERVER, success on nth attempt, idempotentOnly=false)
+| yes (4xx/INVALID/CONFIG not retried, max attempts, POST/PATCH skipped, exceptional non-retryable re-propagated, handshake not retried, cancellation ×2, interrupt)
+| no
+| Strong unit coverage with a hand-rolled `+MockAdapter+` (no Mockito — compliant). Integration lacks exhaustion and timeout cases (F-8); no log asserts for 110/111/112 (F-5).
+
+| ETagAwareHttpAdapter
+| ETagAwareHttpAdapterTest, ETagAwareHttpAdapterIntegrationTest
+| yes (200→304, POST/PUT/DELETE, 204/205, Accept/Content-Type, redirect follow, cache key = configured URI)
+| yes (unsolicited 304, unsafe-method 304, empty 200, unparseable 200 ±ETag eviction, 4xx/5xx, refused hop → CONFIGURATION_ERROR)
+| no
+| Integration test is genuinely good. Unit test is ~40 `+assertNotNull+`s firing real requests at api.example.com (F-7). No cross-principal fallback test (F-1); connection-refused test accepts any category.
+
+| CacheKeyHeaderFilter
+| CacheKeyHeaderFilterTest
+| yes
+| yes
+| no (hard-coded header names; acceptable)
+| Real truth-table tests incl. composition. `+@author Generated+`.
+
+| HttpAdapter (defaults, *Blocking, await)
+| HttpAdapterTest
+| yes (all delegations)
+| yes (interrupt mid-flight restores flag & cancels)
+| no
+| Real; one `+catch (Throwable)+` at `+:261+` is legitimate capture in a worker thread.
+
+| HttpRequestConverter / HttpResponseConverter (contracts)
+| HttpRequestConverterTest, HttpResponseConverterTest
+| yes
+| yes (serialization failure → IAE; parsing failure → empty)
+| no
+| Tests exercise test-local implementations of the interface; contract-level only.
+
+| StringContentConverter
+| StringContentConverterTest
+| yes (charset precedence 8 cases via synthetic ResponseInfo)
+| yes (unsupported/malformed charset fallback)
+| no
+| Good; misses `+charset = X+` (F-13).
+
+| VoidResponseConverter
+| VoidResponseConverterTest
+| yes
+| n/a
+| no
+| Several tautological tests (`+shouldReturnSameSingletonInstance+`, `+shouldReturnConsistentContentType+`, `+shouldBeThreadSafe+`).
+
+| HttpResult
+| HttpResultTest
+| yes (creation, map, pattern matching, equality)
+| yes (failure shapes)
+| HttpResultSuccessGenerator, HttpResultFailureGenerator via manual `+next()+` loops
+| Real. Generators never emit 304/null-content success (F-17/F-18); no invariant tests.
+
+| HttpErrorCategory
+| HttpErrorCategoryTest
+| yes (retryable set, IOException, wrappers)
+| yes (TLS carve-out, other throwables)
+| no
+| Real. `+shouldProvideSemanticClarityThroughNaming+` (`+:52-65+`) asserts enum names end with `+_ERROR+`/`+_CONTENT+` — padding. Misses "Remote host terminated the handshake" (F-4).
+
+| ContentType
+| ContentTypeTest
+| yes (every constant)
+| n/a (enum)
+| no
+| Exhaustive but repetitive; `+enumValuesExist+` (`+:257-274+`) and `+enumValueOf+` are padding.
+
+| HttpMethod
+| HttpMethodTest
+| yes
+| yes (non-idempotent set exactly {POST, PATCH})
+| no
+| Real.
+
+| HttpLogMessages
+| (none dedicated)
+| via LogAsserts for 106/115/116/117 only
+| —
+| —
+| 108/110–114/200/201 never asserted (F-5).
+
+|===
+

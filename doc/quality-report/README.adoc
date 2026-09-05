@@ -1,0 +1,163 @@
+= cui-http Quality Review
+:toc: left
+:toclevels: 3
+:sectnums:
+:icons: font
+
+== Purpose and scope
+
+This directory holds the results of a full review of the `cui-http` repository (state: `main` at commit `0bad295`, version `3.1-SNAPSHOT`, 2026-09-05) covering
+
+* all production code of `cui-http-core` (13 packages, 19 174 lines) and `cui-http-benchmarking` (600 lines),
+* all tests (46 436 lines: unit tests, attack databases, generators, integration tests),
+* all documentation: Javadoc, `README.adoc`, `CLAUDE.md`, `agents.md`, every file under `doc/` including the 15 ADRs, `LogMessages.adoc`, the requirement and specification documents, and
+* the build and CI infrastructure (three POMs, eight GitHub workflows, the benchmark publishing script).
+
+The review question set was:
+
+. Is the code correct, including edge cases?
+. Are there hidden traps, i.e. a false feeling of security where the protection is not actually there?
+. Is the claimed security posture fully implemented, in particular "fail closed"?
+. Are the tests real content tests, or coverage padding? Are positive and negative cases present? Are the cui-test-generator generators used correctly?
+. Is the documentation (Javadoc and AsciiDoc) sensibly structured and does it represent the current code?
+. Consistency, completeness, ambiguity, duplication across code and documentation.
+
+Nothing in the repository other than this directory was changed. Every finding is a report item; no fixes were applied.
+
+== How the review was conducted
+
+. *Baseline.* The full core test suite was executed first: 336 test classes, 6 993 tests, 0 failures, 0 errors, 0 skipped.
+. *Independent reading of the security core* by the lead reviewer: every validation stage, every pipeline, the configuration presets, the forwarded-header resolver, the TLS provider, the redirect policy and the redirect follow loop were read in full.
+. *Six parallel area reviews*, each reading its files in full and each required to cite `path:line` evidence for every finding and to label each finding `CONFIRMED` (traced line by line or executed) or `SUSPECTED`.
+. *Empirical probes.* Each area reviewer and the lead compiled small Java or jshell programs against the freshly built `target/classes` and ran concrete inputs (traversal spellings, encodings, header injections, forwarded-header spoofing, redirect chains, cache-key collisions) through the real pipelines. Where an output is quoted in a finding it was produced by such a run.
+. *Adversarial verification.* After the initial reports were consolidated, an independent reviewer with no prior context re-verified the findings end to end (see xref:07-adversarial-verification.adoc[]). Findings it could not reproduce were downgraded or removed; its verdict is recorded per finding.
+
+Reviewers were told not to pad, to report only specific and actionable items, and to list what they verified as correct so the report is not read as "everything is broken".
+
+== Severity scale
+
+[cols="1,4",options="header"]
+|===
+| Severity | Meaning used in this report
+
+| Critical | Exploitable by an unauthenticated remote party against a default configuration with direct security impact. None found.
+| High | A security or correctness defect a reasonable integrator following the documentation would run into, or a documented protection that is not delivered.
+| Medium | A gap, false-security trap or correctness defect that needs a specific (non-default) configuration or usage pattern, or a documentation statement that materially misdescribes behaviour.
+| Low | Correctness, consistency or test-quality issue with limited or no security consequence.
+| Info | Observation, drift, or a recommendation without a defect.
+|===
+
+Finding identifiers keep the prefix of the review stream that produced them so every item can be traced to its raw evidence and to the adversarial verification:
+
+[cols="1,3",options="header"]
+|===
+| Prefix | Stream
+
+| `L-` | Lead reviewer (independent read of the security core plus two compiled probes)
+| `F-A-` | Validation stages and configuration
+| `F-B-` | Pipelines, data classes, exceptions, monitoring
+| `F-client-` | HTTP client: TLS, redirects, retry, ETag cache, result types
+| `F-D-` | Forwarded-header resolution, benchmarking module, build and CI
+| `F-E-` | Security test framework: generators, attack databases, integration tests
+| `F-F-` | Documentation set
+|===
+
+== Executive summary
+
+The library is in better shape than a list of 125 findings suggests. The central security mechanisms were probed hard and held: no path-traversal bypass of the default configuration was found across roughly a hundred encoded, double-encoded, overlong, Unicode-folded, semicolon-parameter and backslash spellings; header pipelines reject CR/LF under every preset; the TLS floor is really pinned on the wire and there is no trust-all path; redirects refuse downgrades before consulting the allow-list; the forwarded-header resolver's CIDR arithmetic, nearest-hop selection and three-state `Forwarded` model are correct; events are counted exactly once and shared pipelines are thread-safe.
+
+The findings cluster around four themes.
+
+. *Protections that are promised but not delivered as stated.* The double-encoding gate recognises only the literal spelling `%25XX`, so `%25%32%66` passes every preset and the pipeline hands back `%2f` (F-A-1). The decoded-delimiter rule for parameter names runs before Unicode normalisation, so U+037E becomes `;` in the returned name (F-A-2). "Malformed UTF-8 is rejected" is true only for a regex list; everything else becomes U+FFFD and is accepted (F-A-4). The content-type pipeline has no length or character stage and its list entries are not normalised like the values (L-3, F-B-1, F-B-2). The cookie prefix stage validates prefixes and nothing else, case-sensitively (L-5, F-A-3, F-B-6).
+. *Trust-model traps in the forwarded-header resolver.* The two de-facto header families are not reconciled against each other, so whichever family the operator's proxy does not write is attacker-controlled (F-D-1); a single bogus `Forwarded` header from a client blanks every resolved field, and all three documented consumers then fall back to `http` (F-D-2); the socket peer is never an input, so `trustedProxies` cannot gate whether headers are believed at all (F-D-3, documented as a deployment precondition).
+. *A cross-principal data leak in the ETag cache* under the cache-key configuration the Javadoc itself recommends for token refresh: a 4xx for user B is answered with user A's cached body as "fallback content" (F-client-1).
+. *Test and documentation claims that outrun the code.* The header-injection, request-smuggling and URL-length test classes are decided on a literal `?` before the mechanism under test runs (F-E-1); several "legitimate input" tests cannot fail (F-E-2); most attack generators are fixed lists sampled with a fresh random seed so entries are skipped on most runs (F-E-5); log-coverage, test-count, CWE and requirement-traceability statements are stale or unsupported (F-documentation-4, -6, -7, -14, -15); the "Security Integration" samples in two `package-info` files do not compile and invert the fail-secure contract (F-documentation-2).
+
+No Critical finding was recorded: every High item either needs a specific non-default configuration or deployment shape, is caught by a later stage for the traversal-shaped variant, or is a test/documentation defect rather than a runtime one.
+
+=== Findings by severity and stream
+
+[cols="3,1,1,1,1,1,1",options="header"]
+|===
+| Stream | Total | Critical | High | Medium | Low | Info
+
+| Lead (`L-`) | 13 | 0 | 0 | 6 | 6 | 1
+| Validation stages and configuration (`F-A-`) | 14 | 0 | 2 | 7 | 4 | 1
+| Pipelines, data, exceptions, monitoring (`F-B-`) | 16 | 0 | 0 | 7 | 7 | 2
+| HTTP client (`F-client-`) | 18 | 0 | 1 | 5 | 9 | 3
+| Forwarded headers, build, CI (`F-D-`) | 20 | 0 | 2 | 4 | 10 | 4
+| Security test framework (`F-E-`) | 16 | 0 | 2 | 7 | 6 | 1
+| Documentation (`F-F-`) | 28 | 0 | 1 | 9 | 15 | 3
+| *All* | *125* | *0* | *8* | *45* | *57* | *15*
+|===
+
+Several defects were found by more than one stream; the per-document "Consolidation notes" list the duplicates and name the primary record. Counting duplicates once, the number of distinct defects is about 110.
+
+=== The eight High findings
+
+[cols="1,4,2",options="header"]
+|===
+| ID | Finding | Where
+
+| F-A-1 | Double-encoding gate bypassed by percent-encoding the hex digits; `%25%32%66` returns `%2f`, `%25%30%30` returns `%00`, under every preset. | xref:01-security-validation.adoc[]
+| F-A-2 | Parameter-name delimiter check runs before Unicode normalisation; `a%CD%BEb` (U+037E) returns `a;b` from the parameter-name pipeline. | xref:01-security-validation.adoc[]
+| F-client-1 | ETag adapter serves one principal's cached body to another as 4xx "fallback content" under the recommended `CacheKeyHeaderFilter.excluding("Authorization")`. | xref:03-http-client.adoc[]
+| F-D-1 | `X-Forwarded-*` and NiFi `X-Proxy*` are never reconciled; the family the proxy does not write is attacker-winnable. | xref:02-forwarded-header-resolution.adoc[]
+| F-D-2 | Any client can null every resolved forwarded field with one malformed `Forwarded` header; documented consumers then default the scheme to `http`. | xref:02-forwarded-header-resolution.adoc[]
+| F-E-1 | Header-injection, smuggling and URL-length attack tests are rejected on a literal `?` before the mechanism under test runs; deleting the decoded-CRLF check would keep them green. | xref:04-test-framework.adoc[]
+| F-E-2 | Seven test methods accept either outcome and cannot fail on validator behaviour. | xref:04-test-framework.adoc[]
+| F-documentation-2 | "Security Integration" samples in `client` and `client.adapter` `package-info` do not compile, invert the fail-secure contract and recommend validating JSON bodies with the parameter pipeline. | xref:05-documentation.adoc[]
+|===
+
+=== Answers to the review questions
+
+Is the code correct, including edge cases?::
+Largely yes for the core paths; the edge-case defects are concentrated in decoding (F-A-1, F-A-2, F-A-4), the terminal `..` clamp (L-1, F-A-8), cookie attribute semantics (F-B-8), redirect method rewriting on 301/302 (F-client-3), the `SSLHandshakeException` retry classification (F-client-4) and host/port reconciliation in the forwarded resolver (F-D-4, F-D-5).
+
+Are there hidden traps, a false feeling of security?::
+Yes, and they are the most important output of this review: the content-type pipeline that enforces nothing by default and cannot see CR/LF after a `;` (L-3, F-B-1, F-B-2); `validateCookie` that validates nothing about the cookie's content (L-5, F-B-6); `trustedProxies` that never gates trust (F-D-3); `excluding("Authorization")` sold as "maintaining security" (F-client-1); `failOnSuspiciousPatterns=false` by default with no observability (ADR-0006, F-E-4); factory Javadoc promising XSS and "malicious header content" detection that no stage performs (F-B-3); requirement documents marked VERIFIED for properties the library does not provide (F-documentation-15).
+
+Is the claimed security posture fully implemented, always fail closed?::
+Fail-closed is real where it was designed in (thrown exceptions, counted events, unresolvable `Forwarded` state, no trust-all TLS path). It is not real for malformed UTF-8 (silent replacement, F-A-4), for the double-encoding gate (F-A-1), for `null` Content-Type against an allow-list (F-B-2), and it is attacker-triggerable in the wrong direction for the forwarded scheme (F-D-2). `when()`/`identity()` are fail-open by design and documented as such (ADR-0013, verified).
+
+Are the tests real content tests with positive and negative cases?::
+The attack-database tests, the pipeline regression tests, the redirect and TLS integration tests and the forwarded trust-boundary tests are strong and assert exact verdicts. The `tests/` integration layer for header injection, smuggling and length is not testing what its names say (F-E-1), seven methods are vacuous (F-E-2), eleven helpers accept 6 to 10 of 24 failure types (F-E-3), and roughly forty `ETagAwareHttpAdapterTest` methods end in `assertNotNull` while firing real requests at `api.example.com` (F-client-7). The per-area inventories list, for every production class, whether positive and negative cases exist.
+
+Are generators used correctly?::
+Partly. The traversal, encoding and Unicode generators are genuinely combinatorial and come with contract tests. Most other "generators" wrap fixed literal lists that are sampled, not iterated, with a per-run random seed (F-E-5); valid generators stay inside the smallest accept set and cannot reveal false positives (F-E-6); five traversal generators overlap (F-E-7); eleven generators have no contract test (F-E-15); six of nine stage tests and the whole client and forwarded suites use no cui-test-generator at all (F-A-13, F-client-18, F-D-19).
+
+Is the documentation sensibly structured and current?::
+The structure is good and almost every link, anchor, class name, numeric default and stage order was verified correct. The defects are concentrated in code samples that do not compile or teach the wrong usage (F-documentation-2, -3, -16, F-B-12), in coverage and count claims (F-documentation-4, -7), in requirement and traceability documents that assert unimplemented properties (F-documentation-14, -15), in the pipeline-selection matrix routing host/IPv6 concerns to a pipeline that only character-checks them (F-documentation-10), in all fifteen ADRs still carrying `Status: Proposed`, and in an orphaned ADR index (F-documentation-12).
+
+== Documents in this directory
+
+xref:01-security-validation.adoc[Security Validation: Stages, Pipelines and Configuration]::
+`de.cuioss.http.security.*`: lead findings, stream A (stages, configuration, core), stream B (pipelines, data classes, exceptions, monitoring). 43 items.
+
+xref:02-forwarded-header-resolution.adoc[Forwarded-Header Resolution]::
+`de.cuioss.http.forwarded`: trust model, reconciliation, parsing, CIDR handling. 15 items.
+
+xref:03-http-client.adoc[HTTP Client]::
+`de.cuioss.http.client.*`: TLS, redirects, retry, ETag cache, result types, converters, log messages. 18 items.
+
+xref:04-test-framework.adoc[Security Test Framework]::
+Generators, attack databases, integration tests and the documents that describe them, with a validator-to-test matrix, a generator inventory with draw counts and an attack-database inventory. 16 items.
+
+xref:05-documentation.adoc[Documentation]::
+Every AsciiDoc and Markdown file, all `package-info.java` files, class-level Javadoc, `LogMessages.adoc` (full identifier table), requirement and traceability spot-check of 31 rows. 28 items.
+
+xref:06-build-and-infrastructure.adoc[Build, CI and Benchmarking]::
+POMs, workflows, benchmark module and publishing script. 5 items.
+
+xref:07-adversarial-verification.adoc[Adversarial Verification]::
+Independent end-to-end re-verification of the findings by a reviewer with no prior context; per-finding verdicts and the adjustments made to this report as a result.
+
+== Suggested order of remediation
+
+. F-A-1, F-A-2, F-A-4 together: replace the wire-form regexes in `DecodingStage` with a real UTF-8 decode that reports malformed input, decide double encoding on the decoded output, and run the decoded-character checks on the normalised string.
+. F-client-1: restrict fallback content to availability failures and make credential-bearing headers part of the cache-entry identity; rewrite the token-refresh guidance.
+. F-D-1, F-D-2, F-D-4: reconcile all three header families, document that the ingress proxy must strip the families it does not write, change the `orElse("http")` examples, reconcile host and port separately.
+. L-3, F-B-1, F-B-2: give the content-type pipeline length and character stages, normalise list entries at construction, document `null` semantics.
+. F-E-1, F-E-2, F-E-3, F-E-5: point header-injection and smuggling payloads at the surfaces that receive them, give every test an expected verdict, assert exact failure types, iterate fixed lists deterministically.
+. F-documentation-2, -3, -16 and F-B-12: make every Javadoc sample compile against the real API and use the right pipeline for names and values.
+. The remaining Medium items, then Low and Info, in the order listed in each document.

@@ -1,0 +1,655 @@
+= Security Test Framework
+:toc: left
+:toclevels: 3
+:sectnums:
+:icons: font
+
+== Consolidation notes
+
+This document is review stream E (`F-E-`), covering the security test framework under `cui-http-core/src/test/java/de/cuioss/http/security/{generators,database,tests}` and the documents that describe it. Test-quality findings for the *other* packages are in the respective area documents (client: F-client-7, F-client-8, F-client-18; forwarded: F-D-19; pipelines and stages: F-B-14 and the `F-A-` test items).
+
+* F-E-1 and F-E-2 are the two High findings on the test side. Together they mean that the test classes named after header injection, request smuggling and URL-length attacks establish nothing about those mechanisms, and that several "legitimate input" tests cannot fail. Both were reproduced by the lead reviewer's own probe (`/api?x=y` is rejected on the `?` before decoding runs).
+* F-E-5 answers the question "are generators used correctly": most attack "generators" wrap fixed literal lists and are *sampled* with a per-run random seed, so individual entries are skipped on most runs. The probabilities quoted were recomputed by the lead reviewer and are correct (coupon-collector arithmetic).
+* F-E-6 exposes a production consequence: base64 cookie values with `+`, `/` or `=` are rejected by `CharacterValidationStage(COOKIE_VALUE)` (the set is RFC 3986 unreserved, not RFC 6265 `cookie-octet`), and no valid generator is wide enough to reveal it. See also L-5 in xref:01-security-validation.adoc[].
+* F-E-8 and F-E-9 overlap F-documentation-7 and F-documentation-8; the document-side view is kept there.
+* The inventories at the end of this document (validator-to-test matrix, generator inventory with draw counts, attack-database inventory) are the answer to the review question "are there always positive and negative tests" and should be read as the baseline for any test-suite clean-up.
+
+== Scope reviewed
+
+Read in full (line counts from `+wc -l+`):
+
+Generators (`+.../security/generators/+`):
+`+GeneratorContractAssertions.java+` 206, `+SupportedValidationTypeGenerator.java+` 48, `+SupportedValidationTypeGeneratorContractTest.java+` 124, `+AllGeneratorsIntegrationTest.java+` 372;
+cookie: `+AttackCookieGenerator+` 300, `+AttackCookieGeneratorTest+` 236, `+ValidCookieGenerator+` 380, `+ValidCookieGeneratorTest+` 242, `+CookieNameAsciiWhitespaceGenerator+` 94, `+CookieNameLegacyParsingGenerator+` 92, `+CookieNameUnicodeWhitespaceGenerator+` 103, `+CookieNameZeroWidthGenerator+` 88;
+encoding: `+BoundaryFuzzingGenerator+` 134 (+Test 132), `+DoubleEncodingAttackGenerator+` 158 (+Test 48), `+EncodingCombinationGenerator+` 132 (+Test 162), `+PathTraversalGenerator+` 295 (+Test 122), `+UnicodeAttackGenerator+` 122 (+Test 182), `+UnicodeControlCharacterAttackGenerator+` 552, `+UnicodeNormalizationAttackGenerator+` 407;
+header: `+HTTPHeaderInjectionGenerator+` 228 (+Test 116), `+HttpHeaderInjectionAttackGenerator+` 335, `+InvalidHTTPHeaderNameGenerator+` 78 (+Test 112), `+ValidHTTPHeaderNameGenerator+` 162 (+Test 110), `+ValidHTTPHeaderValueGenerator+` 278;
+injection: `+HttpRequestSmugglingAttackGenerator+` 308 (+Test 177), `+ProtocolHandlerAttackGenerator+` 354, `+URLLengthLimitAttackGeneratorTest+` 221;
+url: `+AttackURLParameterGenerator+` 302 (+Test 115), `+InvalidURLGenerator+` 232 (+Test 140), `+NullByteInjectionParameterGenerator+` 52, `+NullByteURLGenerator+` 89 (+Test 89), `+PathTraversalParameterGenerator+` 208 (+Test 93), `+PathTraversalURLGenerator+` 186 (+Test 92), `+URLLengthLimitAttackGenerator+` 417, `+ValidURLGenerator+` 97 (+Test 84), `+ValidURLParameterGenerator+` 189 (+Test 136), `+ValidURLParameterStringGenerator+` 141, `+ValidURLPathGenerator+` 196 (+Test 132).
+
+Databases (`+.../security/database/+`, 18 files, 3908 lines total): `+AttackDatabase+` 202, `+AttackTestCase+` 110, `+LegitimatePatternDatabase+` 116, `+LegitimateTestCase+` 62, `+ApacheCVEAttackDatabase+` 239, `+IISCVEAttackDatabase+` 212, `+NginxCVEAttackDatabase+` 282, `+OWASPTop10AttackDatabase+` 174, `+ModSecurityCRSAttackDatabase+` 281, `+OWASPZAPAttackDatabase+` 239, `+HomographAttackDatabase+` 297, `+IDNAttackDatabase+` 275, `+IPv6AttackDatabase+` 306, `+ProtocolHandlerAttackDatabase+` 294, `+PathParameterTraversalAttackDatabase+` 147, `+EdgeCaseValidURLsDatabase+` 279, `+LegitimatePathPatternsDatabase+` 259, `+LegitimateSpecialCharactersDatabase+` 213, `+package-info.java+` 187.
+
+Integration tests (`+.../security/tests/+`, 30 files, 7663 lines total) — all read: `+ApacheCVEAttackDatabaseTest+` 98, `+AttackDatabaseEntries+` 56, `+CookieChaosAttackTest+` 537, `+DoubleEncodingAttackTest+` 295, `+EdgeCaseValidURLsDatabaseTest+` 134, `+EncodedPathTraversalAttackTest+` 239, `+HomographAttackDatabaseTest+` 232, `+Http1VulnerabilitiesTest+` 486, `+HttpHeaderInjectionAttackTest+` 350, `+HttpRequestSmugglingAttackTest+` 502, `+IDNAttackDatabaseTest+` 102, `+IISCVEAttackDatabaseTest+` 100, `+IPv6AttackDatabaseTest+` 244, `+LegitimatePathPatternsDatabaseTest+` 116, `+LegitimateSpecialCharactersDatabaseTest+` 134, `+MixedEncodingAttackTest+` 239, `+ModSecurityCRSAttackDatabaseTest+` 100, `+NfkcFoldClaimInvariantTest+` 123, `+NginxCVEAttackDatabaseTest+` 100, `+NullBytePathTraversalAttackTest+` 292, `+OWASPTop10AttackDatabaseTest+` 106, `+OWASPZAPAttackDatabaseTest+` 101, `+PathParameterTraversalAttackDatabaseTest+` 128, `+PathTraversalAttackTest+` 252, `+ProtocolHandlerAttackDatabaseTest+` 99, `+ProtocolHandlerAttackTest+` 409, `+URLLengthLimitAttackTest+` 1183, `+UnicodeControlCharacterAttackTest+` 573, `+UnicodeNormalizationAttackTest+` 552, `+UnicodePathTraversalAttackTest+` 201.
+
+Docs: `+doc/test-generators-readme.adoc+` 119, `+doc/test-framework-structure.adoc+` 39, `+doc/http-security/specification/testing.adoc+` 478, `+doc/adr/0009-*.adoc+` 61, `+doc/adr/0010-*.adoc+` 60, `+doc/http-security/analysis/cookie-chaos-analysis.adoc+` 403, `+cve-analysis.adoc+` 310, `+http1-vulnerabilities-analysis.adoc+` 625, `+owasp-best-practices.adoc+` 314, `+CLAUDE.md+` (classifier section), `+cui-http-core/pom.xml+` lines 16-138.
+
+Production code read to judge the tests (Javadoc stripped): `+UrlSecurityFailureType+`, `+ValidationType+`, `+AbstractValidationPipeline+`, `+URLPathValidationPipeline+`, `+URLParameterValidationPipeline+`, `+URLParameterNameValidationPipeline+`, `+HTTPHeaderValidationPipeline+`, `+ContentTypeValidationPipeline+`, `+PipelineFactory+`, `+CharacterValidationStage+`, `+CharacterValidationConstants+`, `+DecodingStage+`, `+LengthValidationStage+`, `+NormalizationStage+`, `+PatternMatchingStage+`, `+AllowBlockListStage+`, `+CookiePrefixValidationStage+`, `+RequestCollectionValidator+`, `+SecurityDefaults+`, `+SecurityConfiguration+`. Also `+javap+` of cui-test-generator 3.0.2 (`+TypeGeneratorSource+`, `+FixedValuesGenerator+`, `+RandomContext+`, `+GeneratorControllerExtension+`).
+
+Grep-only (for the pipeline/stage matrix): `+validation/*Test.java+`, `+pipeline/*Test.java+`, `+data/CookieTest.java+`.
+
+== Findings
+
+=== F-E-1: URL-shaped "header injection / smuggling / length" attack tests are rejected on the literal `+?+` (or space/`+#+`), never on the mechanism they claim to test
+* Severity: High
+* Category: false-security
+* Status: CONFIRMED (executed)
+* Location:
+** `+cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java:102-123+` (150 generated URLs), `+:128-159+`, `+:162-185+`, `+:187-214+`, `+:216-238+`, `+:262-291+`, `+:293-320+`, `+:322-344+`
+** `+cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java:235-257+` and the six guarded tests `+:268-452+` which even `+assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, ...)+` (`+:286+`, `+:319+`, `+:352+`, `+:384+`, `+:416+`, `+:448+`)
+** `+cui-http-core/src/test/java/de/cuioss/http/security/tests/Http1VulnerabilitiesTest.java:110-470+` (10 of 11 methods use payloads containing `+?+` and/or a literal space)
+** `+cui-http-core/src/test/java/de/cuioss/http/security/tests/URLLengthLimitAttackTest.java:273-306+` (query overflow), `+:316-349+` (repeated params), `+:402-435+` (long parameter names), `+:445-478+` (buffer overflow incl. `+/resource#...+` at `+:462+`), `+:488-520+`, `+:530-563+`
+** Generators feeding them: `+generators/header/HttpHeaderInjectionAttackGenerator.java:77-83+` (every `+BASE_URLS+` entry is an absolute URL) + `+:105,119,133,...+` (every branch appends `+"?<name>=" + attack+`); `+generators/injection/HttpRequestSmugglingAttackGenerator.java:65-71+` and every pattern array (`+pattern + "?data=..."+`).
+* Evidence (probe run against `+URLPathValidationPipeline(SecurityConfiguration.defaults())+`):
+----
+  </api?x=y>                                                    -> INVALID_CHARACTER : Invalid character '?' (0x3F) at position 4
+  <http://example.com/redirect?redirect=normal%0d%0aX-Injected: malicious> -> INVALID_CHARACTER : Invalid character '?' (0x3F) at position 27
+  <http://example.com/api/data?data=test%0d%0aContent-Length: 6%0d%0aTransfer-Encoding: chunked> -> INVALID_CHARACTER : '?' at position 27
+  </api?data=chunked%0d>                                        -> INVALID_CHARACTER : '?' at position 4
+  </api%0d%0aGET /admin HTTP/1.1>                               -> INVALID_CHARACTER : Invalid character ' ' (0x20) at position 13
+  </data?query_string_parameter_name_abc=search>                -> INVALID_CHARACTER : '?' at position 5
+  </search?param=abc>  (maxParameterValueLength=256)            -> INVALID_CHARACTER : '?' at position 7
+  </resource#frag>                                              -> INVALID_CHARACTER : '#' at position 9
+  </api%0d%0aX-Injected:malicious>  (no '?', no space)          -> CONTROL_CHARACTERS : Decoded control character (U+000D) at position 4
+----
+  `+CharacterValidationConstants+` `+RFC3986_PATH_CHARS+` contains neither `+?+` nor `+#+` nor space, and `+CharacterValidationStage+` runs before `+DecodingStage+` in `+URLPathValidationPipeline.createStages+`. `+HttpRequestSmugglingAttackTest.java:487+` even documents the wrong expectation: `+// - CRLF injection (%0d%0a, %0a) → CONTROL_CHARACTERS or INVALID_CHARACTER+`.
+* Analysis: Every value emitted by `+HttpHeaderInjectionAttackGenerator+` and `+HttpRequestSmugglingAttackGenerator+` contains a `+?+`, so all 158 + 1435 surefire cases in T15/T16 are decided at the `+?+` before the encoded CRLF is ever decoded. Deleting `+DecodingStage.validateDecodedCharacters+` (the only place a `+%0d%0a+` in a path is caught) would leave `+HttpHeaderInjectionAttackTest+`, `+HttpRequestSmugglingAttackTest+` and `+Http1VulnerabilitiesTest+` green. Likewise in `+URLLengthLimitAttackTest+` the "parameter value/name over limit" assertions are satisfied by the `+?+` regardless of length (the entry documented as `+// ~49 chars total - within STRICT+` at `+:419+` is still rejected, which the test then reports as a detected length attack). The `+isURLLengthLimitSpecificFailure+` helper hides this by accepting `+INVALID_CHARACTER+` with the comment `+// Repeated chars in length attacks+` (`+:665+`). The analysis doc built on these tests (see F-E-8) therefore claims coverage ("25 CL.TE-specific tests", "553 tests") that establishes nothing about CRLF or smuggling handling.
+* Recommendation: (1) Feed header-injection payloads to the surface that actually receives header values: `+HTTPHeaderValidationPipeline(HEADER_VALUE)+` with raw `+\r\n+` (that is what `+HTTPHeaderInjectionGenerator+` is for) and `+URLParameterValidationPipeline+` with the percent-encoded query *value* only (strip the URL scaffolding in the generators or add a `+queryValue()+` accessor). (2) For the path pipeline, use path-only payloads (`+/api%0d%0aX:y+`) and assert `+CONTROL_CHARACTERS+` exactly. (3) Add a differential guard to each attack test: the same payload with the attack bytes removed must be ACCEPTED by the pipeline under test; otherwise the test is not testing the attack. (4) In `+URLLengthLimitAttackTest+` drive parameter-length cases through `+URLParameterValidationPipeline+`/`+URLParameterNameValidationPipeline+` and assert `+INPUT_TOO_LONG+` exactly.
+
+=== F-E-2: Accept-or-reject tests that cannot fail on validator behaviour
+* Severity: High
+* Category: test-quality
+* Status: CONFIRMED (traced)
+* Location / Evidence:
+.. `+tests/EncodedPathTraversalAttackTest.java:137-153+` — `+shouldHandleLegitimateEncodedCharacters+` draws from `+EncodingCombinationGenerator+` (an *attack* generator whose own contract test asserts every value is rejected, `+generators/encoding/EncodingCombinationGeneratorTest.java:67-69+`), names it `+legitimatePattern+`, and `+catch (UrlSecurityException e) { // This is acceptable ... }+` with no assertion. Passes for any pipeline behaviour.
+.. `+tests/DoubleEncodingAttackTest.java:200-225+` — `+shouldValidateValidPaths+` (`+ValidURLPathGenerator+`): `+catch (UrlSecurityException e) { // Some paths might still be blocked ... This is acceptable ... assertTrue(initialEventCount < eventCounter.getTotalCount()) }+`. A pipeline that rejects every legitimate path passes.
+.. `+tests/DoubleEncodingAttackTest.java:235-274+` — `+shouldHandleEdgeCases+`: 12 literals, each either accepted (asserts `+isPresent+`) or rejected (`+// This is acceptable - either for security reasons or invalid encoding+`). No literal has an expected outcome.
+.. `+tests/NullBytePathTraversalAttackTest.java:94-120+` — `+shouldProcessBoundaryFuzzingPatternsCorrectly+` (75 draws): accepted → `+isPresent+`, rejected → `+assertNotNull(e.getFailureType())+`. Zero information about which inputs must be rejected; `+BoundaryFuzzingGenerator+` families 2–5 (null bytes, control chars, traversal, shell metachars) are all "must reject" inputs.
+.. `+tests/CookieChaosAttackTest.java:362-396+` — Test #8 validates 200 `+AttackCookieGenerator+` draws and asserts only that *at least one* name and *at least one* value were rejected (`+isRejected+` swallows the exception at `+:405-412+`). A `+CharacterValidationStage+` that rejected only `+\t+` would pass. The Javadoc (`+:353-360+`) states this is deliberate because the generator emits an empty name — the fix is to make the generator's contract precise (F-E-12), not to weaken the assertion.
+.. `+tests/CookieChaosAttackTest.java:246-289, 305-325+` — Tests #5/#6 ("documentation") assert only that the `+Cookie+` record stores attributes; no validator is invoked although `+CookiePrefixValidationStage.validateCookie(Cookie)+` exists and would reject exactly these cookies (`+validation/CookiePrefixValidationStage.java+`, `+validateHostPrefix+`/`+validateSecurePrefix+`). The class Javadoc (`+:60-66+`) still says prefix semantics are "not yet implemented in the library", contradicting `+doc/http-security/analysis/cookie-chaos-analysis.adoc:76-85+` ("FULLY MITIGATED", 71 tests).
+.. `+tests/EncodedPathTraversalAttackTest.java:175-200+` — `+shouldHandleEdgeCases+` is the one honest variant (it `+fail()+`s if an accepted value contains `+..+`/`+\0+`/control chars) but still accepts any rejection reason.
+* Analysis: Items 1–4 are the classic "if rejected ok, if accepted also ok" pattern the brief asks about; items 5–6 are weaker variants. Together they inflate the surefire count (75 + 20 + 20 + 1 + 1 + 1 + 1 cases) without constraining behaviour, and item 2/3 in particular mask false positives on legitimate paths (the exact regression class the `+Legitimate*Database+` tests exist to catch).
+* Recommendation: Delete 1 (it duplicates `+shouldRejectAllGeneratedEncodedPatterns+`); make 2 a hard `+assertPipelineAccepts+` (the sibling `+MixedEncodingAttackTest.java:200-218+` already does this for the same generator); give each literal in 3 an explicit expected verdict (`+%25+` and `+/normal%25path+` → accepted; `+%+`, `+%2+`, `+%252G+` → `+INVALID_ENCODING+`; `+%25252e+`, `+%2525%252e%252e%252f+`, `+/%25%25%25%25%25+` → `+DOUBLE_ENCODING+`); split 4 by family (long-path/deep-nesting families → accepted or `+PATH_TOO_LONG+`/`+EXCESSIVE_NESTING+`, the other four families → must reject); rewrite 5 per draw once F-E-12 is fixed; turn 6 into `+assertThrows+` against `+new CookiePrefixValidationStage().validateCookie(...)+` with `+COOKIE_PREFIX_VIOLATION+`.
+
+=== F-E-3: Failure-type assertions are "any of 6–10 of the 24 enum values" — labelled as the opposite
+* Severity: Medium
+* Category: test-quality
+* Status: CONFIRMED
+* Location: `+tests/PathTraversalAttackTest.java:234-250+` (7 types), `+tests/DoubleEncodingAttackTest.java:283-295+` (9), `+tests/MixedEncodingAttackTest.java:228-240+` (9), `+tests/NullBytePathTraversalAttackTest.java:279-292+` (10), `+tests/HttpRequestSmugglingAttackTest.java:485-501+` (7), `+tests/Http1VulnerabilitiesTest.java:478-485+` (6), `+tests/URLLengthLimitAttackTest.java:654-667+` (10), `+tests/UnicodeControlCharacterAttackTest.java:540-549+` (6), `+tests/UnicodeNormalizationAttackTest.java:509-522+` (10), `+tests/UnicodePathTraversalAttackTest.java:192-201+` (6), `+tests/ProtocolHandlerAttackTest.java:396-409+` (three category predicates plus 7 literals; `+SUSPICIOUS_PATTERN_DETECTED+` listed twice at `+:402+` and `+:405+`), `+tests/CookieChaosAttackTest.java:133-134+` (`+failureType.name().contains("CHARACTER") || ...contains("CONTROL")+`).
+* Evidence: every helper carries the Javadoc `+QI-9: ... Replaces broad OR-assertion with comprehensive security validation+` while being exactly a broad OR (e.g. `+NullBytePathTraversalAttackTest+` accepts `+PATH_TOO_LONG+`, `+INPUT_TOO_LONG+`, `+EXCESSIVE_NESTING+`, `+DOUBLE_ENCODING+` for a null-byte generator whose every value contains `+\0+`/`+%00+`).
+* Analysis: With `+CharacterValidationStage+` first in the pipeline, `+INVALID_CHARACTER+` is accepted by all eleven helpers, so any non-ASCII / non-path character anywhere in the payload satisfies them. Combined with F-E-1 this is why the suite cannot distinguish "the attack mechanism was detected" from "the payload was malformed". Contrast with the database tests, which assert `+assertEquals(testCase.expectedFailureType(), ...)+`.
+* Recommendation: Per test method, assert the exact type the generator branch guarantees (e.g. `+NullByteURLGenerator+` → `+NULL_BYTE_INJECTION+` for all 15 entries; `+PathTraversalParameterGenerator+` → `+PATH_TRAVERSAL_DETECTED+`; `+UnicodeAttackGenerator+` bare arms → `+PATH_TRAVERSAL_DETECTED+`, invisible-char arms → `+INVALID_CHARACTER+`). Where a generator mixes branches, classify the draw in the test (as `+HttpRequestSmugglingAttackTest+` already does with regex guards) and assert per class.
+
+=== F-E-4: "Protocol handler" database and generator exercise protocol-handler detection in 1 of 24 entries / ~0 of the generated values
+* Severity: Medium
+* Category: false-security
+* Status: CONFIRMED (database verdicts are asserted exactly by `+ProtocolHandlerAttackDatabaseTest+`; generator traced)
+* Location: `+database/ProtocolHandlerAttackDatabase.java:59-235+`, `+generators/injection/ProtocolHandlerAttackGenerator.java:339-348+` (`+generatePath()+` — every option starts with `+../+` or `+/../+`), `+tests/ProtocolHandlerAttackTest.java:106-129+`.
+* Evidence: declared types in the database: `+PATH_TRAVERSAL_DETECTED+` ×16, `+INVALID_CHARACTER+` ×5, `+NULL_BYTE_INJECTION+` ×1, `+CONTROL_CHARACTERS+` ×1, `+SUSPICIOUS_PATTERN_DETECTED+` ×1 (`+JAVASCRIPT_ENCODED_EVAL+`, `+:66-71+`). The rationales say so themselves ("traversal detection takes precedence over the javascript: scheme content", `+:63+`). In `+PatternMatchingStage.validate+`, step 1 (traversal) throws before step 3 (`+checkProtocolHandlerSchemes+`), and every generator branch except `+generateProtocolHandlerExploitation+` case 1 / `+generateCustomProtocolSchemes+` case 1 embeds `+../+`. Probe: `+<javascript:alert(1)>+` is ACCEPTED under `+SecurityConfiguration.defaults()+` (failOnSuspiciousPatterns=false) — no test in this tree exercises that default.
+* Analysis: The database name, class Javadoc ("Protocol Attack Categories … JS Protocol Injection, Data URI …") and `+ProtocolHandlerAttackTest+` Javadoc claim coverage of scheme detection that the payloads never reach. This is the ADR-0009 failure class ("names assert more than the passing suite establishes") without the structural-claim test ADR-0009 prescribes.
+* Recommendation: Add traversal-free entries per scheme (`+javascript:alert(1)+`, `+data:text/html,x+`, `+file:///etc/hosts+`, `+vbscript:x+`) expecting `+SUSPICIOUS_PATTERN_DETECTED+` under `+failOnSuspiciousPatterns=true+`, plus a structural-claim test asserting each `+*_PROTOCOL_*+` entry's payload starts with the scheme its name claims and contains no `+../+`. Give `+ProtocolHandlerAttackGenerator+` a traversal-free arm and assert `+SUSPICIOUS_PATTERN_DETECTED+` for it.
+
+=== F-E-5: Fixed-list generators are randomly sampled with a fresh random seed, so entries are skipped on most runs
+* Severity: Medium
+* Category: generator-usage
+* Status: CONFIRMED (javap + arithmetic)
+* Location: `+generators/url/NullByteURLGenerator.java:63-79+` (15 literals via `+Generators.fixedValues+`), `+generators/url/NullByteInjectionParameterGenerator.java:27-42+` (14 literals), `+generators/header/HttpHeaderInjectionAttackGenerator.java+` (15 families × 7 literals × 5 base URLs = 525 fixed strings), `+generators/injection/HttpRequestSmugglingAttackGenerator.java+` (525 fixed strings); consumers `+tests/NullBytePathTraversalAttackTest.java:133,165,199,227,254+` (25/50/25/20/22 draws), `+pipeline/URLParameterValidationPipelineTest.java:134+` (5 draws of 14), `+pipeline/URLPathValidationPipelineTest.java:122+` (5 of 15), `+tests/HttpHeaderInjectionAttackTest.java:103+` (150 of 525), `+tests/HttpRequestSmugglingAttackTest.java+` (200 of 525).
+* Evidence: `+FixedValuesGenerator.next()+` = `+values.get(RandomContext.random().nextInt(size))+`; `+RandomContext.initSeed()+` = `+random.nextLong()+` → the seed is random per JVM run unless `+@GeneratorSeed+`/`+-Dde.cuioss.test.generator.seed+` is set (no `+@GeneratorSeed+` anywhere in the tree). Coverage per run (coupon-collector): 15 entries / 25 draws → E[distinct]=12.3, P(all 15)=2.2 %; 15/20 → 0.2 %; 14 entries / 5 draws → ≤5 exercised; 525/150 → ~131 distinct (25 %); 525/200 → ~166 (32 %); `+SupportedValidationTypeGenerator+` 4 values / 5 draws in `+PipelineFactoryTest.java:210+` → P(all 4)=23 %.
+* Analysis: A `+TypedGenerator+` over a closed literal list adds randomness without adding coverage: a regression that breaks exactly one literal is detected only probabilistically. `+NullByteURLGenerator+`'s Javadoc (`+:26-32+`) even argues these literals must be preserved exactly — which is the argument for iterating them exhaustively.
+* Recommendation: Expose the literal lists as `+static final List<String>+` and drive `+@ParameterizedTest @MethodSource+` (or `+@FieldSource+`) over them deterministically; keep `+TypedGenerator+` for spaces that are genuinely combinatorial (`+PathTraversalGenerator+`, `+URLLengthLimitAttackGenerator+`). For the 525-string smuggling/header-injection corpora, iterate the arrays directly (the arrays are already static per family) and reserve the random draw for the base-URL prefix if at all.
+
+=== F-E-6: "Valid" generators are too narrow to detect false positives, and two of them are not valid for any pipeline
+* Severity: Medium
+* Category: generator-usage
+* Status: CONFIRMED (executed for the cookie case)
+* Location: `+generators/cookie/ValidCookieGenerator.java:228-231+` (`+letterStrings(...).toUpperCase()+`), contract `+generators/cookie/ValidCookieGeneratorTest.java:50+` (`+COOKIE_TOKEN = "[A-Za-z0-9_]+"+`); `+generators/url/ValidURLParameterGenerator.java+` (values ∈ {digits, true/false, asc/desc, 4 formats, 5 langs, 4 statuses, 4 words}); `+generators/url/ValidURLGenerator.java:43-54,70+` (emits `+/search?q=test&limit=10+` and appends `+?page=..&sort=..+` in 50 % of draws); `+generators/url/ValidURLGeneratorTest.java:59-64+` (accepts query syntax); `+generators/url/InvalidURLGenerator.java:103+` (`+protocol + "://" + host + "/" + path + "/"+` — a well-formed URL); `+generators/header/ValidHTTPHeaderValueGenerator.java:245-252+` (`+Origin+` values `+same-origin+`/`+no-cors+`, which are Fetch request modes, not `+Origin+` header syntax).
+* Evidence: probe with `+CharacterValidationStage(COOKIE_VALUE)+`: `+abc+/=+` → `+INVALID_CHARACTER '+'+`; `+YWJjZGVm==+` → `+INVALID_CHARACTER '='+`; i.e. base64 session tokens (RFC 6265 `+cookie-octet+` permits `++ / = ! # $ % & ' ( ) * : < > ? @ [ ] ^ { | } ~+`) are rejected, and no valid-generator value can reveal it because the generator only emits `+[A-Za-z0-9_]+`. `+ValidURLGenerator+` values with `+?+` are rejected by `+URLPathValidationPipeline+` (probe `+</api?x=y>+` → `+INVALID_CHARACTER+`), and the generator is consumed only by `+AllGeneratorsIntegrationTest+` (grep) — never against a pipeline. `+InvalidURLGenerator+` likewise has no pipeline consumer; its own test admits well-formed output ("so that this test states honestly what the generator emits today", `+InvalidURLGeneratorTest.java:41-43+`).
+* Analysis: The false-positive side of the contract ("valid generators only produce inputs that MUST be accepted") is satisfied trivially by staying inside the smallest accept set; that gives no signal about over-rejection of realistic input (a security library that rejects every base64 cookie value is a production-blocking false positive). `+ValidURLGenerator+`/`+InvalidURLGenerator+` are dead weight relative to the pipelines.
+* Recommendation: Widen `+ValidCookieGenerator+` values to the RFC 6265 `+cookie-octet+` alphabet (or at least base64 tokens) and make its pipeline round-trip assert acceptance (or record the rejection as a production finding for the owner of `+CharacterValidationConstants+`); widen `+ValidURLParameterGenerator+` to percent-encoded values (as `+ValidURLParameterStringGenerator+` already does) and consolidate the two; either split `+ValidURLGenerator+` into path and query parts and route them to the matching pipelines or delete it together with `+InvalidURLGenerator+`; replace the bogus `+Origin+` values with `+https://example.com+`/`+null+`.
+
+=== F-E-7: Overlapping generators and mis-placed/mis-named consumers
+* Severity: Medium
+* Category: duplication
+* Status: CONFIRMED
+* Location / Evidence:
+** Traversal: `+encoding/PathTraversalGenerator+` (7 arms), `+url/PathTraversalURLGenerator+` (6 encoding families, `+/api+`-prefixed), `+url/PathTraversalParameterGenerator+` (8 families), `+encoding/EncodingCombinationGenerator+` (traversal × 3 encoding levels), `+encoding/DoubleEncodingAttackGenerator+` (8 double-encoding arms). `+%252e%252e%252f+` is emitted by four of them; `+..%2f+`/`+%2e%2e%2f+` by all five. The only documented differentiator is `+PathTraversalParameterGenerator.java:26-27+` ("designed to be detected by URLParameterValidationPipeline") — yet `+tests/EncodedPathTraversalAttackTest.java:102-111+` pushes it through `+URLPathValidationPipeline+` under the name `+shouldBlockUTF8OverlongPatterns+` although only 1 of its 8 families (`+generateUtf8OverlongTraversal+`) is overlong.
+** `+tests/EncodedPathTraversalAttackTest.java:70-75, 91-100, 115-124, 127-135, 137-153+` run the *same* `+EncodingCombinationGenerator+` five times (25+24+75+27+20 draws) under the names "basic", "mixed-case", "all generated", "complex", "legitimate" with identical bodies — no filter distinguishes them.
+** Header injection: `+header/HTTPHeaderInjectionGenerator+` (raw CRLF fragments) vs `+header/HttpHeaderInjectionAttackGenerator+` (URL-shaped, 525 literals). The split is documented in both Javadocs (`+HTTPHeaderInjectionGenerator.java:29-35+`), which is fine, but the raw generator — the one that actually reaches CRLF detection — is consumed for only 5 + 10 draws (`+pipeline/HTTPHeaderValidationPipelineTest.java:150,250+`) while the URL-shaped one gets 150 draws that never reach it (F-E-1).
+** Null byte: `+url/NullByteURLGenerator+` (path literals) vs `+url/NullByteInjectionParameterGenerator+` (`+name=value+` strings). The latter is fed to `+URLParameterValidationPipeline+` (`+pipeline/URLParameterValidationPipelineTest.java:134+`), which validates *values*; `+param=value\0admin+` passes character validation only because `+=+` is a query char, so the test exercises an unrealistic input.
+** Package placement: `+generators/injection/URLLengthLimitAttackGeneratorTest.java+` tests `+generators/url/URLLengthLimitAttackGenerator+`; `+doc/test-framework-structure.adoc:33+` says the injection package contains "length-limit attacks".
+* Recommendation: Keep one traversal generator per pipeline (`+PathTraversalGenerator+` for URL_PATH, `+PathTraversalParameterGenerator+` for PARAMETER_VALUE); fold `+PathTraversalURLGenerator+`, `+DoubleEncodingAttackGenerator+` and `+EncodingCombinationGenerator+` into arms of `+PathTraversalGenerator+` (the contract test's family-reachability pattern already scales to this); collapse `+EncodedPathTraversalAttackTest+` to one parameterized method per pipeline; move `+URLLengthLimitAttackGeneratorTest+` next to its generator; either retire `+NullByteInjectionParameterGenerator+` or make it emit values.
+
+=== F-E-8: Analysis documents state test counts and detection mechanisms that do not match the code
+* Severity: Medium
+* Category: documentation
+* Status: CONFIRMED (surefire + code)
+* Location / Evidence:
+** `+doc/http-security/analysis/cookie-chaos-analysis.adoc:305-307, 338-348, 392-395+`: "CookieChaosAttackTest (213 tests)", "Test #8: Attack cookie patterns (50 parameterized tests)", "284+ tests total". Surefire: `+CookieChaosAttackTest+` = 164 cases; Test #8 is a single `+@Test+` looping 200 draws (`+tests/CookieChaosAttackTest.java:362+`).
+** `+doc/http-security/analysis/http1-vulnerabilities-analysis.adoc:65,73,119,262,351-354,489-498+`: "200+ tests", "25 CL.TE-specific tests", "25 TE.CL", "30 TE.TE", "395 tests", "553 tests total". Surefire: `+HttpRequestSmugglingAttackTest+` = 1435 cases (8 methods × 200/35 draws), `+HttpHeaderInjectionAttackTest+` = 158 → 1593. The "CL.TE-specific" method (`+tests/HttpRequestSmugglingAttackTest.java:268-290+`) draws 200 and admits ~1/15 via regex guard, i.e. ~13, not 25.
+** `+http1-vulnerabilities-analysis.adoc:63, 110, 152, 583+`: "CharacterValidationStage - Detects CRLF injection patterns (`+%0d%0a+`)", "Detects embedded HTTP verbs". `+CharacterValidationStage.validatePercentEncoding+` accepts `+%0d+` as valid percent-encoding; decoded CR/LF is rejected in `+DecodingStage.validateDecodedCharacters+`; and the cited tests are decided on `+?+` (F-E-1). "Detects embedded HTTP verbs" describes nothing in the code.
+** `+tests/Http1VulnerabilitiesTest.java:87+`: `+@see ../../../doc/http-security/analysis/http1-vulnerabilities-analysis.adoc+` — from `+security/tests/+` three `+../+` reach `+de/cuioss/http/+`, not the repository root.
+* Recommendation: Replace hard-coded counts with the method/draw structure (or drop counts), attribute CRLF detection to `+DecodingStage+`, and rewrite the "Application-Layer Protection" bullets after F-E-1 is fixed so they describe tests that reach the mechanism.
+
+=== F-E-9: Class inventories and code samples in the test docs are stale
+* Severity: Medium
+* Category: documentation
+* Status: CONFIRMED (grep of every `+*Test|*Generator|*Database+` identifier in the six docs against the source tree)
+* Location / Evidence:
+** `+cui-http-core/src/test/java/de/cuioss/http/security/database/package-info.java:50,56,57,62,64+`: `+NginxCVEAttackDatabase … (planned)+`, `+HomographAttackDatabase (planned)+`, `+IPv6AttackDatabase (planned)+`, `+ProtocolHandlerAttackDatabase (planned)+`, `+IDNAttackDatabase (planned)+` — all five exist; `+:63+` `+XssAttackDatabase (planned)+` does not exist and contradicts the "application-layer attacks excluded" note in `+OWASPTop10AttackDatabase.java:41-44+`. `+ModSecurityCRSAttackDatabase+`, `+OWASPZAPAttackDatabase+`, `+PathParameterTraversalAttackDatabase+` and the three `+Legitimate*+`/`+EdgeCase*+` databases are not listed at all.
+** `+doc/test-generators-readme.adoc:43-65+` and `+doc/http-security/specification/testing.adoc:178-190+` enumerate the attack databases and omit `+PathParameterTraversalAttackDatabase+` (testing.adoc also omits the legitimate-pattern databases).
+** `+testing.adoc:73-171+` shows a `+PathTraversalAttackTest+` with methods `+testBasicPathTraversal_T1..T4+` over `+PathTraversalURLGenerator+`/`+EncodingCombinationGenerator+`/`+UnicodeAttackGenerator+`/`+BoundaryFuzzingGenerator+`; the real class (`+tests/PathTraversalAttackTest.java+`) has five methods over `+PathTraversalGenerator+` only. `+testing.adoc:324-350+` (`+SecurityValidationTest+`) and `+:424-453+` (`+ComprehensiveSecurityTest+`) show classes that do not exist; `+:461+` claims "`+AllGeneratorsIntegrationTest+` validates all generators" — it instantiates 10 of the 33 generators (`+generators/AllGeneratorsIntegrationTest.java:52-61+`).
+** Test-class Javadoc: `+tests/OWASPTop10AttackDatabaseTest.java:39-41+` "173+ proven OWASP attack patterns including … cross-site scripting, SQL injection" (database has 9 entries and excludes XSS/SQLi by design); `+tests/ModSecurityCRSAttackDatabaseTest.java:43-49+` lists "Protocol Violations … Session Fixation" (database Javadoc `+ModSecurityCRSAttackDatabase.java:58-63+` says these are "Deliberately absent"); `+tests/IISCVEAttackDatabaseTest.java:42-48+` lists "Request Smuggling CVEs" (none in the database).
+** Consistency check of `+CLAUDE.md:83-91+` vs `+cui-http-core/pom.xml:79-98+`: the `+generators+` classifier claim is correct (verified strength, see below).
+* Recommendation: Regenerate `+package-info.java+` from the actual class list; add `+PathParameterTraversalAttackDatabase+` to both docs; replace the fictional code samples in `+testing.adoc+` with pointers to `+PathTraversalGeneratorTest+`/`+ApacheCVEAttackDatabaseTest+`; fix the three test-class Javadocs.
+
+=== F-E-10: ADR-0010 is violated by a surviving local fold assertion; ADR-0009/0010 still "Proposed"
+* Severity: Low
+* Category: consistency
+* Status: CONFIRMED
+* Location: `+generators/encoding/UnicodeAttackGeneratorTest.java:85-95+` (`+shouldNfkcFoldLookalikeTraversalToAsciiTraversal+`, asserts `+Normalizer.normalize(LOOKALIKE_DOTS_AND_SLASH, NFKC)+`); `+tests/NfkcFoldClaimInvariantTest.java:43-53+` already holds rows for U+2024 and U+FF0F; `+doc/adr/0010-*.adoc:31+` "No second, parallel fold-verification mechanism is kept … the local assertion is removed"; `+doc/adr/0009-*.adoc:15+` and `+0010:15+` `+Status: Proposed+` although both are implemented (`+AttackDatabaseEntries+`, `+HomographAttackDatabaseTest.shouldCarryTheScriptItsNameClaims+`, `+NfkcFoldClaimInvariantTest+`).
+* Recommendation: Delete the local test method (the generator test's class Javadoc `+:26-29+` already points to the registry) and set both ADRs to `+Accepted+`.
+
+=== F-E-11: ADR-0009 structural-claim tests cover 3 of 10 attack databases; several rationales state the wrong rejection cause
+* Severity: Low
+* Category: test-quality / documentation
+* Status: CONFIRMED (verdict tests pass with exact `+assertEquals+`, so declared types are correct; rationales and coverage are the issue)
+* Location / Evidence:
+** Structural tests exist for `+HomographAttackDatabase+` (`+tests/HomographAttackDatabaseTest.java:150-217+`), `+IPv6AttackDatabase+` (`+tests/IPv6AttackDatabaseTest.java:122-198+`), `+PathParameterTraversalAttackDatabase+` (`+tests/PathParameterTraversalAttackDatabaseTest.java:96-112+`). None for `+IDNAttackDatabase+` (23 entries, 16 declare `+INVALID_CHARACTER+`), `+ApacheCVEAttackDatabase+` (6/15 `+INVALID_CHARACTER+`, all six because of `+?+`/space/`+\r\n+`), `+NginxCVEAttackDatabase+` (10/22), `+IISCVEAttackDatabase+`, `+ProtocolHandlerAttackDatabase+` (F-E-4), `+OWASPZAPAttackDatabase+`.
+** Wrong rationales: `+database/IDNAttackDatabase.java:54+` (`+CYRILLIC_APPLE_HOMOGRAPH+`): "INVALID_CHARACTER is expected because the attack contains directory traversal sequences (../../../) which are detected before suspicious pattern matching" — the verdict is due to U+0430 (probe on `+[::1]/...+` shows the analogous first-non-path-char behaviour; `+CharacterValidationStage.isCharacterAllowed+` rejects >255 for URL_PATH regardless of `+allowExtendedAscii+`). `+database/IPv6AttackDatabase.java:73-93+` rationales all say "because … directory traversal", while the class Javadoc (`+:52-66+`) correctly says it is the `+[+`. `+database/ApacheCVEAttackDatabase.java:119-125+` (`+CVE_2020_1927_MOD_REWRITE+`) blames "the raw encoded-traversal payload (..%2f)"; the probe shows `+'?' at position …+` for the analogous payload.
+* Recommendation: Add an `+AttackDatabaseEntries+`-driven claim test for the IDN database (Cyrillic/Greek script, `+xn--+` prefix, U+202E, zero-width, punycode), and for the CVE databases assert the specific short-circuit character each `+INVALID_CHARACTER+` entry relies on (as the Nginx class Javadoc already names it); correct the three rationale strings.
+
+=== F-E-12: `+AttackCookieGenerator+` emits branches that no validator can or should reject
+* Severity: Low
+* Category: generator-usage
+* Status: CONFIRMED (executed)
+* Location: `+generators/cookie/AttackCookieGenerator.java:62+` (`+""+` name), `+:95-99+` (`+very_long_cookie_name_+` + letters), `+:223-226+` (letters-only value 5000-9000 chars), `+:250-295+` (attributes: `+Domain=.evil.com; Path=/+`, `+Path=../../../+`, `+Max-Age=-1+`, `+Invalid=Attribute; Bad=Value+`, `+Domain=+`, `+=; Path=/+`).
+* Evidence: probe — `+CharacterValidationStage(COOKIE_NAME).validate("")+` → ACCEPTED; `+CharacterValidationStage(COOKIE_VALUE).validate("x"*6000)+` → ACCEPTED (no length check in that stage). `+Max-Age=-1+` is the RFC 6265 §5.2.2 "expire now" instruction; unknown attributes are ignored per §5.2; `+Domain=.evil.com+` is syntactically valid. No test passes the generated attributes to any validator (grep: `+AttackCookieGenerator+` consumers are its contract test, `+AllGeneratorsIntegrationTest+`, and `+CookieChaosAttackTest+` Test #8, which reads only `+name()+`/`+value()+`).
+* Analysis: Because 1 of 4 name families and 1 of 11 value families are accepted by the validator the consumer uses, per-draw rejection cannot be asserted, which is what forced the aggregate assertion in F-E-2 item 5. The attribute families are "attacks" only by naming.
+* Recommendation: Split into `+AttackCookieNameGenerator+`/`+AttackCookieValueGenerator+` whose every output is rejected by `+CharacterValidationStage+` (drop the empty and letters-only arms; test length separately through `+LengthValidationStage(COOKIE_VALUE)+`), and turn the attribute arms into `+Cookie+` fixtures for `+CookiePrefixValidationStage.validateCookie+` with explicit `+COOKIE_PREFIX_VIOLATION+` expectations; drop `+Max-Age=-1+`/`+Invalid=Attribute+` from the "malicious" set.
+
+=== F-E-13: `+SupportedValidationTypeGenerator+` omits `+PARAMETER_NAME+`, which `+PipelineFactory.createPipeline+` supports
+* Severity: Low
+* Category: generator-usage
+* Status: CONFIRMED
+* Location: `+generators/SupportedValidationTypeGenerator.java:32-43+` (`+integers(1, 4)+` → URL_PATH, PARAMETER_VALUE, HEADER_NAME, HEADER_VALUE); `+pipeline/PipelineFactory.java+` `+case PARAMETER_NAME -> createParameterNamePipeline(...)+`; consumer `+pipeline/PipelineFactoryTest.java:210+` (`+count = 5+`).
+* Analysis: The generator's Javadoc ("the subset of ValidationType enum values that are supported by the factory") is now false, and the factory test never selects `+PARAMETER_NAME+` through this path. With 4 values and 5 draws, even the four listed types are all covered in only 23 % of runs (F-E-5).
+* Recommendation: Derive the set from `+EnumSet.complementOf(EnumSet.of(BODY, COOKIE_NAME, COOKIE_VALUE))+` and iterate it with `+@EnumSource(names = …)+` instead of sampling.
+
+=== F-E-14: `+AllGeneratorsIntegrationTest+` assertions are tautological or non-null-only
+* Severity: Low
+* Category: test-quality
+* Status: CONFIRMED
+* Location: `+generators/AllGeneratorsIntegrationTest.java:78-98+` (`+assertNotNull+` only), `+:158+` (`+hasUnicodeAttack = unicodeAttacks.stream().anyMatch(s -> !s.isEmpty())+`), `+:160+` (`+s.length() > 100 || s.isEmpty()+`), `+:200-258+` ("thread safety" asserts only the output count), `+:52-61+` (10 of 33 generators).
+* Recommendation: Delete the tautologies; the per-generator contract tests already cover reachability. If a cross-generator smoke test is wanted, enumerate all `+TypedGenerator+` classes reflectively and assert each contract test exists (which would also catch F-E-15).
+
+=== F-E-15: Eleven generators have no dedicated contract test; two existing contract tests are marker-only
+* Severity: Low
+* Category: test-quality
+* Status: CONFIRMED (file listing)
+* Location: no `+*Test+` for `+cookie/CookieNameAsciiWhitespaceGenerator+`, `+cookie/CookieNameLegacyParsingGenerator+`, `+cookie/CookieNameUnicodeWhitespaceGenerator+`, `+cookie/CookieNameZeroWidthGenerator+`, `+encoding/UnicodeControlCharacterAttackGenerator+`, `+encoding/UnicodeNormalizationAttackGenerator+`, `+header/HttpHeaderInjectionAttackGenerator+`, `+header/ValidHTTPHeaderValueGenerator+`, `+injection/ProtocolHandlerAttackGenerator+`, `+url/NullByteInjectionParameterGenerator+`, `+url/ValidURLParameterStringGenerator+`. `+encoding/DoubleEncodingAttackGeneratorTest.java:31-48+` and `+url/ValidURLGeneratorTest.java:37-84+` check substrings only (no family reachability, no pipeline round-trip) unlike the other contract tests. `+UnicodeControlCharacterAttackGenerator.containsControlCharacters+` (`+:446-492+`) is helper logic inside a generator, tested only by `+tests/UnicodeControlCharacterAttackTest.java:515-531+`.
+* Recommendation: Add contract tests following the `+GeneratorContractAssertions+` pattern (defining property + family reachability + pipeline round-trip where every branch is unambiguous); for `+ValidHTTPHeaderValueGenerator+` the round-trip is `+HTTPHeaderValidationPipeline(HEADER_VALUE)+`; for the four `+CookieName*+` generators it is `+CharacterValidationStage(COOKIE_NAME)+` rejection.
+
+=== F-E-16: Minor tautologies and non-seeded randomness in test helpers
+* Severity: Info
+* Category: test-quality
+* Status: CONFIRMED
+* Location / Evidence: `+tests/MixedEncodingAttackTest.java:184, 213+` and `+tests/UnicodeNormalizationAttackTest.java:363, 433+` — `+assertNotNull(result)+` immediately after `+assertTrue(result.isPresent())+` on an `+Optional+`; `+tests/URLLengthLimitAttackTest.java:672-674+` `+hashBasedSelection+` = `+Math.abs(this.hashCode()) % bound+` and `+:757+` prefix choice via `+hashCode()+` (identity hash — not seed-reproducible, contrary to the "seed-based" claim in the analysis docs); `+tests/HttpRequestSmugglingAttackTest.java+` reports 1435 surefire cases of which ~1200 are early-return no-ops (the `+@AfterAll+` guard at `+:183-198+` is a good mitigation, but the count is misleading and is what the analysis doc quotes); `+tests/UnicodeNormalizationAttackTest.java:314-333+` asserts that `+café+`, `+Zürich+` etc. are rejected "for security" — fine as a regression pin, but it is a false positive being locked in by test.
+* Recommendation: Remove the redundant `+assertNotNull+`s; replace `+hashBasedSelection+` with `+Generators.integers+`; consider `+@MethodSource+` over the classified corpus so the case count equals the asserted count.
+
+== Verified strengths
+
+* `+CLAUDE.md:83-91+` "generators classifier" claim is correct: `+cui-http-core/pom.xml:79-98+` builds `+<classifier>generators</classifier>+` from `+de/cuioss/http/security/generators/**+` and `+database/**+`, excluding `+*Test.class+`; `+:104-138+` guards against an empty jar. `+doc/test-generators-readme.adoc:21-27+` correctly warns that JUnit/cui-test-generator must be added by consumers (`+AttackDatabase.ArgumentsProvider+` implements `+org.junit.jupiter.params.provider.ArgumentsProvider+`).
+* All 16 database `+ArgumentsProvider+` nested classes exist (grep), and every database test asserts the failure type exactly (`+assertEquals(testCase.expectedFailureType(), exception.getFailureType())+`) plus original-input preservation and event-counter increment: `+tests/ApacheCVEAttackDatabaseTest.java:74-83+` and the analogous lines in the other nine attack-database tests. Surefire is green, so every declared `+expectedFailureType+` matches the pipeline's actual verdict.
+* ADR-0009 is genuinely implemented for `+HomographAttackDatabase+` (script/block claims per entry, fail-closed on unknown names, `+HomographAttackDatabaseTest.java:150-217+`), `+IPv6AttackDatabase+` (`+IPv6AttackDatabaseTest.java:122-198+`, including loopback spelling and eight-group expansion checks) and `+PathParameterTraversalAttackDatabase+` (`+PathParameterTraversalAttackDatabaseTest.java:96-112+` also asserts the absence of `+../+` so the entry cannot be carried by a different pattern). The class Javadocs of Apache/Nginx/Homograph/IPv6 databases honestly state the short-circuit.
+* `+NfkcFoldClaimInvariantTest+` asserts both fold-to-target and change-of-input for positive rows and self-normalization for negative rows; the registry rows I checked (U+2024, U+FF0E/0F/3C, U+2044, U+2215, U+2216) are correct per the Unicode data.
+* Contract tests in `+generators/**+` (except the two named in F-E-15) follow a consistent, meaningful pattern: defining-property per draw, family reachability in aggregate with sized draw counts (`+InvalidURLGeneratorTest.java:34-39+` even justifies 2000 draws probabilistically), and `+assertPipelineRejects+`/`+assertPipelineAccepts+` round-trips that also assert `+getOriginalInput()+`. Surefire confirms the round-trip tests pass for 100 draws each (e.g. `+PathTraversalGeneratorTest+` 102 cases, `+EncodingCombinationGeneratorTest+` 103, `+ValidURLPathGeneratorTest+` 102, `+ValidURLParameterGeneratorTest+` 102).
+* `+GeneratorContractAssertions.assertPipelineAccepts+` (`+:185-190+`) checks `+isPresent()+` as well as no-throw, so accepted values cannot silently be `+Optional.empty()+`.
+* `+URLLengthLimitAttackGenerator+` uses a registry list for its families (`+:104-109+`) and a length invariant enforced by its test (`+URLLengthLimitAttackGeneratorTest.java:149-158+`); `+HttpRequestSmugglingAttackTest+`/`+URLLengthLimitAttackTest+` guard their early-return filters with `+@AfterAll+` admitted-sample checks (`+:183-198+` / `+:88-109+`) — a good pattern that prevents silent degradation to no-op.
+* `+EdgeCaseValidURLsDatabaseTest+`, `+LegitimatePathPatternsDatabaseTest+`, `+LegitimateSpecialCharactersDatabaseTest+` are real positive tests (no-throw *and* event counter unchanged), and their databases contain sharp regression cases (`+/api/profile:read+`, `+/documents/document.envelope+`, `+/reports/2024/revenue.env+`, `+/api/v1/root/children+`).
+* `+CookiePrefixValidationStageTest+` (71 cases) and `+CookieTest+` (92) exist and exercise `+CookiePrefixValidationStage.validateCookie+` with both accept and reject cases (grep: 15 positive / 11 `+assertThrows+` indicators), so the production prefix logic is covered — only the `+tests/+` integration layer misrepresents it (F-E-2 item 6).
+* No `+@Disabled+`, no `+assertTrue(true)+`, no `+@GeneratorSeed+` pinning anywhere in the security test tree (grep).
+
+== Test inventory for the area
+
+=== Production validator ↔ tests matrix
+
+[cols="1,1,1,1,1,1",options="header"]
+|===
+| Production class
+| Test classes (unit; framework)
+| Positive (accepted) cases
+| Negative (rejected) cases
+| Generators used
+| Quality notes
+
+| `+URLPathValidationPipeline+`
+| `+URLPathValidationPipelineTest+` (53 cases); 36 framework files: all 10 attack-DB tests, 3 legitimate-DB tests, 14 attack tests, 8 generator contract tests
+| Yes — `+ValidURLPathGenerator+` round-trips (contract test 100 draws, `+MixedEncodingAttackTest+`, `+UnicodeNormalizationAttackTest+`), legitimate DBs (26+28+20 entries, asserted 3× each)
+| Yes — exact types via DBs (183 entries); loose types via attack tests (F-E-3)
+| `+ValidURLPathGenerator+`, `+PathTraversalGenerator+`, `+PathTraversalURLGenerator+`, `+EncodingCombinationGenerator+`, `+DoubleEncodingAttackGenerator+`, `+UnicodeAttackGenerator+`, `+UnicodeNormalizationAttackGenerator+`, `+UnicodeControlCharacterAttackGenerator+`, `+BoundaryFuzzingGenerator+`, `+NullByteURLGenerator+`, `+URLLengthLimitAttackGenerator+`, `+ProtocolHandlerAttackGenerator+`, `+HttpRequestSmugglingAttackGenerator+`, `+HttpHeaderInjectionAttackGenerator+`, `+PathTraversalParameterGenerator+`
+| Heavily over-tested on traversal; header-injection/smuggling/length tests decided by `+?+` (F-E-1); several accept-or-reject methods (F-E-2)
+
+| `+URLParameterValidationPipeline+`
+| `+URLParameterValidationPipelineTest+` (58); `+PathTraversalParameterGeneratorTest+`, `+ValidURLParameterGeneratorTest+`
+| Yes — `+ValidURLParameterStringGenerator+` (10+5+5 draws, asserts canonical form), `+ValidURLParameterGenerator+` (100)
+| Yes — `+PathTraversalParameterGenerator+` (exact set of 3 types), `+NullByteInjectionParameterGenerator+` (`+NULL_BYTE_INJECTION+` exact, 5 of 14 literals per run), `+EncodingCombinationGenerator+`
+| as listed
+| No attack-DB or `+tests/+` class targets this pipeline; valid generators too narrow (F-E-6)
+
+| `+URLParameterNameValidationPipeline+`
+| `+URLParameterNameValidationPipelineBehaviorTest+` (7)
+| Yes (`+Optional.of("page")+`)
+| Yes (2 `+assertThrows+`)
+| none
+| Zero framework coverage; no parameter-name generator exists
+
+| `+HTTPHeaderValidationPipeline+` (HEADER_NAME / HEADER_VALUE)
+| `+HTTPHeaderValidationPipelineTest+` (61), `+HeaderAndContentTypeEnforcementRegressionTest+` (11), `+PipelineFactoryTest+`
+| Yes — `+ValidHTTPHeaderNameGenerator+` (10), `+ValidHTTPHeaderValueGenerator+` (10), literals
+| Yes — `+HTTPHeaderInjectionGenerator+` (5+10 draws, any exception), `+InvalidHTTPHeaderNameGenerator+` (5)
+| as listed
+| The only tests that reach raw-CRLF detection; only 15 injection draws, no failure-type assertion; not touched by any `+tests/+` class
+
+| `+ContentTypeValidationPipeline+`
+| `+ContentTypeValidationPipelineTest+` (17), `+HeaderAndContentTypeEnforcementRegressionTest+`
+| Yes (`+Optional.of("application/json")+`, `+; charset=+`)
+| Yes (7 `+assertThrows+`)
+| none
+| Zero framework coverage
+
+| `+PipelineFactory+`
+| `+PipelineFactoryTest+` (53)
+| Yes
+| Yes (BODY/COOKIE throw)
+| `+SupportedValidationTypeGenerator+` (5 draws, omits PARAMETER_NAME — F-E-13), `+Valid*+` generators
+| —
+
+| `+CharacterValidationStage+`
+| `+CharacterValidationStageTest+` (30); `+CookieChaosAttackTest+` (COOKIE_NAME/VALUE)
+| Yes — `+ValidCookieGenerator+` (20, `+assertDoesNotThrow+` only)
+| Yes — four `+CookieName*+` generators (140 draws, some with exact/loose type), `+AttackCookieGenerator+` aggregate (F-E-2/12)
+| as listed
+| Cookie generators only reach this stage; `+Valid+` alphabet too narrow (F-E-6)
+
+| `+DecodingStage+`
+| `+DecodingStageTest+` (73)
+| Yes (55 indicators)
+| Yes (16)
+| none directly; indirectly via path pipeline
+| Framework never isolates decoded-CRLF detection (F-E-1)
+
+| `+LengthValidationStage+`
+| `+LengthValidationStageTest+` (37)
+| Yes
+| Yes
+| none directly
+| Framework length tests via path pipeline decided by `+?+`/`+#+` except pure-path cases (`+URLLengthLimitAttackGeneratorTest.java:82-100+`, `+URLLengthLimitAttackTest.java:216-248+`) which are genuine
+
+| `+NormalizationStage+`
+| `+NormalizationStageTest+` (62); `+PathParameterTraversalAttackDatabaseTest+`
+| Yes
+| Yes (exact `+PATH_TRAVERSAL_DETECTED+` for the `+..;+` family)
+| none
+| Good
+
+| `+PatternMatchingStage+`
+| `+PatternMatchingStageTest+` (62); all traversal tests
+| Yes
+| Yes
+| traversal generators
+| Protocol-handler branch essentially untested by the framework (F-E-4)
+
+| `+AllowBlockListStage+`
+| `+AllowBlockListStageTest+` (10), header/content-type pipeline tests
+| Yes
+| Yes
+| none
+| Zero framework coverage
+
+| `+CookiePrefixValidationStage+`
+| `+CookiePrefixValidationStageTest+` (71), `+CookieTest+` (92)
+| Yes (15 indicators)
+| Yes (11) incl. `+CookieNameAsciiWhitespaceGenerator+` (20, exact `+INVALID_CHARACTER+`)
+| `+CookieNameAsciiWhitespaceGenerator+`
+| `+tests/CookieChaosAttackTest+` #5/#6 ignore it and claim it does not exist (F-E-2)
+
+| `+RequestCollectionValidator+`
+| `+RequestCollectionValidatorTest+` (7)
+| Yes
+| Yes
+| none
+| Zero framework coverage
+
+|===
+
+
+=== Generator inventory (question 1/5 quantification; "space" = distinct outputs reachable, estimated from the switch arms)
+
+[cols="1,1,1,1,1,1",options="header"]
+|===
+| Generator
+| Kind
+| Approx. space
+| Dedicated contract test
+| Consumers (draws)
+| Notes
+
+| `+SupportedValidationTypeGenerator+`
+| fixed 4 via `+integers(1,4)+`
+| 4
+| yes (100 + 1000×2 loops)
+| `+PipelineFactoryTest+` (5)
+| omits PARAMETER_NAME
+
+| `+AttackCookieGenerator+`
+| hybrid (literal arms + `+letterStrings+`)
+| names 15 literals + long; values 11 families (~40 literals); attrs 12 literals
+| yes (100 + 400 + 400)
+| `+CookieChaosAttackTest+` #8 (200, aggregate)
+| 2 arms + all attrs unrejectable (F-E-12)
+
+| `+ValidCookieGenerator+`
+| hybrid
+| names ~40, values ~35 literals + random `+[A-Z]+`/`+[a-z]+` tokens
+| yes (100 + 400)
+| `+CookieChaosAttackTest+` (20), `+CookieTest+` (55)
+| alphabet `+[A-Za-z0-9_]+` only
+
+| `+CookieNameAsciiWhitespaceGenerator+`
+| combinatorial literals
+| 4×3×5 = 60
+| no
+| `+CookieChaosAttackTest+` (40), `+CookiePrefixValidationStageTest+` (20)
+| E[distinct]=29/60 per 40 draws
+
+| `+CookieNameLegacyParsingGenerator+`
+| literals
+| 2×3×2 = 12
+| no
+| `+CookieChaosAttackTest+` (20)
+| P(all 12)=5 %
+
+| `+CookieNameUnicodeWhitespaceGenerator+`
+| literals
+| 13×3×3 = 117
+| no
+| `+CookieChaosAttackTest+` (50)
+| ~41/117 per run
+
+| `+CookieNameZeroWidthGenerator+`
+| literals
+| 4×6 = 24
+| no
+| `+CookieChaosAttackTest+` (30)
+| ~17/24 per run
+
+| `+BoundaryFuzzingGenerator+`
+| hybrid (2 random-length + 14 literals + 4 semi-random)
+| 6 families
+| yes (200 + 400)
+| `+NullBytePathTraversalAttackTest+` (75, accept-or-reject), `+EncodedPathTraversalAttackTest+` (15)
+| mixed valid/attack by design
+
+| `+DoubleEncodingAttackGenerator+`
+| hybrid
+| 8 families, ~60 strings
+| marker-only (100)
+| `+DoubleEncodingAttackTest+` (50), `+EncodedPathTraversalAttackTest+` (22)
+| overlaps 4 other traversal generators
+
+| `+EncodingCombinationGenerator+`
+| hybrid
+| ~22 base × 3 levels × 2 case ≈ 130
+| yes, with round-trip (100 + 400 + 400)
+| `+DoubleEncodingAttackTest+` (30+20), `+EncodedPathTraversalAttackTest+` (25+24+75+27+20), `+URLPathValidationPipelineTest+` (5), `+URLParameterValidationPipelineTest+` (5)
+| same generator run 7× under different test names
+
+| `+PathTraversalGenerator+`
+| genuinely random (depth 1-8, 7 targets, 7 prefixes, 6 suffixes)
+| thousands
+| yes, with round-trip
+| `+PathTraversalAttackTest+` (64+20+25+20)
+| good
+
+| `+UnicodeAttackGenerator+`
+| literals
+| ~42
+| yes, with round-trip (100 + 400)
+| `+UnicodePathTraversalAttackTest+` (100+25+22), `+URLPathValidationPipelineTest+` (5)
+| good; local NFKC test violates ADR-0010
+
+| `+UnicodeControlCharacterAttackGenerator+`
+| combinatorial literals
+| 12 × 24 = 288
+| no
+| `+UnicodeControlCharacterAttackTest+` (120)
+| ~59/72 (type×base) per run
+
+| `+UnicodeNormalizationAttackGenerator+`
+| combinatorial
+| 9 × ~22 ≈ 200
+| no
+| `+UnicodeNormalizationAttackTest+` (90), `+UnicodePathTraversalAttackTest+` (22)
+| —
+
+| `+HTTPHeaderInjectionGenerator+`
+| combinatorial literals
+| 8 families × 5 tokens × … ≈ 200
+| yes (100 + 400)
+| `+HTTPHeaderValidationPipelineTest+` (5 + 10)
+| the *right* generator for CRLF, under-used
+
+| `+HttpHeaderInjectionAttackGenerator+`
+| fixed list
+| 525 strings
+| no
+| `+HttpHeaderInjectionAttackTest+` (150, ~131 distinct)
+| never reaches CRLF detection (F-E-1)
+
+| `+InvalidHTTPHeaderNameGenerator+`
+| literals
+| 4 × 9 = 36
+| yes (100 + 400)
+| `+HTTPHeaderValidationPipelineTest+` (5)
+| —
+
+| `+ValidHTTPHeaderNameGenerator+`
+| literals
+| 18 + 112 = 130
+| yes (100 + 400)
+| `+HTTPHeaderValidationPipelineTest+` (10), `+PipelineFactoryTest+` (5)
+| —
+
+| `+ValidHTTPHeaderValueGenerator+`
+| hybrid (random tokens, versions, q-values)
+| large
+| no
+| `+HTTPHeaderValidationPipelineTest+` (10), `+PipelineFactoryTest+` (5)
+| bogus `+Origin+` values
+
+| `+HttpRequestSmugglingAttackGenerator+`
+| fixed list
+| 525 strings
+| yes, with round-trip (100 + 600)
+| `+HttpRequestSmugglingAttackTest+` (200×7 + 35)
+| never reaches CRLF detection (F-E-1)
+
+| `+ProtocolHandlerAttackGenerator+`
+| combinatorial literals
+| 17 cats × 4-8 × 6 hosts × 6 paths ≈ 1500
+| no
+| `+ProtocolHandlerAttackTest+` (64)
+| rejected on traversal, not scheme (F-E-4)
+
+| `+AttackURLParameterGenerator+`
+| hybrid
+| names 16 literals + long; values 9 families
+| yes (100 + 400)
+| `+AllGeneratorsIntegrationTest+` only
+| never run against a pipeline
+
+| `+InvalidURLGenerator+`
+| literals
+| ~60
+| yes (200 + 2000)
+| `+AllGeneratorsIntegrationTest+` only
+| dead relative to pipelines
+
+| `+NullByteInjectionParameterGenerator+`
+| `+fixedValues+`
+| 14
+| no
+| `+URLParameterValidationPipelineTest+` (5)
+| ≤5 of 14 per run
+
+| `+NullByteURLGenerator+`
+| `+fixedValues+`
+| 15
+| yes, with round-trip (100 + 400)
+| `+NullBytePathTraversalAttackTest+` (25+50+25+20+22), `+URLPathValidationPipelineTest+` (5)
+| 2 % chance all 15 seen in a 25-draw method
+
+| `+PathTraversalParameterGenerator+`
+| combinatorial
+| 8 fam × depth × 10 targets ≈ 500
+| yes, with round-trip (parameter pipeline)
+| `+URLParameterValidationPipelineTest+` (5+3+5), `+EncodedPathTraversalAttackTest+` (20, *path* pipeline)
+| —
+
+| `+PathTraversalURLGenerator+`
+| combinatorial
+| 6 × 10 × 10 × 4 ≈ 2400
+| yes, with round-trip
+| `+URLPathValidationPipelineTest+` (5+5+5), `+PipelineFactoryTest+` (5)
+| overlaps `+PathTraversalGenerator+`
+
+| `+URLLengthLimitAttackGenerator+`
+| genuinely random lengths
+| 13 × 8 branches
+| yes (100 + 2000 + 200 + 2000), test in wrong package
+| `+URLLengthLimitAttackTest+` (30+40, ~1/3 admitted)
+| hostname/fragment families untested by any pipeline
+
+| `+ValidURLGenerator+`
+| literals + query
+| 7 paths (+999 ids) × 200 queries
+| marker-only (100)
+| `+AllGeneratorsIntegrationTest+` only
+| 50 % of outputs rejected by path pipeline
+
+| `+ValidURLParameterGenerator+`
+| literals
+| 15 names × ~25 values
+| yes, with round-trip (100 + 400)
+| `+AllGeneratorsIntegrationTest+`
+| alphabet too narrow
+
+| `+ValidURLParameterStringGenerator+`
+| hybrid
+| 8 shapes
+| no
+| `+URLParameterValidationPipelineTest+` (10+5+5), `+PipelineFactoryTest+` (5)
+| the better valid-parameter generator; undocumented
+
+| `+ValidURLPathGenerator+`
+| combinatorial
+| 7 families, few hundred
+| yes, with round-trip (100 + 400)
+| 5 `+tests/+` classes (15-20 each), 3 pipeline tests
+| good
+
+|===
+
+
+=== Attack-database inventory
+
+[cols="1,1,1,1,1",options="header"]
+|===
+| Database
+| Entries
+| Verdict test
+| Structural claim test (ADR-0009)
+| Entries whose verdict is the first non-path character rather than the named mechanism
+
+| `+ApacheCVEAttackDatabase+`
+| 15
+| exact
+| no
+| 6 (`+?+`, space, `+\r\n+`) — documented in class Javadoc
+
+| `+IISCVEAttackDatabase+`
+| 15
+| exact
+| no
+| 6 (`+\+`, `+\r\n+`, `+<+`, `+%u+`, space)
+
+| `+NginxCVEAttackDatabase+`
+| 22
+| exact
+| no
+| 10 — documented in class Javadoc
+
+| `+OWASPTop10AttackDatabase+`
+| 9
+| exact
+| no
+| 1 (`+\+`)
+
+| `+ModSecurityCRSAttackDatabase+`
+| 20
+| exact
+| no
+| 1 (`+\+`)
+
+| `+OWASPZAPAttackDatabase+`
+| 18
+| exact
+| no
+| 1 (`+\+`)
+
+| `+HomographAttackDatabase+`
+| 22
+| exact
+| yes
+| 22 (by design, documented)
+
+| `+IDNAttackDatabase+`
+| 23
+| exact
+| no
+| 16, three rationales wrong (F-E-11)
+
+| `+IPv6AttackDatabase+`
+| 24
+| exact
+| yes
+| 24 (by design, documented)
+
+| `+ProtocolHandlerAttackDatabase+`
+| 24
+| exact
+| no
+| 5; a further 16 decided by `+../+` not by the scheme (F-E-4)
+
+| `+PathParameterTraversalAttackDatabase+`
+| 7
+| exact
+| yes (+ `+../+` absence)
+| 0
+
+| `+EdgeCaseValidURLsDatabase+` / `+LegitimatePathPatternsDatabase+` / `+LegitimateSpecialCharactersDatabase+`
+| 28 / 26 / 20
+| accept + counter unchanged
+| n/a
+| n/a
+
+|===
+
