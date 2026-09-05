@@ -1,0 +1,188 @@
+= cui-http Quality Review
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+:icons: font
+
+[.discrete]
+== Snapshot
+
+[cols="1,3"]
+|===
+| Reviewed commit | `0bad2959b3ec34a3a6c80d73122f14902361d7b8` (main, 2026-09-04, "chore: update cui-java-parent from 1.6.1 to 1.6.2 (#204)")
+| Review date | 2026-09-05
+| Scope | Everything in the repository: `cui-http-core` main and test sources, `cui-http-benchmarking`, build and CI configuration, all AsciiDoc under `doc/`, `README.adoc`, `CLAUDE.md`, `agents.md`, Javadoc
+| Nature | Read-only review. No production code, test, or documentation outside `doc/quality-report/` was changed.
+|===
+
+EXECUTIVE_SUMMARY_PLACEHOLDER
+
+== How to read this report
+
+[cols="2,5", options="header"]
+|===
+| File | Content
+
+| xref:findings-register.adoc[findings-register.adoc]
+| Master table of every finding that survived verification, ordered by severity, with links into the area reports.
+
+| xref:security-posture-review.adoc[security-posture-review.adoc]
+| The fail-closed and false-security hunt across the whole main tree, and the claim-by-claim honesty table for the README and security documentation.
+
+| xref:code-review-security.adoc[code-review-security.adoc]
+| Code-lens findings for the security validation packages: decoding, normalization, character and length validation, pattern matching, allow/block lists, cookie prefixes, pipelines, configuration, core types, data types.
+
+| xref:code-review-client.adoc[code-review-client.adoc]
+| Code-lens findings for `HttpHandler`, TLS and redirect handling, the ETag and resilient adapters, converters, and the result types.
+
+| xref:code-review-forwarded.adoc[code-review-forwarded.adoc]
+| Code-lens findings for the forwarded-header resolution package.
+
+| xref:test-quality-review.adoc[test-quality-review.adoc]
+| Test-lens findings for every unit, the attack databases, the generators, the protocol-attack tests, and the coverage and mechanical test metrics.
+
+| xref:documentation-review.adoc[documentation-review.adoc]
+| AsciiDoc and Javadoc accuracy, structure, ambiguity and duplication, including the ADRs, the specification tree, and the traceability matrix.
+
+| xref:build-ci-review.adoc[build-ci-review.adoc]
+| POMs, module descriptor, generators classifier artifact, GitHub workflows, benchmarking module.
+
+| xref:adversarial-verification.adoc[adversarial-verification.adoc]
+| The independent second-pass review: a fresh agent with no knowledge of the review process re-verified the written report end to end. Contains its verdicts and any corrections applied.
+|===
+
+Every finding has a stable identifier of the form `<unit>-<lens>-<nn>` (for example `U1-C-03`, `U10b-T-02`, `D5-D-07`, `X2-X-01`). Unit and lens are explained in <<method>>.
+
+[[method]]
+== Method
+
+=== Why a multi-agent review
+
+The repository holds roughly 19,000 lines of production Java, 46,000 lines of test Java, and 8,500 lines of AsciiDoc. No single reviewer can hold that in working memory, and a security library deserves adversarial reading rather than skimming. The review was therefore decomposed into units small enough to be read completely, each unit was reviewed through one or more lenses by an independent reviewer, and every finding was then handed to a separate adversarial verifier whose instruction was to refute it.
+
+=== Units
+
+[cols="1,4,2", options="header"]
+|===
+| Unit | Scope | Lenses
+
+| U1 | `DecodingStage`, `NormalizationStage`, and the encoding, traversal, and Unicode-normalization integration tests; ADR 0010, 0011, 0014 | code, tests
+| U2 | `CharacterValidationStage`, `CharacterValidationConstants`, `LengthValidationStage`, control-character and length-limit integration tests | code, tests
+| U3 | `PatternMatchingStage`, `AllowBlockListStage`, `CookiePrefixValidationStage`, `RequestCollectionValidator`, cookie and protocol-handler integration tests; ADR 0006, 0012, 0015 | code, tests
+| U4 | All pipelines, `PipelineFactory`, `AbstractValidationPipeline`, pipeline tests, pipeline-architecture standards | code, tests
+| U5 | `SecurityConfiguration`, `SecurityConfigurationBuilder`, `SecurityDefaults`, `configuration.adoc` | code, tests
+| U6a | `HttpSecurityValidator`, `UrlSecurityFailureType`, `ValidationType`, `UrlSecurityException`, `SecurityEventCounter`; ADR 0013 | code, tests
+| U6b | `AttributeParser`, `Cookie`, `HTTPBody`, `URLParameter` | code, tests
+| U7a | `HttpHandler`, `HttpStatusFamily`, client-handlers readme | code, tests
+| U7b | `RedirectPolicy`, `RedirectNotAllowedException`, `SecureSSLContextProvider`, `HostnameVerificationRelaxingTrustManager`, TLS and redirect tests; ADR 0007 | code, tests
+| U8a | `HttpAdapter`, `ETagAwareHttpAdapter`, `CacheKeyHeaderFilter` | code, tests
+| U8b | `ResilientHttpAdapter`, `RetryConfig`, adapter integration tests | code, tests
+| U9 | `ContentType`, `HttpMethod`, `HttpLogMessages`, converters, `HttpResult`, `HttpErrorCategory`, result-pattern and log-message docs | code, tests
+| U10a / U10b | Forwarded-header resolution package; ADR 0001 to 0003; forwarded readme | code / tests
+| U11a / U11b | Attack databases (CVE, OWASP, protocol / Unicode, IPv6, legitimate) and their tests; ADR 0009 | test infrastructure
+| U12a / U12b / U12c | Test generators (url and header / encoding and framework / cookie and injection) | test infrastructure
+| U13 | HTTP/1.x, header-injection and request-smuggling tests against the header pipeline; HTTP/1.x analysis document | test infrastructure
+| X1 | POMs, `module-info.java`, generators classifier jar, GitHub workflows, benchmarking module and script | cross-cutting
+| X2 | Fail-closed and false-security hunt over the whole main tree; honesty table for README and security docs | cross-cutting
+| X3 | Duplication, naming and terminology consistency, stale references, dead code | cross-cutting
+| X4 | JaCoCo coverage and mechanical test-quality metrics | cross-cutting
+| D1 | `README.adoc`, `CLAUDE.md`, `agents.md`, `security-readme.adoc`, generator and framework readmes, ADR index, site descriptor | docs
+| D2 | `doc/http-security` overview, requirements, specification, pipeline standards, configuration | docs
+| D3 | `compliance-traceability.adoc` and `testing.adoc`, row by row | docs
+| D4 | The four analysis documents (cookie, CVE, OWASP, HTTP/1.x) | docs
+| D5 | All fifteen ADRs and the ADR index | docs
+| D6 | Client-handlers, result-pattern, forwarded and log-message documents | docs
+| D7a / D7b | Javadoc audit of the security packages / of the client and forwarded packages | docs
+|===
+
+=== Lenses
+
+* *code* -- correctness for all inputs including edge cases, fail-closed behaviour on every error path, hidden traps where a name or Javadoc promises more than the code delivers, Javadoc accuracy, concurrency claims, regex and allocation hazards.
+* *tests* -- whether each test asserts a specific outcome or merely exercises code, whether every security control has both a rejecting and an accepting test, untested edge cases (which were then probed against the real code), correct and deterministic use of `cui-test-generator`, compliance with the project's own testing standards.
+* *test infrastructure* -- attack databases and generators are shipped in the published `generators` classifier and are therefore product code: do they contain what they claim, are they consumed, are their consumers' assertions strong, is anything duplicated or dead.
+* *docs* -- the code is ground truth; every class name, method, example, default, count, cross-reference and claim in a document was checked against it.
+* *cross-cutting* -- grep-driven sweeps that no single unit can see: fail-open paths, duplicated content, coverage data, build and CI.
+
+=== Verification
+
+Every finding produced by a reviewer was passed, in batches of at most five, to a separate verifier agent that had not seen the reviewer's reasoning. Its instruction was to refute: open the cited location, reproduce behavioural claims by running the compiled classes in `jshell`, search the whole test tree before accepting a "missing test" claim, check ADRs and Javadoc for a documented deliberate decision, and re-assess severity. Verdicts are:
+
+* `CONFIRMED` -- the claim holds as stated.
+* `PARTIALLY_CONFIRMED` -- the core claim holds but a detail or the severity was corrected; the corrected title is shown.
+* `UNVERIFIABLE` -- could not be reproduced in the review environment (for example, requires the network); kept with the reviewer's evidence.
+* `UNVERIFIED` -- the verifier did not return a verdict for this item (agent failure); kept and marked.
+* `REFUTED` -- the claim does not hold; listed in the area report's transparency section only.
+
+After the reports were written, an independent agent with a clean context read them and re-verified the findings end to end. Its results are in xref:adversarial-verification.adoc[adversarial-verification.adoc].
+
+=== Tooling
+
+* Static reading of every file in scope, with `grep -n` for cross-references.
+* `jshell` against the compiled `target/classes` and `target/test-classes` plus the full dependency classpath, used to feed concrete inputs to pipelines, stages, the forwarded resolver, adapters and TLS providers and to record the actual output.
+* The JUnit Platform console launcher to run individual compiled test classes without Maven.
+* JaCoCo XML from `verify -Pcoverage` for the coverage figures.
+* Maven was run once for the baseline (test and coverage) before the review started and not during it, so the compiled classes reviewed are exactly those of the reviewed commit.
+
+=== Severity scale
+
+[cols="1,5", options="header"]
+|===
+| Severity | Meaning
+
+| CRITICAL | Exploitable security gap, a security control that fails open, or silent data corruption.
+| HIGH | A real bug; a false sense of security likely to bite users; a missing negative test for a security control; a documented feature that does not exist.
+| MEDIUM | Misleading documentation or Javadoc; an edge-case bug with limited impact; a coverage-only test; a missing edge-case test.
+| LOW | Inconsistency, duplication, ambiguity, or deviation from the project's own written standards.
+| INFO | An observation worth recording, including positive ones.
+|===
+
+=== Limitations
+
+* Network-dependent behaviour (real TLS handshakes against public hosts, proxy behaviour) could not be exercised; those claims are marked `UNVERIFIABLE` where a verifier could not reproduce them.
+* The review is of a snapshot. Findings reference line numbers of the reviewed commit.
+* Reviewer and verifier agents read independently; the same underlying issue can occasionally surface under two identifiers from two units. Such pairs are cross-referenced in the register where noticed.
+* The benchmarking module was reviewed for correctness and consistency, not for the validity of its published performance numbers.
+
+== Baseline metrics
+
+Captured before the review on the reviewed commit, `cui-http-core` module, with the project's own build.
+
+[cols="2,1", options="header"]
+|===
+| Metric | Value
+
+| Tests executed (`test -pl cui-http-core`) | 7,874
+| Failures / errors / skipped | 0 / 0 / 0
+| Test classes (surefire reports) | 112
+| Line coverage (JaCoCo, `verify -Pcoverage`) | 95.0 % (2,598 of 2,734)
+| Branch coverage | 91.8 % (1,483 of 1,616)
+| Production Java files / lines | 72 / 19,174 (including Javadoc)
+| Test Java files / lines | 171 / 46,436
+| AsciiDoc files / lines under `doc/` | 36 / 8,500
+|===
+
+.Coverage per package (line %, branch %)
+[cols="3,1,1", options="header"]
+|===
+| Package | Line | Branch
+
+| `de.cuioss.http.client` | 100.0 | 100.0
+| `de.cuioss.http.client.adapter` | 87.8 | 90.7
+| `de.cuioss.http.client.converter` | 100.0 | 80.0
+| `de.cuioss.http.client.handler` | 94.6 | 95.3
+| `de.cuioss.http.client.result` | 100.0 | 88.5
+| `de.cuioss.http.forwarded` | 97.3 | 94.3
+| `de.cuioss.http.security.config` | 94.6 | 79.7
+| `de.cuioss.http.security.core` | 100.0 | 100.0
+| `de.cuioss.http.security.data` | 99.3 | 92.9
+| `de.cuioss.http.security.exceptions` | 100.0 | 83.3
+| `de.cuioss.http.security.monitoring` | 100.0 | 100.0
+| `de.cuioss.http.security.pipeline` | 98.9 | 94.1
+| `de.cuioss.http.security.validation` | 94.5 | 88.8
+|===
+
+Classes below the project's own 80 % target on at least one axis: `SecurityConfigurationBuilder` (branch 74 %), `NormalizationStage` (branch 79 %), `HostnameVerificationRelaxingTrustManager` (line 54 %), `HttpAdapter` (branch 50 %, one branch), `HttpResult$Success` and `ForwardedHeaderResolver$HostPort` (one uncovered branch each). Which of those lines matter is assessed in the test-quality report (unit X4).
+
+ASSESSMENT_PLACEHOLDER
