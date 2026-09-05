@@ -109,7 +109,7 @@ Read in full (line counts from `+wc -l+`):
 |===
 
 
-Automated passes run over the whole tree (scripts under the scratchpad, not in the repo): (a) every `+xref:+`/`+link:+`/`+include::+` and Markdown link target resolved relative to its file; (b) every `+xref:…#anchor+` and `+<<anchor>>+` resolved against explicit `+[#id]+` anchors and auto-generated section ids of the target file; (c) every class-like identifier mentioned in any adoc/md file checked for existence in the source tree; (d) inbound-link graph to find orphan documents; (e) public-type Javadoc presence / `+<pre>+` example / `+@since+` scan; (f) `+@param+`-name vs. signature scan (hits reviewed manually — all were false positives from record-component docs, see Verified strengths).
+Automated passes run over the whole tree (scripts under the scratchpad, not in the repo): (a) every `+xref:+`/`+link:+`/`+include::+` and Markdown link target resolved relative to its file (one exception: `+about.adoc+` → `+index.html+`, which has no source in `+src/site+` and is reported as F-documentation-23); (b) every `+xref:…#anchor+` and `+<<anchor>>+` resolved against explicit `+[#id]+` anchors and auto-generated section ids of the target file; (c) every class-like identifier mentioned in any adoc/md file checked for existence in the source tree; (d) inbound-link graph to find orphan documents; (e) public-type Javadoc presence / `+<pre>+` example / `+@since+` scan; (f) `+@param+`-name vs. signature scan (hits reviewed manually — all were false positives from record-component docs, see Verified strengths).
 
 == Findings
 
@@ -148,7 +148,7 @@ Automated passes run over the whole tree (scripts under the scratchpad, not in t
 * Analysis: The example silently hides the one decision the pipeline requires (name vs. value), which is the thing configuration.adoc and the spec say matters (allow/block list only for `+HEADER_NAME+`).
 * Recommendation: `+new HTTPHeaderValidationPipeline(config, counter, ValidationType.HEADER_VALUE)+` and mention `+PipelineFactory.createHeaderNamePipeline/createHeaderValuePipeline+`.
 
-=== F-documentation-4: LogMessages.adoc test-coverage statement is false for 7 of 12 WARN records (identifiers/templates themselves are exact)
+=== F-documentation-4: LogMessages.adoc test-coverage statement is false for 7 of the 18 WARN records (identifiers/templates themselves are exact)
 * Severity: Medium
 * Category: documentation / test-quality
 * Status: CONFIRMED
@@ -549,7 +549,7 @@ Automated passes run over the whole tree (scripts under the scratchpad, not in t
 
 == Test inventory for the area
 
-Documentation area — "tests" here are the verification performed against code/tests. Traceability spot-check (compliance-traceability.adoc, functional/security requirements, analysis docs): 31 rows checked.
+Documentation area — "tests" here are the verification performed against code/tests. Traceability spot-check (compliance-traceability.adoc, functional/security requirements, analysis docs): 32 rows checked.
 
 [cols="1,1,1",options="header"]
 |===
@@ -688,4 +688,4 @@ Documentation area — "tests" here are the verification performed against code/
 |===
 
 
-Summary: of 31 spot-checked rows, 22 verified, 8 stale/incorrect, 1 unverifiable from this repository.
+Summary: of 32 spot-checked rows, 21 verified (one of them, HTTP-2, with the omission recorded as F-28), 10 stale/incorrect, 1 unverifiable from this repository. (Recounted after the PR review.)

@@ -10,7 +10,7 @@ This document is the build, CI and benchmarking part of review stream D (`F-D-`)
 
 * F-D-14 is the only Medium item: a missing results directory or a transient history-fetch failure leads to the published benchmark site being replaced by an empty tree.
 * The build-related *documentation* findings (canonical executor missing from the clone: F-documentation-1; release skill CI statement: F-documentation-22) are in xref:05-documentation.adoc[].
-* Everything else that was checked in this area is in order: all actions pinned by SHA, minimal permissions, consistent versions across the three POMs and `project.yml`, and the `generators` classifier artifact that `CLAUDE.md` promises is really produced and guarded by an enforcer rule.
+* Apart from F-D-14 through F-D-18, the reviewed controls are in order: all actions are pinned by SHA, workflow-level `permissions` are minimal (the over-scoped App token in `benchmark.yml` is F-D-18), versions are consistent across the three POMs and `project.yml`, and the `generators` classifier artifact that `CLAUDE.md` promises is really produced and guarded by an enforcer rule.
 
 == Findings
 === F-D-14: Benchmark `+assemble+` step tolerates a missing results directory and the deploy step then wipes the published benchmark site

@@ -636,10 +636,10 @@ Production (read in full):
 | Context: core/{HttpSecurityValidator,ValidationType,UrlSecurityFailureType}.java
 | 260 / 164 / 261
 
-| /home/user/cui-http/doc/http-security/specification/pipeline-architecture-standards.adoc
+| doc/http-security/specification/pipeline-architecture-standards.adoc
 | 238
 
-| /home/user/cui-http/doc/http-security/configuration.adoc
+| doc/http-security/configuration.adoc
 | 277
 
 |===
@@ -700,7 +700,7 @@ Tests (read in full):
 * Severity: Medium
 * Category: false-security
 * Status: CONFIRMED (jshell)
-* Location: src/main/java/de/cuioss/http/security/validation/AllowBlockListStage.java:99-105 (`+toLowercaseSet+` only lowercases), :167-177 (`+comparisonKey+` strips parameters + trims the *value* only); wired by src/main/java/de/cuioss/http/security/pipeline/ContentTypeValidationPipeline.java:96-99 and HTTPHeaderValidationPipeline.java:149-152; documented in /home/user/cui-http/doc/http-security/configuration.adoc:248-273
+* Location: src/main/java/de/cuioss/http/security/validation/AllowBlockListStage.java:99-105 (`+toLowercaseSet+` only lowercases), :167-177 (`+comparisonKey+` strips parameters + trims the *value* only); wired by src/main/java/de/cuioss/http/security/pipeline/ContentTypeValidationPipeline.java:96-99 and HTTPHeaderValidationPipeline.java:149-152; documented in doc/http-security/configuration.adoc:248-273
 * Evidence:
 [source,java]
 ----
@@ -834,7 +834,7 @@ Set-Cookie: admin=true; Secure; Path=/; HttpOnly; SameSite=Strict"
 * Severity: Low
 * Category: documentation
 * Status: CONFIRMED (grep + jshell)
-* Location: /home/user/cui-http/doc/http-security/specification/pipeline-architecture-standards.adoc:14 ("directory traversal, and host-based attacks"), :20-22 ("Host/domain-based exploits", "IPv6 address parsing in path context"), :177-195 ("Unicode characters in paths → URLPathValidationPipeline with allowExtendedAscii(true)"); src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java:370-380, :418-426 (code points >255 always rejected for URL_PATH/PARAMETER_*); src/main/java/de/cuioss/http/security/core/UrlSecurityFailureType.java:106-133 (`+MALFORMED_INPUT, INVALID_STRUCTURE, PROTOCOL_VIOLATION, RFC_VIOLATION, INVALID_IPV6_FORMAT, MALFORMED_URL, INVALID_HOST_FORMAT, INVALID_URL_FORMAT, KNOWN_ATTACK_SIGNATURE+`)
+* Location: doc/http-security/specification/pipeline-architecture-standards.adoc:14 ("directory traversal, and host-based attacks"), :20-22 ("Host/domain-based exploits", "IPv6 address parsing in path context"), :177-195 ("Unicode characters in paths → URLPathValidationPipeline with allowExtendedAscii(true)"); src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java:370-380, :418-426 (code points >255 always rejected for URL_PATH/PARAMETER_*); src/main/java/de/cuioss/http/security/core/UrlSecurityFailureType.java:106-133 (`+MALFORMED_INPUT, INVALID_STRUCTURE, PROTOCOL_VIOLATION, RFC_VIOLATION, INVALID_IPV6_FORMAT, MALFORMED_URL, INVALID_HOST_FORMAT, INVALID_URL_FORMAT, KNOWN_ATTACK_SIGNATURE+`)
 * Evidence: `+grep -rl "UrlSecurityFailureType.<X>" src/main/java+` → 0 files for all nine constants. jshell: `+/a/․․/b+` (U+2024 raw) → `+INVALID_CHARACTER (0x2024)+` under defaults (allowExtendedAscii already `+true+`); `+/aé/b+` → ACCEPT under defaults, so the adoc's "for Unicode path content" snippet is a no-op relative to `+defaults()+` and cannot enable anything beyond Latin-1.
 * Analysis: The spec tells readers the path pipeline is the home of host/IPv6 validation and offers a configuration recipe for "Unicode" that changes nothing versus the default and can never admit a non-Latin-1 code point. The unused failure types suggest removed functionality whose enum surface (and `+isIPv6HostAttack()+`/`+isProtocolViolation()+` predicates) remains as dead API.
 * Recommendation: Rewrite adoc:14-22 to "path component only — no host/authority validation"; replace :177-195 with the actual rule (raw code points >255 are always rejected for URL types; use percent-encoding, which is decoded and NFKC-checked). Either remove the never-raised constants (breaking) or mark them `+@Deprecated+`/"reserved" in Javadoc.
@@ -908,7 +908,7 @@ Set-Cookie: admin=true; Secure; Path=/; HttpOnly; SameSite=Strict"
 * SecurityEventCounter: lock-free `+ConcurrentHashMap<…, AtomicLong>+`; `+incrementBy(x, 0)+` is a true no-op; thread-safety tests (SecurityEventCounterTest.java:271-370) assert exact totals, not just absence of exceptions.
 * AttributeParser: quoted-string unwrapping with escaped-quote/backslash-parity handling (AttributeParser.java:171-204) is correct for the cases tested, and the Turkish-locale regression test (AttributeParserTest.java:188-205) is a genuine negative-control test.
 * module-info.java exports exactly the packages that contain public API; `+AttributeParser+` is package-private and correctly not exported as API.
-* ADR links in configuration.adoc:115 (`+../adr/0015-…+`) resolve to existing files under `+/home/user/cui-http/doc/adr/+`.
+* ADR links in configuration.adoc:115 (`+../adr/0015-…+`) resolve to existing files under `+doc/adr/+`.
 
 === Test inventory for the area
 

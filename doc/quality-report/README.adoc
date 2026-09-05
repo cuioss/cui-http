@@ -200,7 +200,7 @@ xref:06-build-and-infrastructure.adoc[Build, CI and Benchmarking]::
 POMs, workflows, benchmark module and publishing script. 5 items.
 
 xref:07-adversarial-verification.adoc[Adversarial Verification]::
-Independent end-to-end re-verification of all 125 original findings by a reviewer with no prior context: 99 confirmed exactly, 22 confirmed with a correction, 3 confirmed on spot-check, none refuted; 38 strength claims re-executed, none false; one missed item (V-1). Lists the adjustments made to this report as a result, followed by the verifier's report verbatim.
+Independent end-to-end re-verification of all 125 original findings by a reviewer with no prior context: 99 confirmed exactly, 22 confirmed with a correction, 2 confirmed on spot-check, 1 confirmed as suspected, 1 confirmed and superseded, none refuted; 38 strength claims re-executed, none false; one missed item (V-1). Lists the adjustments made to this report as a result, followed by the verifier's report verbatim.
 
 == Suggested order of remediation
 

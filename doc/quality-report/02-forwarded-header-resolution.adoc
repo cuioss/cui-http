@@ -40,8 +40,8 @@ version-alignment checks.
 * Category: security-gap / false-security
 * Status: CONFIRMED (probe)
 * Location:
-** /home/user/cui-http/cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedHeaderResolver.java:191 (`+firstPresent(lookup, X_FORWARDED_PROTO, X_PROXY_SCHEME)+`), :211 (`+X_FORWARDED_HOST, X_PROXY_HOST+`), :333 (`+X_FORWARDED_PORT, X_PROXY_PORT+`), :385 (`+X_PROXY_CONTEXT_PATH, X_FORWARDED_PREFIX+`)
-** doc/adr/0002-…adoc:26 (also :60, :85; line numbers corrected after adversarial verification) ("any *fixed* precedence answers that question in a way the attacker can predict and exploit")
+** cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedHeaderResolver.java:191 (`+firstPresent(lookup, X_FORWARDED_PROTO, X_PROXY_SCHEME)+`), :211 (`+X_FORWARDED_HOST, X_PROXY_HOST+`), :333 (`+X_FORWARDED_PORT, X_PROXY_PORT+`), :385 (`+X_PROXY_CONTEXT_PATH, X_FORWARDED_PREFIX+`)
+** doc/adr/0002-Fail_closed_when_X-Forwarded-For_and_RFC_7239_Forwarded_disagree.adoc:26 (also :60, :85; line numbers corrected after adversarial verification) ("any *fixed* precedence answers that question in a way the attacker can predict and exploit")
 * Evidence (probe output, `+trustAll=true+`):
 ----
   XFPrefix=/app (proxy) + X-ProxyContextPath=/evil (attacker)      => /evil
@@ -74,7 +74,7 @@ version-alignment checks.
 .. Suppress its own client-IP attribution (rate-limiting, audit logs, geo/IP allow-lists all see "no IP").
 .. Null the scheme. Every documented consumer pattern is `+scheme().orElse("http")+`, so the documented fail-closed path fails *open* in the security-relevant direction: absolute URLs, OAuth `+redirect_uri+`, cookie `+Secure+` decisions, HSTS logic derived from the resolved scheme silently downgrade to `+http+`. Under the pre-ADR fixed precedence this specific downgrade was impossible (proxy XFP won).
 .. Null the host and port, so the app falls back to `+request.getServerName()+` (doc line 450) — often the internal service name, leaking it into generated links. The docs call this "fail closed" without ever stating the precondition that makes it safe: the trusted proxy MUST strip or overwrite `+Forwarded+` (and, per F-D-1, the unmanaged de-facto family). The `+SecurityConfiguration.maxHeaderValueLength+` (2048) additionally turns "fail closed" into a one-header DoS of IP attribution because the *whole joined* XFF value is length-checked (line 440) before the walk.
-* Recommendation: (a) Document, in the MANDATORY warning box and the class Javadoc, that the ingress proxy must remove every client-supplied header of all three families it does not itself set — this is the actual precondition for the fail-closed logic to be a defence rather than an attacker lever. (b) Offer `+honoredFamilies+` so single-family deployments can ignore `+Forwarded+` entirely. (c) Change the three `+orElse("http")+` examples to `+orElse("https")+` or to an explicit "treat empty scheme as an error" pattern, and say why. (d) For the client IP, consider length-checking per chain entry (or after taking the rightmost N entries) instead of the joined header, so an attacker-supplied prefix cannot invalidate the proxy-appended hop.
+* Recommendation: (a) Document, in the MANDATORY warning box and the class Javadoc, that the ingress proxy must remove every client-supplied header of all three families it does not itself set — this is the actual precondition for the fail-closed logic to be a defence rather than an attacker lever. (b) Offer `+honoredFamilies+` so single-family deployments can ignore `+Forwarded+` entirely. (c) Change the three `+orElse("http")+` examples: an absent scheme is an unresolvable state, so the examples should fail explicitly (or fall back to the scheme of the actual transport connection), not default to either `+http+` or `+https+`, and say why. (d) For the client IP, consider length-checking per chain entry (or after taking the rightmost N entries) instead of the joined header, so an attacker-supplied prefix cannot invalidate the proxy-appended hop.
 
 === F-D-3: `+trustedProxies+` never gates whether headers are believed — the peer address is not an input, so the trust model cannot be implemented as documented ("trust only if the request came through a trusted proxy")
 * Severity: Medium
@@ -202,7 +202,7 @@ version-alignment checks.
 ** doc/forwarded-header-resolution.adoc:372 — "The host rejects embedded path separators, backslashes, and whitespace" omits `+@ # ?+` which the code (ForwardedHeaderResolver.java:306-314) and Javadoc also reject.
 ** doc/adr/0002:39 (line corrected after adversarial verification) — "For each field independently — scheme, host, and client IP" — code also applies the unresolvable rule to the port (ForwardedHeaderResolver.java:330); the main doc says so, the ADR does not.
 ** All three ADRs have `+Status: Proposed+` although they are implemented and tested; none is linked from README.adoc or doc/forwarded-header-resolution.adoc (only the http-security docs link ADRs).
-** .editorconfig covers only `+js,java,xml,properties,xhtml+`; the repo's `+.yml+`, `+.py+`, `+.adoc+` files have no rules.
+** .editorconfig has a generic `+[*]+` section and one extension-specific section for `+js,java,xml,properties,xhtml+`; the repo's `+.yml+`, `+.py+`, `+.adoc+` files fall under the generic section only and have no extension-specific rules (indent width, for example).
 
 
 == Verified strengths

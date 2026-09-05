@@ -155,7 +155,7 @@ Docs: doc/client-handlers-readme.adoc (411), doc/http-result-pattern.adoc (430),
 * Category: documentation / false-security
 * Status: CONFIRMED (against JDK 21u source)
 * Location:
-** `+handler/HostnameVerificationRelaxingTrustManager.java:281-297+` (esp. `+:294-296+`), `+:401-403+`
+** `+handler/HostnameVerificationRelaxingTrustManager.java:36-44+` (class Javadoc, esp. `+:40-42+`), `+:137+` and `+:148+` (the `+(Socket) null+` / `+(SSLEngine) null+` delegation) — line numbers corrected after the PR review; the file has 180 lines
 ** `+handler/SecureSSLContextProvider.java:177-182+`
 ** `+handler/HttpHandler.java:197-203+`, `+:1038-1046+` (`+verifyHostname+` Javadoc)
 ** `+doc/client-handlers-readme.adoc:56-67+`
@@ -163,10 +163,10 @@ Docs: doc/client-handlers-readme.adoc (411), doc/http-result-pattern.adoc (430),
 * Evidence (project):
 [source,java]
 ----
-  // HostnameVerificationRelaxingTrustManager.java:294-296
+  // HostnameVerificationRelaxingTrustManager.java:40-42
   *   <li>revocation posture - whatever revocation checking the delegate is configured for still applies</li>
   *   <li>algorithm constraints - the JDK's disabled-algorithm and key-size policies still apply</li>
-  // :401-403
+  // :146-148
   public void checkServerTrusted(X509Certificate[] chain, String authType, SSLEngine engine) ... {
       delegate.checkServerTrusted(chain, authType, (SSLEngine) null);
 ----
@@ -413,8 +413,8 @@ Docs: doc/client-handlers-readme.adoc (411), doc/http-result-pattern.adoc (430),
 
 == Verified strengths
 
-* *TLS floor is real on the wire*: `+HttpHandler.java:441-452+` pins `+SSLParameters.setProtocols(provider.getEnabledProtocols())+` → `+[TLSv1.2, TLSv1.3]+` or `+[TLSv1.3]+`; `+SecureSSLContextProvider.java:126-132+` never returns anything older; asserted in `+HttpHandlerTest.java:147-170+` and `+SecureSSLContextProviderTest.java:105-120+`. TLS 1.0/1.1 cannot be offered by this client.
-* *No trust-all anywhere*: `+createSecureSSLContext()+` / `+createHostnameRelaxedSSLContext()+` (`+SecureSSLContextProvider.java:153-205+`) use `+TrustManagerFactory.init((KeyStore) null)+` (JVM default store); the relaxing wrapper only wraps `+X509ExtendedTrustManager+` instances and forwards everything else verbatim (`+HostnameVerificationRelaxingTrustManager.java:349-359+`). Chain trust, expiry and not-yet-valid rejection under the wrapper are proven with real handshakes (`+HostnameVerificationRelaxingTrustManagerTest.java:83-131+`), with a matched negative control (`+:71-82+`).
+* *TLS floor is pinned on the built client*: `+HttpHandler.java:441-452+` sets `+SSLParameters.setProtocols(provider.getEnabledProtocols())+` → `+[TLSv1.2, TLSv1.3]+` or `+[TLSv1.3]+` on the `+HttpClient+`, and `+SecureSSLContextProvider.java:126-132+` never returns anything older, so this client cannot offer TLS 1.0/1.1 in a handshake. What the test suite asserts is the client-side protocol list (`+HttpHandlerTest.java:147-170+`, `+SecureSSLContextProviderTest.java:105-120+`); no test drives a handshake against a TLS 1.0/1.1-only server — that gap is F-client-8, and the strength claim is limited accordingly.
+* *No trust-all anywhere*: `+createSecureSSLContext()+` / `+createHostnameRelaxedSSLContext()+` (`+SecureSSLContextProvider.java:153-205+`) use `+TrustManagerFactory.init((KeyStore) null)+` (JVM default store); the relaxing wrapper only wraps `+X509ExtendedTrustManager+` instances and forwards everything else verbatim (`+HostnameVerificationRelaxingTrustManager.java:95-104+`). Chain trust, expiry and not-yet-valid rejection under the wrapper are proven with real handshakes (`+HostnameVerificationRelaxingTrustManagerTest.java:83-131+`), with a matched negative control (`+:71-82+`).
 * *Relaxation is opt-in and loud*: only `+verifyHostname(false)+` reaches `+createHostnameRelaxedSSLContext()+` (`+HttpHandler.java:1288-1292+`), always logs HTTP-116, is rejected with a caller-supplied `+sslContext+` (`+:1211-1216+`), survives `+asBuilder()+` only via the package-private `+derivedSslContext+` seam, and is discarded when `+verifyHostname+` is flipped back to `+true+` (`+:1293-1295+`; tests `+HttpHandlerTest.java:619-730+`). `+javap -p+` confirms the Lombok-generated `+sslContextCallerSupplied(boolean)+` / `+secureSSLContextProvider(...)+` builder setters are `+private+`, so the provenance flag cannot be forged from outside the package.
 * *Default hostname verification is proven, not assumed*: `+HttpHandlerHostnameVerificationTest+` connects to a real in-JVM TLS server with a mismatched SAN and asserts rejection, plus a matching-SAN positive control.
 * *Redirects*: JDK client stays on `+Redirect.NEVER+` on both constructor paths (`+HttpHandler.java:411-413, 447-452+`; asserted end-to-end `+HttpHandlerIntegrationTest.java:131-169+`). `+https→http+` is refused before the allowlist (`+RedirectPolicy.java:186-189+`, asserted over a real TLS server `+HttpHandlerHttpsIntegrationTest.java:154-188+`). Default is same-origin only; the policy is consulted before the hop counter (`+HttpHandler.java:696-702+`; both line references corrected after adversarial verification). Probed bypass candidates all refused: scheme-relative `+//evil.example.org/x+`, userinfo trick `+https://api.example.com@evil.example.org/+`, trailing-dot host `+api.example.com.+`; case-different scheme/host and explicit `+:443+` correctly treated as same-origin; IPv6 literals compare correctly. Malformed `+Location+` → typed `+MALFORMED_LOCATION+` with sanitised, length-bounded message (`+:640-679+`). Intermediate and refused hop bodies are drained, never handed to the caller's handler (`+:583-616+`; tests `+HttpHandlerRedirectTest.java:189-257+`). Credentials never reach an `+http+` target even same-origin (`+RedirectPolicy.java:212-214+`; tests `+:608-626+`).

@@ -9,7 +9,7 @@
 After the six area reports and the lead findings had been consolidated into chapters 01 to 06, an independent verifier with no prior context (a fresh agent that had not seen how the findings were produced) was given the report and the repository with the instruction to break it: re-execute every probe, re-trace every code path, open every cited line, re-check the "verified strengths", check the README numbers, and spend a bounded effort looking for anything material the report had missed. The verifier ran under the same constraints as the review (read-only, probes compiled against `cui-http-core/target/classes`).
 
 .Outcome
-* 125 findings checked. 99 confirmed exactly, 22 confirmed with a correction, 3 confirmed on a spot-check basis, 0 not reproduced, 0 disputed.
+* 125 findings checked. 99 confirmed exactly, 22 confirmed with a correction, 2 confirmed on a spot-check basis, 1 confirmed as suspected (F-documentation-23, which the report itself marks SUSPECTED), 1 confirmed and superseded (L-12, superseded by F-client-2), 0 not reproduced, 0 disputed.
 * Every High finding was reproduced end to end. F-client-1 was replayed against a MockWebServer with two principals; F-client-3 live against the JDK client; F-client-2, -4 and -11 against the JDK 21u sources.
 * 38 "verified strength" claims were re-executed. None was false.
 * One new item was found (V-1, now in xref:01-security-validation.adoc[]). Nothing else material was missed in the security core.
@@ -25,7 +25,7 @@ The verifier's report follows unchanged below (identifiers, line references and 
 
 == Method
 
-Independent verifier, no prior context. Repository treated read-only; nothing under `+/home/user/cui-http+` was modified.
+Independent verifier, no prior context. Repository treated read-only; nothing under `+the repository root+` was modified.
 
 Probe programs (all under `+/tmp/claude-0/-home-user-cui-http/fedac416-59e2-5fc8-b6f7-1511985a44cf/scratchpad/verify/+`), compiled with `+javac+` against `+cui-http-core/target/classes+` + `+target/test-classes+` + the dependency jars from `+/root/.m2+` (cui-java-tools 2.7.0, jspecify 1.0.1, cui-test-generator 3.0.2, junit-jupiter-api 6.1.3, mockwebserver3 5.5.0, okhttp-jvm 5.5.0, okio 3.18.1, kotlin-stdlib 2.1.21), and run with `+java+` (JDK 21.0.10):
 
@@ -185,7 +185,7 @@ Severity column "mine" is what I would assign on the report's own scale. "loc" =
 | Medium
 | CONFIRMED
 | Medium
-| lenient: `+ab+`, `+ab+`, `+ab+` header value PASS, `+XY+`, `+X\tY+` header *name* PASS; CRLF and NUL still rejected; COOKIE_NAME `+ab+` PASS. Under defaults `+ab+` is rejected.
+| lenient: `+aU+0001b+`, `+aU+000Bb+`, `+aU+001Bb+` header value PASS, `+XU+0001Y+`, `+X\tY+` header *name* PASS; CRLF and NUL still rejected; COOKIE_NAME `+aU+0001b+` PASS. Under defaults `+aU+0001b+` is rejected.
 
 | F-A-7
 | Medium
@@ -323,7 +323,7 @@ Severity column "mine" is what I would assign on the report's own scale. "loc" =
 | Info
 | CONFIRMED
 | Info
-| Same probe as F-A-7 (`+vX+`, U+2028 accepted by defaults, rejected by strict).
+| Same probe as F-A-7 (`+vU+009FX+`, U+2028 accepted by defaults, rejected by strict).
 
 | F-B-16
 | Info
@@ -378,7 +378,7 @@ Severity column "mine" is what I would assign on the report's own scale. "loc" =
 | Low
 | CONFIRMED
 | Low
-| `+/app/../admin+`, `+/app?x=1+`, `+/app#f+`, `+/%2F%2Fattacker.com+`, Cyrillic `+/аpp+` all honoured; `+//attacker.com+`, `+/app, //attacker.com+`, `+/appx+` rejected.
+| `+/app/../admin+`, `+/app?x=1+`, `+/app#f+`, `+/%2F%2Fattacker.com+`, Cyrillic `+/аpp+` all honoured; `+//attacker.com+`, `+/app, //attacker.com+`, `+/appU+0001x+` rejected.
 
 | F-D-7
 | Low
@@ -942,7 +942,7 @@ Severity column "mine" is what I would assign on the report's own scale. "loc" =
 | HEADER_VALUE rejects raw CR, LF, NUL, DEL; allows HTAB; `+%0d%0a+` inert
 | 01 lead
 | holds
-| `+a\rb+`,`+a\nb+` INVALID_CHARACTER, `+a b+` NULL_BYTE, `+ab+` INVALID_CHARACTER, `+a\tb+` PASS, `+%0d%0a+` PASS unchanged
+| `+a\rb+`,`+a\nb+` INVALID_CHARACTER, `+aU+0000b+` NULL_BYTE, `+aU+007Fb+` INVALID_CHARACTER, `+a\tb+` PASS, `+%0d%0a+` PASS unchanged
 
 | CR/LF rejected in HEADER_NAME/HEADER_VALUE under defaults, strict and lenient; NUL under lenient
 | 01 stream B
@@ -952,7 +952,7 @@ Severity column "mine" is what I would assign on the report's own scale. "loc" =
 | HEADER_NAME enforces RFC 7230 tchar (space, colon, non-ASCII, DEL, NEL rejected)
 | 01 lead
 | holds
-| `+X Y+`, `+X:Y+`, `+Xé+`, `+X+`, `+X+` REJECT; `+X-Foo+`, `+X-Foo%00+` PASS
+| `+X Y+`, `+X:Y+`, `+Xé+`, `+XU+0085+`, `+XU+007F+` REJECT; `+X-Foo+`, `+X-Foo%00+` PASS
 
 | PARAMETER_NAME: decoded `+= & ; space+` and `+++` rejected; paranoid blocked names exact-match, case-insensitive, post-decode
 | 01 lead/B
@@ -1121,7 +1121,7 @@ No strength claim I re-checked was false. One strength paragraph (03, redirect o
 Effort spent: ~10 %. Findings:
 
 . **Decoded `+?+`/`+#+` (or invisible characters) glued to a `+..+` segment survive the path pipeline in every preset and the returned value still contains the dot-dot segment.** `+/files/public/..%3F+` → `+/files/public/..?+`; `+/a/b/..%23/c+` → `+/a/b/..#/c+`; `+/a/b/%2e%2e%3f%2fetc%2fpasswd+` → `+/a/b/..?/etc/passwd+` (defaults and strict; paranoid rejects only because of `+/etc/+`). Also `+/a/b/%2e%2e%c2%a0/c+` → `+/a/b/.. /c+` (NBSP) and `+/a/b/..%e2%80%8b/c+` → `+/a/b/..[ZWSP]/c+` (ZWSP). Neither `+PatternMatchingStage+` (needs a separator after `+..+`) nor `+NormalizationStage+` (segment is `+..?+`, not `+..+`) fires, and the decoded `+?+`/`+#+` are not treated as structural. A consumer that reparses the *returned* string as a URL sees path `+/files/public/..+` (`+URI.create("https://h" + out).getPath()+` = `+/files/public/..+`, `+.normalize()+` → `+/files/+`). This is the L-1 risk class, but unlike L-1 the pipeline's own output carries the `+..+`, so the report's mitigation "consumers must use the returned value" does not close it. One level only (the `+?+`/`+#+` terminates the path), so not a root escape. Suggested severity: Low–Medium; belongs next to L-1/F-A-8 with the recommendation "reject a decoded `+?+`/`+#+` in URL_PATH, and treat any `+..+`-prefixed segment as traversal". Evidence: `+P6Missed.java+` output.
-. *F-D-10 extension:* `+X-Forwarded-Host: https://real@evil+` resolves to `+host=Optional[https]+` (single-colon split, the invalid port remainder dropped, host token kept). Same defect as F-D-10, more striking output; no independent security impact (the attacker does not control the resulting host string).
+. *F-D-10 extension:* `+X-Forwarded-Host: https://real@evil+` resolves to `+host=Optional[https]+` (single-colon split, the invalid port remainder dropped, host token kept). Same defect as F-D-10, more striking output; no independent security impact (the attacker does not control the resulting host string). _[Editorial note added after the PR review: the attacker does control the prefix before the first colon — `+X-Forwarded-Host: evil:abc+` yields `+evil+` — so the accurate statement is that this adds no exposure beyond what F-D-5 (host is not validated as a hostname) and F-D-10 (invalid port suffix dropped instead of rejecting the value) already record.]_
 . Observation, not a defect: `+HttpHandler.asBuilder()+` does not carry the URI, so `+handler.asBuilder().build()+` throws "URI must not be null or empty"; the tests always call `+.url(...)+` after `+asBuilder()+`. Worth a Javadoc sentence.
 . Header-pipeline CRLF (raw and encoded, all presets), forwarded-header spoofing beyond F-D-1/2/4/5/10 (ports, brackets, quoted-string escapes, ext directives, `+HTTPS+` case, 2048-char boundary, `+%5c+` prefix), and redirect downgrade/same-origin bypass candidates: *nothing found* beyond what the report already records.
 
