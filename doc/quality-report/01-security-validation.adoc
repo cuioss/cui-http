@@ -1,0 +1,1023 @@
+= Security Validation: Stages, Pipelines and Configuration
+:toc: left
+:toclevels: 3
+:sectnums:
+:icons: font
+
+== Consolidation notes
+
+This document combines three review streams that all looked at `de.cuioss.http.security`: the lead reviewer's own findings (`L-`), stream A (validation stages and configuration, `F-A-`) and stream B (pipelines, data classes, exceptions, monitoring, `F-B-`). The three streams worked independently and overlap in places; the overlaps are the strongest evidence in this report because the same defect was found twice from different directions.
+
+.Duplicates and primary records
+[cols="1,1,3",options="header"]
+|===
+| Item | Same defect as | Primary record / note
+
+| L-1 | F-A-8, V-1 | Segment-terminal `..` is accepted and rewritten (`/a/b/..` → `/a`) while `/a/b/../` is rejected. L-1 documents the full-pipeline view, F-A-8 the stage-internal inconsistencies. V-1 (found by the adversarial verification) is the variant where the returned value itself still carries the `..`. All kept.
+| L-2 | F-A-4 | Malformed UTF-8 percent sequences become U+FFFD and are accepted. F-A-4 is primary (it also shows the malformed regex alternative).
+| L-4 | F-A-5, F-B-5 | Raw CR/LF in the exception `detail` (log forging). F-B-5 is primary (widest analysis, includes the C1 gap of the message sanitiser).
+| L-5 | F-A-3, F-B-6 | Cookie prefix stage validates prefixes only; L-5 adds that no cookie content pipeline exists at all.
+| L-6 | F-B-8 | Cookie attribute first-wins vs RFC 6265 last-wins.
+| L-7 | F-A-10 | `RequestCollectionValidator` counts distinct keys only.
+| L-8 | F-B-4, F-A-9 | `RFC3986_QUERY_CHARS` narrower than RFC 3986; raw `/ : @` rejected, encoded forms accepted.
+| L-9 | F-A-7 | Format/invisible Unicode characters accepted where combining marks are rejected.
+| L-11 | F-A-11 | Duplicated default literals; dead constant surface.
+| L-12 | F-client-2 | Superseded: confirmed against JDK sources in stream C.
+| L-13 | F-A-8, ADR-0014 | ADR example unreachable through the factory pipelines.
+| F-A-12 | F-documentation-11 and others | ADR/Javadoc drift; the documentation stream carries the document-side items.
+| F-B-11 | F-documentation-10 | Path pipeline described as validating hosts/IPv6.
+| F-B-12 | F-documentation-2, -3, -16, F-client-6 | Non-compiling or anti-pattern Javadoc examples.
+|===
+
+.Severity decisions
+* *F-A-1 (High, confirmed by the lead).* `%25%32%66` passes every preset and the pipeline returns `%2f`; `%25%30%30` returns `%00`. The record component `allowDoubleEncoding=false` and requirement HTTP-9 promise that double encoding is blocked. The value returned to the caller still carries a complete encoding layer, so a consumer that decodes once more sees `/` or NUL. Traversal-shaped payloads are still caught by later stages, which is why this is High and not Critical.
+* *F-A-2 (High, confirmed by the lead).* The decoded-delimiter rule for parameter names runs before Unicode normalisation; U+037E (a canonical NFC singleton) folds to `;` afterwards, so the parameter-name pipeline returns `a;b`, which is exactly the output the rule exists to prevent. The lead's probe additionally shows `/a%EF%BC%9Bb` → `/a;b` and `/a%C2%A0b` → `/a b` for the path pipeline without `UNICODE_NORMALIZATION_CHANGED`.
+* *F-A-3 (proposed High, recorded Medium).* The case-sensitive prefix match is wrong against the RFC 6265bis text the class cites and against browsers, and the test suite pins the wrong behaviour. It is recorded as Medium because the failure direction is "validator accepts a cookie the browser will reject": no server-side trust decision in this library is based on the prefix, so the consequence is an availability defect and a false compliance claim rather than a bypass. It should still be fixed.
+* *L-1 / F-A-8 (Medium).* The clamp is RFC-conformant for the *returned* value, and ADR-0014 documents clamping. The defect is that no document tells integrators they must use the returned value, that the ADR's scoping statement ("only a `..` sequence long enough to walk past root") is not what the pipeline does (`/a/b/..` walks up one level and is accepted), and that a trailing slash flips the verdict.
+* *F-B-1, F-B-2, L-3 (Medium).* Together they describe the content-type pipeline: list entries are not normalised the way values are (a copied `text/html; charset=utf-8` entry blocks nothing), a `null` Content-Type bypasses an allow-list, and the pipeline has no length or character stage, so `application/json; x\r\nX: y` passes an allow-list of `application/json`.
+* Everything else is recorded at the severity the stream proposed.
+
+.What was verified as correct
+The three "Verified strengths" sections below list roughly sixty specific checks that passed: every encoded traversal spelling in the attack databases, the `..;` path-parameter family, overlong sequences that are on the regex list, NFKC structural-fold detection, CR/LF rejection in header types under every preset, exactly-once event counting, thread safety of shared pipelines, and the stage orders documented in five places.
+
+== Lead reviewer findings (`+L-+`)
+
+These items come from the lead reviewer's own read of the security core and three compiled probe programs run against `+cui-http-core/target/classes+` built from HEAD (6 993 tests green). Items that a stream later reported in more depth are marked as such; the stream item is the primary record.
+
+=== L-1 Segment-terminal `+..+` (no trailing separator) is not treated as traversal; pipeline accepts and rewrites
+* Severity: Medium | Category: false-security | CONFIRMED (probe)
+* URLPathValidationPipeline default/strict/lenient/paranoid (paranoid confirmed by the adversarial verification): `+/a/b/..+` -> ACCEPT `+/a+`; `+/files/public/..+` -> ACCEPT `+/files+`; `+/..+` -> `+/+`; `+/a/%2e%2e+` -> `+/+`; `+/%2e%2e+` -> `+/+`; `+/%2F%2F..+` -> `+/+`; `+/./././..+` -> `+/+`. Meanwhile `+/a/b/../+` (trailing slash) is REJECTED (PATH_TRAVERSAL_DETECTED). Only difference: trailing slash.
+* Root cause: SecurityDefaults.PATH_TRAVERSAL_PATTERNS entries all require a following separator ("../", "..\\", "..%2F"...); PatternMatchingStage ENCODED_TRAVERSAL_PATTERN/DOT_SEPARATOR_PATTERN likewise; NormalizationStage LAYER 1 patterns (SINGLE_COMPONENT_TRAVERSAL_PATTERN requires a trailing segment; CONTAINS_* need separators) so a terminal `+..+` reaches RFC 3986 resolution and is consumed (NormalizationStage.processPathSegment ".." branch).
+* ADR-0014 claims the clamp "applies only to the residual case ... a `+..+` sequence long enough to walk past root". `+/a/b/..+` does not walk past root: it walks up ONE directory and is accepted. So the ADR's scoping statement is inaccurate and the canonical example `+/api/../../etc/passwd+` never reaches the clamp through any factory pipeline (PatternMatchingStage pass 1 rejects `+../+`).
+* Risk: a caller that validates the wire path and then forwards the ORIGINAL string (common integration pattern, nowhere forbidden in docs) forwards a one-level upward traversal (`+/files/public/..+` -> backend resolves `+/files+`). Safe only if caller uses the returned normalized value; no doc states "you MUST use the returned value".
+* Recommendation: treat a `+..+` path segment anywhere (including terminal) as traversal intent in PatternMatchingStage/NormalizationStage LAYER 1, or document the contract "consumers MUST use the returned value" prominently in README/security-readme/pipeline Javadoc; fix ADR-0014 scoping text.
+
+=== L-2 Malformed (non-overlong) UTF-8 percent sequences are silently accepted as U+FFFD; Javadoc claims INVALID_ENCODING
+* Severity: Medium | Category: correctness / documentation | CONFIRMED (probe)
+* DecodingStage Javadoc: "INVALID_ENCODING - if URL decoding fails due to malformed input", "Blocks malformed UTF-8 encoding attacks". URLDecoder.decode(..., UTF_8) never throws on malformed byte sequences; it substitutes U+FFFD.
+* Probe (URL_PATH default): `+/a/%80+` -> `+/a/�+`; `+/a/%c3+` -> `+�+`; `+/a/%f5%80%80%80+` -> 4x U+FFFD; `+/a/%f4%90%80%80+` (> U+10FFFF) accepted; `+/a/%ed%a0%80+` (encoded UTF-16 surrogate) accepted; `+/a/%c0%80+` (2-byte overlong NUL, "modified UTF-8") accepted as U+FFFD U+FFFD — NOT caught by UTF8_OVERLONG_PATTERN because `+%c0%[a-f][0-9a-f]+` needs second nibble a-f and `+%c[0-1][0-9a-f]+` needs a literal hex char after %c0; `+%f0%8f%bf%bf+` (4-byte overlong) accepted.
+* Not a traversal bypass (replacement char is inert), but the "fail closed on invalid encoding" claim is only true for the regex blocklist. Canonicalization mismatch risk with downstream Latin-1 decoders (%ff -> 'ÿ' vs U+FFFD here).
+* Recommendation: decode with a CharsetDecoder configured with CodingErrorAction.REPORT and map MalformedInputException to INVALID_ENCODING; or document "malformed UTF-8 is replaced, not rejected" and drop the regex.
+
+=== L-3 ContentTypeValidationPipeline enforces nothing beyond list membership; CRLF and unbounded length pass
+* Severity: Medium | Category: false-security | CONFIRMED (probe)
+* ContentTypeValidationPipeline.createStages = List.of(AllowBlockListStage.forContentTypes(config)) only — no LengthValidationStage, no CharacterValidationStage.
+* Probe: default config (empty lists): `+text/html\r\nX-Injected: 1+` ACCEPTED; `+"a"*5000+` ACCEPTED; `+totally not a media type+` ACCEPTED. With allowedContentTypes={application/json}: `+application/json; x\r\nX: y+` ACCEPTED (only media type before ';' compared); `+application/json;+` + 100000 chars ACCEPTED.
+* The pipeline reports ValidationType.HEADER_VALUE, so a caller may assume header-value character rules apply. They do not.
+* Recommendation: prepend LengthValidationStage + CharacterValidationStage(HEADER_VALUE) in ContentTypeValidationPipeline; document that with empty lists the pipeline is a no-op.
+
+=== L-4 AllowBlockListStage embeds the raw value (incl. CR/LF) in the exception detail -> log forging
+* Severity: Medium | Category: security-gap / consistency | CONFIRMED (probe)
+* AllowBlockListStage.validate: detail("Value '" + value + "' is block-listed") / "... not in the allow-list". Every other stage escapes control chars (CharacterValidationStage.handleInvalidCharacter, DecodingStage.escaped, HttpHandler.sanitizeForMessage). UrlSecurityException.getMessage() sanitizes the `+(input: ...)+` suffix but NOT the detail.
+* Probe: message = `+... Invalid input - Value 'x/y\r\nInjected: yes' is not in the allow-list (input: 'x/y??Injected: yes')+` — raw CR LF inside the message.
+* Recommendation: do not echo the value in detail (originalInput already carries it), or apply the same escaping.
+
+=== L-5 CookiePrefixValidationStage.validateCookie validates prefix rules only; cookie name/value content is not validated, and prefix match is case-sensitive
+* Severity: Medium | Category: false-security | CONFIRMED (probe)
+* Probe (validateCookie): name `+a\r\nb+`, `+a b+`, `+a;b+`, `+a=b+` ACCEPTED; value `+v\r\nSet-Cookie: x+` ACCEPTED; `+__host-a+` and `+__HOST-a+` without Secure ACCEPTED; `+__secure-a+` without Secure ACCEPTED. `+validate(String)+` (name-only) accepts `+a\r\nb+` too (only trims whitespace).
+* PipelineFactory.createPipeline(COOKIE_NAME/COOKIE_VALUE) throws "not yet implemented", so there is NO cookie content pipeline; CharacterValidationStage(COOKIE_*) exists but is only wired into Cookie.hostPrefix()/securePrefix() factory suffix checks (Cookie.java COOKIE_NAME_VALIDATOR).
+* RFC 6265bis (draft-ietf-httpbis-rfc6265bis, since -10) specifies case-insensitive prefix matching ("case-insensitive match for the string __Secure-"); browsers (Chromium) implement this. SUSPECTED for the exact draft number; CONFIRMED that code is case-sensitive.
+* Recommendation: either wire LengthValidationStage + CharacterValidationStage(COOKIE_NAME/COOKIE_VALUE) into validateCookie or rename/document the stage as prefix-only; make prefix detection case-insensitive.
+
+=== L-6 Cookie attribute lookup is first-wins; RFC 6265 §5.3 is last-wins
+* Severity: Low | Category: correctness | CONFIRMED (probe)
+* `+new Cookie("n","v","Secure; Path=/; Path=/x").getPath()+` -> `+/+`; `+Domain=a; domain=b+` -> `+a+`. RFC 6265 §5.3 steps 7-9: "the last attribute-value wins". Consequences: `+__Host-a; Secure; Path=/; Path=/x+` passes validateCookie although a browser sets Path=/x and rejects the __Host- cookie; `+Secure; Path=/x; Path=/+` is rejected although a browser accepts it.
+* Location: AttributeParser.extractAttributeValue (first match returned).
+
+=== L-7 RequestCollectionValidator counts distinct parameter names, not parameter instances
+* Severity: Low | Category: false-security | CONFIRMED (probe)
+* validateParameters(Map<String,?>) -> parameters.size(). A `+Map<String, List<String>>+` with 1 key x 10000 values is ACCEPTED under maxParameterCount=100. Repeated parameters (`+?a=1&a=2&...+`) — the classic parameter-flood DoS — are not bounded. configuration.adoc:230 shows `+validator.validateParameters(request.getParameterMap())+` (String[] values) as the usage.
+* Recommendation: count values when the map values are Collection/array, or document the limitation.
+
+=== L-8 PARAMETER_VALUE character set is narrower than RFC 3986 query grammar; raw `+/+`, `+:+`, `+@+` rejected
+* Severity: Medium | Category: correctness / consistency | CONFIRMED (probe)
+* CharacterValidationConstants.RFC3986_QUERY_CHARS Javadoc: "RFC 3986 query characters". RFC 3986 §3.4: query = *( pchar / "/" / "?" ), pchar includes ":" and "@". The set omits "/", ":", "@".
+* Probe (PARAMETER_VALUE default): `+/home+` REJECT INVALID_CHARACTER; `+http://x+` REJECT; `+a@b.com+` REJECT; `+10:30+` REJECT; while `+a%2Fb+` -> `+a/b+` and `+a%3Ab+` -> `+a:b+` ACCEPT. Browsers do not percent-encode `+/ : @+` in link query strings (`+?next=/home+`, `+?url=https://...+`), so legitimate wire values are rejected as INVALID_CHARACTER; conversely the traversal tests for parameter values only exercise PATH_TRAVERSAL_DETECTED through encoded forms (`+../+` raw is rejected as INVALID_CHARACTER for the `+/+`).
+* Also: no document tells integrators to pass the still-encoded wire value rather than the container-decoded `+request.getParameter()+` value (which the pipeline would decode a second time and whose raw `+/+` it would reject).
+* Recommendation: either align the set with RFC 3986 (add / : @) and rely on PatternMatchingStage for traversal, or rename the constant/Javadoc to state the deliberate narrowing; add an integration note "feed wire-form (still percent-encoded) values".
+
+=== L-9 Decoded Unicode format/invisible characters are accepted in URL paths
+* Severity: Low | Category: security-gap | CONFIRMED (probe)
+* DecodingStage.validateDecodedCharacters rejects NUL, combining marks (Mn/Mc/Me) and Cc controls, citing homograph risk. It does not reject Cf (format) or Zs/Zl/Zp: `+/a/%e2%80%ae+` (U+202E RLO) -> ACCEPT; `+/a/%e2%80%8b+` (ZWSP) -> ACCEPT; `+/a/%ef%bb%bf+` (BOM) -> ACCEPT; `+/a/%c2%a0+` (NBSP) -> ACCEPT. Same homograph/visual-spoofing class the combining-mark rule exists for; C1 controls via `+%c2%85+` ARE rejected.
+* Recommendation: extend the decoded-character rule to Character.FORMAT (and optionally LINE/PARAGRAPH_SEPARATOR) or document the boundary.
+
+=== L-10 LENIENT preset: single decode leaves dangerous encoded sequences in the returned value
+* Severity: Low | Category: documentation | CONFIRMED (probe)
+* lenient: `+/a/%2500+` -> ACCEPT `+/a/%00+` (allowDoubleEncoding=true; decoded once). A consumer that decodes again gets NUL. Not wrong per se (lenient is opt-in) but configuration.adoc should state the returned value may still carry percent-encoded bytes under allowDoubleEncoding.
+
+=== L-11 Duplicated default literals between SecurityConfigurationBuilder and SecurityDefaults
+* Severity: Low | Category: duplication | CONFIRMED (code)
+* SecurityConfigurationBuilder fields: maxPathLength=4096, maxParameterNameLength=128, maxParameterValueLength=2048, maxHeaderNameLength=128, maxHeaderValueLength=2048, maxCookieNameLength=128, maxCookieValueLength=2048, maxBodySize=5MB as literals; SecurityDefaults has MAX_*_DEFAULT constants with the same values but the builder only references the *_COUNT_* constants. Builder validation (`+<= 0+`) duplicates the record compact-constructor validation. Drift risk.
+
+=== L-12 ADR-0007 / trust manager: null socket also drops TLS-layer algorithm constraints and stapled OCSP, not only hostname verification
+* Severity: Low | Category: documentation | SUSPECTED at the time of writing; since CONFIRMED against JDK sources by stream C, see F-client-2 in xref:03-http-client.adoc[] (superseded) (JDK source not available offline; based on JDK 21 sun.security.ssl.X509TrustManagerImpl.checkTrusted)
+* With a null Socket/SSLEngine the JDK path is `+v.validate(chain, null, Collections.emptyList(), null /*constraints*/, authType)+`: (a) no SSLAlgorithmConstraints derived from the handshake (jdk.tls.disabledAlgorithms / peer-signature constraints) are applied — only the certpath-level jdk.certpath.disabledAlgorithms remain; (b) stapled OCSP responses from the session are not passed to the validator. ADR-0007 states "chain trust, expiry, and algorithm constraint enforcement continue to run unchanged" — over-claims for the TLS-layer constraints.
+* Recommendation: soften the ADR/Javadoc wording; verification by a JDK-source reader recommended.
+
+=== L-13 ADR-0014 canonical example is unreachable through factory pipelines
+* Severity: Info | Category: documentation | CONFIRMED (probe)
+* `+/api/../../etc/passwd+` is rejected by PatternMatchingStage pass 1 (`+../+`) in every factory pipeline; NormalizationStage alone clamps it to `+/etc/passwd+`. The ADR describes stage-level behaviour as if it were pipeline behaviour. The case that actually reaches the clamp via the pipeline is L-1 (terminal `+..+`).
+
+=== Verified strengths (lead)
+* Percent-encoded traversal variants (`+%2e%2e/+`, `+.%2e/+`, `+%2e./+`, `+..%2f+`, `+/%2e%2e/+`, `+..;/+`, `+%2e%2e;+`, `+..%3B+`), overlong `+%c0%ae+`/`+%c0%af+`/3-byte/4-byte overlongs of the regex list, `+%00+`, decoded CR/LF/TAB in paths, fullwidth solidus/dot folds (NFKC) — all rejected under default and strict.
+* Fullwidth `+;+` fold (`+%ef%bc%9b+`) after `+..+` is caught downstream by NormalizationStage DOT_SEGMENT_WITH_PATH_PARAM_PATTERN.
+* Backslash rejected as INVALID_CHARACTER in paths before any traversal logic.
+* HEADER_VALUE pipeline rejects raw CR, LF, NUL, DEL; allows HTAB; `+%0d%0a+` stays literal (no decoding) — correct.
+* HEADER_NAME pipeline enforces RFC 7230 tchar exactly (space, colon, non-ASCII, DEL rejected).
+* PARAMETER_NAME: decoded `+= & ; space+` delimiters rejected; paranoid blocked names are exact-match, case-insensitive, and applied post-decode (`+%66ile+` -> `+file+` rejected).
+* Paranoid blockedPathPatterns are segment-based post-decode (`+/etc%2Fpasswd+`, `+/%65tc/passwd+` rejected) and do not over-match (`+/a/.env.bak+` accepted).
+* Presets: strict.isStrict()==true, paranoid.isStrict()==true, lenient.isLenient()==true, defaults neither — consistent with configuration.adoc table.
+* AbstractValidationPipeline counts every thrown failure exactly once and rethrows with the pipeline's ValidationType; shared pipeline instance across 8 threads x 20000 mixed inputs produced 0 misclassifications.
+* HttpSecurityValidator.when()/identity() behave exactly as ADR-0013 documents (fail-open, documented).
+* RequestCollectionValidator boundary: count == max accepted, max+1 rejected (documented "exceeds").
+* ForwardedHeaderResolver: documented MANDATORY network-placement precondition is stated in both the adoc (lines 37-51) and the class Javadoc (52-63).
+* HttpHandler redirect follow loop: policy refusal evaluated before hop budget; downgrade check before allow-list; credentials stripped per policy; 303 -> GET, 301/302 preserve GET/HEAD, 307/308 preserve method+body; representation headers dropped with body; malformed Location -> typed refusal with sanitized message.
+
+
+
+== Item added by the adversarial verification (`+V-+`)
+
+=== V-1 A decoded `+?+`, `+#+` or invisible character glued to a `+..+` segment passes every preset and the returned value still carries the dot-dot
+* Severity: Medium | Category: false-security / correctness | CONFIRMED (executed by the adversarial verifier, `+P6Missed.java+`; see xref:07-adversarial-verification.adoc[])
+* URLPathValidationPipeline, defaults and strict: `+/files/public/..%3F+` -> ACCEPT `+/files/public/..?+`; `+/a/b/..%23/c+` -> ACCEPT `+/a/b/..#/c+`; `+/a/b/%2e%2e%3f%2fetc%2fpasswd+` -> ACCEPT `+/a/b/..?/etc/passwd+` (paranoid rejects this one only because of the `+/etc/+` block-list entry); `+/a/b/%2e%2e%c2%a0/c+` -> ACCEPT `+/a/b/.. /c+` (NBSP); `+/a/b/..%e2%80%8b/c+` -> ACCEPT `+/a/b/..\u200B/c+` (ZWSP).
+* Root cause: `+PatternMatchingStage+` needs a separator after `+..+`; `+NormalizationStage+` compares whole segments, and `+..?+` is not `+..+`; `+DecodingStage.validateDecodedCharacters+` treats a decoded `+?+`/`+#+` as an ordinary character for `+URL_PATH+` (only combining marks, controls and NUL are re-checked, and the structural-fold check applies to Unicode normalisation only).
+* Why it matters: unlike L-1, the pipeline's *own output* contains the `+..+`. A consumer that re-parses the returned string as a URL sees the path `+/files/public/..+` (`+URI.create("https://h" + out).getPath()+`), which normalises to `+/files/+`. So the mitigation for L-1 ("consumers must use the returned value") does not close this variant. The `+?+`/`+#+` terminates the path on re-parse, so at most one level is walked; this is not a root escape.
+* Recommendation: reject a decoded `+?+` and `+#+` for `+URL_PATH+` in `+DecodingStage.validateDecodedCharacters+` (they can only have been percent-encoded on the wire and become structural once decoded), and treat any segment that *starts with* `+..+` as traversal intent in `+PatternMatchingStage+`/`+NormalizationStage+` LAYER 1 (which also fixes L-1/F-A-8). Add regression tests for the five inputs above.
+
+== Stream A: validation stages and configuration (`F-A-`)
+
+=== Scope reviewed
+
+Production (all read in full):
+
+[cols="1,1",options="header"]
+|===
+| File
+| Lines
+
+| `+cui-http-core/src/main/java/de/cuioss/http/security/validation/AllowBlockListStage.java+`
+| 178
+
+| `+.../validation/CharacterValidationConstants.java+`
+| 301
+
+| `+.../validation/CharacterValidationStage.java+`
+| 427
+
+| `+.../validation/CookiePrefixValidationStage.java+`
+| 345
+
+| `+.../validation/DecodingStage.java+`
+| 474
+
+| `+.../validation/LengthValidationStage.java+`
+| 263
+
+| `+.../validation/NormalizationStage.java+`
+| 610
+
+| `+.../validation/PatternMatchingStage.java+`
+| 523
+
+| `+.../validation/RequestCollectionValidator.java+`
+| 154
+
+| `+.../validation/package-info.java+`
+| 72
+
+| `+.../config/SecurityConfiguration.java+`
+| 339
+
+| `+.../config/SecurityConfigurationBuilder.java+`
+| 590
+
+| `+.../config/SecurityDefaults.java+`
+| 457
+
+| `+.../core/HttpSecurityValidator.java+`
+| 260
+
+| `+.../core/UrlSecurityFailureType.java+`
+| 261
+
+| `+.../core/ValidationType.java+`
+| 164
+
+| Supporting (read for context): `+pipeline/URLPathValidationPipeline.java+` (stage order l.127-133), `+pipeline/URLParameter*Pipeline.java+`, `+pipeline/HTTPHeaderValidationPipeline.java+` l.135-152, `+pipeline/ContentTypeValidationPipeline.java+` l.98, `+data/Cookie.java+`, `+exceptions/UrlSecurityException.java+` l.81, 140-200
+| —
+
+|===
+
+
+Tests (all read): `+validation/AllowBlockListStageTest+` (149), `+CharacterValidationConstantsTest+` (215), `+CharacterValidationStageTest+` (442), `+CookiePrefixValidationStageTest+` (362), `+DecodingStageTest+` (766), `+LengthValidationStageTest+` (603), `+NormalizationStageTest+` (450), `+PatternMatchingStageTest+` (450), `+RequestCollectionValidatorTest+` (128), `+config/SecurityConfigurationBuilderTest+` (321), `+SecurityConfigurationTest+` (293), `+SecurityDefaultsTest+` (362), `+core/HttpSecurityValidatorTest+` (310), `+UrlSecurityFailureTypeTest+` (268), `+ValidationTypeTest+` (310); plus greps over `+security/tests/*+` and `+security/pipeline/PostDecodeEnforcementRegressionTest+` for coverage of the specific inputs below.
+
+ADRs read in full: 0006 (156), 0010 (60), 0011 (140), 0012 (145), 0014 (157), 0015 (192).
+
+Pipeline order that the analysis relies on (`+URLPathValidationPipeline.java:127-133+`):
+`+Length → Character → PatternMatching(pre) → Decoding → Normalization → PatternMatching(post)+`.
+Parameter pipelines: `+Length → Character → Decoding → Normalization(pass-through) → PatternMatching+`.
+Header pipelines: `+Length → Character [→ AllowBlockList for HEADER_NAME]+` — *no DecodingStage*.
+Content-type pipeline: `+AllowBlockListStage+` only — *no CharacterValidationStage*.
+
+---
+
+=== Findings
+
+==== F-A-1: Double-encoding gate is bypassed by percent-encoding the hex digits (`+%25%32%66+` → output `+%2f+`, `+%25%30%30+` → output `+%00+`)
+* Severity: High
+* Category: security-gap / false-security
+* Status: CONFIRMED (executed)
+* Location: `+DecodingStage.java:117+` (`+DOUBLE_ENCODING_PATTERN = "%25[0-9a-fA-F]{2}"+`), `+:178-185+` (only check), `+:201+` (single `+URLDecoder.decode+`), no re-check of the decoded output for a remaining `+%XX+` layer.
+* Evidence (probe output, `+SecurityConfiguration.defaults()+` *and* `+strict()+`):
+----
+  DecodingStage/PATH | in=/a%252fb      -> REJECT DOUBLE_ENCODING
+  DecodingStage/PATH | in=/a%25%32%66b  -> PASS out=/a%2fb
+  DecodingStage/PATH | in=/a%252%66b    -> PASS out=/a%2fb
+  PathPipeline/def   | in=/a%25%32%66b  -> PASS out=/a%2fb
+  PathPipeline/def   | in=/api/%25%30%30 -> PASS out=/api/%00
+  PathPipeline/strict| in=/a%25%32%66b  -> PASS out=/a%2fb
+  ParamValuePipeline/def | in=a%25%32%66b -> PASS out=a%2fb
+----
+* Analysis: The gate only recognises the *literal spelling* `+%25+` + two hex digits in the wire form. Encoding one or both hex digits (`+%25%32%66+`, `+%252%66+`) defeats it, and after the single decode the pipeline *returns a value that still carries a complete second encoding layer* (`+%2f+`, `+%00+`). Every downstream consumer that decodes once more (a servlet container mapping the returned path, `+URI+`, `+URLDecoder+`, a reverse proxy) sees `+/+` or NUL. This is exactly the class HTTP-9 ("The system must detect and block double-encoded input", `+doc/http-security/functional-requirements.adoc:129-131+`) and the record component `+allowDoubleEncoding+` promise to close. Traversal-shaped payloads happen to be caught later (`+/api/%25%32%65%25%32%65/x+` is rejected by `+NormalizationStage+`'s `+%2e%2e+` intent check, and `+..%2f+` by the post-pattern pass), so this is not a traversal bypass, but arbitrary bytes (`+%00+`, `+%2f+`, `+%3b+`, `+%5c+`, …) reach the caller undecoded while the configuration says double encoding is blocked. No test in the tree exercises this shape (`+MixedEncodingAttackTest.java:126+` uses `+%25%32%65%25%32%65%25%32%66+`, which is rejected for traversal reasons, not for double encoding).
+* Recommendation: Decide double encoding on the *decoded* output, not on the wire spelling: after `+decodeForValidationType+`, if `+!config.allowDoubleEncoding()+` and the decoded string still contains `+%+` followed by two hex digits (or simply any `+%+` that was produced by decoding `+%25+`), throw `+DOUBLE_ENCODING+`. Keep the wire-form regex only as a fast path. Add tests for `+%25%32%66+`, `+%252%66+`, `+%25%30%30+` in `+DecodingStageTest+` and in `+DoubleEncodingAttackTest+`.
+
+==== F-A-2: Decoded parameter-name delimiter check runs *before* Unicode normalisation — NFC singleton U+037E folds to `+;+` after the check (`+a%CD%BEb+` → output `+a;b+`)
+* Severity: High
+* Category: false-security / correctness
+* Status: CONFIRMED (executed)
+* Location: `+DecodingStage.java:217+` (`+validateDecodedCharacters(value, decoded)+`) executes before `+:229-241+` (normalisation); `+:278+` `+STRUCTURAL_CHARS = "/\\.:?#%"+` omits `+;+`, `+&+`, `+=+`, `+++`, `+@+` and space; `+:399-406+` delimiter rule; `+:416-418+` `+isParameterNameDelimiter+`.
+* Evidence:
+----
+  DecodingStage/PNAME     | in=a%CD%BEb -> PASS out=a;b
+  DecodingStage/PNAME     | in=a%3Bb    -> REJECT INVALID_CHARACTER : Decoded parameter-name delimiter ';'
+  ParamNamePipeline/def   | in=a%CD%BEb -> PASS out=a;b        (full URLParameterNameValidationPipeline)
+  NFC(U+037E)=;   NFKC(U+FF1B)=;   NFKC(U+00A0)=' '   NFKC(U+FF1D)==   NFKC(U+FF06)=&
+  PathPipeline/def        | in=/a%EF%BC%9Bb -> PASS out=/a;b
+  PathPipeline/def        | in=/a%C2%A0b    -> PASS out=/a b
+----
+* Analysis: The Javadoc (`+DecodingStage.java:149-151, 350-352+`) and ADR-0011 promise that a percent-encoded delimiter cannot reach a parameter name. U+037E GREEK QUESTION MARK has a *canonical* (NFC) singleton decomposition to U+003B, so even the "lossless" NFC form used for `+PARAMETER_NAME+` (`+normalizationForm()+`, `+:292-297+`) produces a literal `+;+` — after the delimiter check has already run, and `+;+` is not in `+STRUCTURAL_CHARS+`, so `+introducesStructuralCharacter+` does not fire either. The pipeline output `+a;b+` is exactly what the rule exists to prevent (`+;+` is a query-parameter separator for many servers). The same ordering flaw lets NFKC introduce `+;+` and a space into a URL path (`+/a;b+`, `+/a b+`) without `+UNICODE_NORMALIZATION_CHANGED+`. There is *no test anywhere* for the parameter-name delimiter rule (grep for `+parameter-name delimiter+` / `+%3B+` / `+%26+` with `+PARAMETER_NAME+` in `+src/test+` returns nothing), and `+NfkcFoldClaimInvariantTest+` has no row for U+037E.
+* Recommendation: Run `+validateDecodedCharacters+` on the *normalised* string (move the call after `+:240+`, or call it twice), and add `+;+`, `+&+`, `+=+` and space to the structural set for `+PARAMETER_NAME+` (and `+;+`/space for `+URL_PATH+`). Add a negative test `+a%CD%BEb+` → `+INVALID_CHARACTER+` and register the U+037E → `+;+` NFC claim in `+NfkcFoldClaimInvariantTest+` per ADR-0010.
+
+==== F-A-3: Cookie prefix matching is case-sensitive; RFC 6265bis and every major browser match `+__Host-+`/`+__Secure-+` case-insensitively, so `+__host-…+` bypasses every prefix rule; `+__Http-+`/`+__HostHttp-+` are not implemented
+* Severity: Medium (reviewer proposed High; adjusted, see consolidation notes)
+* Category: false-security
+* Status: CONFIRMED (executed + spec)
+* Location: `+CookiePrefixValidationStage.java:236+` (`+cookieName.startsWith(HOST_PREFIX)+`), `+:242+`, `+:321-344+` (helpers), Javadoc `+:106+` ("Case-Sensitive — Cookie name prefixes are case-sensitive per RFC"), `+:104+` ("Implements RFC 6265bis prefix requirements"). Test that pins the wrong behaviour: `+CookiePrefixValidationStageTest.java:269-274+` (`+"__host-session", "__HOST-session"+` asserted as *no* prefix).
+* Evidence:
+----
+  cookie __Host-s   attrs=Path=/ -> REJECT COOKIE_PREFIX_VIOLATION __Host- prefix requires Secure attribute
+  cookie __host-s   attrs=Path=/ -> PASS
+  cookie __HOST-s   attrs=Path=/ -> PASS
+  cookie __secure-s attrs=Path=/ -> PASS
+  cookie __Http-s   attrs=Path=/ -> PASS
+  cookie __HostHttp-s attrs=Path=/ -> PASS
+----
+* Analysis: draft-ietf-httpbis-rfc6265bis (the document the class cites in `+@see+`) states for both prefixes "If a cookie's name begins with a *case-insensitive* match for the string `+__Secure-+`/`+__Host-+` …", and Chromium/Firefox implement the check case-insensitively (this is precisely one of the PortSwigger "Cookie Chaos" bypasses the class claims to prevent, `+:110-118+`). A server-side check that is case-sensitive therefore accepts `+Set-Cookie: __host-session=…; Path=/+` (no `+Secure+`, or with `+Domain=+`) — a cookie the browser *will* treat as a prefixed cookie and reject or, worse, the application will treat as host-locked while it is not. Later drafts (-19 and newer) also define `+__Http-+` and `+__HostHttp-+` (require `+HttpOnly+`); the class silently accepts them as ordinary names while advertising RFC 6265bis compliance. Additionally `+validate(String)+` `+:170+` uses `+String.trim()+`, which strips only `+<= U+0020+`, so a name ending in a *Unicode* whitespace character (`+__Host-s+` followed by U+00A0 NBSP, U+2003 or U+200B, or preceded by U+3000) passes the whitespace check — an ASCII trailing space is rejected (made explicit after adversarial verification) — although the Javadoc (`+:113+`) says Unicode whitespace injection is "prevented by character validation" — no character validation runs in this stage.
+* Recommendation: Use `+cookieName.regionMatches(true, 0, HOST_PREFIX, 0, HOST_PREFIX.length())+` (and the same for `+__Secure-+`, `+__Http-+`, `+__HostHttp-+`); implement `+__Http-+` (HttpOnly) and `+__HostHttp-+` (HttpOnly + `+__Host-+` rules); flip the test at `+:269-274+` to assert detection; either run `+CharacterValidationStage(COOKIE_NAME)+` inside `+validateCookie+` or remove the "prevented by character validation" claim.
+
+==== F-A-4: Malformed / uncovered overlong UTF-8 percent sequences are silently decoded to U+FFFD and returned — never `+INVALID_ENCODING+`
+* Severity: Medium
+* Category: correctness / false-security
+* Status: CONFIRMED (executed)
+* Location: `+DecodingStage.java:125-133+` (`+UTF8_OVERLONG_PATTERN+`), `+:188-195+`, `+:270+` (`+URLDecoder.decode(.., UTF_8)+` replaces malformed bytes, never throws), Javadoc `+:61, 158-161+` ("INVALID_ENCODING – if URL decoding fails due to malformed input", "Blocks malformed UTF-8 encoding attacks").
+* Evidence:
+----
+  PathPipeline/def | in=/a%c0%80b            -> PASS out=/a��b     (overlong NUL)
+  PathPipeline/def | in=/a%c0%8ab            -> PASS out=/a��b     (overlong LF)
+  PathPipeline/def | in=/a%ffb               -> PASS out=/a�b
+  PathPipeline/def | in=/a%80b               -> PASS out=/a�b
+  PathPipeline/def | in=/a%ed%a0%80b         -> PASS out=/a�b           (UTF-8-encoded surrogate)
+  PathPipeline/def | in=/a%f8%80%80%80%afb   -> PASS out=/a�...b        (5-byte overlong '/')
+  PathPipeline/def | in=/a%c0%afb            -> REJECT INVALID_ENCODING       (listed alternative)
+----
+* Analysis: The first regex alternative `+%c[0-1][0-9a-f]+` (`+:127+`) is malformed — it matches `+%c0+` followed by a *bare* hex digit (`+/a%c0ab+` is rejected) but not `+%c0%8X+`, so the overlong encodings of all C0 controls (`+%c0%80+`–`+%c0%9f+`) escape the "always blocked – security critical" check. Because `+URLDecoder+` substitutes U+FFFD, no exception is raised and the pipeline returns a value that differs from what any byte-oriented consumer (nginx, a C parser, a raw-byte router) will see for the same wire input. In Java itself no control character materialises, so this is not a direct bypass, but the documented contract ("blocks malformed UTF-8", "INVALID_ENCODING on malformed input") is false, and a value containing U+FFFD is accepted as valid path/parameter content.
+* Recommendation: Replace the regex with a real check: percent-decode to bytes yourself and decode with `+StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(REPORT)+`; map `+CharacterCodingException+` to `+INVALID_ENCODING+`. That rejects every overlong, surrogate and truncated sequence uniformly and lets you delete `+UTF8_OVERLONG_PATTERN+`. Add `+%c0%80+`, `+%ff+`, `+%ed%a0%80+` to `+DecodingStageTest.shouldDetectUtf8OverlongEncodingAttacks+` / a new malformed-UTF-8 test.
+
+==== F-A-5: `+AllowBlockListStage+` and `+CookiePrefixValidationStage+` embed unsanitised attacker input in `+detail+`, which `+UrlSecurityException.getMessage()+` appends verbatim — CR/LF log forging in the content-type pipeline
+* Severity: Medium
+* Category: security-gap
+* Status: CONFIRMED (executed)
+* Location: `+AllowBlockListStage.java:146+` (`+"Value '" + value + "' is block-listed"+`), `+:155+`; `+CookiePrefixValidationStage.java:276-277+` (`+cookie.getDomain().get()+`), `+:288-289+` (`+path.orElse(..)+`); `+UrlSecurityException.java:155-156+` appends `+detail+` raw while only `+originalInput+` is passed through `+truncateForLogging+` (`+:160+`). `+ContentTypeValidationPipeline.java:98+` contains only the allow/block stage, so no character validation precedes it.
+* Evidence:
+----
+  CT msg=Security validation failed [HEADER_VALUE]: Invalid input - Value 'text/html
+X-Injected: 1' is not in the allow-list (input: 'text/html??X-Injected: 1')
+  crlf domain -> REJECT msg=... __Host- prefix must not have Domain attribute (found: evil
+X: y) (input: '__Host-s')
+----
+* Analysis: The other stages deliberately escape control characters in `+detail+` (`+CharacterValidationStage.java:252-257+`, `+DecodingStage.java:467-473+`) precisely because the message is logged. These two stages undo that: a `+Content-Type+` header or a cookie attribute string containing CR/LF ends up verbatim in the exception message. Note also that `+CONTROL_CHARS_PATTERN+` in `+UrlSecurityException.java:81+` is `+[\x00-\x1F\x7F]+` — C1 controls (U+0085 NEL) and U+2028 are not neutralised even in `+originalInput+` (outside this area, mentioned for completeness).
+* Recommendation: Do not repeat the value in `+detail+` (`+originalInput+` already carries it, sanitised); for cookie attributes sanitise with the same `+U+XXXX+` escaping used elsewhere, or drop the "found: …" suffix.
+
+==== F-A-6: `+allowControlCharacters=true+` (lenient preset) admits C0 controls other than CR/LF into header names, header values and cookie names — contradicting `+DecodingStage+`'s "unconditional for header/cookie types" rule and RFC 7230
+* Severity: Medium
+* Category: false-security / consistency
+* Status: CONFIRMED (executed)
+* Location: `+CharacterValidationStage.java:336-350+` (`+ch <= 31+`: only CR/LF are unconditional for header/cookie types, everything else falls through to `+return allowControlCharacters+`); contrast `+DecodingStage.java:450-456+` (`+HEADER_NAME, HEADER_VALUE, COOKIE_NAME, COOKIE_VALUE, PARAMETER_NAME -> true+`, i.e. always forbidden) and ADR-0011 l.52 ("header and cookie components reject control characters unconditionally"). The header pipeline has no `+DecodingStage+` (`+HTTPHeaderValidationPipeline.java:144-147+`), so the character stage is the only guard.
+* Evidence:
+----
+  HVAL/lenient  | in=ab -> PASS      HVAL/lenient | in=ab -> PASS      HVAL/lenient | in=ab -> PASS
+  HNAME/lenient | in=XY -> PASS      HNAME/lenient | in=X	Y -> PASS   (TAB in a header *name*)
+  CharStage/COOKIE_NAME/lenient | in=ab -> PASS
+----
+* Analysis: RFC 7230 `+tchar+` (header names) contains no control character at all, and `+field-value+` allows only HTAB among controls. `+NormalizationStage.java:43-44+` and `+HTTPHeaderValidationPipeline+` justify omitting other stages with "relies on RFC 7230 character validation" — but that validation is configuration-dependent, and `+lenient()+` (documented as "maximum compatibility", not "unsafe headers") turns it off. A `++` or VT in a header name is never legitimate; some intermediaries treat them as whitespace/terminators (request-smuggling primitives).
+* Recommendation: In `+isCharacterAllowed+`, for `+isHeaderOrCookieType()+` return `+allowedChars.test(ch)+` for the whole `+ch <= 31+` range (i.e. only HTAB for `+HEADER_VALUE+`), ignoring `+allowControlCharacters+`, mirroring `+DecodingStage.decodedControlCharacterForbidden+`. Add a negative test for `++` in header name/value under `+lenient()+`.
+
+==== F-A-7: Default `+allowExtendedAscii=true+` lets C1 controls (U+0085), U+2028/U+2029, U+202E and unpaired surrogates through header-value validation; `+CharacterValidationStage+` Javadoc documents the default as `+false+`
+* Severity: Medium
+* Category: false-security / documentation
+* Status: CONFIRMED (executed)
+* Location: `+SecurityConfigurationBuilder.java:97+` (`+allowExtendedAscii = true+`), `+CharacterValidationStage.java:359-369+` (128–255: `+return allowExtendedAscii || allowedChars.test(ch)+` — no `+Cc+` check), `+:371-381+` (>255: everything but combining marks when `+allowExtendedAscii && supportsUnicodeCharacters()+`), Javadoc `+:123-130+` ("allowExtendedAscii … (default: false)").
+* Evidence:
+----
+  HeaderValuePipeline/def | in=abcdef -> PASS     (C1 NEL)
+  HeaderValuePipeline/def | in=abc def -> PASS     (LINE SEPARATOR)
+  HeaderValuePipeline/def | in=abc\uD800def -> PASS     (unpaired surrogate)
+  HeaderValuePipeline/def | in=abc‮def -> PASS     (RLO)
+  CharStage/PATH/def      | in=/ab    -> PASS  (caught later only because the path pipeline has a DecodingStage)
+  PathPipeline/lenient    | in=/ab    -> PASS
+----
+* Analysis: `+allowControlCharacters+` (default `+false+`) reads as "control characters are blocked", but for the 0x80–0x9F block the decision is made by `+allowExtendedAscii+`, which defaults to `+true+`; for header values nothing downstream re-checks. `+DecodingStage+` correctly classifies U+0085 as a control character (`+Character.isISOControl+`, `+:387+`) — the two stages disagree. The Javadoc default claim is simply wrong (the builder test `+SecurityConfigurationBuilderTest.java:75+` asserts `+true+`).
+* Recommendation: In `+isCharacterAllowed+`, test `+Character.isISOControl(ch)+` (or `+Character.getType(ch) == CONTROL+`) for the 128–255 branch and route it through the same control-character decision as `+ch <= 31+`; consider rejecting `+Cs+` (surrogate) and `+Zl/Zp+` (U+2028/9) categories for header values. Fix the Javadoc default (and list `+allowExtendedAscii+`/`+normalizeUnicode+` in the builder's "Default Values" section, `+SecurityConfigurationBuilder.java:56-66+`, which omits them).
+
+==== F-A-8: `+NormalizationStage+` traversal-intent and clamp rules are internally inconsistent and not "RFC 3986 §5.2.4 exactly"
+* Severity: Medium
+* Category: correctness / false-security
+* Status: CONFIRMED (executed)
+* Location: `+NormalizationStage.java:203+` (`+SINGLE_COMPONENT_TRAVERSAL_PATTERN+`), `+:419-429+` (root clamp), `+:430-433+` (empty segments dropped), `+:605-609+` (`+escapesRoot+` only for relative paths), Javadoc `+:157-164+` and ADR-0014 l.48 ("implements RFC 3986 Section 5.2.4 exactly").
+* Evidence (standalone stage, `+defaults()+`):
+----
+  a/../b            -> REJECT PATH_TRAVERSAL_DETECTED        /a/../b   -> PASS out=/b
+  a/../b/c          -> PASS out=b/c                          /../../etc/passwd -> PASS out=/etc/passwd
+  /a/b/../../../c   -> PASS out=/c                           api/..    -> PASS out=""      .  -> PASS out=""
+  /a//b///c/        -> PASS out=/a/b/c/                      //evil.com/x -> PASS out=/evil.com/x
+  PathPipeline/def: /api/..  -> PASS out=/     /api/%2e%2e -> PASS out=/     /a/b/%2e%2e -> PASS out=/a
+----
+* Analysis: (1) The LAYER-1 "intent" rule fires only for the exact shape `+seg/../seg+` with no leading slash; adding a leading slash or a third segment turns the same intent into an accepted, silently rewritten path. That is a fingerprint, not a rule, and it is what the class Javadoc example `+api/../admin+` advertises. (2) `+DIRECTORY_ESCAPE_ATTEMPT+` is unreachable for absolute paths (the clamp swallows every root-consumed `+..+`), so for servlet-style request paths — always absolute — the failure type documented at `+:286+` can never occur. (3) RFC 3986 §5.2.4 does *not* drop empty segments; `+/a//b+` → `+/a/b+` and `+//evil.com/x+` → `+/evil.com/x+` are rewrites beyond the RFC (the latter changes a protocol-relative reference into a path — protective if the caller uses the output, misleading if the caller uses the original after "validation passed"). (4) `+"."+` and `+"api/.."+` normalise to the empty string. (5) Inside the full path pipeline the pre-decode `+PatternMatchingStage+` rejects every `+../+` unconditionally, so the only `+..+` forms that reach this stage are trailing `+/..+`, `+/%2e%2e+`, `+/.%2e+` — and those are *resolved and accepted* (`+/api/%2e%2e+` → `+/+`) while `+/api/%2e%2e/+` is rejected. A caller cannot predict which spelling is rejected and which is rewritten.
+* Recommendation: Pick one contract and apply it uniformly: either (a) reject any `+..+` segment for `+URL_PATH+` (the pattern stage already does this for all but the trailing form — add `+(^|/)\.\.$+` there), making the clamp dead code, or (b) drop `+SINGLE_COMPONENT_TRAVERSAL_PATTERN+` and document that this stage resolves and clamps. Preserve empty segments (or document the deviation and stop claiming "exactly"). Have `+escapesRoot+` also flag an absolute path whose `+..+` count exceeded depth if that is meant to be an error.
+
+==== F-A-9: `+RFC3986_QUERY_CHARS+` and the cookie character set are narrower than the RFCs they cite; the strict-mode scheme check is only reachable through `+%3A+`
+* Severity: Low
+* Category: correctness / documentation
+* Status: CONFIRMED (executed)
+* Location: `+CharacterValidationConstants.java:117-121+` Javadoc vs `+:170-180+` (the `+RFC3986_QUERY_CHARS+` initialiser: no `+:+`, `+/+`, `+@+`), `+:267+` (`+COOKIE_NAME, COOKIE_VALUE -> RFC3986_UNRESERVED+`) — line numbers corrected after adversarial verification (the file has 301 lines); `+CharacterValidationConstantsTest.java:92-113+` never asserts the missing characters.
+* Evidence:
+----
+  CharStage/PVAL | in=http://x/y -> REJECT INVALID_CHARACTER ':'      CharStage/PVAL | in=a@b -> REJECT '@'
+  CharStage/COOKIE_VALUE | in=abc= -> REJECT INVALID_CHARACTER '='
+  ParamValuePipeline/strict | in=%09javascript:alert(1) -> REJECT INVALID_CHARACTER ':' (position 13)
+  ParamValuePipeline/strict | in=javascript%3Aalert(1)  -> REJECT SUSPICIOUS_PATTERN_DETECTED
+----
+* Analysis: RFC 3986 `+query = *( pchar / "/" / "?" )+` with `+pchar+` containing `+:+` and `+@+`; RFC 6265 `+cookie-octet+` allows `+!#$%&'()*+-./:<=>?@[]^_+`{|}~`+. The library rejects a raw URL or e-mail in a parameter value and a padded base64 cookie value. This is fail-closed, so not a security gap, but the class claims "RFC 3986 query characters" and the ADR-0015 example +`%09javascript:alert(1)` is in practice rejected by the character stage, not by the scheme check it is meant to illustrate.
+* Recommendation: Add `+:+`, `+@+`, `+/+` to the query set (and `+?+`), align the cookie set with RFC 6265 `+cookie-octet+` (or document the deliberate narrowing), and assert the sets in `+CharacterValidationConstantsTest+` exhaustively (the test for the query set checks only 9 characters).
+
+==== F-A-10: `+RequestCollectionValidator+` counts distinct keys, accepts negative counts, and cannot deliver the "hash-collision DoS" defence it advertises
+* Severity: Low
+* Category: false-security / documentation
+* Status: CONFIRMED (executed)
+* Location: `+RequestCollectionValidator.java:39+` ("defend against resource-exhaustion and hash-collision denial-of-service"), `+:84-87+` (`+parameters.size()+`), `+:119-141+` (no lower bound), `+SecurityConfigurationBuilder.java:430+`, `+doc/http-security/configuration.adoc:217+`.
+* Evidence: `+Map{"a" -> String[10000]}+` with `+maxParameterCount(2)+` → PASS; `+validateParameterCount(-5)+` → PASS.
+* Analysis: A `+Map<String, String[]>+` (the servlet `+getParameterMap()+` shape the Javadoc example uses) with one key and ten thousand values passes. A hash-collision attack succeeds while the container *builds* the map, before this validator can be called, so the claim is unachievable by design.
+* Recommendation: Count total values for `+Map<String, ? extends Collection|Object[]>+` inputs (or expose `+validateParameterValueCount+`), reject negative counts, and rephrase the Javadoc to "parameter-flood (count) protection".
+
+==== F-A-11: Dead configuration/constant surface that suggests enforcement which does not exist
+* Severity: Low
+* Category: duplication / false-security
+* Status: CONFIRMED (grep over `+src/main+`)
+* Location: `+SecurityDefaults.java:236-246+` (`+DANGEROUS_HEADER_NAMES+`, `+DEBUG_HEADER_NAMES+`), `+:278-281+` (`+SUSPICIOUS_COOKIE_NAMES+`), `+:295-314+` (`+SAFE_/DANGEROUS_/UPLOAD_CONTENT_TYPES+`), `+:319-331+` (`+NULL_BYTE+`, `+PROBLEMATIC_CONTROL_CHARS+`, `+INJECTION_CHARACTERS+`), `+:340-348+` (`+DOUBLE_ENCODING_PATTERNS+`, `+UNICODE_NORMALIZATION_FORMS+`) — none referenced by any production class. `+UrlSecurityFailureType.java:100-133+`: `+KNOWN_ATTACK_SIGNATURE, MALFORMED_INPUT, INVALID_STRUCTURE, PROTOCOL_VIOLATION, RFC_VIOLATION, INVALID_IPV6_FORMAT, MALFORMED_URL, INVALID_HOST_FORMAT, INVALID_URL_FORMAT+` are never raised. `+SecurityConfigurationBuilder.java:76-92+` hard-codes `+4096/128/2048/5MB+` instead of `+SecurityDefaults.MAX_*_DEFAULT+`.
+* Analysis: `+DOUBLE_ENCODING_PATTERNS+` contains `+"%2e%2e"+`, `+"%2f%2e%2e"+` — not double encodings at all. `+PROBLEMATIC_CONTROL_CHARS+` omits `+\t\n\r+` and 0x1A–0x1F (it stops at `+\031+`). A reader of `+SecurityDefaults+` reasonably assumes `+DANGEROUS_HEADER_NAMES+` is enforced somewhere; only the class Javadoc (`+:48-50+`) says otherwise. The tests for these constants (`+SecurityDefaultsTest.java:176-264+`) are `+assertNotNull+`/`+contains+` on literals — coverage without behaviour.
+* Recommendation: Delete the unused sets and enum constants (or move the reference lists to documentation), and derive builder defaults from `+SecurityDefaults+` so `+defaultsShouldEqualPlainBuilderResult+` cannot drift.
+
+==== F-A-12: Documentation drift between ADRs, Javadoc and code
+* Severity: Low
+* Category: documentation / consistency
+* Status: CONFIRMED (read)
+* Location / Evidence:
+** ADR-0006 l.154-156: "its four Windows filesystem literals moved into `+SENSITIVE_PATH_PATTERNS+` *as bare segments*" — contradicts ADR-0015 l.171-173 ("keeping their backslash-delimited spelling") and `+SecurityDefaults.java:149-157+`/`+:162+` (`+"\\windows\\"+` etc., substring-matched).
+** `+CharacterValidationStage.java:123-130+`: `+allowExtendedAscii+` "(default: false)" — builder default is `+true+` (F-A-7).
+** `+CookiePrefixValidationStage.java:106,113+`: "case-sensitive per RFC", "Unicode whitespace injection (prevented by character validation)" — both false (F-A-3).
+** `+DecodingStage.java:61, 158-161+`: "blocks malformed UTF-8", "INVALID_ENCODING if decoding fails" — see F-A-4.
+** `+NormalizationStage.java:157-164+` / ADR-0014 l.48: "follows RFC 3986 §5.2.4 exactly" — empty-segment collapsing is not in the RFC (F-A-8).
+** `+SecurityDefaults.java:60-63+`: usage example still calls the count limits "advisory constants for application-layer enforcement" while `+:46-47+` says they are enforced by `+RequestCollectionValidator+`.
+** `+SecurityDefaults.java:408-411+` (lenient callout): "normalizeUnicode=false disables … homoglyph detection … before the input is compared against the pattern sets" — for the path pipeline the second pattern pass runs after normalisation, so partially true; the first pass never sees normalised input in any preset.
+** `+DecodingStageTest.java:429-430+`: "Verify immutability via Lombok @Value" — `+DecodingStage+` is a record.
+** `+PatternMatchingStageTest.java:33-36+`: class Javadoc still lists "SQL injection, XSS, command injection"; `+:382+` comment "contains both path traversal and SQL injection".
+** `+CharacterValidationStageTest.java:399-441+`: assertion messages refer to a flag `+allowHighBitCharacters+` that does not exist.
+* Recommendation: Fix each statement at the cited line; add the U+037E row and the `+__host-+` case to the relevant test registries so the docs are backed by executable claims (ADR-0010's own principle).
+
+==== F-A-13: Test-quality gaps for this area
+* Severity: Medium
+* Category: test-quality / generator-usage
+* Status: CONFIRMED (read + grep)
+* Location / Evidence:
+.. *No test for the parameter-name delimiter rule* (`+DecodingStage.java:399-406+`) anywhere in `+src/test+` — the only positive/negative evidence is my probe. Same for the `+PARAMETER_NAME+` `+++`→space rejection.
+.. *No test for malformed UTF-8* other than the six listed overlongs (`+DecodingStageTest.java:745-763+`); nothing asserts `+%c0%80+`, `+%ff+`, `+%ed%a0%80+` behaviour (F-A-4).
+.. *No test for encoded-hex-digit double encoding* (F-A-1); `+DecodingStageTest.java:115-131+` covers only literal `+%25XX+`.
+.. `+CookiePrefixValidationStageTest.java:269-274+` *pins the RFC-violating behaviour* (F-A-3) as "Should be case-sensitive".
+.. `+PatternMatchingStageTest.java:300-311+` `+shouldRespectCaseSensitiveConfiguration+` uses `+../etc/passwd+`, an input with no case-dependent characters — it cannot fail whichever way the flag is wired. No test asserts the documented consequence (`+JavaScript:alert(1)+` passes under `+caseSensitiveComparison=true+`), which my probe confirmed.
+.. `+DecodingStageTest.java:425-472+` `+shouldBeImmutableAndThreadSafe+`: `+assertDoesNotThrow(() -> DecodingStage.class.getMethod("equals", Object.class))+` on a record is a tautology; the concurrency part runs 10 threads once — not a thread-safety test.
+.. `+SecurityDefaultsTest.java:93-264+` (15× `+assertNotNull+` on `+static final+` constants), `+UrlSecurityFailureTypeTest.java:36-56+` and `+ValidationTypeTest.java:35-42+` (`+assertNotNull(Enum.CONSTANT)+`) can never fail.
+.. `+NormalizationStageTest.java:136-143, 201-213, 341-353+` assert the clamp (`+/api/../../../etc/passwd+` → `+/etc/passwd+`, `+/../+` → `+/+`) as *desired* behaviour, freezing F-A-8.
+.. `+RequestCollectionValidatorTest+` never uses a multi-valued map (F-A-10) or a negative count.
+.. Generator usage: `+DecodingStageTest+`, `+NormalizationStageTest+`, `+CharacterValidationStageTest+`, `+PatternMatchingStageTest+`, `+AllowBlockListStageTest+`, `+RequestCollectionValidatorTest+` and all three `+core/*Test+` use *no* cui-test-generator at all — every attack list is a hard-coded `+@ValueSource+`/`+Stream.of+` (the `+DecodingStageTest.java:149-152+` comment "QI-14/QI-10: Converted hardcoded String[] to dynamic parameterized test" is misleading; `+:172-185+` is still a hard-coded `+Stream.of+`). Only `+LengthValidationStageTest+` (`+Generators.letterStrings+`) and `+CookiePrefixValidationStageTest+` (`+@TypeGeneratorSource(CookieNameAsciiWhitespaceGenerator, count = 20)+`) use generators; the latter draws from 3 fixed names × 4 whitespace variants × 5 positions (60 distinct outputs), adequate but low-entropy.
+.. `+assertDoesNotThrow+` is used as the *only* assertion in 9 cookie tests and 5 request-collection tests (positive cases without checking the returned value).
+* Recommendation: Add the concrete negative cases listed above (`+a%CD%BEb+`, `+%25%32%66+`, `+%c0%80+`, `+__host-x+`, `++` header name under lenient, `+JavaScript:+` under case-sensitive); replace tautological assertions; convert the hard-coded attack lists to `+TypedGenerator+`s per `+doc/test-generators-readme.adoc+`.
+
+==== F-A-14: Paranoid block-list is applied to parameter *values* with path-segment semantics — a value equal to `+etc+`, `+dev+`, `+sys+`, `+root+`, `+boot+`, `+proc+` is rejected
+* Severity: Info
+* Category: documentation
+* Status: CONFIRMED (executed)
+* Location: `+PatternMatchingStage.java:309-312+` (`+URL_PATH || PARAMETER_VALUE+` → `+checkBlockedPathPatterns+`), `+:462+` (`+testValue.split("/")+`); `+SecurityConfiguration.java:235-242+` documents the false-positive profile for paths only.
+* Evidence: `+ParamValuePipeline/paranoid | in=etc -> REJECT SUSPICIOUS_PATTERN_DETECTED : /etc/+`, `+in=dev -> REJECT+`, `+in=ETC -> REJECT+`.
+* Recommendation: Mention parameter values in the `+paranoid()+` false-positive note, or restrict the segment matcher to `+URL_PATH+`.
+
+---
+
+=== Verified strengths
+
+Checked specifically and found correct (with probe evidence unless noted):
+
+* *Percent-encoding syntax* (`+CharacterValidationStage.java:272-303+`): `+%2+`, `+%+`, `+%2G+` at end/middle → `+INVALID_ENCODING+`; `+%00+` → `+NULL_BYTE_INJECTION+`; the off-by-one in `+position + 2 >= value.length()+` is correct (`+/abc%20+` passes, `+/abc%2+` fails).
+* *DEL (0x7F)* is rejected for every type (not in any set; `+CharStage/PATH /abc -> REJECT+`, `+HeaderValuePipeline  -> REJECT+`).
+* *CR/LF in header and cookie types* are rejected regardless of `+allowControlCharacters+` (`+CharacterValidationStage.java:341-343+`; lenient header value `+\r\n+` → REJECT).
+* *Code-point iteration* (`+CharacterValidationStage.java:218-222+`, `+DecodingStage.java:363-408+`): supplementary-plane combining marks and unpaired surrogates in URL paths are reported correctly; `+CharacterValidationStageTest.java:253-294+` covers both.
+* *Combining marks* (`+isCombiningMark+`, Mn/Mc/Me) rejected both raw (`+áb+` in BODY and HEADER_VALUE) and decoded (`+%CC%80+`).
+* **`+++` semantics** (`+DecodingStage.java:266-271+`): `+/a+b%2Bc+` → `+/a+b+c+` for paths, `+a+b%2Bc+` → `+a b+c+` for form types.
+* *Malformed percent sequences* reaching `+DecodingStage+` directly (`+%2+`, `+%zz+`, `+%+`) → `+INVALID_ENCODING+` with cause.
+* *Decoded C0/C1 controls* rejected for `+URL_PATH+` (`+%7f+`, `+%c2%85+`), unconditionally for header/cookie/parameter-name types; CR/LF/TAB tolerated only for `+PARAMETER_VALUE+`/`+BODY+` as documented; details are `+U+XXXX+`-escaped.
+* *NFKC structural-fold detection* catches U+2024, U+2025, U+2026, U+FF0E, U+FF0F, U+FF3C, U+FE68, U+FF1A, U+FF03, U+FF1F, U+FF05 (all → `+UNICODE_NORMALIZATION_CHANGED+`) and lets benign folds (`+ＡBC+`→`+ABC+`, U+212A→`+K+`) through; U+2044/U+2215 do not fold (checked) so no false negative there.
+* *Kelvin-sign blocked-parameter-name evasion* (`+%E2%84%AAey+` → `+Key+`) is a non-issue: pattern matching runs after decode+NFC and lowercases (`+key+` not in the list anyway; `+f%69le+` → rejected).
+* *Whitespace-stripped scheme anchor* (`+PatternMatchingStage.java:424-431+`, ADR-0015): `+%09javascript%3A…+`, `+%0A…+`, `+%20%20…+`, `+java%09script%3A…+` all rejected under strict; `+/v1/data:export+` and `+xjavascript:+` pass. NBSP is not stripped, which matches WHATWG (only C0/space are stripped) — not a bypass.
+* *Case-insensitivity superset claim* (ADR-0012): under `+caseSensitiveComparison=true+` the literal set narrows as documented, but `+ENCODED_TRAVERSAL_PATTERN+` is compiled `+CASE_INSENSITIVE+` so `+%2E%2e%2F+` is still caught — detection never drops below the regex floor.
+* **`+..;+` path-parameter family** (`+NormalizationStage.java:226+`, `+:534-538+`): `+/api/..;/x+`, `+/api/..%3b/x+`, `+/api/%2e%2e;/x+`, `+..%EF%BC%9B/x+` (fullwidth `+;+` folded by NFKC) are all rejected; `+/a/b..;/c+` passes.
+* *Mixed separators*: `+/a\../b+` is caught by the final segment split (`+:583-591+`) even though earlier regexes miss it; `+..+` alone, `+http://h/../x+` rejected.
+* *Segment/depth limits* are exact (`+/a/×100+` passes, ×101 → `+EXCESSIVE_NESTING+`; 1001 segments rejected).
+* **`+LengthValidationStage+`**: BODY measured in UTF-8 bytes without allocation, surrogate pairs = 4 bytes, unpaired surrogate = 3 bytes (`+éé+` = 4 bytes > 3 → reject); limits are `+long+`; other types measured in UTF-16 units as documented.
+* **`+AllowBlockListStage+`**: case-insensitive (`+Locale.ROOT+`), block precedence, media-type parameter stripping incl. trim (`+application/json ; charset=utf-8+`, `+ Application/JSON+`), empty-value semantics as documented; `+X-Debug2+`/`+X_Debug+` not matched by `+X-Debug+`.
+* **`+SecurityConfiguration+`** compact constructor validates every limit and defensively copies every set; presets are `+assertSame+`-delegated; `+paranoid()+` derived from `+strict()+` via `+withContentBlockLists+` and `+isStrict()+` stays true.
+* *Header pipeline* literal `+%00+`/`+%XX+` are inert (no decoding), so `+X-Foo%00+` passing is correct.
+* *ADR-0011* (wire-form vs decoded-form split) and *ADR-0015* (block-list tiering, backslash substring matching reachable via `+%5C+`) match the code: `+/api/%5cwindows%5csystem32+` → rejected under paranoid, `+/api/sketches+`, `+/a/.env.local+`, `+web.xml.bak+` pass, `+/%65tc/passwd+` and `+/ETC/passwd+` rejected.
+
+=== Test inventory for the area
+
+[cols="1,1,1,1,1,1",options="header"]
+|===
+| Production class
+| Test class(es)
+| Positive cases?
+| Negative cases?
+| Generators used?
+| Notes on quality
+
+| `+DecodingStage+`
+| `+DecodingStageTest+` (32 tests)
+| yes (decode, `+++`, benign folds, allowed controls)
+| yes (double enc., invalid enc., overlong, combining, CRLF, controls, structural fold)
+| no
+| Hard-coded lists; no PARAMETER_NAME delimiter test; no malformed-UTF-8 test; no `+%25%32%66+`; tautological record-method assertions (`+:431-433+`); stale "Lombok @Value" comment
+
+| `+NormalizationStage+`
+| `+NormalizationStageTest+` (26)
+| yes (RFC examples, trailing slash, `+..+` in filenames, `+;+` params)
+| yes (relative escape, `+seg/../seg+`, `+%2e%2e+` case perms, `+..;+`, limits)
+| no
+| Pins clamp/empty-segment behaviour (F-A-8); no test for absolute-path `+DIRECTORY_ESCAPE_ATTEMPT+` (impossible)
+
+| `+CharacterValidationStage+`
+| `+CharacterValidationStageTest+` (23)
+| yes
+| yes (NUL, `+%00+`, bad hex, controls in headers, non-ASCII header names, high Unicode)
+| no
+| Messages reference non-existent `+allowHighBitCharacters+`; no C1/U+2028 header-value case; `+allowControlCharacters=true+` header case untested
+
+| `+CharacterValidationConstants+`
+| `+CharacterValidationConstantsTest+` (7)
+| yes
+| partial
+| no
+| Query-set test checks 9 chars; does not assert absence of `+:+`/`+@+`/`+/+`; token/header sets exhaustive
+
+| `+PatternMatchingStage+`
+| `+PatternMatchingStageTest+` (22), `+pipeline/PostDecodeEnforcementRegressionTest+`, `+tests/*Attack*Test+`
+| yes
+| yes (traversal literal/encoded, blocked paths, schemes, param names)
+| no (unit test); DB tests use generators
+| Vacuous case-sensitivity test (`+:300-311+`); stale SQL/XSS Javadoc; no header pass-through test; no backslash-substring test
+
+| `+LengthValidationStage+`
+| `+LengthValidationStageTest+` (30)
+| yes
+| yes (all 8 types, boundaries, `+> Integer.MAX_VALUE+`)
+| yes (`+Generators.letterStrings+`)
+| Good: exact-boundary, UTF-8 byte, surrogate cases
+
+| `+AllowBlockListStage+`
+| `+AllowBlockListStageTest+` (10)
+| yes
+| yes
+| no
+| Solid semantics coverage; no CRLF/detail test (F-A-5)
+
+| `+CookiePrefixValidationStage+`
+| `+CookiePrefixValidationStageTest+` (24), `+tests/CookieChaosAttackTest+`
+| yes
+| yes
+| yes (`+@TypeGeneratorSource+` ×20, `+@EnableGeneratorController+`)
+| Pins case-sensitive prefix (wrong per RFC); positive cases use only `+assertDoesNotThrow+`; no `+__Http-+` test
+
+| `+RequestCollectionValidator+`
+| `+RequestCollectionValidatorTest+` (7)
+| yes
+| yes (over-limit, nulls)
+| no
+| No multi-valued map, no negative count; `+assertDoesNotThrow+`-only positives
+
+| `+SecurityConfiguration+`
+| `+SecurityConfigurationTest+` (19)
+| yes
+| yes (non-positive limits, near-preset variants)
+| no
+| Good; `+assertNotNull(toString)+` filler
+
+| `+SecurityConfigurationBuilder+`
+| `+SecurityConfigurationBuilderTest+` (26)
+| yes
+| yes
+| no
+| Asserts literal defaults (`+4096+`…) instead of `+SecurityDefaults.*+`
+
+| `+SecurityDefaults+`
+| `+SecurityDefaultsTest+` (25)
+| yes
+| n/a
+| no
+| 15× `+assertNotNull+` on constants; consistency tests omit `+allowExtendedAscii+`/`+failOnSuspiciousPatterns+` for default preset
+
+| `+HttpSecurityValidator+`
+| `+HttpSecurityValidatorTest+` (19)
+| yes
+| yes (null args, exception propagation)
+| no
+| Reasonable behavioural tests of `+andThen/compose/when/reject+`
+
+| `+UrlSecurityFailureType+`
+| `+UrlSecurityFailureTypeTest+` (19)
+| yes
+| n/a
+| no
+| 23× `+assertNotNull+` on enum constants; category-exclusivity test is the only real invariant
+
+| `+ValidationType+`
+| `+ValidationTypeTest+` (20)
+| yes
+| n/a
+| no
+| 10× `+assertNotNull+`; classification tests are real
+
+|===
+
+
+
+== Stream B: pipelines, data classes, exceptions, monitoring (`F-B-`)
+
+=== Scope reviewed
+
+Production (read in full):
+
+[cols="1,1",options="header"]
+|===
+| File
+| Lines
+
+| src/main/java/de/cuioss/http/security/pipeline/AbstractValidationPipeline.java
+| 111
+
+| src/main/java/de/cuioss/http/security/pipeline/PipelineFactory.java
+| 309
+
+| src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java
+| 141
+
+| src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java
+| 128
+
+| src/main/java/de/cuioss/http/security/pipeline/URLParameterNameValidationPipeline.java
+| 113
+
+| src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java
+| 159
+
+| src/main/java/de/cuioss/http/security/pipeline/ContentTypeValidationPipeline.java
+| 105
+
+| src/main/java/de/cuioss/http/security/pipeline/package-info.java
+| 95
+
+| src/main/java/de/cuioss/http/security/data/{AttributeParser,Cookie,HTTPBody,URLParameter,package-info}.java
+| 204 / 446 / 384 / 175 / 75
+
+| src/main/java/de/cuioss/http/security/exceptions/{UrlSecurityException,package-info}.java
+| 199 / 89
+
+| src/main/java/de/cuioss/http/security/monitoring/{SecurityEventCounter,package-info}.java
+| 276 / 67
+
+| src/main/java/de/cuioss/http/security/package-info.java
+| 47
+
+| src/main/java/module-info.java
+| 45
+
+| Context: config/{SecurityConfiguration,SecurityConfigurationBuilder,SecurityDefaults}.java
+| 339 / 590 / 457
+
+| Context: validation/{AllowBlockListStage,LengthValidationStage,CharacterValidationStage,CharacterValidationConstants,DecodingStage,NormalizationStage,PatternMatchingStage,RequestCollectionValidator,CookiePrefixValidationStage}.java
+| 178 / 263 / 427 / 301 / 474 / 610 / 523 / 154 / 345
+
+| Context: core/{HttpSecurityValidator,ValidationType,UrlSecurityFailureType}.java
+| 260 / 164 / 261
+
+| doc/http-security/specification/pipeline-architecture-standards.adoc
+| 238
+
+| doc/http-security/configuration.adoc
+| 277
+
+|===
+
+
+Tests (read in full):
+
+[cols="1,1",options="header"]
+|===
+| File
+| Lines
+
+| src/test/java/de/cuioss/http/security/pipeline/URLPathValidationPipelineTest.java
+| 335
+
+| src/test/java/de/cuioss/http/security/pipeline/URLParameterValidationPipelineTest.java
+| 397
+
+| src/test/java/de/cuioss/http/security/pipeline/URLParameterNameValidationPipelineBehaviorTest.java
+| 113
+
+| src/test/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipelineTest.java
+| 368
+
+| src/test/java/de/cuioss/http/security/pipeline/ContentTypeValidationPipelineTest.java
+| 271
+
+| src/test/java/de/cuioss/http/security/pipeline/HeaderAndContentTypeEnforcementRegressionTest.java
+| 258
+
+| src/test/java/de/cuioss/http/security/pipeline/PostDecodeEnforcementRegressionTest.java
+| 302
+
+| src/test/java/de/cuioss/http/security/pipeline/PresetTieringBehaviourTest.java
+| 222
+
+| src/test/java/de/cuioss/http/security/pipeline/PipelineFactoryTest.java
+| 363
+
+| src/test/java/de/cuioss/http/security/data/{AttributeParserTest,CookieTest,HTTPBodyTest,URLParameterTest}.java
+| 206 / 565 / 471 / 279
+
+| src/test/java/de/cuioss/http/security/exceptions/UrlSecurityExceptionTest.java
+| 209
+
+| src/test/java/de/cuioss/http/security/monitoring/SecurityEventCounterTest.java
+| 400
+
+| Generators consulted (code only): generators/url/{ValidURLPathGenerator,PathTraversalURLGenerator}, generators/encoding/EncodingCombinationGenerator, generators/header/{HTTPHeaderInjectionGenerator,ValidHTTPHeaderValueGenerator,InvalidHTTPHeaderNameGenerator}, generators/SupportedValidationTypeGenerator
+| —
+
+|===
+
+
+=== Findings
+
+==== F-B-1: Content-type / header-name list ENTRIES are not normalised like the values they are matched against — a block-list entry with parameters or whitespace silently blocks nothing
+* Severity: Medium
+* Category: false-security
+* Status: CONFIRMED (jshell)
+* Location: src/main/java/de/cuioss/http/security/validation/AllowBlockListStage.java:99-105 (`+toLowercaseSet+` only lowercases), :167-177 (`+comparisonKey+` strips parameters + trims the *value* only); wired by src/main/java/de/cuioss/http/security/pipeline/ContentTypeValidationPipeline.java:96-99 and HTTPHeaderValidationPipeline.java:149-152; documented in doc/http-security/configuration.adoc:248-273
+* Evidence:
+[source,java]
+----
+  // AllowBlockListStage.java:100-103
+  for (String value : source) { lower.add(value.toLowerCase(Locale.ROOT)); }
+  // AllowBlockListStage.java:169-176 — applied to the INPUT only
+  int semicolon = candidate.indexOf(';'); if (semicolon >= 0) candidate = candidate.substring(0, semicolon);
+  candidate = candidate.trim();
+----
+  jshell:
+----
+  blockedContentTypes=["text/html; charset=utf-8"]  validate("text/html; charset=utf-8") -> ACCEPT   (block-list is a silent no-op)
+  allowedContentTypes=["application/json "]         validate("application/json")         -> REJECT   (allow-list rejects everything)
+  allowedContentTypes=["text/*"]                    validate("text/html")                -> REJECT   (no wildcard support, undocumented)
+----
+* Analysis: The input side is canonicalised (parameters dropped, whitespace trimmed, lowercased) but the configured entries are only lowercased. Any entry a caller copies verbatim from a real `+Content-Type+` header (`+text/html; charset=utf-8+` — exactly the spelling used throughout `+HTTPBody+`/`+AttributeParser+` Javadoc) can never equal a canonicalised key, so the block-list is silently ineffective (fail-open). The allow-list variant is fail-closed but breaks the service. Neither `+SecurityConfigurationBuilder.blockedContentTypes()+` (config/SecurityConfigurationBuilder.java:523-526) nor the stage constructor rejects or normalises such entries, and configuration.adoc:248-256 says nothing about entry format or wildcards.
+* Recommendation: Apply `+comparisonKey()+` to every entry at construction (in `+toLowercaseSet+` when `+mediaTypeOnly+`, and `+trim()+` always), and reject (IllegalArgumentException) entries that still contain `+;+`, `+,+`, whitespace or `+*+` so a misconfiguration fails at startup. Document in configuration.adoc and the builder Javadoc that entries are bare media types / bare header names, no parameters, no wildcards. Add tests for both traps.
+
+==== F-B-2: Recommended body-validation flow lets a request with NO Content-Type bypass a configured allow-list (null → Optional.empty() → accepted)
+* Severity: Medium
+* Category: false-security
+* Status: CONFIRMED (jshell)
+* Location: src/main/java/de/cuioss/http/security/data/HTTPBody.java:71-76 and :98-107 (recommended usage); src/main/java/de/cuioss/http/security/pipeline/AbstractValidationPipeline.java:79-81; src/main/java/de/cuioss/http/security/validation/AllowBlockListStage.java:135-137
+* Evidence:
+[source,java]
+----
+  // HTTPBody.java:74-76 (Javadoc, the documented route)
+  HttpSecurityValidator contentTypeValidator = PipelineFactory.createContentTypePipeline(config, counter);
+  contentTypeValidator.validate(body.contentType());
+  // AbstractValidationPipeline.java:79-81
+  if (value == null) { return Optional.empty(); }
+----
+  jshell: `+allowedContentTypes=["application/json"]; validate(new HTTPBody("x", null, "").contentType()) -> Optional.empty+` — no exception, no counter increment.
+* Analysis: `+HTTPBody.contentType()+` is `+@Nullable+` (HTTPBody.java:126-129). Following the class's own recommended snippet, a request that omits `+Content-Type+` sails past an allow-list of `+application/json+` with no exception and no security event, while the same body *with* `+Content-Type: text/plain+` is rejected. For an allow-list, "absent" is not "safe". The pipeline's null semantics are documented in the interface, but the only place a caller is told how to use the content-type pipeline actively steers them into the gap, and ContentTypeValidationPipeline's Javadoc (lines 31-33) says nothing about null.
+* Recommendation: Change the HTTPBody Javadoc route to `+validate(body.contentTypeOrDefault(""))+` (an empty string *is* rejected by a non-empty allow-list, AllowBlockListStage Javadoc lines 45-47) and add a "null Content-Type is accepted — pass `+""+` if absence must be rejected" warning to ContentTypeValidationPipeline and configuration.adoc:248-256. Consider a `+ContentTypeValidationPipeline.validateHeader(@Nullable String)+` convenience that maps null→"" when an allow-list is configured. Add a regression test.
+
+==== F-B-3: PipelineFactory / package Javadoc promise detections no stage performs (XSS, "suspicious header names", "malicious header content", "header injection attempts")
+* Severity: Medium
+* Category: documentation (false-security)
+* Status: CONFIRMED (grep + jshell)
+* Location: src/main/java/de/cuioss/http/security/pipeline/PipelineFactory.java:110 (`+<li>XSS attack patterns</li>+`), :164 (`+<li>Suspicious header names</li>+`), :187 (`+<li>Malicious header content</li>+`); src/main/java/de/cuioss/http/security/pipeline/package-info.java:27 (`+URLParameterValidationPipeline - XSS and injection attacks via URL parameter values+`); contrast src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java:231-232, :306 ("XSS pattern checking removed - application layer responsibility") and HTTPHeaderValidationPipeline.java:135-153 (Length + Character [+ AllowBlockList] only)
+* Evidence: `+grep -rniE "xss|<script" src/main/java+` finds only Javadoc mentions; no code path. jshell: parameter-value pipeline `+validate("%3Cscript%3E") -> ACCEPT '<script>'+`; PostDecodeEnforcementRegressionTest.java:293-301 pins `+/%3Cscript%3E -> /<script>+` as accepted by design.
+* Analysis: A caller choosing `+createUrlParameterPipeline+` because the factory Javadoc lists "XSS attack patterns" gets no XSS coverage at all; a caller choosing `+createHeaderValuePipeline+` for "Malicious header content" gets RFC 7230 character + length checks only. The library's own design decision (application-layer escaping) is correct, but the factory Javadoc contradicts it and is the first thing a user reads.
+* Recommendation: Rewrite the bullet lists in PipelineFactory.java:106-113, :160-167, :183-190 and package-info.java:27 to enumerate what actually runs (traversal literals, encoding attacks, decoded control/delimiter checks, protocol-handler scheme under `+failOnSuspiciousPatterns+`, configured block-lists; for headers: length, RFC 7230 character set, CR/LF, optional name lists). Add an explicit "does NOT detect XSS/SQLi/HTML — application-layer" sentence.
+
+==== F-B-4: Parameter pipelines reject raw RFC 3986 query characters (`+/ : @+`) that browsers send unencoded, yet accept the identical percent-encoded spellings — false positives with no security value
+* Severity: Medium
+* Category: correctness (false-security on the "RFC 3986 query characters" claim)
+* Status: CONFIRMED (jshell)
+* Location: src/main/java/de/cuioss/http/security/validation/CharacterValidationConstants.java:177-185 (`+RFC3986_QUERY_CHARS+` = unreserved + `+?&=!$'()*+,;+` — omits `+/ : @+` which RFC 3986 §3.4 `+query = *( pchar / "/" / "?" )+` permits); composed by src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java:37 ("Validates RFC 3986 query characters") and :118, URLParameterNameValidationPipeline.java:102; DecodingStage.java:359-410 (`+validateDecodedCharacters+` does not re-check set membership)
+* Evidence (jshell, defaults, parameter-value pipeline):
+----
+  https://example.com/cb          -> REJECT INVALID_CHARACTER (':' at 5)
+  https%3A%2F%2Fexample.com%2Fcb  -> ACCEPT 'https://example.com/cb'
+  user@example.com                -> REJECT INVALID_CHARACTER ('@')
+  user%40example.com              -> ACCEPT 'user@example.com'
+  a/b -> REJECT ; a%2Fb -> ACCEPT 'a/b' ; <script> -> REJECT ; %3Cscript%3E -> ACCEPT '<script>'
+----
+* Analysis: Browsers' query percent-encode set (WHATWG URL) does not encode `+/+`, `+:+` or `+@+`, so `+?redirect=https://host/cb+` and `+?email=user@example.com+` arrive raw and are rejected by the default pipeline with INVALID_CHARACTER. Because the decoded output is never re-checked against the set, the restriction is trivially satisfied by encoding and the value handed to the caller can contain any of these characters anyway. Net effect: breakage of legitimate inputs, zero added protection, and a Javadoc claim ("RFC 3986 query characters") that is stricter than RFC 3986. The URLParameterValidationPipelineTest.java:148-149 comment ("a literal `+/+` is not a member of the RFC 3986 query character set") encodes the same misconception into the tests.
+* Recommendation: Add `+/ : @+` to `+RFC3986_QUERY_CHARS+` (they are `+pchar+` members) and state in the pipeline Javadoc that the character stage is a *wire-form* syntax check whose guarantees do not extend to the decoded return value (CharacterValidationStage.java:49-53 already says so; the pipeline Javadoc does not). Fix the test comment. (The constant lives in the validation package — cross-reference with that reviewer; the misleading claim and composition are in this area.)
+
+==== F-B-5: `+UrlSecurityException+` sanitises only `+originalInput+`, not `+detail+`; `+AllowBlockListStage+` puts the raw value into `+detail+`, so CR/LF/NUL reach `+getMessage()+`/`+toString()+` (log injection). Sanitiser also misses C1 controls and U+2028/2029
+* Severity: Medium
+* Category: security-gap
+* Status: CONFIRMED (jshell)
+* Location: src/main/java/de/cuioss/http/security/exceptions/UrlSecurityException.java:81 (`+CONTROL_CHARS_PATTERN = "[\\x00-\\x1F\\x7F]"+`), :155-157 (detail appended unsanitised), :178; src/main/java/de/cuioss/http/security/validation/AllowBlockListStage.java:146 and :155 (`+.detail("Value '" + value + "' is block-listed")+`)
+* Evidence (jshell):
+----
+  blockedContentTypes=["text/html"]; validate("text/html\r\n") -> REJECT ... [Value 'text/html^M<LF>' is block-listed]
+  UrlSecurityException.builder()...originalInput("ab c").detail("raw\r\nInjected: yes").build().getMessage()
+    = "Security validation failed [URL_PATH]: Invalid input - raw
+Injected: yes (input: 'ab c')"
+----
+* Analysis: `+CharacterValidationStage+` (lines 251-256) and `+DecodingStage+` (lines 466-473) deliberately escape control characters in `+detail+` "because callers log getMessage()"; `+AllowBlockListStage+` does not, and `+buildMessage+` trusts `+detail+`. A `+Content-Type: text/html\r\nFAKE+` (or any block-listed header name with a trailing CR) produces a forged log line in any consumer that logs `+e.getMessage()+`, defeating the sanitisation effort in `+truncateForLogging+`. The pattern also leaves NEL (U+0085) and LINE/PARAGRAPH SEPARATOR raw, which some log viewers render as line breaks.
+* Recommendation: In `+buildMessage+`/`+toString+`, run `+detail+` (and `+sanitizedInput+`) through `+truncateForLogging+`; widen the pattern to `+[\p{Cc}  ]+`. In `+AllowBlockListStage+` render the value escaped (or drop it — `+originalInput+` already carries it). Add a test asserting no `+\r+`/`+\n+` in `+getMessage()+` for a block-listed value containing CRLF.
+
+==== F-B-6: `+Cookie.hostPrefix+`/`+securePrefix+` validate only the *suffix*; the value is unvalidated, yet the Javadoc calls the result "valid" and shows it written straight into `+Set-Cookie+` — header injection; `+null+`/empty suffix produce `+__Host-null+` / `+__Host-+`
+* Severity: Medium
+* Category: false-security
+* Status: CONFIRMED (jshell)
+* Location: src/main/java/de/cuioss/http/security/data/Cookie.java:96-99 (`+COOKIE_NAME_VALIDATOR+`), :152-156 and :200-204 (only `+suffix+` validated), :124-126 and :138 (Javadoc "structure is valid", `+response.setHeader("Set-Cookie", sessionCookie.toCookieString())+`), :398-416 (`+toCookieString+`)
+* Evidence (jshell):
+----
+  Cookie.hostPrefix("s", "v\r\nSet-Cookie: admin=true").toCookieString()
+    = "__Host-s=v
+Set-Cookie: admin=true; Secure; Path=/; HttpOnly; SameSite=Strict"
+  new CookiePrefixValidationStage().validateCookie(thatCookie) -> passes (no exception)
+  Cookie.hostPrefix(null, "v").name()  = "__Host-null"      (validate(null) returns Optional.empty, no NPE)
+  Cookie.hostPrefix("",   "v").name()  = "__Host-"
+----
+* Analysis: The factory's stated purpose is "Validates cookie name characters to prevent injection attacks" (line 94), but the value — the part most likely to carry attacker-influenced data — is stored verbatim, and the recommended follow-up (`+CookiePrefixValidationStage.validateCookie+`) checks attributes only. Following the Javadoc example verbatim yields a response-splitting vector. The `+null+` suffix case silently produces the literal name `+__Host-null+` because `+HttpSecurityValidator.validate(null)+` is an accept-by-contract.
+* Recommendation: `+Objects.requireNonNull(suffix)+` and reject the empty suffix; validate `+value+` with a `+CharacterValidationStage(config, COOKIE_VALUE)+` (which rejects CR/LF unconditionally, CharacterValidationStage.java:340-342); state in the Javadoc that `+toCookieString()+` performs no encoding and must not be used with untrusted values. Add negative tests for value CRLF and null/empty suffix.
+
+==== F-B-7: Exception message and `+toString()+` embed up to 200 chars of the raw input — header values (bearer tokens, cookies) leak into logs; contradicts the library's own logging guideline
+* Severity: Medium
+* Category: security-gap
+* Status: CONFIRMED (jshell)
+* Location: src/main/java/de/cuioss/http/security/exceptions/UrlSecurityException.java:159-161 (`+sb.append(" (input: '").append(truncatedInput)+`), :188-198 (`+toString+` includes `+originalInput+` and cause chain); src/main/java/de/cuioss/http/security/pipeline/AbstractValidationPipeline.java:102 (`+.originalInput(value)+` — full original input re-attached on rewrap); guideline in src/main/java/de/cuioss/http/security/core/HttpSecurityValidator.java:90 ("Log security violations appropriately without exposing sensitive data")
+* Evidence (jshell): `+headerValuePipeline.validate("Bearer SUPER-SECRET-TOKEN\r\nX: y")+` → `+getMessage()+` = `+... (input: 'Bearer SUPER-SECRET-TOKEN??X: y')+`; `+toString()+` repeats it twice (outer + cause).
+* Analysis: The header-value pipeline is explicitly marketed for `+Authorization+` values (HTTPHeaderValidationPipeline.java:71). Every rejection puts the credential into `+getMessage()+`, which `+log.warn(e.getMessage())+` — the pattern shown in every Javadoc example in this package — writes to logs. The 200-char truncation does not help for tokens. Combined with F-B-5 this makes the exception unsafe to log by default.
+* Recommendation: Do not include the input in `+getMessage()+`/`+toString()+` by default (keep it on `+getOriginalInput()+` for callers who need it), or redact for `+HEADER_VALUE+`/`+COOKIE_VALUE+` types, or provide `+getSafeMessage()+`. Update the Javadoc examples that log `+e.getMessage()+`.
+
+==== F-B-8: `+CookiePrefixValidationStage+` resolves `+Path+`/`+Domain+` by first match while RFC 6265 §5.3 uses the last occurrence — `+__Host-a=1; Secure; Path=/; Path=/admin+` passes
+* Severity: Low
+* Category: correctness
+* Status: CONFIRMED (jshell)
+* Location: src/main/java/de/cuioss/http/security/data/AttributeParser.java:120-146 (returns first match), Cookie.java:337-342 (Javadoc acknowledges "resolve first-match"); src/main/java/de/cuioss/http/security/validation/CookiePrefixValidationStage.java:282-291
+* Evidence: jshell `+validateCookie(new Cookie("__Host-a","1","Secure; Path=/; Path=/admin"))+` → no exception.
+* Analysis: A user agent stores the *last* `+Path+`, i.e. `+/admin+`, so the cookie violates the `+__Host-+` contract the stage claims to enforce (browsers will reject it; the validator says it is fine). Not exploitable server-side, but the RFC-compliance claim (CookiePrefixValidationStage.java:104) is inaccurate for duplicated attributes.
+* Recommendation: Make `+AttributeParser.extractAttributeValue+` return the last match (or add `+extractLastAttributeValue+`) and use it for prefix checks; or reject duplicate attributes outright in `+validateCookie+`.
+
+==== F-B-9: `+Cookie+` duplicates attribute-splitting logic instead of using `+AttributeParser+`, with divergent key rules (`+Domain =x+` is listed by `+getAttributeNames()+` but `+getDomain()+` returns empty)
+* Severity: Low
+* Category: duplication / consistency
+* Status: CONFIRMED (jshell)
+* Location: src/main/java/de/cuioss/http/security/data/Cookie.java:264-272 (`+hasAttributeFlag+`), :347-357 (`+getAttributeNames+` trims the key), vs AttributeParser.java:123-133 (skips keys with trailing whitespace "for strict RFC compliance")
+* Evidence: jshell `+new Cookie("x","y","Domain =example.com; Path=/")+` → `+getAttributeNames()=[Domain, Path]+`, `+getDomain()=Optional.empty+`.
+* Analysis: Three semicolon-splitting loops exist in the data package with two different key-normalisation policies. A caller iterating `+getAttributeNames()+` and then calling the typed accessor gets "present" from one and "absent" from the other for the same string.
+* Recommendation: Expose a single tokeniser in `+AttributeParser+` (e.g. `+attributes(String)+` returning name/value pairs with one key rule) and have `+Cookie.hasAttributeFlag+`/`+getAttributeNames+` use it; document the strict-key rule in `+getAttributeNames+`.
+
+==== F-B-10: `+HTTPBody.isPlainText()+` uses whole-string equality while all sibling predicates use substring matching — `+text/plain; charset=utf-8+` is not "plain text"
+* Severity: Low
+* Category: correctness / consistency
+* Status: CONFIRMED (jshell)
+* Location: src/main/java/de/cuioss/http/security/data/HTTPBody.java:259-261 vs :229-232, :238-242, :248-252, :268-273
+* Evidence: jshell `+new HTTPBody("x","text/plain; charset=utf-8","").isPlainText()+` = `+false+`; `+new HTTPBody("x","text/plain; x=json","").isJson()+` = `+true+`.
+* Analysis: `+HTTPBody.text(content).withContentType("text/plain;charset=UTF-8")+` — the normal spelling — reports `+isPlainText()==false+`; meanwhile `+isJson()+` matches inside parameters. The Javadoc for `+isPlainText+` ("the content type is text/plain") does not disclose the exact-match rule.
+* Recommendation: Compare the media type only (reuse `+AllowBlockListStage+`-style `+comparisonKey+` or `+AttributeParser+`) for all `+isXxx()+` predicates; document the rule once.
+
+==== F-B-11: pipeline-architecture-standards.adoc attributes host/IPv6 handling and "Unicode path content via allowExtendedAscii(true)" to URLPathValidationPipeline; neither is implemented, and nine `+UrlSecurityFailureType+` constants are never raised anywhere
+* Severity: Low
+* Category: documentation
+* Status: CONFIRMED (grep + jshell)
+* Location: doc/http-security/specification/pipeline-architecture-standards.adoc:14 ("directory traversal, and host-based attacks"), :20-22 ("Host/domain-based exploits", "IPv6 address parsing in path context"), :177-195 ("Unicode characters in paths → URLPathValidationPipeline with allowExtendedAscii(true)"); src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java:370-380, :418-426 (code points >255 always rejected for URL_PATH/PARAMETER_*); src/main/java/de/cuioss/http/security/core/UrlSecurityFailureType.java:106-133 (`+MALFORMED_INPUT, INVALID_STRUCTURE, PROTOCOL_VIOLATION, RFC_VIOLATION, INVALID_IPV6_FORMAT, MALFORMED_URL, INVALID_HOST_FORMAT, INVALID_URL_FORMAT, KNOWN_ATTACK_SIGNATURE+`)
+* Evidence: `+grep -rl "UrlSecurityFailureType.<X>" src/main/java+` → 0 files for all nine constants. jshell: `+/a/․․/b+` (U+2024 raw) → `+INVALID_CHARACTER (0x2024)+` under defaults (allowExtendedAscii already `+true+`); `+/aé/b+` → ACCEPT under defaults, so the adoc's "for Unicode path content" snippet is a no-op relative to `+defaults()+` and cannot enable anything beyond Latin-1.
+* Analysis: The spec tells readers the path pipeline is the home of host/IPv6 validation and offers a configuration recipe for "Unicode" that changes nothing versus the default and can never admit a non-Latin-1 code point. The unused failure types suggest removed functionality whose enum surface (and `+isIPv6HostAttack()+`/`+isProtocolViolation()+` predicates) remains as dead API.
+* Recommendation: Rewrite adoc:14-22 to "path component only — no host/authority validation"; replace :177-195 with the actual rule (raw code points >255 are always rejected for URL types; use percent-encoding, which is decoded and NFKC-checked). Either remove the never-raised constants (breaking) or mark them `+@Deprecated+`/"reserved" in Javadoc.
+
+==== F-B-12: Javadoc usage examples across the area do not compile or teach anti-patterns
+* Severity: Low
+* Category: documentation
+* Status: CONFIRMED (read; one case executed)
+* Location / Evidence:
+** src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java:67 — `+new HTTPHeaderValidationPipeline(config, counter)+`; the only constructor takes three arguments (:121-123).
+** src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java:56 — `+pipeline.validate("user_id=123")+` feeds a `+name=value+` pair to the *value* pipeline.
+** src/main/java/de/cuioss/http/security/pipeline/package-info.java:51 — `+paramValidator.validate("search=test&page=1")+`: the whole query string goes through the value pipeline as one value. jshell confirms it is ACCEPTED unchanged, so a reader copying this never runs `+URLParameterNameValidationPipeline+` and the name-only rules (:100-106) are bypassed by construction.
+** src/main/java/de/cuioss/http/security/data/Cookie.java:64-65 and URLParameter.java:45-46 — `+validator.validate(x, ValidationType.COOKIE_NAME)+`: no two-argument `+validate+` exists on `+HttpSecurityValidator+` (core/HttpSecurityValidator.java:126), and `+PipelineFactory.createPipeline(COOKIE_*)+` throws (PipelineFactory.java:256-259).
+** src/main/java/de/cuioss/http/client/package-info.java:305-312 (cross-area) — `+new HTTPHeaderValidationPipeline()+`, `+new URLParameterValidationPipeline()+` (no such ctors) and `+new UrlSecurityException("...")+` (ctor is `+private+`, UrlSecurityException.java:106); `+.orElseThrow(...)+` misreads `+Optional.empty()+` (null input) as a detected attack.
+** src/main/java/de/cuioss/http/security/monitoring/package-info.java:17-31 — increments the counter in `+catch+`; a factory-built pipeline already increments (AbstractValidationPipeline.java:95), so following the example double-counts.
+** src/main/java/de/cuioss/http/security/exceptions/package-info.java:58 — `+case INVALID_CHARACTER -> sanitizeAndRetry();+` contradicts the fail-closed contract in core/HttpSecurityValidator.java:113-115.
+** src/main/java/de/cuioss/http/security/core/HttpSecurityValidator.java:89 — "Be consistent with null handling (typically reject null inputs)" contradicts the interface contract two paragraphs later (:109, :119) and every implementation.
+** src/main/java/de/cuioss/http/security/pipeline/PipelineFactory.java:37 — "Type Safety — Compile-time verification of pipeline types": `+createPipeline+` fails at *runtime* with `+IllegalArgumentException+` for BODY/COOKIE_* (:254-259).
+* Recommendation: Fix each snippet to compile against the current API; in package-info/URLParameterValidationPipeline show splitting into name and value and validating each with the right pipeline; delete the manual `+eventCounter.increment+` from the monitoring example or state it is for hand-rolled validators only.
+
+==== F-B-13: `+@ToString(callSuper = true)+` on every pipeline renders `+Class(super=…@identityHash)+` — no useful content; tests only check the class name
+* Severity: Low
+* Category: consistency
+* Status: CONFIRMED (jshell)
+* Location: src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java:99, URLParameterValidationPipeline.java:90, URLParameterNameValidationPipeline.java:73, HTTPHeaderValidationPipeline.java:102, ContentTypeValidationPipeline.java:73; AbstractValidationPipeline.java:56-58 has no `+@ToString+`
+* Evidence: jshell `+pipeline.toString()+` = `+URLPathValidationPipeline(super=de.cuioss.http.security.pipeline.URLPathValidationPipeline@81b5ebd6)+`. Tests: URLPathValidationPipelineTest.java:266-270 assert only `+contains("URLPathValidationPipeline")+`.
+* Recommendation: Drop `+callSuper = true+` (or add `+@ToString+` to the abstract class excluding `+eventCounter+`) and include `+validationType+` + stage class names; tighten the tests.
+
+==== F-B-14: Test-quality gaps in the area
+* Severity: Low
+* Category: test-quality / generator-usage
+* Status: CONFIRMED (read; two claims executed)
+* Location / Evidence:
+** No `+AbstractValidationPipelineTest+` exists (src/test/java/de/cuioss/http/security/pipeline/ listing). The documented short-circuit contract (AbstractValidationPipeline.java:43-52, :89-91), propagation of non-`+UrlSecurityException+` without counting (:93-95 — jshell: `+IllegalStateException+` propagates, counter stays 0), and exactly-once counting are untested; all pipeline tests assert only `+eventCounter.getTotalCount() > 0+` (URLPathValidationPipelineTest.java:223, URLParameterValidationPipelineTest.java:312, HTTPHeaderValidationPipelineTest.java:256).
+** Over-wide verdict sets with wrong rationale: URLPathValidationPipelineTest.java:143-151 and URLParameterValidationPipelineTest.java:46-59, :144-151 claim a `+%5C+` form "is stopped by the character set"; jshell: `+..%5Cx+` → `+PATH_TRAVERSAL_DETECTED+` (the wire form `+%5C+` is valid percent-encoding, SecurityDefaults.java:149-157 says the same). Because the `+EnumSet+` contains 3-4 verdicts, a regression that moves detection to a weaker stage would still pass.
+** `+assertThrows+` with no failure-type/type/input assertion: HTTPHeaderValidationPipelineTest.java:149-165, :168-174; PipelineFactoryTest.java:320-325.
+** Tautologies: PipelineFactoryTest.java:209-214 (`+assertNotNull(pipeline)+`), :289-296 (`+toString+` not null/empty), :328-362 (ten threads each create an independent pipeline — no shared state is contended, so the "concurrency" test cannot fail for a threading reason).
+** `+SupportedValidationTypeGenerator+` (generators/SupportedValidationTypeGenerator.java:3-13) emits only 4 of the 5 factory-supported types — `+PARAMETER_NAME+` is missing although `+createPipeline+` supports it (PipelineFactory.java:253).
+** URLParameterNameValidationPipelineBehaviorTest.java covers one encoded CRLF case; it does not test the pipeline's two distinguishing properties — the 128-char `+maxParameterNameLength+` limit (jshell: 129 chars → INPUT_TOO_LONG on the name pipeline, ACCEPT on the value pipeline) and raw delimiters `+a=b+`/`+a&b+` (jshell: rejected) — and uses no generators.
+** No tests for F-B-1 (list-entry normalisation), F-B-2 (null Content-Type vs allow-list), F-B-5 (CRLF in `+getMessage()+`), F-B-6 (cookie value CRLF).
+** Stale comments contradicted by the same file: CookieTest.java:89 and URLParameterTest.java:90, :223 ("Empty name is now rejected by constructor validation") vs CookieTest.java:93-108 / URLParameterTest.java:55-65 which assert empty names are accepted.
+** UrlSecurityExceptionTest.java:86-108 pins `+null+` `+validationType+`/`+originalInput+` as acceptable ("handled gracefully"), locking in a violation of the `+@NullMarked+` contract (`+getOriginalInput()+` is declared non-null, UrlSecurityException.java:87-88).
+** `+EncodingCombinationGenerator.applyMixedCase+` (generators/encoding/EncodingCombinationGenerator.java:123-126) uppercases the `+%2e+`/`+%2f+` escapes wholesale, so "mixed case" is never actually mixed (corrected after adversarial verification: it does not touch other hex); `+PathTraversalURLGenerator+` only emits spellings caught by the pre-decode `+PatternMatchingStage+`, so the post-normalisation pass (URLPathValidationPipeline.java:134) is never reached by generator-driven tests (only by hand-written `+PostDecodeEnforcementRegressionTest+`).
+* Recommendation: Add `+AbstractValidationPipelineTest+` (custom stages: empty-Optional short-circuit, RuntimeException propagation, exactly-once increment, original-input preservation); replace `+EnumSet+` membership with per-spelling exact verdicts (parameterise the generator by spelling family); assert failure type in every `+assertThrows+`; add `+PARAMETER_NAME+` to `+SupportedValidationTypeGenerator+`; delete or fix the tautological tests; fix stale comments.
+
+==== F-B-15: Header-value pipeline accepts C1 controls (U+0085 NEL, U+009F) and U+2028 under `+defaults()+`; only `+strict()+` rejects them
+* Severity: Info
+* Category: consistency
+* Status: CONFIRMED (jshell)
+* Location: src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java:359-368 (`+return allowExtendedAscii || allowedChars.test(ch)+` for 128-255), :379-380; wired by HTTPHeaderValidationPipeline.java:146-147 with `+defaults().allowExtendedAscii()==true+` (SecurityConfigurationBuilder.java:97)
+* Evidence: jshell defaults: `+vX+` → ACCEPT, `+vX+` → ACCEPT, `+v X+` → ACCEPT, `+vX+` → REJECT; strict: all rejected.
+* Analysis: RFC 7230 `+obs-text+` does allow 0x80-0xFF, so this is not a protocol violation, but the Javadoc line "Headers - RFC 7230 visible ASCII minus delimiters" (CharacterValidationStage.java:72) under-describes what the default pipeline admits, and NEL/LS are line breaks to several log and text consumers. Worth a doc sentence; not a bypass of HTTP framing.
+
+==== F-B-16: Raw CR/LF in a parameter value is rejected but `+%0D%0A+` is accepted — inconsistent raw-vs-encoded outcome for the same decoded value
+* Severity: Info
+* Category: consistency
+* Status: CONFIRMED (jshell)
+* Location: src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java:335-350 (raw control → reject), DecodingStage.java:430-456 (decoded CR/LF/TAB carve-out for PARAMETER_VALUE); composed in URLParameterValidationPipeline.java:117-119
+* Evidence: jshell `+x\r\ny+` → `+CONTROL_CHARACTERS+`; `+x%0d%0ay+` → ACCEPT `+x\r\ny+`.
+* Analysis: The carve-out is documented and deliberate for the decoded form, but the pipeline's overall behaviour depends on how the same bytes are spelled. Since browsers always percent-encode CR/LF in form data the practical impact is nil; document the asymmetry in the pipeline Javadoc so callers do not infer that CR/LF is rejected.
+
+=== Verified strengths
+
+* Stage composition and ordering match every documented statement checked line-by-line: URLPathValidationPipeline.java:128-134 (Length → Character → Pattern → Decoding → Normalization → Pattern) vs Javadoc :35-45 and PatternMatchingStage.java:173-176; URLParameterValidationPipeline.java:116-122 and URLParameterNameValidationPipeline.java:100-106 (Length → Character → Decoding → Normalization[pass-through] → Pattern) vs configuration.adoc:42-44, :83-85, :91-93; HTTPHeaderValidationPipeline.java:145-152 (Length → Character [+ AllowBlockList for HEADER_NAME]) vs pipeline-architecture-standards.adoc:92 and HeaderAndContentTypeEnforcementRegressionTest.java:188-198; ContentTypeValidationPipeline.java:96-99 (single AllowBlockListStage) vs adoc:117 and configuration.adoc:43-44. Preset tables in configuration.adoc:46-100 match SecurityDefaults.java:370-428 and SecurityConfigurationBuilder.java:75-121 field by field.
+* No default-configuration path-traversal bypass found. All of the following are rejected (jshell, `+defaults()+`): `+/api/../../etc/passwd+`, `+/a/..%2fb+`, `+/a/%2e%2e%2fb+`, `+/a/%2E%2e%2Fb+`, `+/a/%2e%2e/+`, `+/%2e%2e/etc/passwd+`, `+/a/%2e%2e;/b+`, `+/a/..%3bfoo/b+`, `+/a/b%5c..+`, `+/a/%5c..%5cb+`, `+/a/%2e%2e%5c+`, `+http://x/a/%2e%2e+`, `+/a/%2e./b+`, `+/a/.../b+`, `+/a/%c0%ae%c0%ae/b+`, `+/a/..%c0%afb+`, `+/a/%252e%252e/b+`, `+/a/%2e%2e%255cb+`, `+..+`, `+/a/..%00/b+`, `+/a/%EF%BC%8E%EF%BC%8E/b+` (fullwidth dots → UNICODE_NORMALIZATION_CHANGED), `+/a/%E2%80%A4%E2%80%A4/b+` (one-dot-leader), `+/a\b+`, `+/a/. ./b+`. Inputs that resolve *inside* root (`+/a/%2e%2e+`, `+/a%2f..+`, `+/a/.%2e+` → `+/+`) are clamped exactly as NormalizationStage.java:135-140 documents. Under `+lenient()+`, `+%252e%252e%2fb+` and `+%25%32%65%25%32%65/b+` are still caught by NormalizationStage's intent check (NormalizationStage.java:523-526).
+* Header CRLF: `+\r+`, `+\n+`, `+\r\n+` rejected in HEADER_NAME and HEADER_VALUE under `+defaults()+`, `+strict()+` and `+lenient()+` (CharacterValidationStage.java:340-342 unconditional); NUL rejected under `+lenient()+`. Header names enforce RFC 7230 `+tchar+` (space, colon, é, NEL rejected).
+* Content-type *value* tricks are handled: `+text/html;charset=x+`, `+TEXT/HTML+`, `+text/html +`, `+  text/html+`, `+text/html\t+`, `+text/html;+` all hit a `+text/html+` block-list (AllowBlockListStage.java:167-177). `+text/html/+` and `+text/html,application/json+` are not blocked, but neither is `+text/html+` to an HTTP parser.
+* Parameter-name pipeline: raw and encoded delimiters (`+a=b+`, `+a&b+`, `+a;b+`, `+a%3Db+`, `+a%26b+`, `+a%20b+`, `+a+b+`) rejected via the decoded-output check (DecodingStage.java:399-406); `+maxParameterNameLength+`=128 enforced while the value pipeline accepts 129; `+paranoid()+` catches `+file+`, `+FILE+`, `+fi%6Ce+`, `+%66ile+` and accepts `+filepath+` (exact match, PatternMatchingStage.java:510-516).
+* Protocol-handler anchor under `+strict()+`: `+%09javascript%3A…+`, `+java%09script%3A…+`, `+JavaScript%3A…+` rejected; `+%C2%A0javascript%3A…+`, `+%E2%80%8Bjavascript%3A…+`, `+%2Fjavascript%3A…+`, `+/v1/data:export+` accepted — consistent with the WHATWG parser model described in PatternMatchingStage.java:378-390 (NBSP/ZWSP are not stripped by URL parsers, so these are not schemes).
+* AbstractValidationPipeline: counter incremented exactly once per rejection (`+{PATH_TRAVERSAL_DETECTED=1}+`); rewrapped exception keeps the stage exception as `+cause+`, the pipeline's `+ValidationType+`, and the *original* (pre-transformation) input (AbstractValidationPipeline.java:99-106); short-circuit on `+Optional.empty()+` behaves exactly as documented (:43-52). `+getStages()+` returns an immutable list (`+List.of+`/`+List.copyOf+`); `+equals+` excludes the mutable counter and differs across pipeline classes; `+defaults()+` and `+builder().build()+` pipelines are equal.
+* SecurityEventCounter: lock-free `+ConcurrentHashMap<…, AtomicLong>+`; `+incrementBy(x, 0)+` is a true no-op; thread-safety tests (SecurityEventCounterTest.java:271-370) assert exact totals, not just absence of exceptions.
+* AttributeParser: quoted-string unwrapping with escaped-quote/backslash-parity handling (AttributeParser.java:171-204) is correct for the cases tested, and the Turkish-locale regression test (AttributeParserTest.java:188-205) is a genuine negative-control test.
+* module-info.java exports exactly the packages that contain public API; `+AttributeParser+` is package-private and correctly not exported as API.
+* ADR links in configuration.adoc:115 (`+../adr/0015-…+`) resolve to existing files under `+doc/adr/+`.
+
+=== Test inventory for the area
+
+[cols="1,1,1,1,1,1",options="header"]
+|===
+| Production class
+| Test class(es)
+| Positive cases?
+| Negative cases?
+| Generators used?
+| Notes on quality
+
+| AbstractValidationPipeline
+| none dedicated (indirect via pipeline tests)
+| indirect
+| indirect
+| —
+| Short-circuit contract, non-USE propagation, exactly-once counting untested (F-B-14)
+
+| PipelineFactory
+| PipelineFactoryTest
+| yes
+| yes (null args, unsupported types, name-only rules)
+| ValidURLPathGenerator, ValidURLParameterStringGenerator, ValidHTTPHeader{Name,Value}Generator, PathTraversalURLGenerator, SupportedValidationTypeGenerator (misses PARAMETER_NAME)
+| Several tautologies (`+assertNotNull+`, toString not empty, non-contending "concurrency" test); `+shouldApplyNameOnlyRulesInParameterNamePipeline+` is a real content test
+
+| URLPathValidationPipeline
+| URLPathValidationPipelineTest, PostDecodeEnforcementRegressionTest, PresetTieringBehaviourTest
+| yes (verbatim return, boundary length)
+| yes (null byte, traversal, encoding, oversize)
+| ValidURLPathGenerator, NullByteURLGenerator, PathTraversalURLGenerator, EncodingCombinationGenerator, UnicodeAttackGenerator (count 5-10)
+| Regression tests are strong exact-verdict tests; generator tests use over-wide `+EnumSet+` verdicts with incorrect rationale comments
+
+| URLParameterValidationPipeline
+| URLParameterValidationPipelineTest, PostDecodeEnforcementRegressionTest (scheme anchor)
+| yes (canonical NFC form asserted)
+| yes
+| ValidURLParameterStringGenerator, NullByteInjectionParameterGenerator, PathTraversalParameterGenerator, EncodingCombinationGenerator
+| Good canonical-form assertion; `+TRAVERSAL_PARAMETER_FAILURES+` set of 4 verdicts too permissive; test comment misstates RFC 3986 query set
+
+| URLParameterNameValidationPipeline
+| URLParameterNameValidationPipelineBehaviorTest, PipelineFactoryTest, PresetTieringBehaviourTest
+| yes (`+page+`)
+| yes (encoded CRLF, `+=+`, `+&+`; paranoid `+file+`)
+| none
+| Minimal: no length-limit test, no raw-delimiter test, no generator
+
+| HTTPHeaderValidationPipeline
+| HTTPHeaderValidationPipelineTest, HeaderAndContentTypeEnforcementRegressionTest
+| yes
+| yes (CRLF incl. lenient, oversize, tchar)
+| ValidHTTPHeader{Name,Value}Generator, HTTPHeaderInjectionGenerator, InvalidHTTPHeaderNameGenerator
+| Generator-driven negative tests assert only `+assertThrows+` (no failure type); regression tests are precise
+
+| ContentTypeValidationPipeline
+| ContentTypeValidationPipelineTest, HeaderAndContentTypeEnforcementRegressionTest
+| yes
+| yes (block, allow, precedence, empty value, params, case)
+| none (hard-coded)
+| Good exact-verdict coverage of value side; no test of list-entry normalisation or null input vs allow-list (F-B-1, F-B-2)
+
+| AttributeParser
+| AttributeParserTest
+| yes
+| yes (missing, null/empty, unbalanced quotes)
+| none (`+@CsvSource+`)
+| Real content tests; last-match semantics untested (F-B-8)
+
+| Cookie
+| CookieTest
+| yes
+| yes (prefix suffix chars)
+| ValidCookieGenerator (count 10-20)
+| No negative test for value CRLF / null suffix (F-B-6); stale "constructor validation" comment
+
+| HTTPBody
+| HTTPBodyTest
+| yes
+| few (`+isPlainText+` with charset untested)
+| `+Generators.letterStrings+` once
+| Hard-coded; predicate inconsistency untested (F-B-10)
+
+| URLParameter
+| URLParameterTest
+| yes
+| n/a (data record)
+| none
+| Adequate for a record; stale comments (lines 90, 223)
+
+| UrlSecurityException
+| UrlSecurityExceptionTest
+| yes
+| partial
+| none
+| Pins null `+validationType+`/`+originalInput+` as acceptable; no test that `+detail+` is sanitised (F-B-5)
+
+| SecurityEventCounter
+| SecurityEventCounterTest
+| yes
+| yes (null, negative delta)
+| none
+| Strong: exact counts under concurrency, reset/clear semantics, zero-delta no-op
+
+| pipeline/package-info, data/package-info, exceptions/package-info, monitoring/package-info, module-info
+| —
+| —
+| —
+| —
+| Documentation only; examples partly non-compiling (F-B-12)
+
+|===
+
