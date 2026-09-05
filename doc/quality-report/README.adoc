@@ -34,6 +34,55 @@ Nothing in the repository other than this directory was changed. Every finding i
 
 Reviewers were told not to pad, to report only specific and actionable items, and to list what they verified as correct so the report is not read as "everything is broken".
 
+== Baseline metrics
+
+Captured on the reviewed commit with the project's own build, before any review work started, and re-captured after the review to confirm the figures (the coverage numbers below were first recorded by a parallel review skeleton that has been merged into this branch, and were re-verified by a fresh `verify -Pcoverage` run).
+
+[cols="2,1",options="header"]
+|===
+| Metric | Value
+
+| Tests executed (`cui-http-core`) | 7 874
+| Failures / errors / skipped | 0 / 0 / 0
+| Test classes (surefire, nested classes included) / report files | 206 / 112
+| Line coverage (JaCoCo, `verify -Pcoverage`) | 95.0 % (2 598 of 2 734)
+| Branch coverage | 91.8 % (1 483 of 1 616)
+| Production Java files / lines (`cui-http-core`) | 72 / 19 174
+| Test Java files / lines | 171 / 46 436
+| Benchmark module Java lines | 600
+| AsciiDoc files / lines under `doc/` (excluding this report) | 36 / about 8 500
+|===
+
+.Coverage per package (line %, branch %)
+[cols="3,1,1",options="header"]
+|===
+| Package | Line | Branch
+
+| `de.cuioss.http.client` | 100.0 | 100.0
+| `de.cuioss.http.client.adapter` | 87.8 | 90.7
+| `de.cuioss.http.client.converter` | 100.0 | 80.0
+| `de.cuioss.http.client.handler` | 94.6 | 95.3
+| `de.cuioss.http.client.result` | 100.0 | 88.5
+| `de.cuioss.http.forwarded` | 97.3 | 94.3
+| `de.cuioss.http.security.config` | 94.6 | 79.7
+| `de.cuioss.http.security.core` | 100.0 | 100.0
+| `de.cuioss.http.security.data` | 99.3 | 92.9
+| `de.cuioss.http.security.exceptions` | 100.0 | 83.3
+| `de.cuioss.http.security.monitoring` | 100.0 | 100.0
+| `de.cuioss.http.security.pipeline` | 98.9 | 94.1
+| `de.cuioss.http.security.validation` | 94.5 | 88.8
+|===
+
+Classes below the project's own 80 % target on at least one axis: `SecurityConfigurationBuilder` (branch 73.5 %), `NormalizationStage` (branch 78.8 %), `HostnameVerificationRelaxingTrustManager` (line 54.2 %; the `Socket`-typed overloads are never exercised because the JDK HTTP client only calls the `SSLEngine` overloads), and one uncovered branch each in `HttpAdapter`, `HttpResult.Success` and `ForwardedHeaderResolver.HostPort`. Coverage is high throughout; the test-quality findings in this report are about what the tests assert, not about which lines they execute.
+
+== Limitations
+
+* The review is of a snapshot (`0bad295`). Line references were re-verified against that commit during the adversarial verification; they will drift with the next edit of the referenced file.
+* Network-dependent behaviour was exercised only against in-process servers (MockWebServer, a one-shot TLS server); no public host was contacted by the review itself.
+* Reviewers worked independently, so the same defect can appear under two identifiers; the consolidation tables in each chapter name the primary record.
+* The benchmarking module was reviewed for correctness and consistency of what it measures, not for the validity of the published numbers.
+* The canonical build executor `.plan/execute-script.py` is not part of the repository and was absent in the review environment; the baseline, the coverage run and the pre-commit gate used the Maven wrapper directly.
+
 == Severity scale
 
 [cols="1,4",options="header"]
