@@ -166,8 +166,10 @@ ValidationType validationType) implements HttpSecurityValidator {
      *   <li>Decoded-character re-validation - rejects null bytes, combining marks, control
      *       characters and (for parameter names) decoded delimiters that percent-encoding
      *       hid from the earlier character-validation stage</li>
-     *   <li>Unicode normalization - optionally canonicalizes and continues with the canonical form,
-     *       rejecting only structural-separator folds</li>
+     *   <li>Unicode normalization - optionally canonicalizes and continues with the canonical form.
+     *       The decoded-character rules of stage 5 are re-applied to the normalized form, so a
+     *       fold that introduces a forbidden character cannot bypass them, and the fold is then
+     *       rejected when it introduces a structural separator</li>
      * </ol>
      *
      * @param value The input string to validate and decode
@@ -261,6 +263,13 @@ ValidationType validationType) implements HttpSecurityValidator {
         // preserves legitimate international text).
         if (config.normalizeUnicode()) {
             String normalized = Normalizer.normalize(decoded, normalizationForm());
+            // Re-run the decoded-character rules against the NORMALIZED form before the
+            // structural-fold check. Step 2.5 only saw the pre-normalization string, so a
+            // character rule could otherwise be bypassed by an input that folds INTO a
+            // forbidden character (e.g. a compatibility form that normalizes to a control
+            // character or to a parameter-name delimiter). Ordering it ahead of the
+            // structural-fold check keeps the more specific character verdict authoritative.
+            validateDecodedCharacters(value, normalized);
             if (introducesStructuralCharacter(decoded, normalized)) {
                 throw UrlSecurityException.builder()
                         .failureType(UrlSecurityFailureType.UNICODE_NORMALIZATION_CHANGED)
@@ -305,10 +314,11 @@ ValidationType validationType) implements HttpSecurityValidator {
 
     /**
      * Structurally significant characters: separators whose introduction changes how a
-     * value parses (path/segment/scheme/query/fragment/encoding delimiters). The
-     * dot-dot traversal sequence is covered transitively by counting {@code '.'}.
+     * value parses (path/segment/scheme/query/fragment/encoding delimiters, and the
+     * {@code ';'} that separates parameters and cookie pairs). The dot-dot traversal
+     * sequence is covered transitively by counting {@code '.'}.
      */
-    private static final String STRUCTURAL_CHARS = "/\\.:?#%";
+    private static final String STRUCTURAL_CHARS = "/\\.:?#%;";
 
     /**
      * Selects the Unicode normalization form for this validation type.

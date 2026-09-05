@@ -266,6 +266,50 @@ class DecodingStageTest {
     }
 
     @Test
+    @DisplayName("Should reject a parameter-name delimiter that normalization introduces")
+    void shouldRejectDelimiterIntroducedByNormalization() {
+        SecurityConfiguration unicodeConfig = SecurityConfiguration.builder()
+                .normalizeUnicode(true)
+                .build();
+
+        DecodingStage nameDecoder = new DecodingStage(unicodeConfig, ValidationType.PARAMETER_NAME);
+
+        // %CD%BE decodes to U+037E (Greek question mark), which is not a delimiter. NFC folds it
+        // to ';', so only a character check that runs AFTER normalization sees the delimiter.
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> nameDecoder.validate("a%CD%BEb"));
+
+        assertAll("delimiter introduced by normalization",
+                () -> assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType()),
+                () -> assertEquals(ValidationType.PARAMETER_NAME, exception.getValidationType()),
+                () -> assertEquals("a%CD%BEb", exception.getOriginalInput()),
+                () -> assertEquals(Optional.of("Decoded parameter-name delimiter ';' at position 1"),
+                        exception.getDetail()));
+    }
+
+    @Test
+    @DisplayName("Should reject a path fold that introduces a semicolon separator")
+    void shouldRejectSemicolonIntroducedByPathNormalization() {
+        SecurityConfiguration unicodeConfig = SecurityConfiguration.builder()
+                .normalizeUnicode(true)
+                .build();
+
+        DecodingStage pathNormalizingDecoder = new DecodingStage(unicodeConfig, ValidationType.URL_PATH);
+
+        // The same U+037E fold on a path introduces ';', a parameter/cookie-pair separator, so the
+        // structural-fold check rejects it rather than passing the folded form downstream.
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> pathNormalizingDecoder.validate("a%CD%BEb"));
+
+        assertAll("semicolon introduced by path normalization",
+                () -> assertEquals(UrlSecurityFailureType.UNICODE_NORMALIZATION_CHANGED,
+                        exception.getFailureType()),
+                () -> assertEquals(ValidationType.URL_PATH, exception.getValidationType()),
+                () -> assertEquals("a%CD%BEb", exception.getOriginalInput()),
+                () -> assertEquals(Optional.of("a;b"), exception.getSanitizedInput()));
+    }
+
+    @Test
     @DisplayName("Should preserve benign compatibility folds (normalize-and-continue)")
     void shouldPreserveBenignCompatibilityFold() {
         SecurityConfiguration unicodeConfig = SecurityConfiguration.builder()
