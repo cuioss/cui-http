@@ -112,7 +112,7 @@ Docs: doc/client-handlers-readme.adoc (411), doc/http-result-pattern.adoc (430),
 * Category: false-security / security-gap
 * Status: CONFIRMED (line-by-line trace; every referenced line quoted)
 * Location:
-** `+adapter/ETagAwareHttpAdapter.java:1135-1142+` (key/entry lookup), `+:608-611+` (foreign ETag sent as `+If-None-Match+`), `+:986-996+` (fallback decision)
+** `+adapter/ETagAwareHttpAdapter.java:1135-1142+` (key/entry lookup), `+:620-625+` (foreign ETag sent as `+If-None-Match+`; line corrected after adversarial verification), `+:986-996+` (fallback decision)
 ** `+adapter/CacheKeyHeaderFilter.java:14-15+`, `+:103-107+`, `+:19-32+`
 ** `+adapter/ETagAwareHttpAdapter.java:127-143+` (class-level "Token Refresh" example), `+:1229-1234+` (Builder recommendations)
 ** `+adapter/package-info.java:115-133+`, `+client/package-info.java:271-294+`
@@ -123,7 +123,7 @@ Docs: doc/client-handlers-readme.adoc (411), doc/http-result-pattern.adoc (430),
   // ETagAwareHttpAdapter.java:1139-1142
   String cacheKey = generateCacheKey(httpHandler.getUri(), headers, cacheKeyHeaderFilter);
   return new CacheContext<>(cacheKey, cache.get(cacheKey));
-  // :608-609
+  // :620-621
   if (cachedEntry != null && method == HttpMethod.GET) {
       requestBuilder.setHeader("If-None-Match", cachedEntry.etag());
   // :987-995
@@ -303,11 +303,11 @@ Docs: doc/client-handlers-readme.adoc (411), doc/http-result-pattern.adoc (430),
 * Severity: Low
 * Category: false-security (API footgun; not exploitable through `+HttpHandler+`)
 * Status: CONFIRMED (probe 1a/1b)
-* Location: `+handler/RedirectPolicy.java:212-216+`; Javadoc `+:199-202+`; guard that currently prevents impact: `+handler/HttpHandler.java:745-748+`
+* Location: `+handler/RedirectPolicy.java:226-230+`; Javadoc `+:213-216+`; guard that currently prevents impact: `+handler/HttpHandler.java:696-702+` (line numbers corrected after adversarial verification)
 * Evidence:
 [source,java]
 ----
-  // RedirectPolicy.java:212-216
+  // RedirectPolicy.java:226-230
   public boolean forwardsCredentials(URI from, URI to) {
       if (SCHEME_HTTP.equals(asciiLowerCase(to.getScheme()))) { return false; }
       return isSameOrigin(from, to) || credentialForwarding == CredentialForwarding.FORWARD_TO_ALLOWLISTED;
@@ -392,7 +392,7 @@ Docs: doc/client-handlers-readme.adoc (411), doc/http-result-pattern.adoc (430),
 * Category: consistency
 * Status: CONFIRMED
 * Location: `+handler/HttpHandler.java:391-414+` (HTTP constructor hard-codes `+verifyHostname = true+`, discards `+sslContext+`/`+secureSSLContextProvider+`), `+:1252-1262+`
-* Analysis: `+HttpHandler.builder().uri("http://x").allowInsecureHttp(true).verifyHostname(false).sslContext(ctx)+` builds fine (the mutual-exclusion check at `+:1211+` fires only if *both* are set) and the resulting handler reports `+isVerifyHostname() == true+`; `+asBuilder()+` then forgets the opt-in. Harmless for security (no TLS), but surprising. `+javap+` also shows a Lombok-generated, never-used `+private HttpClient httpClient+` builder field/setter (dead code from `+@Builder+` on the class).
+* Analysis (corrected after adversarial verification): `+HttpHandler.builder().uri("http://x").allowInsecureHttp(true).verifyHostname(false)+` builds and the resulting handler reports `+isVerifyHostname() == true+`, and `+asBuilder()+` then forgets the opt-in; `+uri("http://x").allowInsecureHttp(true).sslContext(ctx)+` builds and `+getSslContext()+` is `+null+` (the context is silently discarded). Setting *both* `+verifyHostname(false)+` and `+sslContext(ctx)+` does not build: the mutual-exclusion check at `+:1202+` throws `+IllegalArgumentException+` regardless of scheme. Harmless for security (no TLS), but surprising. `+javap+` also shows a Lombok-generated, never-used `+private HttpClient httpClient+` builder field/setter (dead code from `+@Builder+` on the class).
 * Recommendation: Reject or WARN on TLS knobs combined with an `+http+` URI; consider moving `+@Builder+` off the class to stop Lombok synthesising unused members.
 
 === F-client-17: `+HttpResult+` records do not enforce their own invariants
@@ -417,7 +417,7 @@ Docs: doc/client-handlers-readme.adoc (411), doc/http-result-pattern.adoc (430),
 * *No trust-all anywhere*: `+createSecureSSLContext()+` / `+createHostnameRelaxedSSLContext()+` (`+SecureSSLContextProvider.java:153-205+`) use `+TrustManagerFactory.init((KeyStore) null)+` (JVM default store); the relaxing wrapper only wraps `+X509ExtendedTrustManager+` instances and forwards everything else verbatim (`+HostnameVerificationRelaxingTrustManager.java:349-359+`). Chain trust, expiry and not-yet-valid rejection under the wrapper are proven with real handshakes (`+HostnameVerificationRelaxingTrustManagerTest.java:83-131+`), with a matched negative control (`+:71-82+`).
 * *Relaxation is opt-in and loud*: only `+verifyHostname(false)+` reaches `+createHostnameRelaxedSSLContext()+` (`+HttpHandler.java:1288-1292+`), always logs HTTP-116, is rejected with a caller-supplied `+sslContext+` (`+:1211-1216+`), survives `+asBuilder()+` only via the package-private `+derivedSslContext+` seam, and is discarded when `+verifyHostname+` is flipped back to `+true+` (`+:1293-1295+`; tests `+HttpHandlerTest.java:619-730+`). `+javap -p+` confirms the Lombok-generated `+sslContextCallerSupplied(boolean)+` / `+secureSSLContextProvider(...)+` builder setters are `+private+`, so the provenance flag cannot be forged from outside the package.
 * *Default hostname verification is proven, not assumed*: `+HttpHandlerHostnameVerificationTest+` connects to a real in-JVM TLS server with a mismatched SAN and asserts rejection, plus a matching-SAN positive control.
-* *Redirects*: JDK client stays on `+Redirect.NEVER+` on both constructor paths (`+HttpHandler.java:411-413, 447-452+`; asserted end-to-end `+HttpHandlerIntegrationTest.java:131-169+`). `+https→http+` is refused before the allowlist (`+RedirectPolicy.java:172-176+`, asserted over a real TLS server `+HttpHandlerHttpsIntegrationTest.java:154-188+`). Default is same-origin only; the policy is consulted before the hop counter (`+HttpHandler.java:744-752+`). Probed bypass candidates all refused: scheme-relative `+//evil.example.org/x+`, userinfo trick `+https://api.example.com@evil.example.org/+`, trailing-dot host `+api.example.com.+`; case-different scheme/host and explicit `+:443+` correctly treated as same-origin; IPv6 literals compare correctly. Malformed `+Location+` → typed `+MALFORMED_LOCATION+` with sanitised, length-bounded message (`+:640-679+`). Intermediate and refused hop bodies are drained, never handed to the caller's handler (`+:583-616+`; tests `+HttpHandlerRedirectTest.java:189-257+`). Credentials never reach an `+http+` target even same-origin (`+RedirectPolicy.java:212-214+`; tests `+:608-626+`).
+* *Redirects*: JDK client stays on `+Redirect.NEVER+` on both constructor paths (`+HttpHandler.java:411-413, 447-452+`; asserted end-to-end `+HttpHandlerIntegrationTest.java:131-169+`). `+https→http+` is refused before the allowlist (`+RedirectPolicy.java:186-189+`, asserted over a real TLS server `+HttpHandlerHttpsIntegrationTest.java:154-188+`). Default is same-origin only; the policy is consulted before the hop counter (`+HttpHandler.java:696-702+`; both line references corrected after adversarial verification). Probed bypass candidates all refused: scheme-relative `+//evil.example.org/x+`, userinfo trick `+https://api.example.com@evil.example.org/+`, trailing-dot host `+api.example.com.+`; case-different scheme/host and explicit `+:443+` correctly treated as same-origin; IPv6 literals compare correctly. Malformed `+Location+` → typed `+MALFORMED_LOCATION+` with sanitised, length-bounded message (`+:640-679+`). Intermediate and refused hop bodies are drained, never handed to the caller's handler (`+:583-616+`; tests `+HttpHandlerRedirectTest.java:189-257+`). Credentials never reach an `+http+` target even same-origin (`+RedirectPolicy.java:212-214+`; tests `+:608-626+`).
 * *Retry*: only `+NETWORK_ERROR+`/`+SERVER_ERROR+` retried (`+HttpErrorCategory.java:92-94+`); non-idempotent methods skipped by default (`+ResilientHttpAdapter.java:410-415+`); exceptional completions re-propagated, never swallowed into `+null+` (`+:463-470+`, test `+ResilientHttpAdapterTest.java:514-540+`); cancellation reaches the in-flight call and the pending backoff (`+:272-288, 344-351+`; tests `+:586-636+` and integration `+:283-318+`); `+*Blocking()+` is interrupt-aware and cancels the request (`+HttpAdapter.java:434-445+`; tests). `+NaN+`/`+±Infinity+` jitter and multiplier are rejected on both construction paths; cap is applied before jitter as documented.
 * *ETag adapter*: a 304 with no cache entry is an `+INVALID_CONTENT+` failure, never a fabricated success (`+ETagAwareHttpAdapter.java:1087-1098+`; test `+ETagAwareHttpAdapterIntegrationTest.java:185-205+`); a 304 to POST/PUT/DELETE leaks neither content nor ETag (`+:1074-1085+`; test `+:155-178+`); cache-key delimiters are escaped so header values cannot forge entries (`+:761-772+`; tests `+:700-747+`); an ETag-less or unparseable 200 evicts the superseded entry (`+:945-951+`; tests `+:314-419+`); the cache key is the configured URI, not the terminal hop (`+:1139+`; test `+:770-788+`); caller `+Accept+`/`+Content-Type+` override converter defaults (`+:492-500+`).
 * *Result types*: `+HttpResult+` is `+sealed+` with exactly `+Success+`/`+Failure+`, exhaustively switchable (tests `+HttpResultTest.java:321-381+`); `+HttpErrorCategory.fromException+` unwraps nested `+CompletionException+`/`+ExecutionException+` with a self-cause guard (`+:145-149+`); `+HttpStatusFamily.toErrorCategory()+` is complete (1xx/3xx/UNKNOWN → `+INVALID_CONTENT+`, 2xx throws).

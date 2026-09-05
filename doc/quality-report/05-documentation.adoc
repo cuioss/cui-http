@@ -12,7 +12,7 @@ This document is review stream F (`F-documentation-`), covering every AsciiDoc a
 * F-documentation-3, -16 = parts of F-B-12: Javadoc examples with wrong constructors or whole query strings fed to the value pipeline.
 * F-documentation-4 = F-client-5 + F-D-9: the false log-coverage claim; this document carries the complete identifier table, which shows the catalogue itself is exact.
 * F-documentation-5 = F-D-8; F-documentation-7 = F-E-8; F-documentation-8 overlaps F-E-1 and F-E-8; F-documentation-10 = F-B-11.
-* Severity adjustment: F-documentation-1 was proposed as High and is recorded as Medium. The `.plan/` directory does exist in the clone (with `marshal.json` and `project-architecture/`), and `.gitignore` documents that the executor is runtime tooling "managed by plan-marshall", so the situation is intentional. The defect that remains is that the four documents forbid the working fallback (`./mvnw`) without saying what to do when the executor is absent, which is exactly the situation in this review environment.
+* Severity adjustments: F-documentation-1 was proposed as High, recorded as Medium in consolidation and as Low after the adversarial verification (the README does document the Maven wrapper for humans). F-documentation-2 is recorded as Medium and F-documentation-3 as Low, both on the verifier's reasoning that a non-compiling sample is caught at first copy. The `.plan/` directory does exist in the clone (with `marshal.json` and `project-architecture/`), and `.gitignore` documents that the executor is runtime tooling "managed by plan-marshall", so the situation is intentional. The defect that remains is that the four documents forbid the working fallback (`./mvnw`) without saying what to do when the executor is absent, which is exactly the situation in this review environment.
 * The most consequential documentation findings for a *user* of the library are F-documentation-2, -8, -10, -14, -15 and -16: each of them describes a protection or a usage that the code does not deliver.
 * The "Verified strengths" list is long on purpose: configuration tables, stage orders, TLS and redirect claims, every link and anchor, and every class name mentioned in the documentation were checked and are correct.
 
@@ -114,19 +114,19 @@ Automated passes run over the whole tree (scripts under the scratchpad, not in t
 == Findings
 
 === F-documentation-1: Canonical build command in CLAUDE.md / agents.md / README / testing.adoc points at a script that is not in the repository
-* Severity: Medium (reviewer proposed High; adjusted, see consolidation notes)
+* Severity: Low (reviewer proposed High; adjusted to Medium in consolidation and to Low after adversarial verification, see consolidation notes)
 * Category: documentation
 * Status: CONFIRMED
 * Location: CLAUDE.md:20-27; agents.md:10,18-21,42-44,127-129; README.adoc:132-133; doc/http-security/specification/testing.adoc:262-271
 * Evidence: CLAUDE.md:20 `+Never hard-code build tool commands (./mvnw, mvn) — invoke builds via the canonical executor commands below:+` … `+python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "compile"+`. Shell: `+ls .plan/execute-script.py+` → `+No such file or directory+`; `+.plan/+` itself exists (it carries `+marshal.json+` and `+project-architecture/+`), but `+execute-script.py+` does not. `+.gitignore:16-21+` ignores `+.plan/*+` and whitelists only `+marshal.json+`, `+project-architecture/+`, `+plugin-doctor.yml+`, `+project-structure.json+` — `+execute-script.py+` is not whitelisted.
-* Analysis: Every build/test/quality-gate instruction the project gives to agents (and the README's note to agents) depends on a tool that a fresh clone does not contain and that Git will never carry. The same documents simultaneously forbid the working fallback (`+./mvnw+`, which does exist). An agent following the docs literally cannot run the mandatory pre-commit gate. `+.plan/temp/+` (CLAUDE.md:156, agents.md:153) is likewise a directory that does not exist.
+* Analysis: Every build/test/quality-gate instruction the project gives to agents (and the README's note to agents) depends on a tool that a fresh clone does not contain and that Git will never carry. CLAUDE.md and agents.md simultaneously forbid the working fallback (`+./mvnw+`, which does exist); README.adoc:126-129 does document `+./mvnw+` for human contributors (correction after adversarial verification), but the agent instructions that reference the executor do not. An agent following the docs literally cannot run the mandatory pre-commit gate. `+.plan/temp/+` (CLAUDE.md:156, agents.md:153) is likewise a directory that does not exist.
 * Recommendation: Either commit the executor (or a bootstrap that fetches it) and whitelist it in `+.gitignore+`, or document `+./mvnw …+` as the fallback when `+.plan/execute-script.py+` is absent. Say explicitly that `+.plan/+` is created by external tooling.
 
 === F-documentation-2: "Security Integration" code samples in `+client+` and `+client.adapter+` package-info do not compile and give security-wrong guidance
-* Severity: High
+* Severity: Medium (reviewer proposed High; adjusted after adversarial verification — a non-compiling sample is caught at first copy; the inverted-contract point is what remains)
 * Category: false-security / documentation
 * Status: CONFIRMED
-* Location: cui-http-core/src/main/java/de/cuioss/http/client/package-info.java:220-236; cui-http-core/src/main/java/de/cuioss/http/client/adapter/package-info.java:459-568, 580-591
+* Location: cui-http-core/src/main/java/de/cuioss/http/client/package-info.java:296-317; cui-http-core/src/main/java/de/cuioss/http/client/adapter/package-info.java:226-330, 358-435 (line numbers corrected after adversarial verification; F-client-6 in xref:03-http-client.adoc[] cites the same locations)
 * Evidence (client/package-info):
 ----
   HTTPHeaderValidationPipeline headerValidator = new HTTPHeaderValidationPipeline();
@@ -140,10 +140,10 @@ Automated passes run over the whole tree (scripts under the scratchpad, not in t
 * Recommendation: Rewrite both sections using `+PipelineFactory.createHeaderValuePipeline(config, counter)+` / `+createUrlParameterPipeline(...)+`, catch `+UrlSecurityException+` instead of `+orElseThrow+`, delete the "request body validation" subsection and checklist item (or point to the HTTP-1 statement that bodies are an application-layer concern), and fix the import.
 
 === F-documentation-3: `+HTTPHeaderValidationPipeline+` class Javadoc example calls a constructor that does not exist
-* Severity: Medium
+* Severity: Low (reviewer proposed Medium; adjusted after adversarial verification)
 * Category: documentation
 * Status: CONFIRMED
-* Location: cui-http-core/src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java:62 vs 105-108
+* Location: cui-http-core/src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java:67 vs 121-123 (line numbers corrected after adversarial verification)
 * Evidence: Javadoc: `+HTTPHeaderValidationPipeline pipeline = new HTTPHeaderValidationPipeline(config, counter);+` — only constructor: `+public HTTPHeaderValidationPipeline(SecurityConfiguration config, SecurityEventCounter eventCounter, ValidationType validationType)+`.
 * Analysis: The example silently hides the one decision the pipeline requires (name vs. value), which is the thing configuration.adoc and the spec say matters (allow/block list only for `+HEADER_NAME+`).
 * Recommendation: `+new HTTPHeaderValidationPipeline(config, counter, ValidationType.HEADER_VALUE)+` and mention `+PipelineFactory.createHeaderNamePipeline/createHeaderValuePipeline+`.
@@ -355,7 +355,7 @@ Automated passes run over the whole tree (scripts under the scratchpad, not in t
 * Category: documentation / duplication
 * Status: CONFIRMED (counts recomputed from annotations) 
 * Location: doc/http-security/analysis/cookie-chaos-analysis.adoc:84, 121, 156, 304-307, 337; doc/http-security/analysis/http1-vulnerabilities-analysis.adoc:65, 73, 119, 262, 351-354, 489, 585
-* Evidence: cookie-chaos:84 "CookieChaosAttackTest (50 tests)" vs :306 "CookieChaosAttackTest (213 tests)"; actual: 5 `+@ParameterizedTest+` with `+count = 50,30,40,20,20+` (=160) + 4 `+@Test+` = 164. cookie-chaos:305 "CookiePrefixValidationStageTest (71 tests)" — 24 annotated test methods (35 annotations incl. sources); 71 not derivable. http1:353 "HttpRequestSmugglingAttackTest (395 tests)" — 8 parameterized methods with `+count+` summing to 1 435; http1:351/585 "553 tests total" therefore also stale. (http1:354 "158 tests: 150 generated + 8 fixed" and :352 "11 parameterized methods" are correct.)
+* Evidence: cookie-chaos:84 "CookieChaosAttackTest (50 tests)" vs :306 "CookieChaosAttackTest (213 tests)"; actual: 5 `+@ParameterizedTest+` with `+count = 50,30,40,20,20+` (=160) + 4 `+@Test+` = 164. cookie-chaos:305 "CookiePrefixValidationStageTest (71 tests)" is correct (surefire records exactly 71 cases; the reviewer's original "not derivable" remark was withdrawn after adversarial verification). http1:353 "HttpRequestSmugglingAttackTest (395 tests)" — 8 parameterized methods with `+count+` summing to 1 435; http1:351/585 "553 tests total" therefore also stale. (http1:354 "158 tests: 150 generated + 8 fixed" and :352 "11 parameterized methods" are correct.)
 * Analysis: ADR-0004 explicitly bans incidental counts in prose because of exactly this drift; these documents were not brought under it.
 * Recommendation: Remove the counts or replace with "see the class".
 
@@ -405,7 +405,7 @@ Automated passes run over the whole tree (scripts under the scratchpad, not in t
 * Severity: Low
 * Category: documentation
 * Status: CONFIRMED
-* Location: cui-http-core/src/main/java/de/cuioss/http/security/validation/package-info.java:8-14; doc/http-security/configuration.adoc:5-12
+* Location: cui-http-core/src/main/java/de/cuioss/http/security/validation/package-info.java:25 (line corrected after adversarial verification); doc/http-security/configuration.adoc:5-12
 * Evidence: package-info: "`+LengthValidationStage+` - Input length and depth validation (first stage)". `+grep EXCESSIVE_NESTING+` in main → only NormalizationStage.java:397, 452 (`+MAX_PATH_SEGMENTS = 1000+`, `+MAX_DIRECTORY_DEPTH = 100+`, lines 182/188); LengthValidationStage.java has no depth logic. The package list names five stages + constants; `+AllowBlockListStage+`, `+CookiePrefixValidationStage+`, `+RequestCollectionValidator+` (all public, same package) are absent. configuration.adoc claims to list "every *enforced* setting" but never mentions the two hard-coded nesting limits.
 * Recommendation: Move "depth" to NormalizationStage, add the three missing types, and document the two fixed limits (and that they are not configurable) in configuration.adoc.
 
@@ -448,7 +448,7 @@ Automated passes run over the whole tree (scripts under the scratchpad, not in t
 * Severity: Low
 * Category: documentation
 * Status: CONFIRMED
-* Location: client/result/package-info.java:12, 22, 42 (`+httpClient.get("https://…")+` returning `+HttpResult+`, `+jwksLoader.loadWithETag(previousETag)+`, `+httpHandler.loadConfig()+`); client/package-info.java:76 (`+new JsonResponseConverter<>(User.class)+`); client/handler/package-info.java:4-8 (lists HttpHandler, HttpStatusFamily, SecureSSLContextProvider only — omits public `+RedirectPolicy+`, `+RedirectNotAllowedException+`)
+* Location: client/result/package-info.java:30, 42, 65 (`+httpClient.get("https://…")+` returning `+HttpResult+`, `+jwksLoader.loadWithETag(previousETag)+`, `+httpHandler.loadConfig()+`); client/package-info.java:111 (`+new JsonResponseConverter<>(User.class)+`); client/handler/package-info.java:21-23 (line numbers corrected after adversarial verification) (lists HttpHandler, HttpStatusFamily, SecureSSLContextProvider only — omits public `+RedirectPolicy+`, `+RedirectNotAllowedException+`)
 * Evidence: `+grep -rn "loadConfig\|loadWithETag\|JsonResponseConverter" cui-http-core/src/main+` → none. `+HttpHandler+` exposes `+send/sendAsync/pingGet/pingHead/createHttpClient+`, not `+loadConfig()+`.
 * Recommendation: Mark pseudo-APIs as illustrative or replace with `+ETagAwareHttpAdapter+`-based snippets; add the two redirect types to the handler package list.
 
@@ -503,14 +503,14 @@ Automated passes run over the whole tree (scripts under the scratchpad, not in t
 * Severity: Low
 * Category: consistency
 * Status: CONFIRMED
-* Location: UrlSecurityException.java:46-53 (`+.sanitizedInput("userscripttest1script").detail("Removed script tags and special characters")+`); security/exceptions/package-info.java:44 (`+case INVALID_CHARACTER -> sanitizeAndRetry();+`); security-requirements.adoc:105 ("Must not attempt to 'fix' invalid input"); owasp-best-practices.adoc:103 ("input is never stripped or repaired")
+* Location: UrlSecurityException.java:46-53 (`+.sanitizedInput("userscripttest1script").detail("Removed script tags and special characters")+`); security/exceptions/package-info.java:58 (`+case INVALID_CHARACTER -> sanitizeAndRetry();+`; line corrected after adversarial verification); security-requirements.adoc:105 ("Must not attempt to 'fix' invalid input"); owasp-best-practices.adoc:103 ("input is never stripped or repaired")
 * Recommendation: Replace the sanitisation example with the normalised-form use (`+sanitizedInput+` carries the decoded/normalised value, not a repaired one) and drop `+sanitizeAndRetry()+`.
 
 === F-documentation-26: Configuration docs overclaim configurable "character sets" and "attack pattern definitions"
 * Severity: Low
 * Category: documentation
 * Status: CONFIRMED
-* Location: security/config/package-info.java:14-17 ("Character Sets - Allowed characters for validation types", "Pattern Configuration - Custom attack pattern definitions"); functional-requirements.adoc:182-185 (HTTP-13 "Allowed character sets", "Encoding strictness levels")
+* Location: security/config/package-info.java:33-35 (line numbers corrected after adversarial verification; "Character Sets - Allowed characters for validation types", "Pattern Configuration - Custom attack pattern definitions"); functional-requirements.adoc:182-185 (HTTP-13 "Allowed character sets", "Encoding strictness levels")
 * Evidence: `+SecurityConfigurationBuilder+` exposes only the boolean toggles `+allowNullBytes/allowControlCharacters/allowExtendedAscii/normalizeUnicode+` and the literal block-lists `+blockedPathPatterns/blockedParameterNames+`; the RFC character sets are `+static final+` (CharacterValidationConstants.java:108-149) and SEC-18 itself states the pattern sets are compile-time constants.
 * Recommendation: Reword to "character policy toggles" and "literal block-lists".
 

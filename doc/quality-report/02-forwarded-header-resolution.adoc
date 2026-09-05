@@ -41,7 +41,7 @@ version-alignment checks.
 * Status: CONFIRMED (probe)
 * Location:
 ** /home/user/cui-http/cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedHeaderResolver.java:191 (`+firstPresent(lookup, X_FORWARDED_PROTO, X_PROXY_SCHEME)+`), :211 (`+X_FORWARDED_HOST, X_PROXY_HOST+`), :333 (`+X_FORWARDED_PORT, X_PROXY_PORT+`), :385 (`+X_PROXY_CONTEXT_PATH, X_FORWARDED_PREFIX+`)
-** doc/adr/0002-…adoc:125-129 ("any *fixed* precedence answers that question in a way the attacker can predict and exploit")
+** doc/adr/0002-…adoc:26 (also :60, :85; line numbers corrected after adversarial verification) ("any *fixed* precedence answers that question in a way the attacker can predict and exploit")
 * Evidence (probe output, `+trustAll=true+`):
 ----
   XFPrefix=/app (proxy) + X-ProxyContextPath=/evil (attacker)      => /evil
@@ -61,7 +61,7 @@ version-alignment checks.
 * Location:
 ** ForwardedHeaderResolver.java:505-516 (`+parseForwarded+` → `+UNRESOLVABLE_RESULT+`), :330 (`+if (forwarded.unresolvable()) return OptionalInt.empty()+`), :558-572 (`+reconcileSources+`)
 ** doc/forwarded-header-resolution.adoc:449, package-info.java:84, ResolvedForwarding.java:44 — all three usage examples read `+fwd.scheme().orElse("http")+`
-** doc/adr/0002:167-171 (frames the negative only as "a partially-upgraded proxy chain")
+** doc/adr/0002:67 (line corrected after adversarial verification; frames the negative only as "a partially-upgraded proxy chain")
 * Evidence (probe, proxy correctly sets XFF/Proto/Host/Port with `+trustAll=true+`, `+trustedProxies=10.0.0.0/8+`):
 ----
   proxy sets XFF/Proto/Host/Port, attacker adds Forwarded: garbage =>
@@ -190,7 +190,7 @@ version-alignment checks.
 * Severity: Low
 * Category: test-quality / generator-usage
 * Status: CONFIRMED
-* Location: IpAddressesTest.java:20-27 and :63-68 (`+assertNotNull+` only, canonical value asserted for one input at :74-79); IpAddressesTest.java:99-129 (`+CidrRange+`: only `+/32+`-bare, `+/8+` family mismatch, `+/28+`); ForwardedResolverConfigTest.java:90-96 (malformed specs: `+/99+`, `+/+`, `+999.1.1.1/8+` — no `+/0+`, `+/-1+`, `+/128+`, `+/33+` boundary).
+* Location: IpAddressesTest.java:81 (`+acceptsValidLiterals+`: `+assertNotNull(IpAddresses.parseChainEntry(entry))+` only; line corrected after adversarial verification), canonical value asserted for one input only; IpAddressesTest.java:99-129 (`+CidrRange+`: only `+/32+`-bare, `+/8+` family mismatch, `+/28+`); ForwardedResolverConfigTest.java:90-96 (malformed specs: `+/99+`, `+/+`, `+999.1.1.1/8+` — no `+/0+`, `+/-1+`, `+/128+`, `+/33+` boundary).
 * Analysis: `+@ParameterizedTest+`/`+@ValueSource+` is used appropriately for enumerated attack shapes, but nothing random-property-tests the two pure functions where a generator would add real value: `+CidrRange.contains+` (random address vs. independently computed mask) and the `+ResolvedForwarding.toForwardedHeader()+` → `+RfcForwardedParser.parse+` round trip (random hosts/ports/IPs incl. characters that force quoting/escaping). My probe confirmed `+/0+`, `+/32+`, `+/128+`, `+/31+`, `+/127+`, `+/-1+`, `+/33+` all behave correctly, so this is a coverage gap, not a bug. Positive/negative pairing in ForwardedTrustBoundaryTest and ForwardedAccessorContractTest is exemplary. No `+@Disabled+`, no try/catch in tests. Missing scenario tests: F-D-1 sibling override, F-D-2 attacker `+Forwarded: garbage+`/oversized XFF, F-D-4 host:port reconciliation, `+for=unknown+` end-to-end (doc line 300 example), zone-ID end-to-end, IPv4-mapped chain entries, HTTP-120 (F-D-9).
 * Recommendation: Add a `+TypedGenerator<InetAddress>+`-based property test for `+CidrRange+` and a generator-driven serialization round-trip; add the missing scenario tests listed above; replace the bare `+assertNotNull+` checks with canonical-string equality.
 
@@ -200,7 +200,7 @@ version-alignment checks.
 * Status: CONFIRMED
 * Location / evidence:
 ** doc/forwarded-header-resolution.adoc:372 — "The host rejects embedded path separators, backslashes, and whitespace" omits `+@ # ?+` which the code (ForwardedHeaderResolver.java:306-314) and Javadoc also reject.
-** doc/adr/0002:141-143 — "For each field independently — scheme, host, and client IP" — code also applies the unresolvable rule to the port (ForwardedHeaderResolver.java:330); the main doc says so, the ADR does not.
+** doc/adr/0002:39 (line corrected after adversarial verification) — "For each field independently — scheme, host, and client IP" — code also applies the unresolvable rule to the port (ForwardedHeaderResolver.java:330); the main doc says so, the ADR does not.
 ** All three ADRs have `+Status: Proposed+` although they are implemented and tested; none is linked from README.adoc or doc/forwarded-header-resolution.adoc (only the http-security docs link ADRs).
 ** .editorconfig covers only `+js,java,xml,properties,xhtml+`; the repo's `+.yml+`, `+.py+`, `+.adoc+` files have no rules.
 

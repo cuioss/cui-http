@@ -1,0 +1,1130 @@
+= Adversarial Verification
+:toc: left
+:toclevels: 3
+:sectnums:
+:icons: font
+
+== Purpose and outcome
+
+After the six area reports and the lead findings had been consolidated into chapters 01 to 06, an independent verifier with no prior context (a fresh agent that had not seen how the findings were produced) was given the report and the repository with the instruction to break it: re-execute every probe, re-trace every code path, open every cited line, re-check the "verified strengths", check the README numbers, and spend a bounded effort looking for anything material the report had missed. The verifier ran under the same constraints as the review (read-only, probes compiled against `cui-http-core/target/classes`).
+
+.Outcome
+* 125 findings checked. 99 confirmed exactly, 22 confirmed with a correction, 3 confirmed on a spot-check basis, 0 not reproduced, 0 disputed.
+* Every High finding was reproduced end to end. F-client-1 was replayed against a MockWebServer with two principals; F-client-3 live against the JDK client; F-client-2, -4 and -11 against the JDK 21u sources.
+* 38 "verified strength" claims were re-executed. None was false.
+* One new item was found (V-1, now in xref:01-security-validation.adoc[]). Nothing else material was missed in the security core.
+
+.Adjustments made to the report as a result
+* Line-number corrections in 20 findings (F-A-9, F-B-12, F-B-14, F-client-1, F-client-9, F-D-1, F-D-2, F-D-15, F-D-17, F-D-19, F-D-20, F-documentation-2, -3, -13, -18, -25, -26 and the redirect strength paragraph in chapter 03). Each corrected location is marked "corrected after adversarial verification" in place.
+* Factual corrections: F-client-16 (the quoted builder combination throws rather than builds), F-documentation-7 (the "71 tests" figure is correct), F-documentation-1 (the README does document the Maven wrapper for humans), F-A-3 (the whitespace claim holds for Unicode whitespace only), F-B-14 (the generator uppercases only the dot and slash escapes), F-E-9 (32 generators, not 33), L-1 (paranoid also accepts).
+* Severity changes: F-E-1, F-E-2 and F-documentation-2 from High to Medium; F-documentation-1 from Medium to Low; F-documentation-3 from Medium to Low. The report now carries five High findings, all code-side.
+* README baseline corrected: the surefire reports hold 112 report files, 206 test classes and 7 874 test cases (0 failures, 0 errors, 0 skipped). The original "336 test classes, 6 993 tests" counted files and summed the per-class text summaries.
+* V-1 added as a Medium finding; the duplicates table in chapter 01 and the remediation order in the README reference it.
+
+The verifier's report follows unchanged below (identifiers, line references and severities as it recorded them, before the adjustments above were applied).
+
+== Method
+
+Independent verifier, no prior context. Repository treated read-only; nothing under `+/home/user/cui-http+` was modified.
+
+Probe programs (all under `+/tmp/claude-0/-home-user-cui-http/fedac416-59e2-5fc8-b6f7-1511985a44cf/scratchpad/verify/+`), compiled with `+javac+` against `+cui-http-core/target/classes+` + `+target/test-classes+` + the dependency jars from `+/root/.m2+` (cui-java-tools 2.7.0, jspecify 1.0.1, cui-test-generator 3.0.2, junit-jupiter-api 6.1.3, mockwebserver3 5.5.0, okhttp-jvm 5.5.0, okio 3.18.1, kotlin-stdlib 2.1.21), and run with `+java+` (JDK 21.0.10):
+
+[cols="1,1",options="header"]
+|===
+| File
+| What it re-executes
+
+| `+P1Security.java+` → `+p1.out+` (378 lines)
+| every probe quoted in 01-security-validation (L-1…L-10, F-A-1…F-A-14, F-B-1…F-B-16), the traversal / CRLF / tchar / NFKC / counter / `+when()+` strength claims
+
+| `+fwd/…/P2Forwarded.java+`, `+fwd/…/P5Fwd2.java+` (package `+de.cuioss.http.forwarded+`, for package-private `+IpAddresses+`, `+CidrRange+`, `+RfcForwardedParser+`)
+| every probe quoted in 02-forwarded-header-resolution (F-D-1…F-D-13), CIDR arithmetic, nearest hop, joining, three-state model, invariants, round trip
+
+| `+P3Client.java+` → `+p3.out+`
+| F-client-1 (two principals against a MockWebServer, `+excluding("Authorization")+` and `+ALL+`), F-client-3 (JDK `+HttpClient+` vs `+HttpHandler+` on 301 for PUT/DELETE/POST, HEAD on 303, `+adapter.delete()+` through 301), F-client-4 (real TLS peer closing mid-handshake), F-client-9/10/11/13/14/16/17, redirect-policy bypass candidates, TLS floor
+
+| `+pipe/…/P4Misc.java+` (package `+de.cuioss.http.security.pipeline+`)
+| F-A-3 Unicode-whitespace variant, F-B-14 (custom `+AbstractValidationPipeline+` subclass: non-`+UrlSecurityException+` propagation, short-circuit), F-E-4 tally of `+ProtocolHandlerAttackDatabase+` by reflection, missed-item hunt
+
+| `+P6Missed.java+`
+| decoded `+?+`/`+#+` after a `+..+` segment (missed item 1)
+
+| `+jdksrc/+`
+| JDK 21u sources fetched from raw.githubusercontent.com (`+X509TrustManagerImpl+`, `+PKIXValidator+`, `+RedirectFilter+`, `+HttpClientImpl+`, `+SSLSocketImpl+`) plus `+javap -c+` of the installed JDK classes, for F-client-2/3/4/11 and L-12
+
+|===
+
+
+Code-trace findings were re-traced by opening every cited `+file:line+` with `+sed -n+`. Test-framework findings were re-checked by reading the cited test bodies and by `+grep+`. Documentation findings were re-checked by opening the cited document lines and the code they are compared with. Surefire baseline: `+cui-http-core/target/surefire-reports+` (timestamps 07:53, i.e. produced before the report).
+
+Control characters in probe sources were written as Java `+\uXXXX+` escapes.
+
+== Verdict table
+
+Severity column "mine" is what I would assign on the report's own scale. "loc" = cited line numbers.
+
+=== 01 — Security validation
+
+[cols="1,1,1,1,1",options="header"]
+|===
+| ID
+| Report sev.
+| Verdict
+| My sev.
+| Correction / reasoning
+
+| L-1
+| Medium
+| CONFIRMED
+| Medium
+| Reproduced verbatim under defaults, strict, lenient *and paranoid*: `+/a/b/..+`→`+/a+`, `+/files/public/..+`→`+/files+`, `+/a/%2e%2e+`→`+/+`, `+/a/b/../+` REJECT. Add: paranoid also accepts.
+
+| L-2
+| Medium
+| CONFIRMED
+| Medium
+| `+/a/%80+`, `+/a/%c3+`, `+/a/%f5%80%80%80+`, `+/a/%f4%90%80%80+`, `+/a/%ed%a0%80+`, `+/a/%c0%80+`, `+/a/%f0%8f%bf%bf+` all PASS with U+FFFD; `+/a%c0ab+` rejected (first regex alternative matches a *bare* hex digit, as claimed).
+
+| L-3
+| Medium
+| CONFIRMED
+| Medium
+| CRLF, 5000 chars, `+totally not a media type+` accepted with empty lists; `+application/json; x\r\nX: y+` and `+application/json;+`+100 000 chars accepted against allow-list `+application/json+`.
+
+| L-4
+| Medium
+| CONFIRMED
+| Medium
+| `+getMessage()+` = `+… Value 'text/html\r\nX-Injected: 1' is not in the allow-list (input: 'text/html??X-Injected: 1')+` — raw CR LF in the detail, sanitised only in the input suffix.
+
+| L-5
+| Medium
+| CONFIRMED
+| Medium
+| `+validateCookie+` passes name `+a\r\nb+`, `+a b+`, `+a;b+`, `+a=b+`, value `+v\r\nSet-Cookie: x+`, `+__host-a+`/`+__HOST-a+`/`+__secure-a+` without Secure; `+validate("a\r\nb")+` passes. `+createPipeline(COOKIE_*)+` throws (PipelineFactory:255).
+
+| L-6
+| Low
+| CONFIRMED
+| Low
+| `+getPath("Secure; Path=/; Path=/x")+`=`+/+`, `+getDomain("Domain=a; domain=b")+`=`+a+`; `+__Host-a; Secure; Path=/x; Path=/+` REJECTED, `+…Path=/; Path=/admin+` PASSED.
+
+| L-7
+| Low
+| CONFIRMED
+| Low
+| `+Map{"a"→String[10000]}+` with `+maxParameterCount(2)+` passes; count 2 passes, 3 rejected.
+
+| L-8
+| Medium
+| CONFIRMED
+| Medium
+| `+/home+`, `+http://x+`, `+a@b.com+`, `+10:30+` REJECT INVALID_CHARACTER; `+a%2Fb+`→`+a/b+`, `+a%3Ab+`→`+a:b+` accepted.
+
+| L-9
+| Low
+| CONFIRMED
+| Low
+| `+%e2%80%ae+`, `+%e2%80%8b+`, `+%ef%bb%bf+`, `+%c2%a0+` PASS; `+%c2%85+` REJECT CONTROL_CHARACTERS, `+%cc%80+` REJECT combining.
+
+| L-10
+| Low
+| CONFIRMED
+| Low
+| lenient: `+/a/%2500+`→`+/a/%00+`.
+
+| L-11
+| Low
+| CONFIRMED
+| Low
+| Builder literals 4096/128/2048 at SecurityConfigurationBuilder:76-98; `+allowExtendedAscii = true+` at :97.
+
+| L-12
+| Low
+| CONFIRMED (superseded by F-client-2)
+| Low
+| See F-client-2: verified against JDK 21u source.
+
+| L-13
+| Info
+| CONFIRMED
+| Info
+| `+/api/../../etc/passwd+` → PATH_TRAVERSAL_DETECTED (pass 1, `+../+`) in every preset; standalone `+NormalizationStage+` → `+/etc/passwd+`.
+
+| F-A-1
+| High
+| CONFIRMED
+| High
+| All seven quoted lines reproduced exactly (`+/a%25%32%66b+`→`+/a%2fb+`, `+/api/%25%30%30+`→`+/api/%00+`, param value `+a%25%32%66b+`→`+a%2fb+`; strict and paranoid identical). Traversal-shaped forms are caught later, as stated.
+
+| F-A-2
+| High
+| CONFIRMED
+| High (borderline Medium)
+| `+a%CD%BEb+`→`+a;b+` through `+DecodingStage+` and the full name pipeline; `+a%3Bb+` rejected; `+/a%EF%BC%9Bb+`→`+/a;b+`, `+/a%C2%A0b+`→`+/a b+`, `+/a%CD%BEb+`→`+/a;b+`. Impact needs a downstream that splits on `+;+` — hence borderline.
+
+| F-A-3
+| Medium
+| CONFIRMED-WITH-CORRECTION
+| Medium
+| Case-sensitivity and `+__Http-+`/`+__HostHttp-+` reproduced exactly. Correction: the whitespace claim — `+"__Host-s "+` with an ASCII trailing space *is* rejected ("must not have leading or trailing whitespace"); the claim holds only for Unicode whitespace: `+__Host-s +`, `+__Host-s +`, `+__Host-s[ZWSP]+`, `+ __Host-s+` all PASS `+validate+` and `+validateCookie+`. State the character explicitly.
+
+| F-A-4
+| Medium
+| CONFIRMED
+| Medium
+| All seven quoted lines reproduced (`+%c0%80+`, `+%c0%8a+`, `+%ff+`, `+%80+`, `+%ed%a0%80+`, 5-byte overlong pass; `+%c0%af+` rejected). Loc :117/:125-133/:178-195/:270 correct.
+
+| F-A-5
+| Medium
+| CONFIRMED
+| Medium
+| Both messages reproduced with raw CR LF. Loc correct. Duplicate of L-4/F-B-5.
+
+| F-A-6
+| Medium
+| CONFIRMED
+| Medium
+| lenient: `+ab+`, `+ab+`, `+ab+` header value PASS, `+XY+`, `+X\tY+` header *name* PASS; CRLF and NUL still rejected; COOKIE_NAME `+ab+` PASS. Under defaults `+ab+` is rejected.
+
+| F-A-7
+| Medium
+| CONFIRMED
+| Medium
+| defaults header value: NEL, U+2028, unpaired U+D800, U+202E, U+009F PASS; strict rejects. `+allowExtendedAscii+` default `+true+` (builder :97), Javadoc says false (CharacterValidationStage ~:130).
+
+| F-A-8
+| Medium
+| CONFIRMED
+| Medium
+| Standalone stage: `+a/../b+` REJECT, `+/a/../b+`→`+/b+`, `+a/../b/c+`→`+b/c+`, `+/../../etc/passwd+`→`+/etc/passwd+`, `+api/..+`→`++`, `+.+`→`++`, `+/a//b///c/+`→`+/a/b/c/+`, `+//evil.com/x+`→`+/evil.com/x+`. Loc :203/:419-433 correct.
+
+| F-A-9
+| Low
+| CONFIRMED-WITH-CORRECTION
+| Low
+| Behaviour reproduced (`+http://x/y+` ':' rejected, `+abc=+` cookie value rejected, `+%09javascript:alert(1)+` rejected at ':' position 13, `+javascript%3A…+` → SUSPICIOUS_PATTERN). **Cited lines 544-549, 604-612, 687-695 cannot exist: `+CharacterValidationConstants.java+` has 301 lines** (Javadoc at ~:118, cookie mapping at :267).
+
+| F-A-10
+| Low
+| CONFIRMED
+| Low
+| Same probe as L-7; `+validateParameterCount(-5)+` passes.
+
+| F-A-11
+| Low
+| CONFIRMED
+| Low
+| All ten constants have 0 references outside `+SecurityDefaults+`; all nine enum constants have 0 references in `+src/main+`; `+DOUBLE_ENCODING_PATTERNS+` = `+%2e%2e, %2f%2e%2e, %5c%2e%2e+`; `+PROBLEMATIC_CONTROL_CHARS+` ends at `+\031+`. Line refs correct.
+
+| F-A-12
+| Low
+| CONFIRMED
+| Low
+| Every cited statement opened and found as quoted (ADR-0006:154-156, CVS Javadoc default, CPS :106/:113, DecodingStageTest :429-430, PMST :33-36/:382, CVST 14× `+allowHighBitCharacters+` with 0 in main).
+
+| F-A-13
+| Medium
+| CONFIRMED
+| Medium (test-quality)
+| grep: no PARAMETER_NAME delimiter test in DecodingStageTest, no `+%CD%BE+`/`+037E+` anywhere in test tree; CPST :269-274 pins case sensitivity; PMST :300-311 uses `+../etc/passwd+`; assertNotNull counts 15/23/10 exactly as stated; `+@GeneratorSeed+` 0 hits.
+
+| F-A-14
+| Info
+| CONFIRMED
+| Info
+| paranoid param value: `+etc+`, `+dev+`, `+ETC+`, `+root+` REJECT `+/etc/+` etc.; `+filepath+` PASS.
+
+| F-B-1
+| Medium
+| CONFIRMED
+| Medium
+| `+blockedContentTypes=[text/html; charset=utf-8]+` blocks nothing; `+allowed=[application/json ]+` rejects `+application/json+`; `+text/*+` rejects `+text/html+`.
+
+| F-B-2
+| Medium
+| CONFIRMED
+| Medium
+| `+validate(null)+` → `+Optional.empty+`, counter delta 0; `+validate("")+` REJECT. HTTPBody:71-76 recommends exactly this route.
+
+| F-B-3
+| Medium
+| CONFIRMED
+| Medium
+| `+%3Cscript%3E+` → `+<script>+` accepted by the value pipeline; Javadoc bullets at PipelineFactory :110/:163/:185 and package-info :27 as quoted.
+
+| F-B-4
+| Medium
+| CONFIRMED
+| Medium
+| Same evidence as L-8; test comment at URLParameterValidationPipelineTest :148-149 present.
+
+| F-B-5
+| Medium
+| CONFIRMED
+| Medium
+| `+CONTROL_CHARS_PATTERN = [\x00-\x1F\x7F]+` at :81; detail appended raw at :155-156; messages reproduced.
+
+| F-B-6
+| Medium
+| CONFIRMED
+| Medium
+| `+hostPrefix("s","v\r\nSet-Cookie: admin=true").toCookieString()+` = `+__Host-s=v\r\nSet-Cookie: admin=true; Secure; …+`; `+validateCookie+` passes it; `+hostPrefix(null,…)+` → `+__Host-null+`, `+hostPrefix("",…)+` → `+__Host-+`.
+
+| F-B-7
+| Medium
+| CONFIRMED
+| Medium
+| `+getMessage()+` carries `+Bearer SUPER-SECRET-TOKEN??X: y+`; `+toString()+` repeats it in outer and cause.
+
+| F-B-8
+| Low
+| CONFIRMED
+| Low
+| `+__Host-a; Secure; Path=/; Path=/admin+` passes (same probe as L-6).
+
+| F-B-9
+| Low
+| CONFIRMED
+| Low
+| `+getAttributeNames()=[Domain, Path]+`, `+getDomain()=Optional.empty+` for `+Domain =example.com; Path=/+`.
+
+| F-B-10
+| Low
+| CONFIRMED
+| Low
+| `+isPlainText("text/plain; charset=utf-8")=false+`, `+isJson("text/plain; x=json")=true+`.
+
+| F-B-11
+| Low
+| CONFIRMED
+| Low
+| `+/a/․․/b+` INVALID_CHARACTER (0x2024), `+/aé/b+` accepted, `+[::ffff:127.0.0.1]/…+` rejected at `+[+`; nine enum constants unreferenced. Doc lines :14/:20-22/:177-195 as quoted.
+
+| F-B-12
+| Low
+| CONFIRMED-WITH-CORRECTION
+| Low
+| Every claim holds (ctor at HTTPHeaderValidationPipeline:121-123 has 3 args; `+UrlSecurityException+` ctor private at :106; `+validate(x, ValidationType)+` does not exist; `+search=test&page=1+` accepted by the value pipeline). *Line numbers drift:* `+URLParameterValidationPipeline:61+`→:56, `+pipeline/package-info:70+`→:51, `+monitoring/package-info:40-48+`→:17-31; `+exceptions/package-info:58+` correct.
+
+| F-B-13
+| Low
+| CONFIRMED
+| Low
+| `+URLPathValidationPipeline(super=…URLPathValidationPipeline@81b5ebd6)+`.
+
+| F-B-14
+| Low
+| CONFIRMED-WITH-CORRECTION
+| Low
+| Custom subclass: `+IllegalStateException+` propagates with counter 0; empty `+Optional+` short-circuits without running the next stage; `+..%5Cx+` → PATH_TRAVERSAL_DETECTED (not stopped by the character set); name pipeline rejects 129 chars, value pipeline accepts; stale comments at CookieTest:89, URLParameterTest:90/:223 present. Correction: `+applyMixedCase+` is at EncodingCombinationGenerator:123-126 (not :66-69) and uppercases only `+%2e+`/`+%2f+`, so "never mixed" is right but "all hex" is not.
+
+| F-B-15
+| Info
+| CONFIRMED
+| Info
+| Same probe as F-A-7 (`+vX+`, U+2028 accepted by defaults, rejected by strict).
+
+| F-B-16
+| Info
+| CONFIRMED
+| Info
+| `+x\r\ny+` REJECT CONTROL_CHARACTERS, `+x%0d%0ay+` → `+x\r\ny+` accepted.
+
+|===
+
+
+=== 02 — Forwarded-header resolution
+
+[cols="1,1,1,1,1",options="header"]
+|===
+| ID
+| Report sev.
+| Verdict
+| My sev.
+| Correction / reasoning
+
+| F-D-1
+| High
+| CONFIRMED-WITH-CORRECTION
+| High
+| All four probe lines reproduced exactly (`+/evil+`, `+https+`, `+attacker.example+`, `+8080+`). Code loc :191/:211/:333/:385 correct. *ADR-0002 is 103 lines; cited :125-129 do not exist* — the quoted sentence is at ADR-0002:26 (and :60, :85).
+
+| F-D-2
+| High
+| CONFIRMED-WITH-CORRECTION
+| High
+| All four probe lines reproduced (`+Forwarded: garbage+` blanks every field incl. proxy-set XFF/Proto/Host/Port; `+for=unknown+`, `+for=9.9.9.9+`, 2700-char XFF all → empty). Loc :505-516/:330/:558-572 correct; `+orElse("http")+` at doc:449, package-info:84, ResolvedForwarding:44 confirmed. *ADR-0002 :167-171 does not exist* — "partially-upgraded proxy chain" is at :67.
+
+| F-D-3
+| Medium
+| CONFIRMED
+| Medium
+| `+XFF: 6.6.6.6+` alone → `+Optional[6.6.6.6]+` with `+trustedProxies=10.0.0.0/8+`; Javadoc :52-63 says so. Design limitation documented; severity as a "false-security trap of the option name" is defensible.
+
+| F-D-4
+| Medium
+| CONFIRMED
+| Medium
+| Both probe lines reproduced; additionally `+XFPort=80+` + `+Forwarded host="x:8443"+` → port 80, host empty (port not reconciled, host dropped).
+
+| F-D-5
+| Medium
+| CONFIRMED
+| Medium
+| All seven probe lines reproduced (`+"abc+`, Cyrillic, `+%2Fpath+`, `+;x+`, `+<b>+`, `+"quoted"+`, `+ex]ample+` all honoured); `+real-host@attacker.example+` correctly rejected.
+
+| F-D-6
+| Low
+| CONFIRMED
+| Low
+| `+/app/../admin+`, `+/app?x=1+`, `+/app#f+`, `+/%2F%2Fattacker.com+`, Cyrillic `+/аpp+` all honoured; `+//attacker.com+`, `+/app, //attacker.com+`, `+/appx+` rejected.
+
+| F-D-7
+| Low
+| CONFIRMED
+| Low
+| Header-value pipeline returns `+//attacker.com+` unchanged; comment at ForwardedHeaderResolver:392-394 and doc:366-368 as quoted.
+
+| F-D-8
+| Low
+| CONFIRMED
+| Low
+| doc:166 says 120..125; `+identifier(126)+` at ForwardedLogMessages:78-82.
+
+| F-D-9
+| Low
+| CONFIRMED
+| Low
+| grep "control characters" in forwarded tests → only ResolvedForwardingTest:82 (record invariant, `+IllegalArgumentException+`); no resolver test asserts HTTP-120.
+
+| F-D-10
+| Low
+| CONFIRMED
+| Low
+| `+parseChainEntry("1.2.3.4:abc")+`, `+("1.2.3.4:")+` → 1.2.3.4; `+[::1]:abc+`, `+[::1]:+` → null; XFH `+example.com:abc+`/`+example.com:+` → host kept, port empty. Extra evidence: `+X-Forwarded-Host: https://real@evil+` → host `+https+` (split at the single colon, remainder dropped).
+
+| F-D-11
+| Info
+| CONFIRMED
+| Info
+| `+::ffff:010.0.0.5+` → 10.0.0.5 Inet4Address in 10/8; `+010.0.0.5+` → null; `+::10.0.0.5+` stays Inet6Address, not in 10/8.
+
+| F-D-12
+| Low
+| CONFIRMED
+| Low
+| `+for=1.2.3.4;for=10.0.0.5+` → malformed=false, forValues=[1.2.3.4, 10.0.0.5], clientIp 1.2.3.4; `+proto=https;proto=http+` → http; `+proto=+` → malformed=true.
+
+| F-D-13
+| Low
+| CONFIRMED
+| Low
+| `+sanitizeForLog+` at :644-651 uses `+Character.isISOControl+` only; header-value pipeline admits U+2028 under defaults (probe).
+
+| F-D-19
+| Low
+| CONFIRMED-WITH-CORRECTION
+| Low
+| `+acceptsValidLiterals+` is `+assertNotNull(IpAddresses.parseChainEntry(entry))+` at IpAddressesTest:81 (cited :20-27 are imports, :63-68 is the out-of-range test). CIDR boundary claims verified (see strengths).
+
+| F-D-20
+| Info
+| CONFIRMED-WITH-CORRECTION
+| Info
+| doc:372 as quoted; ADR-0001/0003 `+Proposed+`; `+.editorconfig+` covers only `+[*]+` and `+[*.{js,java,xml,properties,xhtml}]+`. *ADR-0002 :141-143 does not exist* — "For each field independently — scheme, host, and client IP" is at :39.
+
+|===
+
+
+=== 03 — HTTP client
+
+[cols="1,1,1,1,1,1",options="header"]
+|===
+| ID
+| Report sev.
+| Verdict
+| My sev.
+| Correction / reasoning
+| 
+
+| F-client-1
+| High
+| CONFIRMED-WITH-CORRECTION
+| High
+| *Reproduced end-to-end against MockWebServer*: A (`+Bearer A+`) → 200 `+A-SECRET-BODY+` ETag `+"e1"+`; B (`+Bearer B+`) → server 403, adapter returns `+Failure+` with `+getContent()=Optional[A-SECRET-BODY]+`, `+getETag()="e1"+`, status 403; request B carried `+If-None-Match: "e1"+`. Secondary claim also reproduced with `+ALL+`: same token later answered 401 → `+getContent()=Optional[A-SECRET-BODY]+`. Loc: key/entry :1139-1142 ✓, fallback :986-996 ✓; **`+If-None-Match+` is set at :620-625, not :608-611**.
+| 
+
+| F-client-2
+| Medium
+| CONFIRMED
+| Medium
+| JDK 21u `+X509TrustManagerImpl.java:257-297+` fetched: `+if (engine != null) { … SSLAlgorithmConstraints.forEngine(…) … getStatusResponses() … checkIdentity }+` else `+v.validate(chain, null, Collections.emptyList(), null, …)+`; `+PKIXValidator.java:218-220+` adds `+AlgorithmChecker+` only when `+constraints != null+`. Project Javadoc :294-296 and ADR-0007:43-51/:75-78 as quoted.
+| 
+
+| F-client-3
+| Medium
+| CONFIRMED
+| Medium
+| *Executed*: JDK `+HttpClient+` (Redirect.NORMAL) sends `+PUT /b+` / `+DELETE /b+` after a 301 (`+RedirectFilter.java:91+` `+orig.equals("POST") ? "GET" : orig+`); `+HttpHandler+` sends `+GET /b+` for PUT, DELETE and POST, and `+GET /b+` for HEAD on 303; `+adapter.delete()+` through 301 → `+Success[content=ok, httpStatus=200]+`.
+| 
+
+| F-client-4
+| Medium
+| CONFIRMED
+| Medium
+| Real `+SSLSocket+` against a peer that accepts and closes: `+javax.net.ssl.SSLHandshakeException: Remote host terminated the handshake+` (cause `+EOFException+`); `+fromException+` → CONFIGURATION_ERROR (non-retryable). JDK source `+SSLSocketImpl.java:1713-1716+` as quoted.
+| 
+
+| F-client-5
+| Medium
+| CONFIRMED
+| Medium
+| Complete `+LogAsserts+` inventory in `+client/+` matches the report (HttpHandlerTest:395,408,580,645; HttpHandlerRedirectTest:429,483,497); nothing for 108/110-114/200/201. HTTP-117 emitted only in `+pingWithMethod+` (:849-851).
+| 
+
+| F-client-6
+| Medium
+| CONFIRMED
+| Medium
+| client/package-info:305-312 and adapter/package-info:284-323, :367-410, :430-434 as quoted; real ctor/`+private+` ctor confirmed. Cited lines correct (unlike F-documentation-2, see below).
+| 
+
+| F-client-7
+| Low
+| CONFIRMED
+| Low
+| fixture `+https://api.example.com/test+` at :33-35; 43 `assertNotNull(adapter
+| future)`+ in 54 test methods; +`connectionRefusedShouldReturnFailure` accepts any category (:716-721).
+
+| F-client-8
+| Low
+| CONFIRMED
+| Low
+| HttpHandlerHttpsIntegrationTest:50-53 self-description as quoted; TLS floor asserted only via `+sslParameters().getProtocols()+` (HttpHandlerTest:153-158); no PUT/DELETE redirect test (grep).
+| 
+
+| F-client-9
+| Low
+| CONFIRMED-WITH-CORRECTION
+| Low
+| `+forwardsCredentials(https://api.example.com/a → https://evil.example.org/b)+` with allowlist `+[cdn.example.net]+` = *true*, `+refuse+` = CROSS_ORIGIN. *Loc off by 14: method at RedirectPolicy:226-230 (not :212-216), Javadoc :213-216; the HttpHandler guard is at :696-702, not :745-748.*
+| 
+
+| F-client-10
+| Low
+| CONFIRMED
+| Low
+| `+initialDelay=500ns+` builds; `+calculateDelay(1)=PT0S+`, `+calculateDelay(3)=PT0S+`; overflow with `+multiplier=1e300+` → PT1M (cap).
+| 
+
+| F-client-11
+| Low
+| CONFIRMED
+| Low
+| `+HttpClient.newHttpClient().executor().isPresent()=false+`; `+HttpClientImpl.java:469+` `+Executors.newCachedThreadPool(...)+`; adapter/package-info:200 "Created once in constructor" vs ETagAwareHttpAdapter:158-166 "Not held by the adapter"; http-result-pattern.adoc:330 plain `+cachedResult+` field vs :381 AtomicReference advice.
+| 
+
+| F-client-12
+| Low
+| CONFIRMED
+| Low
+| `+canReadCache+` GET/HEAD at :1013-1015; `+If-None-Match+` only for GET (:623); integration test sets it manually with `+NONE+`.
+| 
+
+| F-client-13
+| Low
+| CONFIRMED
+| Low
+| `+parseDeclaredCharset("text/plain; charset = ISO-8859-1")+` → `+Optional.empty+` (fallback); `+charset=+` and `+CHARSET="…"+` → ISO-8859-1.
+| 
+
+| F-client-14
+| Low
+| CONFIRMED
+| Low
+| `+fromException(new InterruptedException())+` → CONFIGURATION_ERROR; sample at :130-139 catches `IOException
+| InterruptedException`.
+
+| F-client-15
+| Info
+| CONFIRMED
+| Info
+| `+generateCacheKey+` appends `+name:value+` verbatim (:731-754); `+maxCacheSize = 1000+` (:1164); eviction by timestamp only when size exceeded (:852-881), no TTL.
+| 
+
+| F-client-16
+| Info
+| CONFIRMED-WITH-CORRECTION
+| Info
+| **The exact combination quoted — `+uri("http://…").allowInsecureHttp(true).verifyHostname(false).sslContext(ctx)+` — does NOT build: the mutual-exclusion check throws IAE (HttpHandler:1202).** What holds: `+http + verifyHostname(false)+` alone builds and reports `+isVerifyHostname()==true+`; `+http + sslContext(ctx)+` alone builds and `+getSslContext()==null+` (silently discarded). Lombok-generated `+private HttpClient httpClient+` builder field confirmed by `+javap -p+`. Rewrite the sentence.
+| 
+
+| F-client-17
+| Low
+| CONFIRMED
+| Low
+| `+success("x",null,500)+`, `+failureWithFallback(…,200)+` accepted; `+failure(null,…).getErrorMessage()+` → `+NullPointerException+`.
+| 
+
+| F-client-18
+| Info
+| CONFIRMED
+| Info
+| grep: cui-test-generator used only in HttpResultTest (:37-39, manual loops) and HttpHandlerHttpsIntegrationTest:145.
+| 
+
+|===
+
+
+=== 04 — Security test framework
+
+[cols="1,1,1,1,1",options="header"]
+|===
+| ID
+| Report sev.
+| Verdict
+| My sev.
+| Correction / reasoning
+
+| F-E-1
+| High
+| CONFIRMED
+| Medium
+| All nine probe lines reproduced (`+?+` at position 4/27/5/7, space at 13, `+#+` at 9; `+/api%0d%0aX-Injected:malicious+` → CONTROL_CHARACTERS). Every `+BASE_URLS+` entry in both generators is an absolute URL (15 `+"?+` sites each); six `+assertEquals(INVALID_CHARACTER…)+` at HttpRequestSmugglingAttackTest :286/:319/:352/:384/:416/:448. I rate this Medium: it is a test-coverage defect with no runtime consequence (the decoded-CRLF rule itself is verified to work by my probe).
+
+| F-E-2
+| High
+| CONFIRMED
+| Medium
+| All seven cited bodies read: items 1-4 catch `+UrlSecurityException+` with no or tautological assertions exactly as quoted; item 5 aggregate-only (`+isRejected+` swallows); item 6 Javadoc :60-66 "not yet implemented" vs. existing `+validateCookie+`. Test-quality, hence Medium on the scale.
+
+| F-E-3
+| Medium
+| CONFIRMED
+| Medium
+| All twelve helpers opened; sizes 7/9/9/10/7/6/10/6/10/6 as stated; `+SUSPICIOUS_PATTERN_DETECTED+` listed twice in ProtocolHandlerAttackTest (:402,:405); `+// Repeated chars in length attacks+` comment at :665.
+
+| F-E-4
+| Medium
+| CONFIRMED
+| Medium
+| Reflection tally of `+ProtocolHandlerAttackDatabase+`: 24 entries = PATH_TRAVERSAL_DETECTED 16, INVALID_CHARACTER 5, NULL_BYTE 1, CONTROL_CHARACTERS 1, SUSPICIOUS_PATTERN_DETECTED 1; 23 of 24 payloads contain `+../+`/`+/..+`; `+generatePath()+` :339-348 all traversal; `+javascript:alert(1)+` accepted under defaults (probe).
+
+| F-E-5
+| Medium
+| CONFIRMED
+| Medium
+| `+Generators.fixedValues+` of 15 literals at NullByteURLGenerator:63-79; draw counts 25/50/25/20/22, 150, 200×7+35, 5, 5, 5 verified; 0 `+@GeneratorSeed+` in tree. Coupon-collector figures not recomputed (arithmetic is standard).
+
+| F-E-6
+| Medium
+| CONFIRMED
+| Medium
+| `+COOKIE_VALUE+` stage rejects `+abc=+`, `+abc+/=+`, `+YWJjZGVm==+` (probe); `+ValidCookieGenerator+` uses `+letterStrings(...).toUpperCase()+` (:228-231), contract regex `+[A-Za-z0-9_]++`; `+ValidURLGenerator+`/`+InvalidURLGenerator+` consumed only by `+AllGeneratorsIntegrationTest+`; `+Origin+` values `+same-origin/cors/no-cors+`.
+
+| F-E-7
+| Medium
+| CONFIRMED
+| Medium
+| `+EncodingCombinationGenerator+` used 5× in EncodedPathTraversalAttackTest (:70,:93,:115,:127,:138); `+shouldBlockUTF8OverlongPatterns+` fed `+PathTraversalParameterGenerator+` (:102-111); `+URLLengthLimitAttackGeneratorTest+` in `+injection/+`; HTTPHeaderInjectionGenerator 5+10 draws.
+
+| F-E-8
+| Medium
+| CONFIRMED
+| Medium
+| cookie-chaos :305-307 "213 tests", "50 parameterized" (Test #8), "284+"; http1 :65/:73/:119/:262/:351-354/:489/:585 as quoted; surefire CookieChaosAttackTest=164, HttpRequestSmugglingAttackTest=1435, HttpHeaderInjectionAttackTest=158; Http1VulnerabilitiesTest:87 `+@see ../../../doc/…+` present.
+
+| F-E-9
+| Medium
+| CONFIRMED-WITH-CORRECTION
+| Medium
+| database/package-info "(planned)" for five existing DBs and non-existent `+XssAttackDatabase+` ✓; testing.adoc fictional classes ✓; `+AllGeneratorsIntegrationTest+` instantiates 10 ✓; test-class Javadocs ✓. Minor: I count *32* `+*Generator.java+` files (report says 33).
+
+| F-E-10
+| Low
+| CONFIRMED
+| Low
+| UnicodeAttackGeneratorTest:85-95 local NFKC assertion; ADR-0010:31 "local assertion is removed"; 0009/0010 `+Proposed+`.
+
+| F-E-11
+| Low
+| CONFIRMED
+| Low
+| Structural tests at the three cited files; IDNAttackDatabase:54 and ApacheCVEAttackDatabase:119-125 rationales as quoted (wrong cause); probe confirms `+?+` decides the Apache payload.
+
+| F-E-12
+| Low
+| CONFIRMED
+| Low
+| `+COOKIE_NAME+` stage accepts `+""+`; `+COOKIE_VALUE+` stage accepts 6000 chars (probe); generator arms :60-64/:95-99/:223-226/:250-262 as quoted.
+
+| F-E-13
+| Low
+| CONFIRMED
+| Low
+| `+integers(1,4)+` → 4 types, no PARAMETER_NAME; `+case PARAMETER_NAME+` at PipelineFactory:252; `+count = 5+` at PipelineFactoryTest:210.
+
+| F-E-14
+| Low
+| CONFIRMED
+| Low
+| :78-98 `+assertNotNull+` list; :158/:160 tautological predicates as quoted.
+
+| F-E-15
+| Low
+| CONFIRMED
+| Low
+| All eleven `+*Test.java+` files absent (checked one by one); 20 contract tests exist.
+
+| F-E-16
+| Info
+| CONFIRMED
+| Info
+| Redundant `+assertNotNull(result)+` at the four cited lines; `+Math.abs(this.hashCode()) % bound+` at :672-674 and :757; `+@AfterAll+` guard at :183-198; `+café+`/`+Zürich+` region at :314-333.
+
+|===
+
+
+=== 05 — Documentation
+
+[cols="1,1,1,1,1",options="header"]
+|===
+| ID
+| Report sev.
+| Verdict
+| My sev.
+| Correction / reasoning
+
+| F-documentation-1
+| Medium
+| CONFIRMED-WITH-CORRECTION
+| Low
+| `+.plan/execute-script.py+` absent, `+.plan/+` present with `+marshal.json+`, `+.gitignore:16-21+` whitelist as stated, `+.plan/temp+` absent, `+./mvnw+` present. Correction: **README.adoc:126-129 already documents `+./mvnw clean install / test / -Ppre-commit clean verify / -Pcoverage+`** as the human build commands; only CLAUDE.md/agents.md forbid it for agents. "The same documents forbid the working fallback" is true for CLAUDE.md/agents.md, not README.
+
+| F-documentation-2
+| High
+| CONFIRMED-WITH-CORRECTION
+| Medium
+| Content fully confirmed (non-existent no-arg ctors, `+private+` ctor, wrong package `+de.cuioss.http.security.UrlSecurityException+`, body-validation advice, checklist). *All cited line numbers are wrong: client/package-info sample is at :296-317 (not :220-236); adapter/package-info is 454 lines, so :459-568 and :580-591 do not exist — the material is at :226-330 and :358-435.* F-client-6 cites the correct lines. Severity: a non-compiling Javadoc sample is caught at first copy; I would keep the "inverted contract" point at Medium.
+
+| F-documentation-3
+| Medium
+| CONFIRMED-WITH-CORRECTION
+| Low
+| Two-arg example exists at HTTPHeaderValidationPipeline:*67* (not :62); only ctor at :*121-123* (not :105-108).
+
+| F-documentation-4
+| Medium
+| CONFIRMED
+| Medium
+| Coverage note at LogMessages.adoc:151-157 as quoted; full `+LogAsserts+` inventory (client + forwarded) matches the table; templates of all 7 forwarded records compared with LogMessages.adoc:115-145 — identical.
+
+| F-documentation-5
+| Low
+| CONFIRMED
+| Low
+| Duplicate of F-D-8.
+
+| F-documentation-6
+| Medium
+| CONFIRMED
+| Low
+| 0 `+CWE-+` in HomographAttackDatabaseTest and ProtocolHandlerAttackTest; "(lines 64)" → actual :65; "(line 209)" → :210; "(line 217)" → :218; :722 as quoted. Documentation drift only → Low.
+
+| F-documentation-7
+| Low
+| CONFIRMED-WITH-CORRECTION
+| Low
+| cookie-chaos :84 "50 tests" vs :306 "213 tests" ✓; CookieChaos actual 50+30+40+20+20+4 = 164 ✓; http1 "395"/"553" stale ✓ (1 435 / 1 593). *Correction: "CookiePrefixValidationStageTest (71 tests)" is CORRECT — surefire records exactly 71 cases for that class*; the report's "71 not derivable" is wrong (24 methods, several parameterized).
+
+| F-documentation-8
+| Medium
+| CONFIRMED
+| Medium
+| http1 :63/:152/:347 as quoted; `+allowPercentEncoding=false+` for header types (CharacterValidationStage:167-170); header pipeline has no DecodingStage; probe: header value `+%0d%0a+` passes unchanged.
+
+| F-documentation-9
+| Low
+| CONFIRMED
+| Low
+| specification.adoc :124 "STRICT, DEFAULT, and LENIENT", :297 "bodies", :339-342 four presets; `+PARANOID_CONFIGURATION+` at SecurityDefaults:456.
+
+| F-documentation-10
+| Medium
+| CONFIRMED
+| Medium
+| adoc :14/:20/:22/:27/:38 as quoted; package-info :29-36 contradicts; `+[+` rejected at position 0 (probe).
+
+| F-documentation-11
+| Low
+| CONFIRMED
+| Low
+| ADR-0006:154-156 "bare segments" vs SecurityDefaults:166 `+"\\windows\\"+` etc.
+
+| F-documentation-12
+| Low
+| CONFIRMED
+| Low
+| adr/README.md:35 "15", :71 "runs to 14"; all 15 ADRs `+Proposed+`; zero inbound links to adr/README.md outside the quality report.
+
+| F-documentation-13
+| Low
+| CONFIRMED-WITH-CORRECTION
+| Low
+| Claim true: "Input length and depth validation" at validation/package-info:*25* (cited :8-14 is the licence header); `+EXCESSIVE_NESTING+` raised only in NormalizationStage (:395/:452); configuration.adoc never mentions the nesting limits.
+
+| F-documentation-14
+| Medium
+| CONFIRMED
+| Medium
+| functional-requirements :145-152, :280-287 and specification :142 as quoted; `+RFC3986_PATH_CHARS+` is unreserved + sub-delims; single `+URLDecoder.decode+` (DecodingStage:270).
+
+| F-documentation-15
+| Medium
+| CONFIRMED
+| Medium
+| All cited SEC lines and the five "✅ VERIFIED" statuses as quoted; SEC-13/SEC-18 carry "NOT IMPLEMENTED" notes, the others do not.
+
+| F-documentation-16
+| Medium
+| CONFIRMED
+| Medium
+| `+validate("user_id=123")+` at URLParameterValidationPipeline:56, `+"search=test&amp;page=1"+` at package-info:51, functional-requirements:25; probe: both strings accepted by the value pipeline.
+
+| F-documentation-17
+| Low
+| CONFIRMED
+| Low
+| monitoring/package-info:24 increments; AbstractValidationPipeline:93-95 increments too.
+
+| F-documentation-18
+| Low
+| CONFIRMED-WITH-CORRECTION
+| Low
+| Claims true, *lines wrong*: `+httpClient.get(...)+` result/package-info:*30* (not 12), `+loadWithETag+` :*42* ✓, `+loadConfig()+` :*65* (not 22/42); `+JsonResponseConverter+` client/package-info:*111* (not 76); handler inventory at handler/package-info:*21-23* (not 4-8).
+
+| F-documentation-19
+| Low
+| CONFIRMED (spot-checked)
+| Low
+| Spot-checked `+SecureSSLContextProvider+` (only inline `+{@code}+` tokens, no `+<pre>+` block), `+StringContentConverter+`, `+AllowBlockListStage+` (no `+<pre>+`). Remaining classes not individually opened.
+
+| F-documentation-20
+| Low
+| CONFIRMED
+| Low
+| 18 main files contain "from HTTP verification specification"; 0 definitions in docs.
+
+| F-documentation-21
+| Low
+| CONFIRMED (spot-checked)
+| Low
+| test-generators-readme:35 "All databases implement `+AttackDatabase+`" ✓; security-readme TLS-floor section :136-148 ✓; preset duplication not exhaustively re-diffed.
+
+| F-documentation-22
+| Low
+| CONFIRMED
+| Low
+| SKILL.md:81-83 as quoted; maven.yml:8-11 `+push: branches [...]+`, `+pull_request: branches: [main]+`.
+
+| F-documentation-23
+| Info
+| CONFIRMED (as SUSPECTED)
+| Info
+| about.adoc:31 `+link:index.html+`; `+src/site/asciidoc+` holds only `+about.adoc+`.
+
+| F-documentation-24
+| Info
+| CONFIRMED
+| Info
+| configuration.adoc header `+:toc: macro+`, no `+:sectnums:+`; `+<<Seeding the lists>>+` at :35; five `+<<…>>+` at compliance-traceability:14-18; agents.md:119 "Use xref: (not <<>>)".
+
+| F-documentation-25
+| Low
+| CONFIRMED-WITH-CORRECTION
+| Low
+| `+.sanitizedInput("userscripttest1script")+` at UrlSecurityException:~53 ✓; `+sanitizeAndRetry()+` is at exceptions/package-info:*58* (not :44); SEC-6 :105 and owasp :103 as quoted.
+
+| F-documentation-26
+| Low
+| CONFIRMED-WITH-CORRECTION
+| Low
+| "Character Sets"/"Pattern Configuration" at config/package-info:*33/35* (not :14-17); functional-requirements:182-185 as quoted; builder exposes only booleans + two literal sets.
+
+| F-documentation-27
+| Low
+| CONFIRMED
+| Low
+| README.adoc:135-159 contains no link to configuration.adoc, adr/, or test-framework-structure.adoc (grep).
+
+| F-documentation-28
+| Info
+| CONFIRMED
+| Info
+| module-info:20 `+requires transitive org.jspecify;+` vs functional-requirements:45 without "transitive".
+
+|===
+
+
+=== 06 — Build, CI, benchmarking
+
+[cols="1,1,1,1,1",options="header"]
+|===
+| ID
+| Report sev.
+| Verdict
+| My sev.
+| Correction / reasoning
+
+| F-D-14
+| Medium
+| CONFIRMED
+| Medium
+| benchmark-pages.py:172-177 prints a warning and continues; only `+sys.exit(1)+` is at :165 (different condition); benchmark.yml:65-73 `+continue-on-error: true+`, :112-122 `+rm -rf "$TARGET_DIR" … cp -r gh-pages/*+`; :87 lists only `+target/benchmark-results/+`.
+
+| F-D-15
+| Low
+| CONFIRMED-WITH-CORRECTION
+| Low
+| `+SupportedValidationTypeGeneratorContractTest$1.class+` exists in test-classes; the single `+<exclude>…/**/*Test.class</exclude>+` is at *cui-http-core/pom.xml:98* (classifier block :91-98), not :144-150 (which is the compiler plugin); parent POM :76-78 `+Automatic-Module-Name+` ✓.
+
+| F-D-16
+| Info
+| CONFIRMED
+| Info
+| `+grep -rl lombok cui-http-benchmarking/src+` → 0; pom :90-93 dependency, :109-112 annotation processor.
+
+| F-D-17
+| Info
+| CONFIRMED-WITH-CORRECTION
+| Info
+| Claims true: `+CLEAN_URLS+` (SecurityBenchmarkState:56-67) contains no `+%+` or dot-segment; `+decodingStage+`/`+normalizationStage+` fed `+nextCleanUrl()+`; `+measureThroughput+` and `+urlPathCleanThroughput+` byte-identical; `+@Threads(1)+` overridden per pom :45-50 comment. **Line numbers wrong: `+ValidationStageBenchmark.java+` has 68 lines (methods at :45-48, :57-60, `+@Threads+` at :36); `+PipelineThroughputBenchmark.java+` has 72 lines (:41-49).**
+
+| F-D-18
+| Low
+| CONFIRMED
+| Low
+| benchmark.yml:39-46 `+repositories: ${{ github.event.repository.name }},cuioss.github.io+`; token used only at :110.
+
+|===
+
+
+== Strength claims re-checked
+
+[cols="1,1,1,1",options="header"]
+|===
+| Claim (short)
+| Document
+| Result
+| Evidence
+
+| Percent-encoded traversal spellings rejected under default and strict (`+%2e%2e/+`, `+.%2e/+`, `+%2e./+`, `+..%2f+`, `+/%2e%2e/+`, `+..;/+`, `+%2e%2e;+`, `+..%3B+`, `+%c0%ae+`, `+%c0%af+`, 3/4-byte overlongs, `+%00+`, decoded CR/LF/TAB)
+| 01 lead
+| holds
+| p1.out "traversal strength list": all 40 spellings REJECT with the stated types
+
+| 24-entry default-config bypass list (`+/a/..%2fb+`, `+/a/%2E%2e%2Fb+`, `+/a/%2e%2e;/b+`, `+/a/b%5c..+`, `+http://x/a/%2e%2e+`, `+/a/.../b+`, `+/a/%c0%ae%c0%ae/b+`, `+/a/%252e%252e/b+`, `+/a/%EF%BC%8E%EF%BC%8E/b+`, `+/a/%E2%80%A4%E2%80%A4/b+`, `+/a\b+`, `+/a/. ./b+`, …)
+| 01 stream B
+| holds
+| all rejected; `+/a/%2e%2e+`, `+/a%2f..+`, `+/a/.%2e+` clamp to `+/+` as documented
+
+| Fullwidth `+;+` after `+..+` caught by `+DOT_SEGMENT_WITH_PATH_PARAM_PATTERN+`
+| 01 lead
+| holds
+| `+/api/..%EF%BC%9B/x+` → PATH_TRAVERSAL_DETECTED
+
+| Backslash rejected as INVALID_CHARACTER before traversal logic
+| 01 lead
+| holds
+| `+/a\b+`, `+/a\../b+` → INVALID_CHARACTER '\'
+
+| HEADER_VALUE rejects raw CR, LF, NUL, DEL; allows HTAB; `+%0d%0a+` inert
+| 01 lead
+| holds
+| `+a\rb+`,`+a\nb+` INVALID_CHARACTER, `+a b+` NULL_BYTE, `+ab+` INVALID_CHARACTER, `+a\tb+` PASS, `+%0d%0a+` PASS unchanged
+
+| CR/LF rejected in HEADER_NAME/HEADER_VALUE under defaults, strict and lenient; NUL under lenient
+| 01 stream B
+| holds
+| 12 combinations probed, all REJECT
+
+| HEADER_NAME enforces RFC 7230 tchar (space, colon, non-ASCII, DEL, NEL rejected)
+| 01 lead
+| holds
+| `+X Y+`, `+X:Y+`, `+Xé+`, `+X+`, `+X+` REJECT; `+X-Foo+`, `+X-Foo%00+` PASS
+
+| PARAMETER_NAME: decoded `+= & ; space+` and `+++` rejected; paranoid blocked names exact-match, case-insensitive, post-decode
+| 01 lead/B
+| holds
+| `+a%3Bb+`,`+a%26b+`,`+a%3Db+`,`+a%20b+`,`+a+b+`,`+a;b+` REJECT; `+file+`,`+FILE+`,`+%66ile+` REJECT, `+filepath+` PASS
+
+| Paranoid blocked path patterns segment-based post-decode, no over-match
+| 01 lead
+| holds
+| `+/etc%2Fpasswd+`, `+/%65tc/passwd+`, `+/ETC/passwd+`, `+/api/%5cwindows%5csystem32+` REJECT; `+/a/.env.bak+`, `+/api/sketches+`, `+/a/.env.local+`, `+/web.xml.bak+` PASS
+
+| Presets: strict/paranoid `+isStrict()+`, lenient `+isLenient()+`, defaults neither
+| 01 lead
+| holds
+| probe output
+
+| Exactly-once counting, cause chain, original input, pipeline ValidationType
+| 01 lead/B
+| holds
+| `+{PATH_TRAVERSAL_DETECTED=1}+`, cause `+UrlSecurityException+`, origInput preserved, vt URL_PATH; custom pipeline: `+IllegalStateException+` propagates with counter 0
+
+| `+when()+`/`+identity()+` fail-open as ADR-0013 documents
+| 01 lead
+| holds
+| `+when(false)+` and `+identity()+` return `+/api/../../etc/passwd+` unchanged
+
+| RequestCollectionValidator boundary: max accepted, max+1 rejected
+| 01 lead
+| holds
+| count 2/2 PASS, 3/2 REJECT
+
+| NFKC structural-fold detection (U+2024/2025/2026/FF0E/FF0F/FF3C/FE68/FF1A/FF03/FF1F/FF05) and benign folds (`+ＡBC+`→`+ABC+`, U+212A→`+K+`), U+2044/U+2215 not folded
+| 01 stream A
+| holds
+| all eleven → UNICODE_NORMALIZATION_CHANGED; `+/%EF%BC%A1BC+`→`+/ABC+`, `+/%E2%84%AA+`→`+/K+`; U+2044/U+2215 PASS unchanged
+
+| Percent-encoding syntax check (`+%2+`, `+%+`, `+%2G+` → INVALID_ENCODING; `+%00+` → NULL_BYTE; `+/abc%20+` passes)
+| 01 stream A
+| holds
+| probe
+
+| `+++` semantics: literal in paths, space in form types
+| 01 stream A
+| holds
+| `+/a+b%2Bc+`→`+/a+b+c+`; `+a+b%2Bc+`→`+a b+c+`
+
+| Segment/depth limits exact (100 ok, 101 EXCESSIVE_NESTING; 1001 segments rejected)
+| 01 stream A
+| holds
+| probe
+
+| BODY length in UTF-8 bytes (`+éé+` = 4 > 3)
+| 01 stream A
+| holds
+| INPUT_TOO_LONG "length 4 exceeds maximum 3"
+
+| AllowBlockList value normalisation (`+text/html;charset=x+`, `+TEXT/HTML+`, whitespace, `+\t+`, `+;+`) and `+X-Debug2+`/`+X_Debug+` not matched
+| 01 stream A/B
+| holds
+| probe
+
+| Case-insensitivity floor: `+%2E%2e%2F+` still caught with `+caseSensitiveComparison=true+`; `+JavaScript:+` passes under case-sensitive
+| 01 stream A
+| holds
+| probe
+
+| WHATWG scheme anchor: `+%09javascript%3A+`, `+java%09script%3A+`, `+JavaScript%3A+` rejected; NBSP/ZWSP-prefixed and `+/v1/data:export+`, `+xjavascript:+` pass
+| 01 stream A/B
+| holds
+| probe
+
+| CidrRange /0, /8, /28, /31, /32, /127, /128, family mismatch, negative/over-range prefixes, mapped-spec bound
+| 02
+| holds
+| 18 containment cases + 7 malformed specs behave as stated
+
+| No DNS: `+::ffff:999.1.1.1+`, `+fe80::1%eth0+`, `+0x7f.0.0.1+`, `+1.2.3+`, `+unknown+`, `+_hidden+` → null
+| 02
+| holds
+| probe
+
+| Bracket trailer rule shared and enforced on both call sites
+| 02
+| holds
+| `+[::1]:abc+`, `+[::1]:+` → null; XFH `+[::1]garbage+` covered by test :327
+
+| Nearest-hop selection incl. RFC accumulator; multi-instance joining; all-trusted chain → empty; HTAB interior tolerated
+| 02
+| holds
+| `+203.0.113.7, 10.0.0.5, 10.0.0.9+` → 203.0.113.7; `+['', '203.0.113.7, 10.0.0.5']+` → 203.0.113.7; RFC 3-element chain → 203.0.113.7 / proto http
+
+| Three-state Forwarded model incl. port
+| 02
+| holds
+| `+Forwarded: garbage+` blanks port too
+
+| `+ResolvedForwarding+` invariants (CR/LF host, `+ftp+` scheme, port 70000 unconstructible)
+| 02
+| holds
+| all three → IllegalArgumentException
+
+| Serialization round trip `+toForwardedHeader()+` → parser
+| 02
+| holds
+| `+for=203.0.113.7;host="app.example.com:8443";proto=https+` reparsed, malformed=false
+
+| LogMessages.adoc forwarded table matches `+ForwardedLogMessages+` templates
+| 02/05
+| holds
+| seven templates compared verbatim
+
+| TLS floor `+[TLSv1.2, TLSv1.3]+` on the built client; JDK client stays `+Redirect.NEVER+` on both ctor paths
+| 03
+| holds
+| `+sslParameters().getProtocols()+`, `+followRedirects()=NEVER+` for https and http handlers
+
+| No trust-all; `+verifyHostname(false)+` + caller `+sslContext+` rejected
+| 03
+| holds
+| IAE at build; `+TrustManagerFactory.init((KeyStore) null)+` at SecureSSLContextProvider (two sites)
+
+| Redirect downgrade refused before allow-list; bypass candidates refused (`+//evil…+`, userinfo trick, trailing dot, other port, `+[::1]+`, `+ftp+`); case/`+:443+` same-origin; credentials never to `+http+`
+| 03
+| holds
+| all refuse verdicts as claimed; `+forwardsCredentials(http→http same origin)=false+`. Line numbers in the doc are off (see F-client-9)
+
+| Retry classification: `+ConnectException+`/`+SSLException+` → NETWORK_ERROR, nested `+CompletionException+` unwrapped
+| 03
+| holds
+| probe
+
+| JDK RedirectFilter preserves method on 301/302 except POST
+| 03 (F-client-3 evidence)
+| holds
+| JDK source :91-93 and live MockWebServer run
+
+| Generators classifier built and guarded; `+useModulePath=false+` in root pom; POM/project.yml versions consistent; okhttp 5.5.0 matches mockwebserver pom; JMH 1.37; `+includeScope runtime+`
+| 06
+| holds
+| pom lines 91-98, 122-128; pom.xml:45; 3.1-SNAPSHOT everywhere; `+version.okhttp3=5.5.0+`
+
+| All workflow `+uses:+` pinned by 40-char SHA; every workflow has top-level `+permissions:+`; pr-agent maps secrets explicitly; dependabot maven + github-actions; `+persist-credentials: false+`
+| 06
+| holds
+| 14 `+uses:+` lines, 0 unpinned; 0 workflows without `+permissions:+`
+
+| benchmark-pages.py: `+glob("*.json")+`, `+fullmatch+`, no JSON parsed from untrusted input
+| 06
+| holds
+| :73, :99, :115
+
+|===
+
+
+No strength claim I re-checked was false. One strength paragraph (03, redirect ordering) cites wrong line numbers (RedirectPolicy :172-176 → :186-189; HttpHandler :744-752 → :696-702) but the behaviour is as claimed.
+
+== README numbers
+
+* Per-stream and total counts: recounted from the six documents — L 13 (0/0/6/6/1), F-A 14 (0/2/7/4/1), F-B 16 (0/0/7/7/2), F-client 18 (0/1/5/9/3), F-D 20 (0/2/4/10/4), F-E 16 (0/2/7/6/1), F-documentation 28 (0/1/9/15/3); *125 findings, 8 High, 45 Medium, 57 Low, 15 Info — all correct.* Per-document item counts (43/15/18/16/28/5) correct. The eight High findings listed in the README are the eight High items in the documents.
+* Baseline statement "336 test classes, 6 993 tests, 0 failures" is *wrong on both numbers*. `+cui-http-core/target/surefire-reports+` (07:53, produced before the report) holds 112 `+TEST-*.xml+` reports covering 206 test classes (nested classes included) with *7 874* test cases, 0 failures/errors/skipped. "336" is the number of *files* in the directory (112 xml + 224 txt). Per-class figures quoted inside the documents (e.g. CookieChaosAttackTest 164, HttpRequestSmugglingAttackTest 1 435, forwarded 181) do match these XMLs, so only the README total is off. Line counts (19 174 / 46 436 / 600, 14 package-info files) are correct.
+* The README cross-references `+07-adversarial-verification.adoc+` in three places; that file does not exist in `+doc/quality-report/+` at the time of this verification.
+* "Counting duplicates once, about 110 distinct defects" — plausible from the consolidation tables (≈15 declared duplicates), not recounted precisely.
+
+== Missed items
+
+Effort spent: ~10 %. Findings:
+
+. **Decoded `+?+`/`+#+` (or invisible characters) glued to a `+..+` segment survive the path pipeline in every preset and the returned value still contains the dot-dot segment.** `+/files/public/..%3F+` → `+/files/public/..?+`; `+/a/b/..%23/c+` → `+/a/b/..#/c+`; `+/a/b/%2e%2e%3f%2fetc%2fpasswd+` → `+/a/b/..?/etc/passwd+` (defaults and strict; paranoid rejects only because of `+/etc/+`). Also `+/a/b/%2e%2e%c2%a0/c+` → `+/a/b/.. /c+` (NBSP) and `+/a/b/..%e2%80%8b/c+` → `+/a/b/..[ZWSP]/c+` (ZWSP). Neither `+PatternMatchingStage+` (needs a separator after `+..+`) nor `+NormalizationStage+` (segment is `+..?+`, not `+..+`) fires, and the decoded `+?+`/`+#+` are not treated as structural. A consumer that reparses the *returned* string as a URL sees path `+/files/public/..+` (`+URI.create("https://h" + out).getPath()+` = `+/files/public/..+`, `+.normalize()+` → `+/files/+`). This is the L-1 risk class, but unlike L-1 the pipeline's own output carries the `+..+`, so the report's mitigation "consumers must use the returned value" does not close it. One level only (the `+?+`/`+#+` terminates the path), so not a root escape. Suggested severity: Low–Medium; belongs next to L-1/F-A-8 with the recommendation "reject a decoded `+?+`/`+#+` in URL_PATH, and treat any `+..+`-prefixed segment as traversal". Evidence: `+P6Missed.java+` output.
+. *F-D-10 extension:* `+X-Forwarded-Host: https://real@evil+` resolves to `+host=Optional[https]+` (single-colon split, the invalid port remainder dropped, host token kept). Same defect as F-D-10, more striking output; no independent security impact (the attacker does not control the resulting host string).
+. Observation, not a defect: `+HttpHandler.asBuilder()+` does not carry the URI, so `+handler.asBuilder().build()+` throws "URI must not be null or empty"; the tests always call `+.url(...)+` after `+asBuilder()+`. Worth a Javadoc sentence.
+. Header-pipeline CRLF (raw and encoded, all presets), forwarded-header spoofing beyond F-D-1/2/4/5/10 (ports, brackets, quoted-string escapes, ext directives, `+HTTPS+` case, 2048-char boundary, `+%5c+` prefix), and redirect downgrade/same-origin bypass candidates: *nothing found* beyond what the report already records.
+
+== Overall assessment
+
+The report is substantively reliable: of 125 findings I could not reproduce or refute a single one — every executed probe I re-ran produced the quoted output, every code trace re-traced, and the High-impact items (F-A-1, F-A-2, F-client-1, F-client-3, F-D-1, F-D-2) were reproduced end-to-end, F-client-1 against a real server with two principals. The strength claims held without exception. The report's weakness is positional: roughly twenty findings cite line numbers that are off by 5–190 lines or point past the end of the file (F-A-9, F-B-12, F-B-14, F-client-1 partly, F-client-9 and the redirect strength paragraph, F-D-1/2/20 for ADR-0002, F-D-15, F-D-17, F-D-19, F-documentation-2, -3, -13, -18, -25, -26), which is ironic given F-documentation-6 criticises exactly this in the traceability document; these should be regenerated against HEAD. Three factual corrections are needed: F-client-16's central sentence describes a combination that actually throws; F-documentation-7 wrongly calls the "71 tests" figure unsupported (surefire records 71); F-documentation-1 should acknowledge that README.adoc:126-129 documents `+./mvnw+`. F-A-3 should name the Unicode whitespace it means (an ASCII trailing space is rejected). The README's baseline "336 test classes, 6 993 tests" must be replaced by 112 report files / 206 classes / 7 874 cases, and the dangling reference to `+07-adversarial-verification.adoc+` resolved. On severity I would move F-E-1, F-E-2 and F-documentation-2 from High to Medium (test and documentation defects with no runtime exposure, on the report's own scale), which would leave 5 High; the code-side Highs are justified.

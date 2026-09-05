@@ -8,7 +8,7 @@
 
 This document is review stream E (`F-E-`), covering the security test framework under `cui-http-core/src/test/java/de/cuioss/http/security/{generators,database,tests}` and the documents that describe it. Test-quality findings for the *other* packages are in the respective area documents (client: F-client-7, F-client-8, F-client-18; forwarded: F-D-19; pipelines and stages: F-B-14 and the `F-A-` test items).
 
-* F-E-1 and F-E-2 are the two High findings on the test side. Together they mean that the test classes named after header injection, request smuggling and URL-length attacks establish nothing about those mechanisms, and that several "legitimate input" tests cannot fail. Both were reproduced by the lead reviewer's own probe (`/api?x=y` is rejected on the `?` before decoding runs).
+* F-E-1 and F-E-2 are the two most important findings on the test side (proposed High, recorded Medium after the adversarial verification because they are test-quality rather than runtime defects). Together they mean that the test classes named after header injection, request smuggling and URL-length attacks establish nothing about those mechanisms, and that several "legitimate input" tests cannot fail. Both were reproduced by the lead reviewer's own probe (`/api?x=y` is rejected on the `?` before decoding runs).
 * F-E-5 answers the question "are generators used correctly": most attack "generators" wrap fixed literal lists and are *sampled* with a per-run random seed, so individual entries are skipped on most runs. The probabilities quoted were recomputed by the lead reviewer and are correct (coupon-collector arithmetic).
 * F-E-6 exposes a production consequence: base64 cookie values with `+`, `/` or `=` are rejected by `CharacterValidationStage(COOKIE_VALUE)` (the set is RFC 3986 unreserved, not RFC 6265 `cookie-octet`), and no valid generator is wide enough to reveal it. See also L-5 in xref:01-security-validation.adoc[].
 * F-E-8 and F-E-9 overlap F-documentation-7 and F-documentation-8; the document-side view is kept there.
@@ -39,7 +39,7 @@ Grep-only (for the pipeline/stage matrix): `+validation/*Test.java+`, `+pipeline
 == Findings
 
 === F-E-1: URL-shaped "header injection / smuggling / length" attack tests are rejected on the literal `+?+` (or space/`+#+`), never on the mechanism they claim to test
-* Severity: High
+* Severity: Medium (reviewer proposed High; adjusted after adversarial verification — a test-quality defect, not a runtime one, on the report's own scale)
 * Category: false-security
 * Status: CONFIRMED (executed)
 * Location:
@@ -65,7 +65,7 @@ Grep-only (for the pipeline/stage matrix): `+validation/*Test.java+`, `+pipeline
 * Recommendation: (1) Feed header-injection payloads to the surface that actually receives header values: `+HTTPHeaderValidationPipeline(HEADER_VALUE)+` with raw `+\r\n+` (that is what `+HTTPHeaderInjectionGenerator+` is for) and `+URLParameterValidationPipeline+` with the percent-encoded query *value* only (strip the URL scaffolding in the generators or add a `+queryValue()+` accessor). (2) For the path pipeline, use path-only payloads (`+/api%0d%0aX:y+`) and assert `+CONTROL_CHARACTERS+` exactly. (3) Add a differential guard to each attack test: the same payload with the attack bytes removed must be ACCEPTED by the pipeline under test; otherwise the test is not testing the attack. (4) In `+URLLengthLimitAttackTest+` drive parameter-length cases through `+URLParameterValidationPipeline+`/`+URLParameterNameValidationPipeline+` and assert `+INPUT_TOO_LONG+` exactly.
 
 === F-E-2: Accept-or-reject tests that cannot fail on validator behaviour
-* Severity: High
+* Severity: Medium (reviewer proposed High; adjusted after adversarial verification — same reasoning as F-E-1)
 * Category: test-quality
 * Status: CONFIRMED (traced)
 * Location / Evidence:
@@ -145,7 +145,7 @@ Grep-only (for the pipeline/stage matrix): `+validation/*Test.java+`, `+pipeline
 * Location / Evidence:
 ** `+cui-http-core/src/test/java/de/cuioss/http/security/database/package-info.java:50,56,57,62,64+`: `+NginxCVEAttackDatabase … (planned)+`, `+HomographAttackDatabase (planned)+`, `+IPv6AttackDatabase (planned)+`, `+ProtocolHandlerAttackDatabase (planned)+`, `+IDNAttackDatabase (planned)+` — all five exist; `+:63+` `+XssAttackDatabase (planned)+` does not exist and contradicts the "application-layer attacks excluded" note in `+OWASPTop10AttackDatabase.java:41-44+`. `+ModSecurityCRSAttackDatabase+`, `+OWASPZAPAttackDatabase+`, `+PathParameterTraversalAttackDatabase+` and the three `+Legitimate*+`/`+EdgeCase*+` databases are not listed at all.
 ** `+doc/test-generators-readme.adoc:43-65+` and `+doc/http-security/specification/testing.adoc:178-190+` enumerate the attack databases and omit `+PathParameterTraversalAttackDatabase+` (testing.adoc also omits the legitimate-pattern databases).
-** `+testing.adoc:73-171+` shows a `+PathTraversalAttackTest+` with methods `+testBasicPathTraversal_T1..T4+` over `+PathTraversalURLGenerator+`/`+EncodingCombinationGenerator+`/`+UnicodeAttackGenerator+`/`+BoundaryFuzzingGenerator+`; the real class (`+tests/PathTraversalAttackTest.java+`) has five methods over `+PathTraversalGenerator+` only. `+testing.adoc:324-350+` (`+SecurityValidationTest+`) and `+:424-453+` (`+ComprehensiveSecurityTest+`) show classes that do not exist; `+:461+` claims "`+AllGeneratorsIntegrationTest+` validates all generators" — it instantiates 10 of the 33 generators (`+generators/AllGeneratorsIntegrationTest.java:52-61+`).
+** `+testing.adoc:73-171+` shows a `+PathTraversalAttackTest+` with methods `+testBasicPathTraversal_T1..T4+` over `+PathTraversalURLGenerator+`/`+EncodingCombinationGenerator+`/`+UnicodeAttackGenerator+`/`+BoundaryFuzzingGenerator+`; the real class (`+tests/PathTraversalAttackTest.java+`) has five methods over `+PathTraversalGenerator+` only. `+testing.adoc:324-350+` (`+SecurityValidationTest+`) and `+:424-453+` (`+ComprehensiveSecurityTest+`) show classes that do not exist; `+:461+` claims "`+AllGeneratorsIntegrationTest+` validates all generators" — it instantiates 10 of the 32 generators (`+generators/AllGeneratorsIntegrationTest.java:52-61+`).
 ** Test-class Javadoc: `+tests/OWASPTop10AttackDatabaseTest.java:39-41+` "173+ proven OWASP attack patterns including … cross-site scripting, SQL injection" (database has 9 entries and excludes XSS/SQLi by design); `+tests/ModSecurityCRSAttackDatabaseTest.java:43-49+` lists "Protocol Violations … Session Fixation" (database Javadoc `+ModSecurityCRSAttackDatabase.java:58-63+` says these are "Deliberately absent"); `+tests/IISCVEAttackDatabaseTest.java:42-48+` lists "Request Smuggling CVEs" (none in the database).
 ** Consistency check of `+CLAUDE.md:83-91+` vs `+cui-http-core/pom.xml:79-98+`: the `+generators+` classifier claim is correct (verified strength, see below).
 * Recommendation: Regenerate `+package-info.java+` from the actual class list; add `+PathParameterTraversalAttackDatabase+` to both docs; replace the fictional code samples in `+testing.adoc+` with pointers to `+PathTraversalGeneratorTest+`/`+ApacheCVEAttackDatabaseTest+`; fix the three test-class Javadocs.
@@ -187,7 +187,7 @@ Grep-only (for the pipeline/stage matrix): `+validation/*Test.java+`, `+pipeline
 * Severity: Low
 * Category: test-quality
 * Status: CONFIRMED
-* Location: `+generators/AllGeneratorsIntegrationTest.java:78-98+` (`+assertNotNull+` only), `+:158+` (`+hasUnicodeAttack = unicodeAttacks.stream().anyMatch(s -> !s.isEmpty())+`), `+:160+` (`+s.length() > 100 || s.isEmpty()+`), `+:200-258+` ("thread safety" asserts only the output count), `+:52-61+` (10 of 33 generators).
+* Location: `+generators/AllGeneratorsIntegrationTest.java:78-98+` (`+assertNotNull+` only), `+:158+` (`+hasUnicodeAttack = unicodeAttacks.stream().anyMatch(s -> !s.isEmpty())+`), `+:160+` (`+s.length() > 100 || s.isEmpty()+`), `+:200-258+` ("thread safety" asserts only the output count), `+:52-61+` (10 of 32 generators; count corrected after adversarial verification).
 * Recommendation: Delete the tautologies; the per-generator contract tests already cover reachability. If a cross-generator smoke test is wanted, enumerate all `+TypedGenerator+` classes reflectively and assert each contract test exists (which would also catch F-E-15).
 
 === F-E-15: Eleven generators have no dedicated contract test; two existing contract tests are marker-only
