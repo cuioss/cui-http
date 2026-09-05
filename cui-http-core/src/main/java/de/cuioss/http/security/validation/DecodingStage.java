@@ -22,7 +22,11 @@ import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import org.jspecify.annotations.Nullable;
 
-import java.net.URLDecoder;
+import java.io.ByteArrayOutputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
 import java.util.Optional;
@@ -37,7 +41,9 @@ import java.util.regex.Pattern;
  *
  * <ol>
  *   <li><strong>Double Encoding Detection</strong> - Identifies %25XX patterns indicating double encoding</li>
- *   <li><strong>Overlong UTF-8 Detection</strong> - Blocks malformed UTF-8 encoding attacks</li>
+ *   <li><strong>Strict UTF-8 Decoding</strong> - Percent-decodes to bytes and decodes those bytes
+ *       with a reporting UTF-8 decoder, so every malformed byte sequence - overlong forms,
+ *       truncated sequences, surrogate halves - is rejected rather than replaced</li>
  *   <li><strong>URL Decoding</strong> - Performs percent-decoding selected by validation type:
  *       {@code URL_PATH} uses RFC 3986 path semantics, in which {@code +} is an ordinary
  *       character and is preserved literally; every other type uses form
@@ -58,7 +64,8 @@ import java.util.regex.Pattern;
  * <h3>Security Validations</h3>
  * <ul>
  *   <li><strong>Double Encoding</strong> - Detects %25XX patterns that could bypass filters</li>
- *   <li><strong>Overlong UTF-8</strong> - Blocks malformed UTF-8 encoding attacks</li>
+ *   <li><strong>Malformed UTF-8</strong> - Rejects every byte sequence a reporting UTF-8 decoder
+ *       refuses, which subsumes the overlong encodings a fixed denylist could only enumerate</li>
  *   <li><strong>Invalid Encoding</strong> - Catches malformed percent-encoded sequences</li>
  *   <li><strong>Unicode Normalization Attacks</strong> - Canonicalizes input and rejects folds that
  *       introduce a structural separator (e.g. fullwidth solidus U+FF0F &rarr; {@code /})</li>
@@ -131,22 +138,6 @@ ValidationType validationType) implements HttpSecurityValidator {
     private static final Pattern SURVIVING_ENCODING_PATTERN = Pattern.compile("%[0-9a-fA-F]{2}");
 
     /**
-     * Pre-compiled pattern for detecting UTF-8 overlong encoding attacks.
-     * Matches UTF-8 overlong encodings commonly used to bypass security filters.
-     * Includes common overlong encodings for ASCII characters and path separators.
-     */
-    @SuppressWarnings({"java:S5785", "java:S5855"})
-    private static final Pattern UTF8_OVERLONG_PATTERN = Pattern.compile(
-            """
-                    %c[0-1][0-9a-f]|\
-                    %e0%[89][0-9a-f]%[89a-f]|\
-                    %f0%80%[89][0-9a-f]%[89a-f]|\
-                    %c0%[a-f][0-9a-f]|%c1%[0-9a-f]|\
-                    %c0%ae|%c0%af|%c1%9c|%c1%81""",
-            Pattern.CASE_INSENSITIVE
-    );
-
-    /**
      * Validates input through HTTP protocol-layer decoding with security checks.
      *
      * <p><strong>Architectural Boundary:</strong> This stage operates strictly at the HTTP protocol layer,
@@ -156,10 +147,10 @@ ValidationType validationType) implements HttpSecurityValidator {
      * <p>HTTP Protocol Processing stages:</p>
      * <ol>
      *   <li>Double encoding detection - fails fast if %25XX patterns found</li>
-     *   <li>UTF-8 overlong encoding detection - blocks malformed UTF-8 attack patterns</li>
-     *   <li>URL decoding - converts percent-encoded sequences to characters, with {@code +}
-     *       preserved literally for {@code URL_PATH} (RFC 3986) and decoded to a space for the
-     *       form-encoded types</li>
+     *   <li>URL decoding - percent-decodes to bytes and decodes those bytes as strict UTF-8, so a
+     *       malformed escape and a malformed byte sequence are both rejected rather than repaired.
+     *       {@code +} is preserved literally for {@code URL_PATH} (RFC 3986) and decoded to a
+     *       space for the form-encoded types</li>
      *   <li>Surviving-encoding detection - rejects a percent-encoding layer that outlived the
      *       decode (a {@code %} followed by two hex digits in the decoded output), catching the
      *       nested spellings the wire-form regex in stage 1 cannot express</li>
@@ -167,7 +158,7 @@ ValidationType validationType) implements HttpSecurityValidator {
      *       characters and (for parameter names) decoded delimiters that percent-encoding
      *       hid from the earlier character-validation stage</li>
      *   <li>Unicode normalization - optionally canonicalizes and continues with the canonical form.
-     *       The decoded-character rules of stage 5 are re-applied to the normalized form, so a
+     *       The decoded-character rules of stage 4 are re-applied to the normalized form, so a
      *       fold that introduces a forbidden character cannot bypass them, and the fold is then
      *       rejected when it introduces a structural separator</li>
      * </ol>
@@ -178,7 +169,8 @@ ValidationType validationType) implements HttpSecurityValidator {
      *                              <ul>
      *                                <li>DOUBLE_ENCODING - if a wire-form double-encoding pattern is
      *                                    found, or if a percent-encoding layer survives decoding</li>
-     *                                <li>INVALID_ENCODING - if URL decoding fails due to malformed input</li>
+     *                                <li>INVALID_ENCODING - if an escape is malformed, or if the
+     *                                    percent-decoded bytes are not well-formed UTF-8</li>
      *                                <li>NULL_BYTE_INJECTION - if the decoded output contains a null byte</li>
      *                                <li>CONTROL_CHARACTERS - if the decoded output contains a control
      *                                    character that this validation type forbids</li>
@@ -204,18 +196,11 @@ ValidationType validationType) implements HttpSecurityValidator {
                     .build();
         }
 
-        // Step 1.5: Detect UTF-8 overlong encoding attacks (always blocked - security critical)
-        if (UTF8_OVERLONG_PATTERN.matcher(value).find()) {
-            throw UrlSecurityException.builder()
-                    .failureType(UrlSecurityFailureType.INVALID_ENCODING)
-                    .validationType(validationType)
-                    .originalInput(value)
-                    .detail("UTF-8 overlong encoding attack detected")
-                    .build();
-        }
-
         // Step 2: URL decode (HTTP protocol-layer appropriate), with the decoder selected by
-        // validation type so a path is not silently rewritten by form semantics.
+        // validation type so a path is not silently rewritten by form semantics. The decode is
+        // strict end to end: a malformed %XX escape and a malformed UTF-8 byte sequence are both
+        // rejected rather than repaired, so no attacker-chosen byte stream is silently turned
+        // into a replacement character that downstream stages then judge as benign.
         String decoded;
         try {
             decoded = decodeForValidationType(value);
@@ -225,6 +210,14 @@ ValidationType validationType) implements HttpSecurityValidator {
                     .validationType(validationType)
                     .originalInput(value)
                     .detail("URL decoding failed: " + e.getMessage())
+                    .cause(e)
+                    .build();
+        } catch (CharacterCodingException e) {
+            throw UrlSecurityException.builder()
+                    .failureType(UrlSecurityFailureType.INVALID_ENCODING)
+                    .validationType(validationType)
+                    .originalInput(value)
+                    .detail("Malformed UTF-8 byte sequence in percent-decoded input: " + e.getMessage())
                     .cause(e)
                     .build();
         }
@@ -286,30 +279,94 @@ ValidationType validationType) implements HttpSecurityValidator {
     }
 
     /**
-     * Percent-decodes the input using the semantics that belong to this validation type.
+     * Percent-decodes the input using the semantics that belong to this validation type, then
+     * decodes the resulting bytes as strict UTF-8.
      *
      * <p>{@code URL_PATH} is decoded under RFC 3986 path semantics, where {@code +} is an
-     * ordinary path character with no special meaning. {@link URLDecoder} only implements
-     * {@code application/x-www-form-urlencoded} semantics, which map {@code +} to a space, so a
-     * literal {@code +} is escaped to {@code %2B} before delegating — the decoder then returns it
-     * unchanged. An already-encoded {@code %2B} is untouched by the escape and still decodes to
-     * {@code +}, so both spellings converge on the same result. Every other validation type
-     * carries form-encoded data, where mapping {@code +} to a space is the correct reading, and is
-     * delegated directly.</p>
+     * ordinary path character with no special meaning and is preserved literally. Every other
+     * validation type carries form ({@code application/x-www-form-urlencoded}) data, where
+     * mapping {@code +} to a space is the correct reading. An already-encoded {@code %2B} decodes
+     * to {@code +} under both readings, so the two spellings converge on a path.</p>
      *
-     * <p>Delegating in both branches keeps the UTF-8 charset handling and the
-     * {@link IllegalArgumentException}-on-malformed-input behaviour identical, so the
-     * {@code INVALID_ENCODING} error path is unaffected by the choice of semantics.</p>
+     * <p>The decode is deliberately hand-rolled rather than delegated to
+     * {@code java.net.URLDecoder}: that decoder builds its result with a replacing charset
+     * decode, so a malformed byte sequence becomes {@code U+FFFD} instead of an error, and an
+     * attacker-chosen overlong or truncated sequence would reach the later stages disguised as
+     * benign text. Decoding to a {@code byte[]} first and then running a
+     * <em>reporting</em> {@link CharsetDecoder} over it makes every malformed sequence an error,
+     * which subsumes the fixed overlong denylist this stage previously carried.</p>
      *
      * @param value the still-encoded input
      * @return the decoded string
-     * @throws IllegalArgumentException if the input contains a malformed percent-encoded sequence
+     * @throws IllegalArgumentException  if the input contains a malformed percent-encoded escape
+     * @throws CharacterCodingException if the percent-decoded bytes are not well-formed UTF-8
      */
-    private String decodeForValidationType(String value) {
-        String toDecode = validationType == ValidationType.URL_PATH
-                ? value.replace("+", "%2B")
-                : value;
-        return URLDecoder.decode(toDecode, StandardCharsets.UTF_8);
+    private String decodeForValidationType(String value) throws CharacterCodingException {
+        CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT);
+        return decoder.decode(ByteBuffer.wrap(percentDecodeToBytes(value))).toString();
+    }
+
+    /**
+     * Percent-decodes the input into the raw byte stream it encodes.
+     *
+     * <p>Characters that are not part of an escape are emitted as their own UTF-8 bytes, so the
+     * result is one consistent byte stream that the strict decoder above can judge as a whole.
+     * They are buffered as a run rather than converted one {@code char} at a time, which keeps a
+     * surrogate pair intact instead of encoding each half separately.</p>
+     *
+     * @param value the still-encoded input
+     * @return the decoded bytes
+     * @throws IllegalArgumentException if an escape is truncated or carries a non-hex digit
+     */
+    private byte[] percentDecodeToBytes(String value) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream(value.length());
+        StringBuilder literalRun = new StringBuilder();
+        int i = 0;
+        while (i < value.length()) {
+            char c = value.charAt(i);
+            if (c == '%') {
+                flushLiteralRun(literalRun, out);
+                out.write(decodeEscape(value, i));
+                i += 3;
+            } else {
+                boolean plusIsSpace = c == '+' && validationType != ValidationType.URL_PATH;
+                literalRun.append(plusIsSpace ? ' ' : c);
+                i++;
+            }
+        }
+        flushLiteralRun(literalRun, out);
+        return out.toByteArray();
+    }
+
+    private static void flushLiteralRun(StringBuilder literalRun, ByteArrayOutputStream out) {
+        if (!literalRun.isEmpty()) {
+            out.writeBytes(literalRun.toString().getBytes(StandardCharsets.UTF_8));
+            literalRun.setLength(0);
+        }
+    }
+
+    /**
+     * Reads the single byte encoded by the {@code %XX} escape starting at {@code index}.
+     *
+     * @param value the still-encoded input
+     * @param index the offset of the {@code %}
+     * @return the decoded byte value in the range 0-255
+     * @throws IllegalArgumentException if the escape is truncated or carries a non-hex digit
+     */
+    private static int decodeEscape(String value, int index) {
+        if (index + 2 >= value.length()) {
+            throw new IllegalArgumentException(
+                    "Incomplete trailing escape (%) pattern at index " + index);
+        }
+        int high = Character.digit(value.charAt(index + 1), 16);
+        int low = Character.digit(value.charAt(index + 2), 16);
+        if (high < 0 || low < 0) {
+            throw new IllegalArgumentException(
+                    "Illegal hex characters in escape (%) pattern: " + value.substring(index, index + 3));
+        }
+        return (high << 4) | low;
     }
 
     /**

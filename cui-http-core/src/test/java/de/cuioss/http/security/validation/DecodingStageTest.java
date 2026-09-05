@@ -732,8 +732,9 @@ class DecodingStageTest {
         assertEquals("<script>", pathDecoder.validate(urlEncoding).orElse(null));
 
         // UTF-8 overlong encoding should be detected and blocked
-        assertThrows(UrlSecurityException.class,
+        UrlSecurityException overlongDot = assertThrows(UrlSecurityException.class,
                 () -> pathDecoder.validate("%c0%ae")); // UTF-8 overlong for '.'
+        assertEquals(UrlSecurityFailureType.INVALID_ENCODING, overlongDot.getFailureType());
     }
 
     @Test
@@ -766,8 +767,9 @@ class DecodingStageTest {
         assertEquals(normalInput, result.get());
 
         // UTF-8 overlong encoding detection should work (HTTP protocol layer)
-        assertThrows(UrlSecurityException.class,
+        UrlSecurityException overlongSlash = assertThrows(UrlSecurityException.class,
                 () -> pathDecoder.validate("%c0%af")); // UTF-8 overlong for '/'
+        assertEquals(UrlSecurityFailureType.INVALID_ENCODING, overlongSlash.getFailureType());
     }
 
     /**
@@ -834,9 +836,29 @@ class DecodingStageTest {
                 () -> pathDecoder.validate(overlongInput),
                 "Should detect UTF-8 overlong encoding in: " + overlongInput);
 
-        assertEquals(UrlSecurityFailureType.INVALID_ENCODING, exception.getFailureType());
-        assertTrue(exception.getDetail().isPresent());
-        assertTrue(exception.getDetail().get().contains("UTF-8 overlong encoding attack"));
+        assertEquals(UrlSecurityFailureType.INVALID_ENCODING, exception.getFailureType(),
+                "Overlong encoding must be reported as INVALID_ENCODING: " + overlongInput);
+        assertTrue(exception.getDetail().orElse("").contains("Malformed UTF-8 byte sequence"),
+                "Detail must name the malformed byte sequence: " + overlongInput);
+    }
+
+    @Test
+    @DisplayName("Should reject an overlong NUL sequence no denylist spelling enumerated")
+    void shouldRejectOverlongNulSequence() {
+        // %c0%80 is the overlong encoding of U+0000. A replacing decoder turns it into U+FFFD and
+        // lets it through; only a reporting decoder rejects it, which is why it is the case that
+        // pins the decoder's behaviour rather than any enumerated pattern.
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> pathDecoder.validate("%c0%80"));
+
+        assertAll("overlong NUL sequence",
+                () -> assertEquals(UrlSecurityFailureType.INVALID_ENCODING, exception.getFailureType()),
+                () -> assertEquals(ValidationType.URL_PATH, exception.getValidationType()),
+                () -> assertEquals("%c0%80", exception.getOriginalInput()),
+                () -> assertTrue(exception.getDetail().orElse("").contains("Malformed UTF-8 byte sequence"),
+                        "Detail must name the malformed byte sequence"),
+                () -> assertNotNull(exception.getCause(),
+                        "The reporting decoder's CharacterCodingException must be preserved as the cause"));
     }
 
     // Architectural decision: Application-layer encodings (HTML entities, JS escapes, Base64)
