@@ -131,6 +131,36 @@ class DecodingStageTest {
     }
 
     @Test
+    @DisplayName("Should reject a percent-encoding layer that survives decoding")
+    void shouldRejectSurvivingPercentEncodingLayer() {
+        // The wire-form gate only recognises the literal spelling %25XX. Here %25 is followed
+        // by %3, so the pre-decode gate does not match, and the input decodes to the literal
+        // "%2f" -- a still-encoded path separator that would reach the next stage undecoded.
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> pathDecoder.validate("%25%32%66"));
+
+        assertAll("surviving percent-encoding layer",
+                () -> assertEquals(UrlSecurityFailureType.DOUBLE_ENCODING, exception.getFailureType()),
+                () -> assertEquals(ValidationType.URL_PATH, exception.getValidationType()),
+                () -> assertEquals("%25%32%66", exception.getOriginalInput()),
+                () -> assertEquals(Optional.of("%2f"), exception.getSanitizedInput()),
+                () -> assertEquals(Optional.of("Percent-encoding layer survived decoding in decoded output"),
+                        exception.getDetail()));
+    }
+
+    @Test
+    @DisplayName("Should accept a decoded percent that is not followed by two hex digits")
+    void shouldAcceptDecodedPercentThatIsNotAnEncodingLayer() {
+        // Negative control for the surviving-layer check: %25 decodes to a literal '%' that is
+        // followed by " o", not by two hex digits, so it is ordinary text and must be preserved.
+        Optional<String> result = pathDecoder.validate("50%25%20off");
+
+        assertTrue(result.isPresent());
+        assertEquals("50% off", result.get(),
+                "a decoded '%' not followed by two hex digits is literal text, not an encoding layer");
+    }
+
+    @Test
     @DisplayName("Should allow double encoding when configured")
     void shouldAllowDoubleEncodingWhenConfigured() {
         SecurityConfiguration allowingConfig = SecurityConfiguration.builder()
@@ -140,7 +170,10 @@ class DecodingStageTest {
 
         DecodingStage lenientDecoder = new DecodingStage(allowingConfig, ValidationType.URL_PATH);
 
-        // This should not throw an exception
+        // allowDoubleEncoding disables BOTH the pre-decode wire-form gate and the post-decode
+        // surviving-layer check, so exactly one layer is peeled and the still-encoded remainder
+        // is returned rather than rejected. This is the reference case that pins what
+        // allowDoubleEncoding(true) means for a value that is still encoded after decoding.
         Optional<String> result = lenientDecoder.validate("/admin%252Fusers");
         assertTrue(result.isPresent());
         assertEquals("/admin%2Fusers", result.get()); // First layer decoded

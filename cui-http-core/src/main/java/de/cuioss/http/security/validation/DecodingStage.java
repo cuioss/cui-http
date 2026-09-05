@@ -117,6 +117,20 @@ ValidationType validationType) implements HttpSecurityValidator {
     private static final Pattern DOUBLE_ENCODING_PATTERN = Pattern.compile("%25[0-9a-fA-F]{2}");
 
     /**
+     * Pre-compiled pattern for detecting a percent-encoding layer that survived decoding.
+     * Matches a {@code %} followed by two hexadecimal digits in the DECODED output, which
+     * means the input carried one more encoding layer than the decode consumed.
+     *
+     * <p>This is the decoded-form counterpart to {@link #DOUBLE_ENCODING_PATTERN}. The
+     * wire-form regex only recognises the literal spelling {@code %25XX}, so an input such
+     * as {@code %25%32%66} — whose {@code %25} is followed by {@code %3}, not two hex
+     * digits — walks past it and decodes to the literal string {@code %2f}, a still-encoded
+     * path separator. Checking the decoded output catches every spelling the wire-form
+     * regex cannot express.</p>
+     */
+    private static final Pattern SURVIVING_ENCODING_PATTERN = Pattern.compile("%[0-9a-fA-F]{2}");
+
+    /**
      * Pre-compiled pattern for detecting UTF-8 overlong encoding attacks.
      * Matches UTF-8 overlong encodings commonly used to bypass security filters.
      * Includes common overlong encodings for ASCII characters and path separators.
@@ -146,6 +160,9 @@ ValidationType validationType) implements HttpSecurityValidator {
      *   <li>URL decoding - converts percent-encoded sequences to characters, with {@code +}
      *       preserved literally for {@code URL_PATH} (RFC 3986) and decoded to a space for the
      *       form-encoded types</li>
+     *   <li>Surviving-encoding detection - rejects a percent-encoding layer that outlived the
+     *       decode (a {@code %} followed by two hex digits in the decoded output), catching the
+     *       nested spellings the wire-form regex in stage 1 cannot express</li>
      *   <li>Decoded-character re-validation - rejects null bytes, combining marks, control
      *       characters and (for parameter names) decoded delimiters that percent-encoding
      *       hid from the earlier character-validation stage</li>
@@ -157,7 +174,8 @@ ValidationType validationType) implements HttpSecurityValidator {
      * @return The validated and canonicalized string wrapped in Optional, or Optional.empty() if input was null
      * @throws UrlSecurityException if any security violations are detected:
      *                              <ul>
-     *                                <li>DOUBLE_ENCODING - if double encoding patterns are found</li>
+     *                                <li>DOUBLE_ENCODING - if a wire-form double-encoding pattern is
+     *                                    found, or if a percent-encoding layer survives decoding</li>
      *                                <li>INVALID_ENCODING - if URL decoding fails due to malformed input</li>
      *                                <li>NULL_BYTE_INJECTION - if the decoded output contains a null byte</li>
      *                                <li>CONTROL_CHARACTERS - if the decoded output contains a control
@@ -206,6 +224,21 @@ ValidationType validationType) implements HttpSecurityValidator {
                     .originalInput(value)
                     .detail("URL decoding failed: " + e.getMessage())
                     .cause(e)
+                    .build();
+        }
+
+        // Step 2.25: Reject a percent-encoding layer that survived the decode. The wire-form
+        // gate in step 1 only recognises the literal spelling %25XX, so a nested spelling such
+        // as %25%32%66 walks past it and decodes to the literal "%2f" -- a still-encoded path
+        // separator that would reach NormalizationStage undecoded. Checking the DECODED output
+        // catches every spelling the wire-form regex cannot express.
+        if (!config.allowDoubleEncoding() && SURVIVING_ENCODING_PATTERN.matcher(decoded).find()) {
+            throw UrlSecurityException.builder()
+                    .failureType(UrlSecurityFailureType.DOUBLE_ENCODING)
+                    .validationType(validationType)
+                    .originalInput(value)
+                    .sanitizedInput(decoded)
+                    .detail("Percent-encoding layer survived decoding in decoded output")
                     .build();
         }
 
