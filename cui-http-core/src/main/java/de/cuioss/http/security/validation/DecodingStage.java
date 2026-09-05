@@ -49,9 +49,24 @@ import java.util.regex.Pattern;
  *       character and is preserved literally; every other type uses form
  *       ({@code application/x-www-form-urlencoded}) semantics, in which {@code +} decodes
  *       to a space</li>
- *   <li><strong>Unicode Normalization</strong> - Optionally canonicalizes Unicode (normalize and
- *       continue), rejecting only folds that introduce a structural separator</li>
+ *   <li><strong>Unicode Normalization</strong> - Always inspects the canonical form and rejects a
+ *       fold that introduces a structural separator; {@code normalizeUnicode} decides only
+ *       whether the canonical form or the input form is the value returned</li>
  * </ol>
+ *
+ * <h3>Raw and encoded spellings receive the same verdict</h3>
+ * <p>Every gate above is unconditional, so a value cannot buy a softer verdict by being spelled
+ * in encoded form. The two gates that were previously configuration-dependent - the double-encoding
+ * pair and the Unicode structural-fold check - are the ones that made the encoded spelling of a
+ * value outrank its raw spelling: a raw {@code /} is inspected by {@code CharacterValidationStage}
+ * and the pattern stages, whereas under a relaxed configuration a {@code %252F} or a fullwidth
+ * solidus carrying that same {@code /} was waved through. Both are now enforced for every
+ * configuration.</p>
+ *
+ * <p>{@link SecurityConfiguration#allowDoubleEncoding()} is consequently no longer read by this
+ * stage. It remains a supported configuration property with an unchanged public surface; it simply
+ * no longer relaxes these gates. {@link SecurityConfiguration#normalizeUnicode()} remains live and
+ * observable here, narrowed to the question of which form is returned.</p>
  *
  * <h3>Design Principles</h3>
  * <ul>
@@ -157,10 +172,12 @@ ValidationType validationType) implements HttpSecurityValidator {
      *   <li>Decoded-character re-validation - rejects null bytes, combining marks, control
      *       characters and (for parameter names) decoded delimiters that percent-encoding
      *       hid from the earlier character-validation stage</li>
-     *   <li>Unicode normalization - optionally canonicalizes and continues with the canonical form.
-     *       The decoded-character rules of stage 4 are re-applied to the normalized form, so a
-     *       fold that introduces a forbidden character cannot bypass them, and the fold is then
-     *       rejected when it introduces a structural separator</li>
+     *   <li>Unicode normalization - always folds the decoded value and inspects the result. The
+     *       decoded-character rules of stage 4 are re-applied to the normalized form, so a fold
+     *       that introduces a forbidden character cannot bypass them, and the fold is then
+     *       rejected when it introduces a structural separator. Only the returned value depends
+     *       on {@code normalizeUnicode}: the canonical form when it is enabled, the decoded input
+     *       form when it is not</li>
      * </ol>
      *
      * @param value The input string to validate and decode
@@ -186,8 +203,12 @@ ValidationType validationType) implements HttpSecurityValidator {
             return Optional.empty();
         }
 
-        // Step 1: Detect double encoding before decoding
-        if (!config.allowDoubleEncoding() && DOUBLE_ENCODING_PATTERN.matcher(value).find()) {
+        // Step 1: Detect double encoding before decoding. Unconditional: a value spelled with an
+        // extra encoding layer smuggles a character past the wire-form character and pattern stages,
+        // which only ever see the outer spelling. Gating this on configuration made the encoded
+        // spelling of a value outrank the raw one -- the raw '/' is inspected by
+        // CharacterValidationStage, while a %252F carrying the same '/' was waved through.
+        if (DOUBLE_ENCODING_PATTERN.matcher(value).find()) {
             throw UrlSecurityException.builder()
                     .failureType(UrlSecurityFailureType.DOUBLE_ENCODING)
                     .validationType(validationType)
@@ -226,8 +247,11 @@ ValidationType validationType) implements HttpSecurityValidator {
         // gate in step 1 only recognises the literal spelling %25XX, so a nested spelling such
         // as %25%32%66 walks past it and decodes to the literal "%2f" -- a still-encoded path
         // separator that would reach NormalizationStage undecoded. Checking the DECODED output
-        // catches every spelling the wire-form regex cannot express.
-        if (!config.allowDoubleEncoding() && SURVIVING_ENCODING_PATTERN.matcher(decoded).find()) {
+        // catches every spelling the wire-form regex cannot express. Unconditional for the same
+        // reason as step 1: the output of this stage is read as literal text by every stage after
+        // it, so a surviving %2F would reach them as a still-encoded separator that the raw '/'
+        // spelling of the same value would never have been able to hide behind.
+        if (SURVIVING_ENCODING_PATTERN.matcher(decoded).find()) {
             throw UrlSecurityException.builder()
                     .failureType(UrlSecurityFailureType.DOUBLE_ENCODING)
                     .validationType(validationType)
@@ -245,23 +269,34 @@ ValidationType validationType) implements HttpSecurityValidator {
         validateDecodedCharacters(value, decoded);
 
         // Step 3: Unicode normalization - canonicalize-then-validate (OWASP model).
-        // Normalize and CONTINUE with the canonical form downstream, rejecting only
-        // when the fold introduces a structurally significant character (a separator
-        // such as / \ . : ? # %) that was not present before -- i.e. the
+        // Normalize and CONTINUE rather than reject on any fold, failing only when the
+        // fold introduces a structurally significant character (a separator such as
+        // / \ . : ? # % ;) that was not present before -- i.e. the
         // homoglyph-separator attack (fullwidth solidus U+FF0F -> '/'). Benign
         // compatibility folds (fullwidth letters, ligatures, CJK compatibility
         // ideographs) are preserved rather than rejected, so legitimate international
         // content passes. Form is chosen by type: NFKC for URL paths (must fold
         // compatibility homoglyphs of separators), NFC for parameter values (lossless,
         // preserves legitimate international text).
-        if (config.normalizeUnicode()) {
-            String normalized = Normalizer.normalize(decoded, normalizationForm());
+        //
+        // DETECTION IS UNCONDITIONAL; ONLY THE REWRITE IS CONFIGURABLE. The fold is always
+        // computed and always inspected, because a homoglyph separator is a raw-versus-encoded
+        // asymmetry rather than a compatibility preference: the raw '/' is inspected by every
+        // wire-form stage, so a fullwidth solidus that folds to '/' must not be accepted merely
+        // because canonicalization is switched off. What config.normalizeUnicode() controls is
+        // the narrower question this stage genuinely has a choice about -- whether the canonical
+        // form or the input form is the value handed downstream.
+        String normalized = Normalizer.normalize(decoded, normalizationForm());
+        if (!normalized.equals(decoded)) {
             // Re-run the decoded-character rules against the NORMALIZED form before the
             // structural-fold check. Step 2.5 only saw the pre-normalization string, so a
             // character rule could otherwise be bypassed by an input that folds INTO a
             // forbidden character (e.g. a compatibility form that normalizes to a control
             // character or to a parameter-name delimiter). Ordering it ahead of the
             // structural-fold check keeps the more specific character verdict authoritative.
+            // The guard is a fast path, not a semantic gate: when the fold is a no-op the
+            // re-check re-examines the exact string step 2.5 already cleared, and the
+            // occurrence counts below are equal by construction.
             validateDecodedCharacters(value, normalized);
             if (introducesStructuralCharacter(decoded, normalized)) {
                 throw UrlSecurityException.builder()
@@ -272,10 +307,9 @@ ValidationType validationType) implements HttpSecurityValidator {
                         .detail("Unicode normalization introduced a structurally significant character")
                         .build();
             }
-            decoded = normalized;
         }
 
-        return Optional.of(decoded);
+        return Optional.of(config.normalizeUnicode() ? normalized : decoded);
     }
 
     /**
@@ -512,6 +546,25 @@ ValidationType validationType) implements HttpSecurityValidator {
     /**
      * Characters that delimit parameters in a query string and therefore must not appear
      * inside a decoded parameter <em>name</em>.
+     *
+     * <h4>Why this rule is scoped to {@link ValidationType#PARAMETER_NAME} alone</h4>
+     * <p>The scoping is a decision, not an omission. Only three validation types reach this
+     * stage at all - {@code URL_PATH}, {@code PARAMETER_NAME} and {@code PARAMETER_VALUE} - and
+     * of those only a parameter name is structural, so only there does a decoded delimiter
+     * change how the value parses. A parameter <em>value</em> legitimately carries {@code &amp;},
+     * {@code =}, {@code ;} and spaces as form content, and a path's own component delimiters
+     * ({@code ?} and {@code #}) are rejected by {@code NormalizationStage}, which owns the
+     * decoded-path rules.</p>
+     *
+     * <p>Widening the rule would not close a raw-versus-encoded asymmetry either, because there
+     * is none to close <em>at this stage</em>: a raw input passes through
+     * {@link #decodeForValidationType(String)} unchanged, so
+     * {@link #validateDecodedCharacters(String, String)} reaches the identical verdict for both
+     * spellings of the same value. The residual divergence - a raw {@code &amp;} in a parameter
+     * name is admitted by {@code CharacterValidationStage} while its {@code %26} spelling is
+     * rejected here - originates in that stage's wire-form character set
+     * ({@code RFC3986_QUERY_CHARS} admits {@code &amp;}, {@code =} and {@code ;}), and closing it
+     * means tightening that set rather than loosening this rule.</p>
      */
     private static boolean isParameterNameDelimiter(int ch) {
         return ch == '&' || ch == '=' || ch == ';' || ch == ' ';

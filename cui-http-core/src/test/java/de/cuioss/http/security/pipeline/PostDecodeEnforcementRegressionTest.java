@@ -21,6 +21,7 @@ import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
+import de.cuioss.http.security.validation.NormalizationStage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -152,33 +153,70 @@ class PostDecodeEnforcementRegressionTest {
         }
     }
 
+    /**
+     * SV-10 is now enforced by two different stages depending on the spelling, so it is pinned by
+     * two tests rather than one.
+     *
+     * <p>This suite previously reached {@code containsDirectoryTraversalIntent} through the
+     * pipeline by setting {@code allowDoubleEncoding(true)} and feeding {@code %252e%252e}, which
+     * decoded exactly once to the {@code %2e%2e} form that check inspects. Deliverable 5 made both
+     * double-encoding gates unconditional, so that route no longer exists: {@code DecodingStage}
+     * rejects the doubly encoded spelling outright, and no pipeline input can deliver a surviving
+     * {@code %2e%2e} to {@code NormalizationStage} any more.</p>
+     *
+     * <p>Flipping the expected failure type would have kept all four rows green while testing
+     * nothing about hex-digit case folding, so the case-permutation coverage is instead moved to a
+     * direct {@code NormalizationStage} test, and the pipeline test is retargeted onto the earlier
+     * rejection that now fires. This is the one place in this class that drives a stage directly;
+     * the pipeline-level invariant in the class Javadoc holds everywhere else.</p>
+     */
     @Nested
     @DisplayName("(3) SV-10: encoded double dots are detected in every hex-digit case")
     class EncodedDoubleDotCasePermutations {
 
         /**
-         * The encoded double dot must be double-encoded to reach the fixed check through the
-         * pipeline. {@code DecodingStage} runs before {@code NormalizationStage}, so a singly
-         * encoded {@code /a%2e%2eb/x} arrives at the normalization stage already decoded to
-         * {@code /a..b/x} - a legitimate filename, correctly accepted, and no test of this fix.
-         * Permitting double encoding lets {@code %252e%252e} decode once to {@code %2e%2e}, which
-         * is exactly the form {@code containsDirectoryTraversalIntent} inspects.
+         * The case-permutation coverage, at the stage that owns the check. The input is the
+         * once-decoded form the pipeline used to hand over.
          *
          * <p>The trailing {@code b} is deliberate: it keeps the input clear of the
          * {@code PATH_TRAVERSAL_PATTERNS} entries that end in a separator, so the rejection comes
-         * from the case-folded encoded-dot check under test rather than from the pre-decode
-         * pattern stage. The two homogeneous spellings were detected before this change and serve
-         * as positive controls; the two mixed-case spellings are the bypass being closed.</p>
+         * from the case-folded encoded-dot check under test. The two homogeneous spellings are
+         * positive controls; the two mixed-case spellings are the bypass SV-10 closed.</p>
          */
         @ParameterizedTest
-        @DisplayName("SV-10: encoded double dot is traversal in any case permutation")
+        @DisplayName("SV-10: NormalizationStage reads an encoded double dot as traversal in any case permutation")
         @ValueSource(strings = {
-                "/a/%252e%252eb/x",  // positive control - all lowercase
-                "/a/%252E%252Eb/x",  // positive control - all uppercase
-                "/a/%252E%252eb/x",  // the bypass - upper then lower
-                "/a/%252e%252Eb/x"   // the bypass - lower then upper
+                "/a/%2e%2eb/x",  // positive control - all lowercase
+                "/a/%2E%2Eb/x",  // positive control - all uppercase
+                "/a/%2E%2eb/x",  // the bypass - upper then lower
+                "/a/%2e%2Eb/x"   // the bypass - lower then upper
         })
         void detectsEncodedDoubleDotInAnyCase(String path) {
+            NormalizationStage stage =
+                    new NormalizationStage(SecurityConfiguration.defaults(), ValidationType.URL_PATH);
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                    () -> stage.validate(path),
+                    "Percent-encoding hex digits are case-insensitive, so '" + path
+                            + "' denotes the same traversal sequence");
+
+            assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, exception.getFailureType());
+        }
+
+        /**
+         * The pipeline-level counterpart: the doubly encoded spelling is still rejected, one stage
+         * earlier and under every configuration. {@code allowDoubleEncoding(true)} is kept in the
+         * arrangement precisely to show it no longer buys the input a softer verdict.
+         */
+        @ParameterizedTest
+        @DisplayName("SV-10: the doubly encoded spelling is rejected by DecodingStage before normalization")
+        @ValueSource(strings = {
+                "/a/%252e%252eb/x",
+                "/a/%252E%252Eb/x",
+                "/a/%252E%252eb/x",
+                "/a/%252e%252Eb/x"
+        })
+        void rejectsDoublyEncodedDoubleDotBeforeNormalization(String path) {
             SecurityConfiguration config = SecurityConfiguration.builder()
                     .allowDoubleEncoding(true)
                     .build();
@@ -186,10 +224,10 @@ class PostDecodeEnforcementRegressionTest {
 
             UrlSecurityException exception = assertThrows(UrlSecurityException.class,
                     () -> pipeline.validate(path),
-                    "Percent-encoding hex digits are case-insensitive, so '" + path
-                            + "' denotes the same traversal sequence");
+                    "'" + path + "' carries a second encoding layer and must be rejected "
+                            + "regardless of allowDoubleEncoding");
 
-            assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, exception.getFailureType());
+            assertEquals(UrlSecurityFailureType.DOUBLE_ENCODING, exception.getFailureType());
         }
     }
 
