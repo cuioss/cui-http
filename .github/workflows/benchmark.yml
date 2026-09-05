@@ -43,6 +43,17 @@ jobs:
           # If a benchmark run fails at an unexpected network call, the harden-runner run
           # summary names the blocked destination — add it here rather than reverting to
           # audit. Reverting to audit restores the exfiltration gap this closes.
+          #
+          # The Azure Storage entries are enumerated rather than wildcarded. A blanket
+          # *.blob.core.windows.net admits ANY Azure Storage account, including an
+          # attacker-controlled one named by compromised build code, which would leave the
+          # deployment token exfiltratable through a destination the allowlist permits — most of
+          # what egress-policy: block is here to prevent. The productionresultssa0-19 hosts below
+          # are the concrete Actions blob endpoints backing actions/upload-artifact and the
+          # setup-java Maven cache, taken from the .domains.actions_inbound.full_domains list of
+          # https://api.github.com/meta rather than guessed. GitHub occasionally extends that set;
+          # if an upload or cache step is blocked at a productionresultssaNN host not listed here,
+          # re-read the meta endpoint and add the new host — do not restore the wildcard.
           egress-policy: block
           allowed-endpoints: >
             api.adoptium.net:443
@@ -51,9 +62,29 @@ jobs:
             github.com:443
             objects.githubusercontent.com:443
             raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
             repo.maven.apache.org:443
             *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
+            productionresultssa0.blob.core.windows.net:443
+            productionresultssa1.blob.core.windows.net:443
+            productionresultssa2.blob.core.windows.net:443
+            productionresultssa3.blob.core.windows.net:443
+            productionresultssa4.blob.core.windows.net:443
+            productionresultssa5.blob.core.windows.net:443
+            productionresultssa6.blob.core.windows.net:443
+            productionresultssa7.blob.core.windows.net:443
+            productionresultssa8.blob.core.windows.net:443
+            productionresultssa9.blob.core.windows.net:443
+            productionresultssa10.blob.core.windows.net:443
+            productionresultssa11.blob.core.windows.net:443
+            productionresultssa12.blob.core.windows.net:443
+            productionresultssa13.blob.core.windows.net:443
+            productionresultssa14.blob.core.windows.net:443
+            productionresultssa15.blob.core.windows.net:443
+            productionresultssa16.blob.core.windows.net:443
+            productionresultssa17.blob.core.windows.net:443
+            productionresultssa18.blob.core.windows.net:443
+            productionresultssa19.blob.core.windows.net:443
 
       - name: Create GitHub App token for deployment
         id: app-token
@@ -128,6 +159,22 @@ jobs:
             echo "Assembled tree is missing the gh-pages/micro directory" >&2
             exit 1
           fi
+          # A gh-pages/micro directory that merely exists is not evidence that this run produced
+          # benchmark data — a tree carrying only stale badges satisfies the directory check while
+          # publishing incomplete results over the previous complete deployment. Require the
+          # current-run artifacts themselves, non-empty. These names come from the out-of-repo
+          # de.cuioss.sheriff.oauth:benchmarking-common report generator and are kept in step with
+          # _REQUIRED_RESULT_ARTIFACTS in cui-http-benchmarking/scripts/benchmark-pages.py; assemble
+          # enforces the same set at its input, this gate re-checks the assembled output.
+          for required in \
+            gh-pages/micro/data/original-jmh-result.json \
+            gh-pages/micro/data/benchmark-data.json \
+            gh-pages/micro/index.html; do
+            if [ ! -s "$required" ]; then
+              echo "Assembled tree is missing or has an empty ${required}" >&2
+              exit 1
+            fi
+          done
           if [ ! -d gh-pages/badges ] || [ -z "$(find gh-pages/badges -type f -print -quit)" ]; then
             echo "Assembled tree has no files under gh-pages/badges" >&2
             exit 1

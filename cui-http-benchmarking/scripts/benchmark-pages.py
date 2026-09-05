@@ -41,6 +41,29 @@ _BADGE_MAPPING = {
 _BENCHMARK_TYPES = ("micro",)
 _DEFAULT_MAX_HISTORY = 10
 
+# Current-run artifacts that a gh-pages-ready directory must contain before it may be assembled
+# and deployed. Paths are relative to the module's gh-pages-ready directory.
+#
+# A gh-pages-ready directory that merely EXISTS is not evidence that this run produced benchmark
+# data: a previous run's badges, or a directory materialized as a side effect, satisfy a bare
+# is_dir() check while carrying no current-run results. Deploying that tree replaces the published
+# benchmarks with incomplete data. These three files are the load-bearing outputs of the report
+# generator, so requiring all three (non-empty) makes the partial-directory case fail here rather
+# than at deploy time:
+#   data/original-jmh-result.json  raw JMH result for this run - the actual measurement payload
+#   data/benchmark-data.json       processed report data consumed by data-loader.js
+#   index.html                     report entry point served from GitHub Pages
+#
+# These names are produced by the out-of-repo de.cuioss.sheriff.oauth:benchmarking-common report
+# generator, not by anything in this repository, and were confirmed against a real benchmark run's
+# output tree. If that dependency is upgraded and renames an output, this gate fails loudly with
+# the missing path named - update this tuple to match the new output rather than removing the gate.
+_REQUIRED_RESULT_ARTIFACTS = (
+    "data/original-jmh-result.json",
+    "data/benchmark-data.json",
+    "index.html",
+)
+
 # Trend history deployed before this cutoff was recorded while the forwarded attack benchmark
 # measured the JUL ConsoleHandler instead of the resolver, so those numbers are not comparable
 # with post-fix runs. Previously deployed entries whose timestamp prefix sorts before this value
@@ -174,6 +197,26 @@ def assemble(args: argparse.Namespace) -> None:
         if not results_dir.is_dir():
             print(f"Error: {name} results not found at {results_dir}", file=sys.stderr)
             sys.exit(1)
+        # A present-but-partial results directory is the residual gap the is_dir() check above
+        # cannot see: a gh-pages-ready directory holding stale badges but no current-run JMH
+        # result still assembles, and the deploy step then publishes incomplete benchmark data
+        # over the previous complete tree. Require every current-run artifact, non-empty.
+        for relative_path in _REQUIRED_RESULT_ARTIFACTS:
+            artifact = results_dir / relative_path
+            if not artifact.is_file():
+                print(
+                    f"Error: {name} results at {results_dir} are incomplete - "
+                    f"missing {relative_path}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            if artifact.stat().st_size == 0:
+                print(
+                    f"Error: {name} results at {results_dir} are incomplete - "
+                    f"{relative_path} is empty",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
 
     # 1. Merge previous history (skip files that already exist to avoid overwriting current run)
     if previous_dir and previous_dir.is_dir():
