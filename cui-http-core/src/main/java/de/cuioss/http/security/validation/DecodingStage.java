@@ -314,7 +314,26 @@ ValidationType validationType) implements HttpSecurityValidator {
             }
         }
 
-        return Optional.of(config.normalizeUnicode() ? normalized : decoded);
+        String result = config.normalizeUnicode() ? normalized : decoded;
+
+        // Step 4: Re-apply the surviving-encoding check to the value actually returned.
+        // The fold can ASSEMBLE an escape that step 2.75 could not see: '%' followed by two
+        // compatibility digits (U+FF12 U+FF26, reachable as the decoded text of
+        // %25%EF%BC%92%EF%BC%A6) carries no ASCII hex, so the pattern misses it, and NFKC then
+        // folds it to the live "%2F". The percent count is unchanged by that fold, so
+        // introducesStructuralCharacter does not see it either. Checking the returned value is
+        // the only place the assembled escape is observable.
+        if (SURVIVING_ENCODING_PATTERN.matcher(result).find()) {
+            throw UrlSecurityException.builder()
+                    .failureType(UrlSecurityFailureType.DOUBLE_ENCODING)
+                    .validationType(validationType)
+                    .originalInput(value)
+                    .sanitizedInput(result)
+                    .detail("Percent-encoding layer survived decoding in returned output")
+                    .build();
+        }
+
+        return Optional.of(result);
     }
 
     /**
@@ -399,14 +418,39 @@ ValidationType validationType) implements HttpSecurityValidator {
             throw new IllegalArgumentException(
                     "Incomplete trailing escape (%) pattern at index " + index);
         }
-        int high = Character.digit(value.charAt(index + 1), 16);
-        int low = Character.digit(value.charAt(index + 2), 16);
+        int high = asciiHexDigit(value.charAt(index + 1));
+        int low = asciiHexDigit(value.charAt(index + 2));
         if (high < 0 || low < 0) {
             throw new IllegalArgumentException(
                     "Illegal hex characters in escape (%) pattern at index " + index + ": "
                             + escaped(value.charAt(index + 1)) + " " + escaped(value.charAt(index + 2)));
         }
         return (high << 4) | low;
+    }
+
+    /**
+     * Reads one ASCII hex digit, or {@code -1} when the character is not one.
+     *
+     * <p>{@link Character#digit(char, int)} accepts every Unicode digit form, so it reads
+     * U+FF12 FULLWIDTH DIGIT TWO as {@code 2}. An RFC 3986 escape is ASCII by definition, so
+     * accepting a compatibility digit lets {@code %} followed by two fullwidth characters
+     * decode to a real byte -- {@code %\uFF12\uFF26} would yield {@code '/'}, smuggling a path
+     * separator past every wire-form check that looked for ASCII hex.</p>
+     *
+     * @param c the character to read
+     * @return the digit value 0-15, or {@code -1} when {@code c} is not an ASCII hex digit
+     */
+    private static int asciiHexDigit(char c) {
+        if (c >= '0' && c <= '9') {
+            return c - '0';
+        }
+        if (c >= 'a' && c <= 'f') {
+            return c - 'a' + 10;
+        }
+        if (c >= 'A' && c <= 'F') {
+            return c - 'A' + 10;
+        }
+        return -1;
     }
 
     /**

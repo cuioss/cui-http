@@ -102,7 +102,13 @@ hold; nothing here changes how `normalizeUriComponent` treats a URI carrying a s
 * **The false-positive class ADR-0014's clamp existed to avoid is now real.** A caller that emits
   a `..` count exceeding the path's nesting depth — a reverse proxy rewriting a relative reference,
   a client following a templated link — produces RFC-legal input that this stage now rejects. Such
-  a caller must normalize before validating, or accept the rejection. This cost is accepted
+  a caller must handle the `DIRECTORY_ESCAPE_ATTEMPT` and decide what to do with the request; it
+  must NOT pre-normalize the value to get past this stage. A clamping RFC 3986 normalizer applied
+  before `validate` turns `/api/../../etc/passwd` into `/etc/passwd`, which this stage then accepts
+  as an ordinary path — the root walk has been erased before the only component that could see it
+  ever ran. Pass the original decoded value to `NormalizationStage` and let it rule; if a caller
+  genuinely must normalize first, its normalizer has to preserve and propagate the root-walk
+  condition rather than clamp it away. This cost is accepted
   knowingly: it is bounded (it affects only absolute paths that walk past root), it is visible (it
   surfaces as an explicit `DIRECTORY_ESCAPE_ATTEMPT`, not as silent data loss), and the failure it
   replaces was silent and pointed the wrong way.

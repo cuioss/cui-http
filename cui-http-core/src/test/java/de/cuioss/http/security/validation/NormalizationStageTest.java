@@ -483,4 +483,23 @@ class NormalizationStageTest {
         assertTrue(result.isPresent(), "Path '" + input + "' should be allowed but was rejected");
         assertEquals(input, result.get(), "Path should remain unchanged after normalization");
     }
+
+    /**
+     * A caller that clamps before validating erases the very evidence this stage rules on.
+     *
+     * <p>ADR-0016 tells callers to pass the original decoded value and handle
+     * {@code DIRECTORY_ESCAPE_ATTEMPT}, explicitly NOT to pre-normalize their way past the
+     * rejection. The pair below is why: the walking form is rejected, and its RFC 3986 clamped
+     * equivalent is an ordinary path this stage cannot distinguish from a legitimate request for
+     * the same resource. The stage is not at fault — by the time it sees the clamped value the
+     * root walk is gone — so this pins the limitation rather than a defect.</p>
+     */
+    @Test
+    void validate_withPreNormalizedRootWalk_cannotDetectWhatTheClampErased() {
+        assertThrows(UrlSecurityException.class, () -> stage.validate("/api/../../etc/passwd"),
+                "the walking form carries the evidence and must be rejected");
+
+        assertEquals("/etc/passwd", stage.validate("/etc/passwd").orElseThrow(),
+                "a caller that clamped first hands over an ordinary path - ADR-0016 forbids doing so");
+    }
 }

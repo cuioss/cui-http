@@ -1063,6 +1063,39 @@ class DecodingStageTest {
         }
     }
 
+    /**
+     * A compatibility digit is never an escape digit, and never assembles one.
+     *
+     * <p>Both shapes were found by the PR review of this change. {@code Character.digit} reads
+     * every Unicode digit form, so {@code %} followed by U+FF12 U+FF26 decoded straight to
+     * {@code '/'}; and the decoded text {@code "%\uFF12\uFF26"} carries no ASCII hex, so the
+     * surviving-encoding check missed it while NFKC then folded it to a live {@code "%2F"} in
+     * the returned value. The percent count is unchanged by that fold, so the structural-fold
+     * check does not see it either.</p>
+     */
+    @Nested
+    @DisplayName("Fullwidth hex characters never form or assemble a percent escape")
+    class FullwidthHexNeverFormsAnEscape {
+
+        @Test
+        @DisplayName("a fullwidth-spelled escape is malformed, not a decoded separator")
+        void fullwidthEscapeDigitsAreRejected() {
+            UrlSecurityException thrown = assertThrows(UrlSecurityException.class,
+                    () -> pathDecoder.validate("/a%\uFF12\uFF26b"));
+
+            assertEquals(UrlSecurityFailureType.INVALID_ENCODING, thrown.getFailureType());
+        }
+
+        @Test
+        @DisplayName("an escape assembled by the NFKC fold is rejected in the returned value")
+        void normalizationAssembledEscapeIsRejected() {
+            UrlSecurityException thrown = assertThrows(UrlSecurityException.class,
+                    () -> pathDecoder.validate("/%25%EF%BC%92%EF%BC%A6"));
+
+            assertEquals(UrlSecurityFailureType.DOUBLE_ENCODING, thrown.getFailureType());
+        }
+    }
+
     // Architectural decision: Application-layer encodings (HTML entities, JS escapes, Base64)
     // are handled by higher application layers where they have proper context.
 }
