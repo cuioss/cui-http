@@ -42,7 +42,7 @@ jobs:
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          repositories: ${{ github.event.repository.name }},cuioss.github.io
+          repositories: cuioss.github.io
           owner: cuioss
 
       - name: Checkout code
@@ -70,7 +70,6 @@ jobs:
           path: previous-pages
           sparse-checkout: |
             cui-http/benchmarks/micro/history
-        continue-on-error: true
 
       - name: Prepare Historical Data for Benchmarks
         run: |
@@ -100,6 +99,25 @@ jobs:
           name: benchmark-results
           path: gh-pages/
           retention-days: 90
+
+      - name: Verify assembled deployment tree
+        run: |
+          # The deploy step below removes the published benchmarks directory and replaces it with
+          # this tree, so an empty or partial gh-pages/ would publish a deletion instead of a
+          # benchmark run. Refuse to reach the deploy on anything short of a complete tree.
+          if [ ! -d gh-pages/micro ]; then
+            echo "Assembled tree is missing the gh-pages/micro directory" >&2
+            exit 1
+          fi
+          if [ ! -d gh-pages/badges ] || [ -z "$(find gh-pages/badges -type f -print -quit)" ]; then
+            echo "Assembled tree has no files under gh-pages/badges" >&2
+            exit 1
+          fi
+          if [ ! -f gh-pages/metadata.json ]; then
+            echo "Assembled tree is missing gh-pages/metadata.json" >&2
+            exit 1
+          fi
+          echo "Assembled deployment tree verified"
 
       - name: Checkout cuioss.github.io for deployment
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
