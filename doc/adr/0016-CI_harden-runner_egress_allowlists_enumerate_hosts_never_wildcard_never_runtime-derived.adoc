@@ -1,0 +1,120 @@
+= ADR-0016: CI harden-runner egress allowlists enumerate hosts; never wildcard, never runtime-derived
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// Progressive-disclosure metadata block (see manage-adr SKILL.md → "ADR Template
+// Structure"). Read by `manage-adr.py scan` so a caller can assess an ADR's
+// relevance without reading the full file. List fields are comma-separated.
+// summary: A harden-runner egress-policy allowlist enumerates concrete hosts; it is never a wildcard suffix and never derived at runtime.
+// tags: security, ci, supply-chain, github-actions, egress-policy
+// affects: .github/workflows
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+A CI job that mints a scoped credential — a deployment token, a publish
+credential — and then executes third-party build tooling faces a supply-chain
+exfiltration risk. A compromised transitive dependency, or a malicious
+pre/post-install script, can attempt an outbound network call carrying that
+credential. Confining the job's outbound access to an explicit allowlist closes
+that channel.
+
+The allowlist itself then becomes a design surface with its own failure modes,
+and there are two tempting ways to make it cheap to maintain. Both give up the
+property that made the allowlist worth having.
+
+A wildcard suffix entry keeps every legitimate step working without enumeration,
+but admits any host under that suffix — including one an attacker can come to
+control. The block posture is nominally in force while the exfiltration channel
+it exists to close is still open.
+
+A list derived at run time — queried live from an external metadata endpoint —
+creates a different problem. Producing the allowlist that gates a job's egress
+requires a network call that is either already permitted, in which case the
+derivation defeats the block posture for itself, or not yet permitted, in which
+case the derivation cannot run. The derived value is also computed inside the
+same execution context the policy exists to constrain, so anything able to
+influence that step can influence its own gate.
+
+== Decision
+
+An egress allowlist enumerates the concrete hosts a job's steps are known to
+need, sourced from an authoritative external reference at authoring time, and is
+maintained as a versioned list committed alongside the workflow rather than
+computed at run time.
+
+When a legitimate step is later blocked by a host not yet listed, the fix is to
+add that host to the enumerated list — never to widen an entry to a wildcard,
+and never to introduce a step that fetches the current host set during the run.
+
+== Consequences
+
+=== Positive
+
+* The allowlist can only ever admit hosts someone has looked up and committed.
+  An attacker cannot expand its coverage by registering a name under an
+  already-allowed suffix.
+* The allowlist is inert with respect to the trust boundary it enforces:
+  resolving it requires no network access, and nothing running inside the job
+  can influence it.
+* A widening event is visible in the workflow file's own history — a reviewer
+  sees every newly-admitted host in the diff.
+
+=== Negative
+
+* The list requires periodic manual maintenance. A cloud provider's host set
+  backing an action, such as artifact upload or dependency caching, can grow,
+  and each growth event blocks the job until a maintainer adds the new host.
+* This maintenance burden is the deliberate trade against the alternative's
+  exfiltration surface, not an oversight.
+
+=== Risks
+
+* A blocked legitimate host presents as a job failure rather than a security
+  event, so the remediation path must be documented where the maintainer will
+  look — at the allowlist itself. Without that, the fastest apparent fix is to
+  restore a wildcard, which silently reverts the decision.
+* The enumerated set is a point-in-time snapshot of an external provider's
+  infrastructure. It is correct when written and decays without notice.
+
+== Alternatives Considered
+
+*Wildcard suffix match.* Solves the maintenance burden completely: any new host
+under the suffix is admitted automatically. Rejected because it re-admits the
+attack class the block posture exists to close. Any path that gets a build step
+to call an attacker-controlled name under that suffix — typosquat, account
+takeover, or a legitimately issued name under attacker control — can exfiltrate
+through it, and once the wildcard is in place the run summary carries no signal
+distinguishing a legitimate host from a malicious one.
+
+*Runtime or automated derivation of the host list.* A step that queries an
+external metadata endpoint and rewrites the allowlist on each run would
+eliminate the manual-maintenance cost. Rejected on two grounds. Near-circularity:
+deriving the allowlist that gates a job's own egress requires an egress call that
+is either already permitted, so the derivation step defeats the block posture for
+itself, or not yet permitted, so the derivation cannot run. Provenance: a list
+computed inside the job at run time is generated under the same execution context
+the policy exists to constrain, so a compromise capable of influencing that
+step's output could also influence the derived allowlist.
+
+A single principle unifies both rejections. A security allowlist draws its
+authority from being resolved outside the boundary it constrains and from
+remaining a reviewable static artefact. Widening the match, or moving resolution
+inside the constrained boundary, trades away exactly that property.
+
+The generalisation holds beyond this provider and this CI system: any allowlist
+gating a security control should be resolved outside the boundary it constrains
+and be reviewable as a static artefact.
+
+== References
+
+* `.github/workflows/benchmark.yml` — the harden-runner step and its inline
+  rationale comments, which carry the maintainer instruction to add a blocked
+  host rather than restore a wildcard.
