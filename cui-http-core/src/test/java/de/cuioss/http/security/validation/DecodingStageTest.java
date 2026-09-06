@@ -1094,6 +1094,20 @@ class DecodingStageTest {
 
             assertEquals(UrlSecurityFailureType.DOUBLE_ENCODING, thrown.getFailureType());
         }
+
+        @Test
+        @DisplayName("the assembled escape is rejected under lenient() too, which returns the unfolded form")
+        void normalizationAssembledEscapeIsRejectedUnderLenient() {
+            DecodingStage lenientDecoder =
+                    new DecodingStage(SecurityConfiguration.lenient(), ValidationType.URL_PATH);
+
+            UrlSecurityException thrown = assertThrows(UrlSecurityException.class,
+                    () -> lenientDecoder.validate("/%25%EF%BC%92%EF%BC%A6"));
+
+            assertEquals(UrlSecurityFailureType.DOUBLE_ENCODING, thrown.getFailureType(),
+                    "the fold is computed for every preset, so the verdict must not depend on "
+                            + "which form normalizeUnicode() selects for return");
+        }
     }
 
     // Architectural decision: Application-layer encodings (HTML entities, JS escapes, Base64)

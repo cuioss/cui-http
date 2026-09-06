@@ -79,10 +79,12 @@ answers per deployment and their answers do not vary with how the value was writ
 
 * A deployment that genuinely needs to accept a surviving percent-encoding layer has no
   configuration switch for it and must handle the rejection at its own layer.
-* `SecurityConfiguration.allowDoubleEncoding()` remains a public record component and
-  builder setter for API compatibility while no longer being read by any production
-  code. A configuration surface that accepts a value it does not act on is a documented
-  wart, retained deliberately rather than removed as a breaking API change.
+* `SecurityConfiguration.allowDoubleEncoding()` no longer gates any validation. It remains a
+  public record component and builder setter for API compatibility, and it is still read by the
+  `isStrict()` / `isLenient()` classification predicates, which report what a configuration
+  *claims* rather than what any gate consults. A setting that is accepted, reported back, and
+  acted on by nothing is a documented wart, retained deliberately rather than removed as a
+  breaking API change.
 
 === Risks
 

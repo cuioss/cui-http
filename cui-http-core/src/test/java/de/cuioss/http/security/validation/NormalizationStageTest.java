@@ -485,6 +485,36 @@ class NormalizationStageTest {
     }
 
     /**
+     * A complete URI carries its own query and fragment, and this stage leaves it alone.
+     *
+     * <p>The path-component delimiter rule rejects a decoded {@code ?} or {@code #} inside a
+     * PATH. A scheme-bearing complete URI is not a path: its {@code ?} opens its own query and
+     * its {@code #} its own fragment, both legitimate. ADR-0016 states that scheme-bearing input
+     * is unaffected by this stage, so applying the delimiter rule to it would contradict the
+     * decision and change pre-existing behaviour.</p>
+     */
+    @Test
+    void validate_withCompleteUriCarryingQueryAndFragment_isLeftUnchanged() {
+        assertAll("a complete URI keeps its own components",
+                () -> assertEquals("https://example.com/a/b?x=1",
+                        stage.validate("https://example.com/a/b?x=1").orElseThrow()),
+                () -> assertEquals("https://example.com/a/b#frag",
+                        stage.validate("https://example.com/a/b#frag").orElseThrow()),
+                () -> assertEquals("https://example.com/a/b?x=1#frag",
+                        stage.validate("https://example.com/a/b?x=1#frag").orElseThrow()));
+    }
+
+    /**
+     * The delimiter rule still binds a bare path — the carve-out above is scheme-bearing only.
+     */
+    @Test
+    void validate_withBarePathCarryingComponentDelimiter_isRejected() {
+        assertAll("a path is one component and may carry neither delimiter",
+                () -> assertThrows(UrlSecurityException.class, () -> stage.validate("/a/b?x=1")),
+                () -> assertThrows(UrlSecurityException.class, () -> stage.validate("/a/b#frag")));
+    }
+
+    /**
      * A caller that clamps before validating erases the very evidence this stage rules on.
      *
      * <p>ADR-0016 tells callers to pass the original decoded value and handle

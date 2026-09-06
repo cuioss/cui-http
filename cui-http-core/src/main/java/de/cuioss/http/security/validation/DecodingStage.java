@@ -316,20 +316,23 @@ ValidationType validationType) implements HttpSecurityValidator {
 
         String result = config.normalizeUnicode() ? normalized : decoded;
 
-        // Step 4: Re-apply the surviving-encoding check to the value actually returned.
+        // Step 4: Re-apply the surviving-encoding check to the NORMALIZED form.
         // The fold can ASSEMBLE an escape that step 2.75 could not see: '%' followed by two
         // compatibility digits (U+FF12 U+FF26, reachable as the decoded text of
         // %25%EF%BC%92%EF%BC%A6) carries no ASCII hex, so the pattern misses it, and NFKC then
         // folds it to the live "%2F". The percent count is unchanged by that fold, so
-        // introducesStructuralCharacter does not see it either. Checking the returned value is
-        // the only place the assembled escape is observable.
-        if (SURVIVING_ENCODING_PATTERN.matcher(result).find()) {
+        // introducesStructuralCharacter does not see it either. The check reads 'normalized'
+        // rather than the returned value on purpose: the fold is computed for every preset, so
+        // reading the returned value would let lenient() (which returns 'decoded') reach a
+        // different verdict for the same input -- the raw-versus-encoded asymmetry ADR-0017
+        // forbids.
+        if (SURVIVING_ENCODING_PATTERN.matcher(normalized).find()) {
             throw UrlSecurityException.builder()
                     .failureType(UrlSecurityFailureType.DOUBLE_ENCODING)
                     .validationType(validationType)
                     .originalInput(value)
-                    .sanitizedInput(result)
-                    .detail("Percent-encoding layer survived decoding in returned output")
+                    .sanitizedInput(normalized)
+                    .detail("Percent-encoding layer survived decoding in normalized output")
                     .build();
         }
 

@@ -338,7 +338,15 @@ ValidationType validationType) implements HttpSecurityValidator {
         // belongs inside a path value. DecodingStage can surface either from %3F / %23, and a path
         // that carries one is no longer a path -- normalizing it would resolve segments that the
         // recipient will read as a different component altogether.
-        int delimiterIndex = indexOfComponentDelimiter(original);
+        //
+        // The check is scoped to values that ARE a path. A complete URI (scheme://authority/...)
+        // legitimately carries its own query and fragment, and this stage leaves such input
+        // unrewritten by design -- ADR-0016 states that scheme-bearing input is unaffected, so
+        // applying the delimiter rule to it would both contradict that decision and change the
+        // pre-existing complete-URI behaviour. A complete URI passes through here and is handled
+        // by the scheme-preserving path below.
+        boolean schemeBearing = URL_WITH_PROTOCOL_PATTERN.matcher(original).matches();
+        int delimiterIndex = schemeBearing ? -1 : indexOfComponentDelimiter(original);
         if (delimiterIndex >= 0) {
             throw UrlSecurityException.builder()
                     .failureType(UrlSecurityFailureType.INVALID_CHARACTER)
