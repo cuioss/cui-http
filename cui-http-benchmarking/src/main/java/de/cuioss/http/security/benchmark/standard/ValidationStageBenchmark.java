@@ -42,10 +42,14 @@ public class ValidationStageBenchmark {
         return state.patternMatchingStage.validate(state.nextCleanUrl());
     }
 
-    /** Decoding stage: URL percent-encoding and UTF-8 overlong detection. */
+    /**
+     * Decoding stage: URL percent-encoding and UTF-8 overlong detection.
+     * Measured over percent-escaped paths, so the reported cost includes the decode itself
+     * rather than only the scan that finds nothing to decode in an unescaped path.
+     */
     @Benchmark
     public Optional<String> decodingStage(SecurityBenchmarkState state) throws UrlSecurityException {
-        return state.decodingStage.validate(state.nextCleanUrl());
+        return state.decodingStage.validate(state.nextEncodedUrl());
     }
 
     /** Character validation stage: allowed character set enforcement. */
@@ -54,10 +58,14 @@ public class ValidationStageBenchmark {
         return state.characterValidationStage.validate(state.nextCleanUrl());
     }
 
-    /** Normalization stage: RFC 3986 path normalization with traversal detection. */
+    /**
+     * Normalization stage: RFC 3986 path normalization with traversal detection.
+     * Measured over paths carrying dot-segments the normalizer actually resolves, so the
+     * reported cost includes segment resolution rather than only rebuilding an already-normal path.
+     */
     @Benchmark
     public Optional<String> normalizationStage(SecurityBenchmarkState state) throws UrlSecurityException {
-        return state.normalizationStage.validate(state.nextCleanUrl());
+        return state.normalizationStage.validate(state.nextDottedUrl());
     }
 
     /** Length validation stage: input length limit enforcement. */

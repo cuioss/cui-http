@@ -41,6 +41,29 @@ _BADGE_MAPPING = {
 _BENCHMARK_TYPES = ("micro",)
 _DEFAULT_MAX_HISTORY = 10
 
+# Current-run artifacts that a gh-pages-ready directory must contain before it may be assembled
+# and deployed. Paths are relative to the module's gh-pages-ready directory.
+#
+# A gh-pages-ready directory that merely EXISTS is not evidence that this run produced benchmark
+# data: a previous run's badges, or a directory materialized as a side effect, satisfy a bare
+# is_dir() check while carrying no current-run results. Deploying that tree replaces the published
+# benchmarks with incomplete data. These three files are the load-bearing outputs of the report
+# generator, so requiring all three (non-empty) makes the partial-directory case fail here rather
+# than at deploy time:
+#   data/original-jmh-result.json  raw JMH result for this run - the actual measurement payload
+#   data/benchmark-data.json       processed report data consumed by data-loader.js
+#   index.html                     report entry point served from GitHub Pages
+#
+# These names are produced by the out-of-repo de.cuioss.sheriff.oauth:benchmarking-common report
+# generator, not by anything in this repository, and were confirmed against a real benchmark run's
+# output tree. If that dependency is upgraded and renames an output, this gate fails loudly with
+# the missing path named - update this tuple to match the new output rather than removing the gate.
+_REQUIRED_RESULT_ARTIFACTS = (
+    "data/original-jmh-result.json",
+    "data/benchmark-data.json",
+    "index.html",
+)
+
 # Trend history deployed before this cutoff was recorded while the forwarded attack benchmark
 # measured the JUL ConsoleHandler instead of the resolver, so those numbers are not comparable
 # with post-fix runs. Previously deployed entries whose timestamp prefix sorts before this value
@@ -164,21 +187,40 @@ def assemble(args: argparse.Namespace) -> None:
         print("Error: --micro-results is required", file=sys.stderr)
         sys.exit(1)
 
-    # 0. Establish the per-module results-directory verdict ONCE, before any directory-creating
-    # work runs. The step-1 history merge below calls mkdir(parents=True) on {results_dir}/history,
-    # which would materialize a missing results directory and make the step-3 existence guard
-    # always pass. Deciding here keeps the guard authoritative and keeps the warning to one line
-    # per missing module rather than one per phase.
-    present_modules: list[tuple[str, Path]] = []
+    # 0. Require every configured module's results directory to exist, before any
+    # directory-creating work runs. The step-1 history merge below calls mkdir(parents=True) on
+    # {results_dir}/history, which would materialize a missing results directory and mask the
+    # absence from any later check. A missing results directory means the benchmark run produced
+    # no artifacts for that module, so there is nothing legitimate to deploy: fail here rather
+    # than assembling — and publishing — a silently incomplete tree.
     for name, results_dir in modules:
-        if results_dir.is_dir():
-            present_modules.append((name, results_dir))
-        else:
-            print(f"Warning: {name} results not found at {results_dir}, skipping")
+        if not results_dir.is_dir():
+            print(f"Error: {name} results not found at {results_dir}", file=sys.stderr)
+            sys.exit(1)
+        # A present-but-partial results directory is the residual gap the is_dir() check above
+        # cannot see: a gh-pages-ready directory holding stale badges but no current-run JMH
+        # result still assembles, and the deploy step then publishes incomplete benchmark data
+        # over the previous complete tree. Require every current-run artifact, non-empty.
+        for relative_path in _REQUIRED_RESULT_ARTIFACTS:
+            artifact = results_dir / relative_path
+            if not artifact.is_file():
+                print(
+                    f"Error: {name} results at {results_dir} are incomplete - "
+                    f"missing {relative_path}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            if artifact.stat().st_size == 0:
+                print(
+                    f"Error: {name} results at {results_dir} are incomplete - "
+                    f"{relative_path} is empty",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
 
     # 1. Merge previous history (skip files that already exist to avoid overwriting current run)
     if previous_dir and previous_dir.is_dir():
-        for name, results_dir in present_modules:
+        for name, results_dir in modules:
             prev_history = previous_dir / name / "history"
             if not prev_history.is_dir():
                 continue
@@ -192,7 +234,7 @@ def assemble(args: argparse.Namespace) -> None:
                 )
 
     # 2. Enforce retention policy per module
-    for name, results_dir in present_modules:
+    for name, results_dir in modules:
         removed = _enforce_retention(results_dir / "history", max_history)
         if removed:
             print(f"Removed {removed} old {name} history files (retention: {max_history})")
@@ -202,7 +244,7 @@ def assemble(args: argparse.Namespace) -> None:
     badges_dir = output_dir / "badges"
     badges_dir.mkdir(exist_ok=True)
 
-    for name, results_dir in present_modules:
+    for name, results_dir in modules:
         # Copy full module output into type subdirectory
         shutil.copytree(results_dir, output_dir / name, dirs_exist_ok=True)
         print(f"Copied {name} benchmark artifacts to {output_dir / name}")

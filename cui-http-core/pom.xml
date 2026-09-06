@@ -96,7 +96,20 @@
                             </includes>
                             <excludes>
                                 <exclude>${generators.classifier.package.generators}/**/*Test.class</exclude>
+                                <!-- javac emits an excluded type's synthetic and nested classes under
+                                     their own names (FooTest$1.class, FooTest$Inner.class), which the
+                                     *Test.class pattern does not match. Without this companion they
+                                     would ship in the classifier jar after their outer class left. -->
+                                <exclude>${generators.classifier.package.generators}/**/*Test$*.class</exclude>
                             </excludes>
+                            <archive>
+                                <manifestEntries>
+                                    <!-- Overrides the inherited de.cuioss.http: this classifier jar is a
+                                         second artifact on the module path and must not claim the main
+                                         jar's module name. The inherited Build-* entries still merge. -->
+                                    <Automatic-Module-Name>de.cuioss.http.generators</Automatic-Module-Name>
+                                </manifestEntries>
+                            </archive>
                         </configuration>
                     </execution>
                 </executions>

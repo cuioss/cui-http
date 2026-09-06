@@ -79,6 +79,43 @@ public class SecurityBenchmarkState {
             "/api/v1/%c0%ae%c0%ae/etc/passwd"
     };
 
+    // Percent-escaped paths for the decoding benchmark. CLEAN_URLS carry no escapes at all, so
+    // DecodingStage returns them after a scan that finds nothing to decode — measuring the guard
+    // rather than the work. Every escape here decodes to a character the stage accepts (space,
+    // brace, hyphen): none forms a traversal sequence, a null byte, or a control character, and
+    // none is double-encoded (%25XX) or an overlong UTF-8 form, so no input throws.
+    private static final String[] ENCODED_URLS = {
+            "/api/users/john%20doe",
+            "/api/v1/items/%7Bid%7D",
+            "/search/results%20page%202",
+            "/api/config/feature%2Dflag",
+            "/docs/getting%20started",
+            "/api/orders/2024%2D06%2D01",
+            "/static/assets/main%20style.css",
+            "/api/users/profile%20avatar",
+            "/v2/reports/q1%20summary",
+            "/api/tags/%7Bname%7D%2Dvalue"
+    };
+
+    // Dot-segment paths for the normalization benchmark. CLEAN_URLS are already normalized, so
+    // NormalizationStage walks their segments and rebuilds an identical string. Each entry here
+    // carries segments RFC 3986 actually resolves. The single ".." entry is absolute and
+    // multi-level, which is what keeps it a resolvable segment rather than a rejected one:
+    // SINGLE_COMPONENT_TRAVERSAL_PATTERN matches only a whole input of the form "seg/../seg",
+    // and the leading slash also keeps escapesRoot false once "users" is consumed.
+    private static final String[] DOTTED_URLS = {
+            "/api/./users/123",
+            "/api/v1/./health/./ready",
+            "/./static/images/logo.png",
+            "/api/products/./456/./details",
+            "/docs/./getting-started",
+            "/api/v1/users/../admin",
+            "/api/./config/./settings",
+            "/public/./assets/./style.css",
+            "/api/v1/orders/789/./items",
+            "/v2/./search/./results"
+    };
+
     private static final String[] CLEAN_PARAMS = {
             "search_query",
             "page1size20",
@@ -110,6 +147,8 @@ public class SecurityBenchmarkState {
     // modulo index non-negative after the counter overflows past Integer.MAX_VALUE.
     private int urlIndex;
     private int attackIndex;
+    private int encodedIndex;
+    private int dottedIndex;
     private int paramIndex;
     private int headerIndex;
 
@@ -141,6 +180,16 @@ public class SecurityBenchmarkState {
     /** Returns the next attack URL, cycling through the array. */
     public String nextAttackUrl() {
         return ATTACK_URLS[(attackIndex++ & Integer.MAX_VALUE) % ATTACK_URLS.length];
+    }
+
+    /** Returns the next percent-escaped URL, cycling through the array. */
+    public String nextEncodedUrl() {
+        return ENCODED_URLS[(encodedIndex++ & Integer.MAX_VALUE) % ENCODED_URLS.length];
+    }
+
+    /** Returns the next dot-segment URL, cycling through the array. */
+    public String nextDottedUrl() {
+        return DOTTED_URLS[(dottedIndex++ & Integer.MAX_VALUE) % DOTTED_URLS.length];
     }
 
     /** Returns the next clean parameter, cycling through the array. */

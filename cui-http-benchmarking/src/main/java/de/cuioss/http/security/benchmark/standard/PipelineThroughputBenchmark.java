@@ -34,17 +34,14 @@ import java.util.concurrent.TimeUnit;
 public class PipelineThroughputBenchmark {
 
     /**
-     * Primary throughput metric: mixed pipeline validation with clean URLs.
-     * Used by the benchmark runner for reporting.
+     * Primary throughput metric: URL path pipeline validation with clean URLs.
+     * This is the benchmark the runner reports as the throughput figure — it is named
+     * literally by {@code SecurityBenchmarkRunner.createConfiguration()}'s
+     * {@code .withThroughputBenchmarkName("measureThroughput")}, so renaming this method
+     * detaches the runner's metric rather than merely renaming a benchmark.
      */
     @Benchmark
     public Optional<String> measureThroughput(SecurityBenchmarkState state) throws UrlSecurityException {
-        return state.pipelines.urlPathPipeline().validate(state.nextCleanUrl());
-    }
-
-    /** URL path pipeline throughput with clean input. */
-    @Benchmark
-    public Optional<String> urlPathCleanThroughput(SecurityBenchmarkState state) throws UrlSecurityException {
         return state.pipelines.urlPathPipeline().validate(state.nextCleanUrl());
     }
 
