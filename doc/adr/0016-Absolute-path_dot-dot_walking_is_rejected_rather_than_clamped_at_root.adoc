@@ -1,0 +1,173 @@
+= ADR-0016: Absolute-path '..' walking is rejected rather than clamped at root
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: For path validation, NormalizationStage rejects an absolute path whose ".." segments reach root with no parent left to consume, raising DIRECTORY_ESCAPE_ATTEMPT instead of discarding the segment and returning the clamped path, and separately rejects a decoded "?" or "#" inside a path value
+// tags: security, url-path, path-normalization, rfc-3986, trust-boundary
+// affects: cui-http-core
+// supersedes: 0014
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+RFC 3986 Section 5.2.4 "Remove Dot Segments" defines resolution to be *total* over syntactically
+valid absolute paths. When a `..` segment reaches the root of an absolute path with no parent
+segment left to consume, the algorithm discards that segment and continues; it does not error.
+`/api/../../etc/passwd` therefore resolves to `/etc/passwd` under a faithful reading of the RFC.
+
+ADR-0014 adopted that reading for `NormalizationStage` and named the clamp explicitly in its
+§ Decision: root-consumed `..` "is clamped, not rejected", and the call "returns normally with no
+throw". Its § Alternatives Considered evaluated the opposite choice — "Throw whenever a `..`
+segment is consumed at root, instead of clamping" — and rejected it on the grounds that it is
+stricter than the specification the stage implements and would reject RFC-legal input a legitimate
+caller can produce.
+
+The reasoning behind that rejection turned on a premise that does not hold for this stage: that
+LAYER 1 and LAYER 2 already cover "the actual attack-shaped inputs", so the clamp "only ever
+reaches input that already cleared both throwing checks". Clearing both checks is not evidence
+that an input is benign. It is a statement about the reach of two literal-pattern layers, and
+`/api/../../etc/passwd` clears them for structural reasons rather than because it is harmless:
+`SINGLE_COMPONENT_TRAVERSAL_PATTERN` is anchored so that a leading `/` prevents any match,
+`processPathSegment` discards the root-consumed `..` before LAYER 2 runs, and `escapesRoot` then
+inspects a path from which the evidence has already been removed. The three gaps compose into a
+single outcome: an absolute path can walk past root and be returned as a normalized value with no
+throw at all.
+
+What makes that outcome the wrong default is not the resolution itself but *what the caller
+receives*. The stage does not return an error the caller can act on; it returns a different path
+than the one the input named, one that resolves successfully against a location the input did not
+ask for. A caller that treats a returned value as validated — which is the whole reason a
+validation stage exists — is handed an attacker-influenced path under the appearance of a clean
+verdict. ADR-0014 acknowledged this and mitigated it with a documentation caveat telling callers
+to authorize the returned value themselves. A caveat that asks every caller to re-do the stage's
+own job is a weaker mitigation than not producing the misleading value in the first place.
+
+A second, independent gap sits beside it. `?` and `#` each open a *different* URI component — the
+query and the fragment. `DecodingStage` can surface either from `%3F` or `%23`, so a decoded path
+value can carry one by the time this stage sees it. Resolving dot segments across such a value
+treats bytes that the eventual recipient will read as query or fragment as if they were path
+segments, and the value that comes back is not a path.
+
+== Decision
+
+`NormalizationStage` rejects, rather than clamps, an absolute path whose `..` walks past root, and
+rejects a path value carrying a URI component delimiter.
+
+**Root-consumed `..` raises `DIRECTORY_ESCAPE_ATTEMPT`.** When `processPathSegment` encounters a
+`..` segment on an absolute path with no parent segment available to consume, it raises
+`UrlSecurityFailureType.DIRECTORY_ESCAPE_ATTEMPT` instead of discarding the segment.
+`/api/../../etc/passwd` and `/../` are rejected where they previously returned `/etc/passwd` and
+`/` respectively. This is a deliberate divergence from RFC 3986 Section 5.2.4, taken because a
+security-validation stage's job is to render a verdict on the input it was given, and clamping
+renders a verdict on a different input.
+
+**Only the complete segment `..` navigates.** The rejection is scoped to a `..` that is a whole
+path segment. A segment that merely *contains* `..` is an ordinary name: `a/..c`, `file..txt`,
+`..config`, `path/sub..dir/file` and `/a/b..;/c` are returned verbatim, unchanged by this
+decision. A `..` that resolves against an available parent is likewise unaffected —
+`/api/users/../admin` still normalizes to `/api/admin`.
+
+**A decoded `?` or `#` in a path raises `INVALID_CHARACTER`.** The check runs before any
+normalization, so no dot-segment resolution is performed across a value that is not a path.
+`UrlSecurityFailureType.INVALID_CHARACTER` is the failure type, matching how this codebase reports
+a character that is structurally illegal for its validation type rather than merely suspicious.
+
+This supersedes ADR-0014's clamp decision. ADR-0014's *second* decision — that scheme-bearing input
+skips dot-segment rewriting but not traversal-intent detection — is unaffected and continues to
+hold; nothing here changes how `normalizeUriComponent` treats a URI carrying a scheme.
+
+== Consequences
+
+=== Positive
+
+* A value returned by this stage for an absolute path now carries the guarantee callers already
+  read into it: no `..` walked past a directory boundary, including at root. The documentation
+  caveat that asked every caller to re-authorize the returned value against its own root is no
+  longer load-bearing for this case.
+* The three composing gaps are closed at the one place that has the information to see them.
+  `processPathSegment` is the only point in the stage that knows a `..` had no parent to consume;
+  by the time LAYER 2 runs, the evidence has been discarded.
+* A path carrying a query or fragment delimiter is rejected rather than resolved, so no
+  dot-segment resolution is ever performed across a value whose later bytes belong to another URI
+  component.
+
+=== Negative
+
+* **The false-positive class ADR-0014's clamp existed to avoid is now real.** A caller that emits
+  a `..` count exceeding the path's nesting depth — a reverse proxy rewriting a relative reference,
+  a client following a templated link — produces RFC-legal input that this stage now rejects. Such
+  a caller must handle the `DIRECTORY_ESCAPE_ATTEMPT` and decide what to do with the request; it
+  must NOT pre-normalize the value to get past this stage. A clamping RFC 3986 normalizer applied
+  before `validate` turns `/api/../../etc/passwd` into `/etc/passwd`, which this stage then accepts
+  as an ordinary path — the root walk has been erased before the only component that could see it
+  ever ran. Pass the original decoded value to `NormalizationStage` and let it rule; if a caller
+  genuinely must normalize first, its normalizer has to preserve and propagate the root-walk
+  condition rather than clamp it away. This cost is accepted
+  knowingly: it is bounded (it affects only absolute paths that walk past root), it is visible (it
+  surfaces as an explicit `DIRECTORY_ESCAPE_ATTEMPT`, not as silent data loss), and the failure it
+  replaces was silent and pointed the wrong way.
+* This stage is no longer a faithful implementation of RFC 3986 Section 5.2.4. A reader who knows
+  the RFC can no longer predict this stage's output for every absolute path without reading this
+  decision, which is why the divergence is stated in the class-level Javadoc as well as here.
+* A path value that legitimately carried an encoded `?` or `#` — a filename containing one, encoded
+  as `%3F` or `%23` — is now rejected. Such a name cannot be distinguished at this layer from an
+  attempt to smuggle a component delimiter through the decode, and the stage has no way to know
+  which the caller meant.
+
+=== Risks
+
+* Callers who relied on the clamped return value — including anything that treated
+  `/api/../../etc/passwd` as a successful normalization to `/etc/passwd` — will now see an
+  exception. This is the intended change, but it is a behavioural break rather than a tightening
+  of an existing error path, so it reaches callers that were previously on a success path.
+* The false-positive class above is invisible until it occurs in production traffic, because a
+  reverse proxy's exact `..` emission depends on its own configuration. The mitigation is that the
+  rejection is explicit and typed, so the case is diagnosable from the failure type alone rather
+  than requiring the input to be reconstructed.
+
+== Alternatives Considered
+
+**Keep the clamp and document it harder (the ADR-0014 position).** This is the status quo, and it
+has the advantage of matching RFC 3986 exactly and never rejecting legal input. It was not kept
+because the mitigation it depends on — a class-level caveat instructing every caller to authorize
+the returned value against its own root — asks each caller to re-derive the property the stage
+exists to establish. A validation stage whose successful return does not mean "this input is safe
+to use" for one specific input class is a contract callers will read wrongly, and the cost of that
+misreading falls on the security-relevant path.
+
+**Clamp, but signal the clamp in the returned value.** Returning the clamped path alongside a flag
+or a distinguished result type would keep RFC conformance while letting a caller detect that a
+walk occurred. It was not taken because it changes `HttpSecurityValidator`'s shared
+`Optional<String> validate(String)` contract for one stage's one case, and because it moves the
+decision to the caller rather than making it — every caller would still have to choose, and the
+insecure choice would remain the convenient one.
+
+**Reject any segment containing `..`, not just the complete segment.** This is simpler to state and
+leaves no dot-related residue at all. It was rejected because it breaks a documented and tested
+negative-control class: `a/..c`, `file..txt`, `..config` and `path/sub..dir/file` are ordinary
+names that navigate nowhere, and rejecting them would trade a real false-negative for a large and
+entirely predictable set of false positives.
+
+**Reject `?` and `#` only when they came from a percent-encoded source.** This would preserve a
+literal `?` in a path while still catching the `%3F` smuggling case. It was not taken because this
+stage does not receive the provenance — it sees a decoded string, and `DecodingStage` does not
+record which characters it produced — and because a literal `?` in a path value is itself outside
+the component's grammar, so the narrower rule would admit input that is already malformed.
+
+== References
+
+* `NormalizationStage` — the class-level Javadoc's "What this stage rejects" section and the
+  `processPathSegment` in-code comment state this decision where a caller or maintainer reads the
+  contract.
+* ADR-0014 — the superseded decision. Its § Decision records the clamp this ADR reverses, and its
+  § Alternatives Considered records the rejection of the alternative this ADR now adopts. Its
+  scheme-bearing-input decision is unaffected.
+* RFC 3986 Section 5.2.4 "Remove Dot Segments" — the specification this stage previously
+  implemented exactly for the clamp, and the source of the "resolution is total, not partial"
+  property this decision deliberately gives up.

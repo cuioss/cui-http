@@ -1,0 +1,139 @@
+= ADR-0017: DecodingStage security gates must not create a raw-versus-encoded verdict asymmetry
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: DecodingStage's double-encoding and homoglyph-separator gates are unconditional and cannot be bypassed through configuration, because a configurable gate lets the encoded spelling of a value reach a verdict its raw spelling could never reach.
+// tags: security, url-decoding, input-validation, configuration, trust-boundary
+// affects: cui-http-core
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Accepted
+
+== Context
+
+`DecodingStage` sits at a trust boundary: it converts the wire form of an HTTP
+component into the literal text every later stage reads. Because a single value can be
+written many ways on the wire — raw, percent-encoded, doubly percent-encoded, or spelled
+with Unicode characters that fold to the ASCII original — the stage decides not one
+question but a family of them, once per spelling.
+
+That creates a structural choice point wherever a gate in this stage is made
+configurable. A gate that a preset can switch off is not merely "more permissive": it is
+permissive *for one spelling only*. The raw spelling of a separator continues to meet
+the checks that live downstream in `CharacterValidationStage`, which reads literal
+characters and has no configuration switch for them. The encoded spelling, released by
+the disabled gate, arrives downstream already past the point where anything could have
+recognised it — it is still text at that point, not a separator, so nothing downstream
+has a rule for it.
+
+The failure mode is therefore not "a lenient preset accepts more input". It is that the
+encoded spelling of a value reaches a verdict the raw spelling of the same value cannot
+reach, and an attacker chooses the spelling. Any gate in this stage whose subject is a
+*spelling* rather than a *policy* inherits this property.
+
+Two gates in the stage have that shape:
+
+* the double-encoding gates, whose subject is a percent-encoding layer that survives the
+  decode; and
+* the homoglyph-separator detection, whose subject is a compatibility character that
+  folds to a structural separator.
+
+== Decision
+
+**A `DecodingStage` gate whose subject is a spelling is unconditional.** It is not
+reachable through `SecurityConfiguration`, and no preset can disable it.
+
+Concretely:
+
+* Both double-encoding gates — the wire-form `%25XX` check and the check on the decoded
+  output — run for every validation, independent of `allowDoubleEncoding()`.
+* Homoglyph-separator *detection* runs for every validation, independent of
+  `normalizeUnicode()`. That flag is narrowed to what it can legitimately govern:
+  which normalisation form is *returned*. Both of its branches stay reachable and
+  observable, so no configuration branch becomes dead.
+
+The discriminator between the two kinds of gate is what the gate's subject is. A gate
+that decides *a spelling* is unconditional. A gate that decides *a policy* — which
+characters an application permits, how long a value may be, which content types are
+allowed — remains configurable, because those questions have legitimately different
+answers per deployment and their answers do not vary with how the value was written.
+
+== Consequences
+
+=== Positive
+
+* The raw and the encoded spelling of one value reach one verdict, under every preset.
+  A preset changes what is allowed, never how the same allowed-or-forbidden value may be
+  written to get there.
+* A stage downstream of `DecodingStage` can treat this stage's output as literal text
+  without asking which configuration produced it.
+* `normalizeUnicode()` now means one thing — which form is returned — rather than
+  silently also governing whether a homoglyph attack is detected.
+
+=== Negative
+
+* A deployment that genuinely needs to accept a surviving percent-encoding layer has no
+  configuration switch for it and must handle the rejection at its own layer.
+* `SecurityConfiguration.allowDoubleEncoding()` no longer gates any validation. It remains a
+  public record component and builder setter for API compatibility, and it is still read by the
+  `isStrict()` / `isLenient()` classification predicates, which report what a configuration
+  *claims* rather than what any gate consults. A setting that is accepted, reported back, and
+  acted on by nothing is a documented wart, retained deliberately rather than removed as a
+  breaking API change.
+
+=== Risks
+
+* The discriminator is a judgement, applied per gate. A future gate whose subject is
+  ambiguous between spelling and policy can be classified wrongly, and the wrong
+  classification is invisible until someone constructs the asymmetric input. A new gate
+  in this stage should be argued against the discriminator explicitly rather than
+  defaulted to configurable.
+* Unconditional gates raise the false-positive cost of the stage for every caller,
+  including those that would have opted out. This is accepted: an opt-out is exactly the
+  mechanism this ADR removes.
+
+== Alternatives Considered
+
+**Keep both gates config-gated for lenient-preset compatibility.** This preserves every
+existing integration unchanged and lets a deployment trade strictness for compatibility
+per preset. It is rejected because the trade it offers is not the one it appears to
+offer: disabling the gate does not uniformly loosen the stage, it loosens exactly one
+spelling of every value, and the attacker rather than the deployment picks which
+spelling to send. A configuration option whose real effect is "let the attacker choose
+the verdict" cannot be offered honestly, whatever it is named.
+
+**Remove the `allowDoubleEncoding` and `normalizeUnicode` flags entirely.** This is the
+cleanest end state: a configuration surface with no dead members. It is rejected here
+only on scope — both are public record components on a published API, so their removal
+is a breaking change governed by the additive-versus-breaking rules, and belongs with
+the API surface rather than with this stage's gate semantics. The retained-but-ungating
+flag is the accepted interim state, not an oversight.
+
+**Detect the asymmetry in a later stage instead.** Letting the encoded spelling through
+and catching it downstream keeps `DecodingStage` free of policy. It is rejected because
+by the time a later stage sees the value, the surviving encoding is ordinary text: the
+information that it was an encoding layer exists only at the point the decode happened.
+A check placed after that point is not a stricter check, it is a check of a different
+thing.
+
+The three alternatives fail in one way. Each proposes to move, disable, or defer the
+decision to a place that cannot see the property being decided — and a check that cannot
+see its own subject is not a weaker guarantee, it is no guarantee.
+
+== References
+
+* `xref:0011-CharacterValidationStage_validates_the_wire_form_DecodingStage_owns_decoded-character_safety.adoc[ADR-0011]`
+  — which stage owns which form; this ADR settles what a gate within the decoded-form
+  stage may be configured to skip.
+* `xref:0016-Absolute-path_dot-dot_walking_is_rejected_rather_than_clamped_at_root.adoc[ADR-0016]`
+  — the sibling decision on `NormalizationStage`, likewise choosing an explicit rejection
+  over a silent accommodation.
+* `cui-http-core/src/main/java/de/cuioss/http/security/validation/DecodingStage.java`
+  — the gates this decision governs.
+* `cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java`
+  — the configuration surface whose retained-but-ungating members this decision explains.

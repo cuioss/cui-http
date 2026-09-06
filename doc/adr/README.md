@@ -31,8 +31,10 @@ filter this repository cannot guarantee.
 | 13 | [HttpSecurityValidator's when() and identity() composition primitives are deliberately fail-open](0013-HttpSecurityValidators_when_and_identity_composition_primitives_are_deliberately_fail-open.adoc) | Proposed |
 | 14 | [NormalizationStage clamps root-consumed dot-segments and skips rewriting scheme-bearing input](0014-NormalizationStage_clamps_root-consumed_dot-segments_and_skips_rewriting_scheme-bearing_input.adoc) | Proposed |
 | 15 | [A pattern literal enforced by a named preset must be decidable from the HTTP component alone](0015-A_pattern_literal_enforced_by_a_named_preset_must_be_decidable_from_the_HTTP_component_alone.adoc) | Proposed |
+| 16 | [Absolute-path '..' walking is rejected rather than clamped at root](0016-Absolute-path_dot-dot_walking_is_rejected_rather_than_clamped_at_root.adoc) | Proposed |
+| 17 | [DecodingStage security gates must not create a raw-versus-encoded verdict asymmetry](0017-DecodingStage_security_gates_must_not_create_a_raw-versus-encoded_verdict_asymmetry.adoc) | Accepted |
 
-The highest allocated number is **15**. This table is maintained by hand and is not derived from
+The highest allocated number is **17**. This table is maintained by hand and is not derived from
 `doc/adr/` at build time, so a rename, addition, or status change elsewhere can leave it stale;
 treat the `.adoc` files as authoritative and update this table in the same change.
 

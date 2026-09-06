@@ -21,6 +21,7 @@ import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -131,19 +132,57 @@ class DecodingStageTest {
     }
 
     @Test
-    @DisplayName("Should allow double encoding when configured")
-    void shouldAllowDoubleEncodingWhenConfigured() {
+    @DisplayName("Should reject a percent-encoding layer that survives decoding")
+    void shouldRejectSurvivingPercentEncodingLayer() {
+        // The wire-form gate only recognises the literal spelling %25XX. Here %25 is followed
+        // by %3, so the pre-decode gate does not match, and the input decodes to the literal
+        // "%2f" -- a still-encoded path separator that would reach the next stage undecoded.
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> pathDecoder.validate("%25%32%66"));
+
+        assertAll("surviving percent-encoding layer",
+                () -> assertEquals(UrlSecurityFailureType.DOUBLE_ENCODING, exception.getFailureType()),
+                () -> assertEquals(ValidationType.URL_PATH, exception.getValidationType()),
+                () -> assertEquals("%25%32%66", exception.getOriginalInput()),
+                () -> assertEquals(Optional.of("%2f"), exception.getSanitizedInput()),
+                () -> assertEquals(Optional.of("Percent-encoding layer survived decoding in decoded output"),
+                        exception.getDetail()));
+    }
+
+    @Test
+    @DisplayName("Should accept a decoded percent that is not followed by two hex digits")
+    void shouldAcceptDecodedPercentThatIsNotAnEncodingLayer() {
+        // Negative control for the surviving-layer check: %25 decodes to a literal '%' that is
+        // followed by " o", not by two hex digits, so it is ordinary text and must be preserved.
+        Optional<String> result = pathDecoder.validate("50%25%20off");
+
+        assertTrue(result.isPresent());
+        assertEquals("50% off", result.get(),
+                "a decoded '%' not followed by two hex digits is literal text, not an encoding layer");
+    }
+
+    @Test
+    @DisplayName("Should reject double encoding even when allowDoubleEncoding is set")
+    void shouldRejectDoubleEncodingEvenWhenConfiguredToAllowIt() {
         SecurityConfiguration allowingConfig = SecurityConfiguration.builder()
                 .allowDoubleEncoding(true)
                 .normalizeUnicode(false)
                 .build();
 
-        DecodingStage lenientDecoder = new DecodingStage(allowingConfig, ValidationType.URL_PATH);
+        DecodingStage allowingDecoder = new DecodingStage(allowingConfig, ValidationType.URL_PATH);
 
-        // This should not throw an exception
-        Optional<String> result = lenientDecoder.validate("/admin%252Fusers");
-        assertTrue(result.isPresent());
-        assertEquals("/admin%2Fusers", result.get()); // First layer decoded
+        // This case previously returned "/admin%2Fusers" -- one layer peeled and the remainder
+        // handed downstream still encoded -- which let the encoded spelling of a '/' outrank the
+        // raw one that CharacterValidationStage and the pattern stages do inspect. Both
+        // double-encoding gates are now unconditional, so allowDoubleEncoding no longer relaxes
+        // them; the flag keeps its public surface but gates nothing in this stage.
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> allowingDecoder.validate("/admin%252Fusers"));
+
+        assertAll("double encoding rejected regardless of configuration",
+                () -> assertEquals(UrlSecurityFailureType.DOUBLE_ENCODING, exception.getFailureType()),
+                () -> assertEquals(ValidationType.URL_PATH, exception.getValidationType()),
+                () -> assertEquals("/admin%252Fusers", exception.getOriginalInput()));
     }
 
     /**
@@ -230,6 +269,50 @@ class DecodingStageTest {
         assertEquals(Optional.of(folded), exception.getSanitizedInput());
         assertTrue(exception.getDetail().isPresent());
         assertTrue(exception.getDetail().get().contains("structurally significant"));
+    }
+
+    @Test
+    @DisplayName("Should reject a parameter-name delimiter that normalization introduces")
+    void shouldRejectDelimiterIntroducedByNormalization() {
+        SecurityConfiguration unicodeConfig = SecurityConfiguration.builder()
+                .normalizeUnicode(true)
+                .build();
+
+        DecodingStage nameDecoder = new DecodingStage(unicodeConfig, ValidationType.PARAMETER_NAME);
+
+        // %CD%BE decodes to U+037E (Greek question mark), which is not a delimiter. NFC folds it
+        // to ';', so only a character check that runs AFTER normalization sees the delimiter.
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> nameDecoder.validate("a%CD%BEb"));
+
+        assertAll("delimiter introduced by normalization",
+                () -> assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType()),
+                () -> assertEquals(ValidationType.PARAMETER_NAME, exception.getValidationType()),
+                () -> assertEquals("a%CD%BEb", exception.getOriginalInput()),
+                () -> assertEquals(Optional.of("Decoded parameter-name delimiter ';' at position 1"),
+                        exception.getDetail()));
+    }
+
+    @Test
+    @DisplayName("Should reject a path fold that introduces a semicolon separator")
+    void shouldRejectSemicolonIntroducedByPathNormalization() {
+        SecurityConfiguration unicodeConfig = SecurityConfiguration.builder()
+                .normalizeUnicode(true)
+                .build();
+
+        DecodingStage pathNormalizingDecoder = new DecodingStage(unicodeConfig, ValidationType.URL_PATH);
+
+        // The same U+037E fold on a path introduces ';', a parameter/cookie-pair separator, so the
+        // structural-fold check rejects it rather than passing the folded form downstream.
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> pathNormalizingDecoder.validate("a%CD%BEb"));
+
+        assertAll("semicolon introduced by path normalization",
+                () -> assertEquals(UrlSecurityFailureType.UNICODE_NORMALIZATION_CHANGED,
+                        exception.getFailureType()),
+                () -> assertEquals(ValidationType.URL_PATH, exception.getValidationType()),
+                () -> assertEquals("a%CD%BEb", exception.getOriginalInput()),
+                () -> assertEquals(Optional.of("a;b"), exception.getSanitizedInput()));
     }
 
     @Test
@@ -655,8 +738,9 @@ class DecodingStageTest {
         assertEquals("<script>", pathDecoder.validate(urlEncoding).orElse(null));
 
         // UTF-8 overlong encoding should be detected and blocked
-        assertThrows(UrlSecurityException.class,
+        UrlSecurityException overlongDot = assertThrows(UrlSecurityException.class,
                 () -> pathDecoder.validate("%c0%ae")); // UTF-8 overlong for '.'
+        assertEquals(UrlSecurityFailureType.INVALID_ENCODING, overlongDot.getFailureType());
     }
 
     @Test
@@ -689,8 +773,9 @@ class DecodingStageTest {
         assertEquals(normalInput, result.get());
 
         // UTF-8 overlong encoding detection should work (HTTP protocol layer)
-        assertThrows(UrlSecurityException.class,
+        UrlSecurityException overlongSlash = assertThrows(UrlSecurityException.class,
                 () -> pathDecoder.validate("%c0%af")); // UTF-8 overlong for '/'
+        assertEquals(UrlSecurityFailureType.INVALID_ENCODING, overlongSlash.getFailureType());
     }
 
     /**
@@ -757,9 +842,272 @@ class DecodingStageTest {
                 () -> pathDecoder.validate(overlongInput),
                 "Should detect UTF-8 overlong encoding in: " + overlongInput);
 
-        assertEquals(UrlSecurityFailureType.INVALID_ENCODING, exception.getFailureType());
-        assertTrue(exception.getDetail().isPresent());
-        assertTrue(exception.getDetail().get().contains("UTF-8 overlong encoding attack"));
+        assertEquals(UrlSecurityFailureType.INVALID_ENCODING, exception.getFailureType(),
+                "Overlong encoding must be reported as INVALID_ENCODING: " + overlongInput);
+        assertTrue(exception.getDetail().orElse("").contains("Malformed UTF-8 byte sequence"),
+                "Detail must name the malformed byte sequence: " + overlongInput);
+    }
+
+    @Test
+    @DisplayName("Should reject an overlong NUL sequence no denylist spelling enumerated")
+    void shouldRejectOverlongNulSequence() {
+        // %c0%80 is the overlong encoding of U+0000. A replacing decoder turns it into U+FFFD and
+        // lets it through; only a reporting decoder rejects it, which is why it is the case that
+        // pins the decoder's behaviour rather than any enumerated pattern.
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> pathDecoder.validate("%c0%80"));
+
+        assertAll("overlong NUL sequence",
+                () -> assertEquals(UrlSecurityFailureType.INVALID_ENCODING, exception.getFailureType()),
+                () -> assertEquals(ValidationType.URL_PATH, exception.getValidationType()),
+                () -> assertEquals("%c0%80", exception.getOriginalInput()),
+                () -> assertTrue(exception.getDetail().orElse("").contains("Malformed UTF-8 byte sequence"),
+                        "Detail must name the malformed byte sequence"),
+                () -> assertNotNull(exception.getCause(),
+                        "The reporting decoder's CharacterCodingException must be preserved as the cause"));
+    }
+
+    /**
+     * Paired raw-versus-encoded controls for the three verdict asymmetries this stage used to
+     * carry. Each test pins the two spellings of one value against each other and asserts either
+     * the same exact returned value or the same exact {@link UrlSecurityFailureType}, so a value
+     * can never buy a softer verdict by being spelled in encoded form or by being validated under
+     * a more permissive preset.
+     */
+    @Nested
+    @DisplayName("Raw and encoded spellings reach the same verdict")
+    class RawVersusEncodedSymmetry {
+
+        /** allowDoubleEncoding=true and normalizeUnicode=false - the preset that carried all three gaps. */
+        private final SecurityConfiguration lenient = SecurityConfiguration.lenient();
+
+        @Test
+        @DisplayName("(a) one encoding layer decodes to exactly the raw spelling, under defaults and lenient")
+        void singleEncodingLayerYieldsTheRawValue() {
+            DecodingStage byDefault = new DecodingStage(defaultConfig, ValidationType.URL_PATH);
+            DecodingStage byLenient = new DecodingStage(lenient, ValidationType.URL_PATH);
+
+            assertAll("the raw '/' and its %2F spelling converge on one value",
+                    () -> assertEquals("/admin/users", byDefault.validate("/admin/users").orElseThrow()),
+                    () -> assertEquals("/admin/users", byDefault.validate("/admin%2Fusers").orElseThrow()),
+                    () -> assertEquals("/admin/users", byLenient.validate("/admin/users").orElseThrow()),
+                    () -> assertEquals("/admin/users", byLenient.validate("/admin%2Fusers").orElseThrow()));
+        }
+
+        @Test
+        @DisplayName("(a) a second encoding layer is rejected identically under defaults and lenient")
+        void extraEncodingLayerIsRejectedUnderEveryPreset() {
+            DecodingStage byDefault = new DecodingStage(defaultConfig, ValidationType.URL_PATH);
+            DecodingStage byLenient = new DecodingStage(lenient, ValidationType.URL_PATH);
+
+            // The wire-form spelling %252F and the nested spelling %25%32%66 both hide a '/'
+            // behind a second layer. Neither may obtain a softer verdict from lenient() than
+            // defaults() gives it -- that divergence was asymmetry (a).
+            UrlSecurityException wireDefault = assertThrows(UrlSecurityException.class,
+                    () -> byDefault.validate("/admin%252Fusers"));
+            UrlSecurityException wireLenient = assertThrows(UrlSecurityException.class,
+                    () -> byLenient.validate("/admin%252Fusers"));
+            UrlSecurityException nestedDefault = assertThrows(UrlSecurityException.class,
+                    () -> byDefault.validate("%25%32%66"));
+            UrlSecurityException nestedLenient = assertThrows(UrlSecurityException.class,
+                    () -> byLenient.validate("%25%32%66"));
+
+            assertAll("the double-encoding verdict is preset-independent",
+                    () -> assertEquals(UrlSecurityFailureType.DOUBLE_ENCODING, wireDefault.getFailureType()),
+                    () -> assertEquals(UrlSecurityFailureType.DOUBLE_ENCODING, wireLenient.getFailureType()),
+                    () -> assertEquals(UrlSecurityFailureType.DOUBLE_ENCODING, nestedDefault.getFailureType()),
+                    () -> assertEquals(UrlSecurityFailureType.DOUBLE_ENCODING, nestedLenient.getFailureType()));
+        }
+
+        @Test
+        @DisplayName("(b) a homoglyph separator is rejected under lenient exactly as under defaults")
+        void homoglyphSeparatorIsRejectedUnderEveryPreset() {
+            DecodingStage byDefault = new DecodingStage(defaultConfig, ValidationType.URL_PATH);
+            DecodingStage byLenient = new DecodingStage(lenient, ValidationType.URL_PATH);
+
+            // U+FF0F folds to '/' under NFKC, in both its raw and its %EF%BC%8F spelling. The raw
+            // '/' is inspected by every wire-form stage, so the homoglyph must not survive merely
+            // because lenient() switches canonicalization off -- that was asymmetry (b).
+            UrlSecurityException rawUnderDefault = assertThrows(UrlSecurityException.class,
+                    () -> byDefault.validate("a／b"));
+            UrlSecurityException rawUnderLenient = assertThrows(UrlSecurityException.class,
+                    () -> byLenient.validate("a／b"));
+            UrlSecurityException encodedUnderDefault = assertThrows(UrlSecurityException.class,
+                    () -> byDefault.validate("a%EF%BC%8Fb"));
+            UrlSecurityException encodedUnderLenient = assertThrows(UrlSecurityException.class,
+                    () -> byLenient.validate("a%EF%BC%8Fb"));
+
+            assertAll("the homoglyph-separator verdict is preset- and spelling-independent",
+                    () -> assertEquals(UrlSecurityFailureType.UNICODE_NORMALIZATION_CHANGED,
+                            rawUnderDefault.getFailureType()),
+                    () -> assertEquals(UrlSecurityFailureType.UNICODE_NORMALIZATION_CHANGED,
+                            rawUnderLenient.getFailureType()),
+                    () -> assertEquals(UrlSecurityFailureType.UNICODE_NORMALIZATION_CHANGED,
+                            encodedUnderDefault.getFailureType()),
+                    () -> assertEquals(UrlSecurityFailureType.UNICODE_NORMALIZATION_CHANGED,
+                            encodedUnderLenient.getFailureType()),
+                    () -> assertEquals(Optional.of("a/b"), rawUnderLenient.getSanitizedInput()),
+                    () -> assertEquals(Optional.of("a/b"), encodedUnderLenient.getSanitizedInput()));
+        }
+
+        @Test
+        @DisplayName("(b) normalizeUnicode still selects the returned form, so neither branch is dead")
+        void normalizeUnicodeStillSelectsTheReturnedForm() {
+            DecodingStage byDefault = new DecodingStage(defaultConfig, ValidationType.URL_PATH);
+            DecodingStage byLenient = new DecodingStage(lenient, ValidationType.URL_PATH);
+
+            // A benign compatibility fold introduces no separator, so both presets accept it. What
+            // the flag still decides -- and the reason neither of its branches is unreachable -- is
+            // which form is handed downstream.
+            assertAll("normalizeUnicode selects the returned form",
+                    () -> assertEquals("ABC", byDefault.validate("ＡBC").orElseThrow(),
+                            "normalizeUnicode(true) returns the canonical form"),
+                    () -> assertEquals("ＡBC", byLenient.validate("ＡBC").orElseThrow(),
+                            "normalizeUnicode(false) returns the decoded input form"));
+        }
+
+        @Test
+        @DisplayName("(c) a parameter-name delimiter yields the same verdict raw and percent-encoded")
+        void parameterNameDelimiterVerdictIsSpellingIndependent() {
+            DecodingStage nameDecoder = new DecodingStage(defaultConfig, ValidationType.PARAMETER_NAME);
+
+            // Both spellings decode to the identical value, so the decoded-character rules reach
+            // the identical verdict -- down to the reported position.
+            UrlSecurityException rawSemicolon = assertThrows(UrlSecurityException.class,
+                    () -> nameDecoder.validate("a;b"));
+            UrlSecurityException encodedSemicolon = assertThrows(UrlSecurityException.class,
+                    () -> nameDecoder.validate("a%3Bb"));
+            UrlSecurityException rawAmpersand = assertThrows(UrlSecurityException.class,
+                    () -> nameDecoder.validate("a&b"));
+            UrlSecurityException encodedAmpersand = assertThrows(UrlSecurityException.class,
+                    () -> nameDecoder.validate("a%26b"));
+
+            assertAll("the delimiter verdict is spelling-independent",
+                    () -> assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, rawSemicolon.getFailureType()),
+                    () -> assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, encodedSemicolon.getFailureType()),
+                    () -> assertEquals(Optional.of("Decoded parameter-name delimiter ';' at position 1"),
+                            rawSemicolon.getDetail()),
+                    () -> assertEquals(Optional.of("Decoded parameter-name delimiter ';' at position 1"),
+                            encodedSemicolon.getDetail()),
+                    () -> assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, rawAmpersand.getFailureType()),
+                    () -> assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, encodedAmpersand.getFailureType()),
+                    () -> assertEquals(Optional.of("Decoded parameter-name delimiter '&' at position 1"),
+                            rawAmpersand.getDetail()),
+                    () -> assertEquals(Optional.of("Decoded parameter-name delimiter '&' at position 1"),
+                            encodedAmpersand.getDetail()));
+        }
+
+        @Test
+        @DisplayName("(c) negative control: a parameter VALUE carries the delimiter in either spelling")
+        void parameterValueAcceptsDelimiterInBothSpellings() {
+            DecodingStage valueDecoder = new DecodingStage(defaultConfig, ValidationType.PARAMETER_VALUE);
+
+            // The rule above is name-only by design: ';' and '&' are ordinary form content inside a
+            // parameter value. The control proves the scoping does not itself introduce a
+            // divergence -- both spellings return the identical value.
+            assertAll("a parameter value accepts the delimiter in both spellings",
+                    () -> assertEquals("a;b", valueDecoder.validate("a;b").orElseThrow()),
+                    () -> assertEquals("a;b", valueDecoder.validate("a%3Bb").orElseThrow()),
+                    () -> assertEquals("a&b", valueDecoder.validate("a&b").orElseThrow()),
+                    () -> assertEquals("a&b", valueDecoder.validate("a%26b").orElseThrow()));
+        }
+    }
+
+    /**
+     * No exception field ever renders a raw control character from attacker-controlled input.
+     *
+     * <p>{@code UrlSecurityException#getMessage()} is what callers log, so a raw CR or LF
+     * reaching {@code detail} or {@code sanitizedInput} is a log-forging primitive
+     * (CWE-117 / CWE-93). Two throw sites carried one before: the malformed-escape branch
+     * copied three raw characters of the still-encoded input into its message, and the
+     * surviving-encoding branch attached the decoded value before the decoded-character
+     * validation had cleared it.</p>
+     */
+    @Nested
+    @DisplayName("Exception fields never carry a raw control character")
+    class ExceptionFieldsNeverCarryRawControlCharacters {
+
+        @Test
+        @DisplayName("a malformed escape whose hex digits are CR/LF is reported without them")
+        void malformedEscapeWithControlCharactersIsRenderedEscaped() {
+            UrlSecurityException thrown = assertThrows(UrlSecurityException.class,
+                    () -> pathDecoder.validate("/a%\r\nb"));
+
+            assertEquals(UrlSecurityFailureType.INVALID_ENCODING, thrown.getFailureType());
+            String detail = thrown.getDetail().orElseThrow();
+            assertFalse(detail.contains("\r"), "detail must not render a raw CR: " + detail);
+            assertFalse(detail.contains("\n"), "detail must not render a raw LF: " + detail);
+            assertTrue(detail.contains("U+000D"),
+                    "detail must name the offending character in escaped form: " + detail);
+        }
+
+        @Test
+        @DisplayName("an input that both survives decoding and decodes to CRLF is rejected on the control-character rule")
+        void survivingEncodingWithDecodedCrlfIsRejectedBeforeSanitizedInputIsAttached() {
+            UrlSecurityException thrown = assertThrows(UrlSecurityException.class,
+                    () -> pathDecoder.validate("/%0D%0A%25%32%66"));
+
+            assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, thrown.getFailureType());
+            assertTrue(thrown.getSanitizedInput().isEmpty(),
+                    "the decoded value must not be attached before the character rule has cleared it");
+        }
+
+        @Test
+        @DisplayName("a surviving encoding layer with no control character still reports DOUBLE_ENCODING")
+        void survivingEncodingWithoutControlCharacterKeepsItsVerdict() {
+            UrlSecurityException thrown = assertThrows(UrlSecurityException.class,
+                    () -> pathDecoder.validate("/%25%32%66"));
+
+            assertEquals(UrlSecurityFailureType.DOUBLE_ENCODING, thrown.getFailureType());
+            assertEquals("/%2f", thrown.getSanitizedInput().orElseThrow());
+        }
+    }
+
+    /**
+     * A compatibility digit is never an escape digit, and never assembles one.
+     *
+     * <p>Both shapes were found by the PR review of this change. {@code Character.digit} reads
+     * every Unicode digit form, so {@code %} followed by U+FF12 U+FF26 decoded straight to
+     * {@code '/'}; and the decoded text {@code "%\uFF12\uFF26"} carries no ASCII hex, so the
+     * surviving-encoding check missed it while NFKC then folded it to a live {@code "%2F"} in
+     * the returned value. The percent count is unchanged by that fold, so the structural-fold
+     * check does not see it either.</p>
+     */
+    @Nested
+    @DisplayName("Fullwidth hex characters never form or assemble a percent escape")
+    class FullwidthHexNeverFormsAnEscape {
+
+        @Test
+        @DisplayName("a fullwidth-spelled escape is malformed, not a decoded separator")
+        void fullwidthEscapeDigitsAreRejected() {
+            UrlSecurityException thrown = assertThrows(UrlSecurityException.class,
+                    () -> pathDecoder.validate("/a%\uFF12\uFF26b"));
+
+            assertEquals(UrlSecurityFailureType.INVALID_ENCODING, thrown.getFailureType());
+        }
+
+        @Test
+        @DisplayName("an escape assembled by the NFKC fold is rejected in the returned value")
+        void normalizationAssembledEscapeIsRejected() {
+            UrlSecurityException thrown = assertThrows(UrlSecurityException.class,
+                    () -> pathDecoder.validate("/%25%EF%BC%92%EF%BC%A6"));
+
+            assertEquals(UrlSecurityFailureType.DOUBLE_ENCODING, thrown.getFailureType());
+        }
+
+        @Test
+        @DisplayName("the assembled escape is rejected under lenient() too, which returns the unfolded form")
+        void normalizationAssembledEscapeIsRejectedUnderLenient() {
+            DecodingStage lenientDecoder =
+                    new DecodingStage(SecurityConfiguration.lenient(), ValidationType.URL_PATH);
+
+            UrlSecurityException thrown = assertThrows(UrlSecurityException.class,
+                    () -> lenientDecoder.validate("/%25%EF%BC%92%EF%BC%A6"));
+
+            assertEquals(UrlSecurityFailureType.DOUBLE_ENCODING, thrown.getFailureType(),
+                    "the fold is computed for every preset, so the verdict must not depend on "
+                            + "which form normalizeUnicode() selects for return");
+        }
     }
 
     // Architectural decision: Application-layer encodings (HTML entities, JS escapes, Base64)
