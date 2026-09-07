@@ -66,7 +66,16 @@ import java.util.Set;
  * @param maxBodySize Maximum allowed body size in bytes (non-negative)
  * @param allowNullBytes Whether null bytes are allowed in content
  * @param allowControlCharacters Whether control characters are allowed in content
- * @param allowExtendedAscii Whether extended ASCII (128-255) and applicable Unicode characters are allowed
+ * @param allowExtendedAscii Whether extended ASCII (128-255) and applicable Unicode characters are
+ *        allowed. <strong>Defaults to {@code false}</strong> (fail-secure); {@link #lenient()} still
+ *        enables it. The flag has two blast radii, and the second is easy to miss: for
+ *        {@code URL_PATH}, {@code PARAMETER_NAME} and {@code PARAMETER_VALUE} it gates only the
+ *        128-255 range, but for {@code HEADER_VALUE} and {@code BODY} it gates <em>all</em> Unicode
+ *        above 255 as well. An integrator whose header values or bodies legitimately carry non-ASCII
+ *        text (CJK, emoji, accented Latin) must therefore opt in explicitly - under the default those
+ *        code points are rejected, and the header pipeline composes no {@code DecodingStage} that
+ *        could soften or re-type the verdict. The C1 range (128-159) is rejected unconditionally and
+ *        is not reachable through this flag.
  * @param normalizeUnicode Whether Unicode normalization is applied during decoding. When enabled,
  *        input is canonicalized (normalize-and-continue: the canonical form flows to downstream
  *        stages) and rejected only when a compatibility/canonical fold introduces a structurally

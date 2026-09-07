@@ -72,7 +72,9 @@ class SecurityConfigurationBuilderTest {
 
         assertFalse(config.allowNullBytes());
         assertFalse(config.allowControlCharacters());
-        assertTrue(config.allowExtendedAscii());
+        // Fail-secure default. The flag also gates all Unicode above 255 for HEADER_VALUE and
+        // BODY, so an integrator carrying non-ASCII header values must opt in explicitly.
+        assertFalse(config.allowExtendedAscii());
         assertTrue(config.normalizeUnicode()); // Enabled by default since 1.5 (NFKC)
     }
 
@@ -200,14 +202,17 @@ class SecurityConfigurationBuilderTest {
 
     @Test
     void shouldSetEncodingSecurityInOneCall() {
+        // Every argument differs from its builder default, so each assertion below proves the
+        // one-call setter forwarded that argument rather than passing vacuously. allowExtendedAscii
+        // is passed as true for exactly this reason - its default is now false.
         SecurityConfiguration config = SecurityConfiguration.builder()
-                .encoding(true, true, false, true)
+                .encoding(true, true, true, false)
                 .build();
 
         assertTrue(config.allowNullBytes());
         assertTrue(config.allowControlCharacters());
-        assertFalse(config.allowExtendedAscii());
-        assertTrue(config.normalizeUnicode());
+        assertTrue(config.allowExtendedAscii());
+        assertFalse(config.normalizeUnicode());
     }
 
     @Test

@@ -1016,6 +1016,62 @@ class DecodingStageTest {
     }
 
     /**
+     * Invisible code points are rejected after decoding, in the same class as combining marks.
+     *
+     * <p>{@link Character#isISOControl(int)} covers category {@code Cc} only, so before this rule
+     * a decoded {@code U+202E} RLO, {@code U+200B} ZWSP, {@code U+FEFF} BOM or {@code U+00A0} NBSP
+     * passed in a URL path despite enabling exactly the visual-spoofing class the combining-mark
+     * rule exists to stop. The rule is unconditional, so {@code lenient()} reaches the same verdict
+     * (ADR-0017).</p>
+     */
+    @Nested
+    @DisplayName("Decoded invisible characters are rejected under every preset")
+    class DecodedInvisibleCharacters {
+
+        private final SecurityConfiguration lenient = SecurityConfiguration.lenient();
+
+        /**
+         * @return the encoded spelling and a label, for each invisible code point the rule adds.
+         */
+        static Stream<Arguments> invisibleCodePoints() {
+            return Stream.of(
+                    Arguments.of("%E2%80%AE", "U+202E RIGHT-TO-LEFT OVERRIDE (Cf)"),
+                    Arguments.of("%E2%80%8B", "U+200B ZERO WIDTH SPACE (Cf)"),
+                    Arguments.of("%EF%BB%BF", "U+FEFF BYTE ORDER MARK (Cf)"),
+                    Arguments.of("%C2%A0", "U+00A0 NO-BREAK SPACE (Zs)"));
+        }
+
+        @ParameterizedTest
+        @MethodSource("invisibleCodePoints")
+        @DisplayName("a decoded invisible character in a URL path is rejected under defaults and lenient")
+        void shouldRejectDecodedInvisibleCharactersInPath(String encoded, String description) {
+            for (SecurityConfiguration preset : new SecurityConfiguration[]{defaultConfig, lenient}) {
+                DecodingStage decoder = new DecodingStage(preset, ValidationType.URL_PATH);
+
+                UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                        () -> decoder.validate("/api/a" + encoded + "b"),
+                        description + " must be rejected under " + preset);
+
+                assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
+                        description + " is an invisible-character rejection, not a control-character one");
+                assertEquals(ValidationType.URL_PATH, exception.getValidationType());
+                assertTrue(exception.getDetail().orElse("").contains("Decoded invisible character"),
+                        "Detail must name the rule: " + exception.getDetail().orElse(""));
+            }
+        }
+
+        @Test
+        @DisplayName("negative control: ASCII SP is not caught by the invisible-character rule")
+        void shouldNotTreatAsciiSpaceAsInvisible() {
+            DecodingStage valueDecoder = new DecodingStage(defaultConfig, ValidationType.PARAMETER_VALUE);
+
+            // ASCII SP is ordinary form content and keeps its existing per-type treatment; only
+            // Zs code points ABOVE ASCII are invisible-spoofing candidates.
+            assertEquals("a b", valueDecoder.validate("a%20b").orElseThrow());
+        }
+    }
+
+    /**
      * The decoded structural-delimiter rule is scoped to exactly one character on exactly one
      * validation type: {@code #} in a {@code PARAMETER_NAME}.
      *

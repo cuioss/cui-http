@@ -292,6 +292,10 @@ class SecurityDefaultsTest {
         assertFalse(strict.allowDoubleEncoding());
         assertFalse(strict.allowNullBytes());
         assertFalse(strict.allowControlCharacters());
+        // STRICT_CONFIGURATION passes allowExtendedAscii POSITIONALLY to the record constructor.
+        // Pinning it here - together with the LENIENT assertion below - catches a future
+        // positional-argument slip, which no compiler check would surface between two booleans.
+        assertFalse(strict.allowExtendedAscii());
         assertTrue(strict.normalizeUnicode());
     }
 
@@ -309,6 +313,9 @@ class SecurityDefaultsTest {
         assertFalse(defaults.allowDoubleEncoding());
         assertFalse(defaults.allowNullBytes());
         assertFalse(defaults.allowControlCharacters());
+        // The fail-secure default. DEFAULT_CONFIGURATION is builder().build(), so this is the
+        // preset the builder flip moves - and the only one.
+        assertFalse(defaults.allowExtendedAscii());
 
         // The default preset must be identical to plain builder defaults
         assertEquals(SecurityConfiguration.builder().build(), defaults);
@@ -333,6 +340,10 @@ class SecurityDefaultsTest {
 
         assertFalse(lenient.allowNullBytes()); // Never allowed, even in lenient mode
         assertTrue(lenient.allowControlCharacters());
+        // LENIENT_CONFIGURATION passes allowExtendedAscii POSITIONALLY as true, and must keep
+        // doing so after the builder default flipped to false - the two presets are only
+        // distinguishable on this flag while this assertion and its STRICT counterpart hold.
+        assertTrue(lenient.allowExtendedAscii());
     }
 
     @Test

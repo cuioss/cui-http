@@ -60,6 +60,9 @@
  *   <li>Conservative length and count limits to prevent DoS attacks (path 4096, parameter
  *       name/value 128/2048, header name/value 128/2048, cookie name/value 128/2048, body 5 MB)</li>
  *   <li>Null bytes, control characters and double encoding are rejected</li>
+ *   <li>{@code allowExtendedAscii} is {@code false} - characters 128-255 are rejected, and for
+ *       {@code HEADER_VALUE} and {@code BODY} the same flag also rejects all Unicode above 255,
+ *       so those two types are ASCII-only until the integrator opts in</li>
  *   <li>Unicode normalization is on, and comparisons are case-insensitive - which broadens,
  *       not narrows, attack-pattern matching</li>
  * </ul>
@@ -67,7 +70,6 @@
  * <ul>
  *   <li>{@code failOnSuspiciousPatterns} is {@code false} - a value starting with a protocol
  *       handler scheme such as {@code javascript:} is allowed through silently</li>
- *   <li>{@code allowExtendedAscii} is {@code true} - characters 128-255 are permitted</li>
  *   <li>{@code requireSecureCookies} and {@code requireHttpOnlyCookies} are {@code false}</li>
  *   <li>The header-name and content-type allow/block lists are empty, which means
  *       allow-all / block-none - and so are {@code blockedPathPatterns} and

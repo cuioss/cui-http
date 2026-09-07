@@ -124,14 +124,30 @@ import java.util.function.IntPredicate;
  * <ul>
  *   <li><strong>allowNullBytes</strong> - Whether to permit null bytes (default: false)</li>
  *   <li><strong>allowControlCharacters</strong> - Whether to permit control characters (default: false)</li>
- *   <li><strong>allowExtendedAscii</strong> - Whether to permit extended ASCII characters (128-255).
+ *   <li><strong>allowExtendedAscii</strong> - Whether to permit extended ASCII characters (160-255).
  *       <ul>
- *         <li>For URL paths and parameters: Allows characters 128-255 when enabled</li>
+ *         <li>For URL paths and parameters: Allows characters 160-255 when enabled</li>
  *         <li>For header names and cookies: Always rejected per RFC (setting ignored)</li>
- *         <li>For header values and body: Enables both extended ASCII and Unicode support</li>
+ *         <li>For header values and body: Enables both extended ASCII and <em>all</em> Unicode
+ *             above 255 - so at the {@code false} default those two types are ASCII-only, and an
+ *             integrator carrying non-ASCII header values or bodies must opt in explicitly</li>
  *         <li>Note: Unicode beyond 255 is always rejected for URLs per RFC 3986</li>
+ *         <li>Note: the C1 range (128-159) is <em>not</em> reachable through this flag - see the
+ *             unconditional rule below</li>
  *       </ul>
  *       (default: false)</li>
+ * </ul>
+ *
+ * <h3>Unconditional Rules (not reachable through configuration)</h3>
+ * <p>Two rules hold regardless of every configuration flag, because relaxing them would hand an
+ * attacker a parser-level primitive rather than merely widen an allowed character set:</p>
+ * <ul>
+ *   <li><strong>CR/LF in header and cookie names and values</strong> - rejected regardless of
+ *       {@code allowControlCharacters}, because cookies travel in the Cookie/Set-Cookie headers and
+ *       a CR or LF there is HTTP response splitting</li>
+ *   <li><strong>The C1 range (128-159)</strong> - rejected regardless of {@code allowExtendedAscii}
+ *       for every validation type. These are non-printing controls, not extended-ASCII text, and
+ *       {@code U+0085} (NEL) is treated as a line terminator by several parsers</li>
  * </ul>
  *
  * <h3>Performance Characteristics</h3>
@@ -370,6 +386,14 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
         // Extended ASCII characters (128-255)
         // Different validation types have different rules for extended ASCII
         if (ch <= 255) {
+            // C1 control characters (128-159) are rejected unconditionally, before the
+            // allowExtendedAscii decision, exactly as CR/LF is above. They are non-printing
+            // controls, not extended-ASCII text, and U+0085 (NEL) is treated as a line
+            // terminator by several parsers - so admitting them via an "extended ASCII"
+            // opt-in would smuggle a control character past the ch<=31 branch.
+            if (ch <= 159) {
+                return false;
+            }
             // Header names and cookie names/values must be ASCII-only per RFC
             if (validationType == ValidationType.HEADER_NAME ||
                     validationType == ValidationType.COOKIE_NAME ||
@@ -383,7 +407,10 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
 
         // Unicode characters above 255:
         // For URLs (paths/parameters): Always rejected per RFC 3986 (ASCII-only)
-        // For headers/body: Allowed if allowExtendedAscii is true (which enables full Unicode support for these contexts)
+        // For headers/body: Allowed if allowExtendedAscii is true. NOTE the flag's second blast
+        // radius: for HEADER_VALUE and BODY it governs ALL Unicode above 255, not just the
+        // 128-255 range, so with the fail-secure default (false) those two types are ASCII-only
+        // and an integrator carrying non-ASCII header values or bodies must opt in explicitly.
         // Always reject combining marks (any Unicode combining block) as they can cause
         // normalization issues and enable homograph attacks.
         if (CharacterValidationConstants.isCombiningMark(ch)) {

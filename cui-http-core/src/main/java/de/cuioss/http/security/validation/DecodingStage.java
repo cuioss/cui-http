@@ -192,7 +192,9 @@ ValidationType validationType) implements HttpSecurityValidator {
      *                                <li>CONTROL_CHARACTERS - if the decoded output contains a control
      *                                    character that this validation type forbids</li>
      *                                <li>INVALID_CHARACTER - if the decoded output contains a combining
-     *                                    mark, or a delimiter inside a parameter name</li>
+     *                                    mark, an invisible format ({@code Cf}) or non-ASCII space
+     *                                    separator ({@code Zs}) character, or a delimiter inside a
+     *                                    parameter name</li>
      *                                <li>UNICODE_NORMALIZATION_CHANGED - if normalization introduces a
      *                                    structurally significant separator character</li>
      *                              </ul>
@@ -534,7 +536,17 @@ ValidationType validationType) implements HttpSecurityValidator {
      *       are legitimate form data, but reject the remaining control characters unless
      *       explicitly allowed. The offending code point is reported in escaped {@code U+XXXX}
      *       form so no raw control character reaches a log.</li>
-     *   <li><strong>Decoded parameter-name delimiters</strong> ({@code = &amp; ; space}) - rejected
+     *   <li><strong>Format characters</strong> (Unicode category {@code Cf}: {@code U+200B} ZWSP,
+     *       {@code U+200E}/{@code U+200F} and {@code U+202A}-{@code U+202E} bidi controls including
+     *       RLO, {@code U+FEFF} BOM) - always rejected. These are invisible when rendered, so they
+     *       enable exactly the visual-spoofing class the combining-mark rule above exists to stop,
+     *       yet {@link Character#isISOControl(int)} does not see them: it covers category
+     *       {@code Cc} only</li>
+     *   <li><strong>Non-ASCII space separators</strong> (category {@code Zs} above {@code U+007F},
+     *       e.g. {@code U+00A0} NBSP) - always rejected, for the same reason: they render as
+     *       whitespace but are not the ASCII SP the parsers and the character sets reason about.
+     *       ASCII SP itself is excluded from this rule and keeps its existing per-type treatment</li>
+     *   <li><strong>Decoded parameter-name delimiters</strong> ({@code = &amp; ; # space}) - rejected
      *       for parameter <em>names</em> only, since a decoded delimiter would split the name and
      *       enable parameter injection</li>
      * </ul>
@@ -569,6 +581,19 @@ ValidationType validationType) implements HttpSecurityValidator {
                         .build();
             }
 
+            // Format (Cf) and non-ASCII space-separator (Zs) code points are invisible when
+            // rendered, so they carry the same spoofing capability as a combining mark. They are
+            // rejected unconditionally: Character.isISOControl covers category Cc only and never
+            // sees them, which is why they need their own rule rather than a wider control check.
+            if (isInvisibleSpoofingCharacter(cp)) {
+                throw UrlSecurityException.builder()
+                        .failureType(UrlSecurityFailureType.INVALID_CHARACTER)
+                        .validationType(validationType)
+                        .originalInput(originalInput)
+                        .detail("Decoded invisible character (" + escaped(cp) + ") at position " + i)
+                        .build();
+            }
+
             // The null byte has its own dedicated flag (checked above) and is deliberately excluded
             // here, so allowNullBytes stays the single authority for it.
             if (cp != '\0' && Character.isISOControl(cp) && decodedControlCharacterForbidden(cp)) {
@@ -594,6 +619,30 @@ ValidationType validationType) implements HttpSecurityValidator {
 
             i += Character.charCount(cp);
         }
+    }
+
+    /**
+     * Whether a decoded code point is invisible when rendered and therefore a visual-spoofing
+     * vector, in the same class as a combining mark.
+     *
+     * <p>Two Unicode general categories qualify, and neither is reachable through
+     * {@link Character#isISOControl(int)}, which covers category {@code Cc} alone:</p>
+     * <ul>
+     *   <li>{@link Character#FORMAT} ({@code Cf}) - zero-width and bidi-control code points such as
+     *       {@code U+200B} ZWSP, {@code U+202E} RLO and {@code U+FEFF} BOM</li>
+     *   <li>{@link Character#SPACE_SEPARATOR} ({@code Zs}) <em>above ASCII</em> - notably
+     *       {@code U+00A0} NBSP. ASCII SP ({@code 0x20}) is deliberately excluded: it is ordinary
+     *       form content in a parameter value and is already judged per validation type by
+     *       {@link #isParameterNameDelimiter(int)} and by the wire-form character sets</li>
+     * </ul>
+     *
+     * @param ch the decoded code point to classify
+     * @return {@code true} if the code point is invisible when rendered
+     */
+    private static boolean isInvisibleSpoofingCharacter(int ch) {
+        int type = Character.getType(ch);
+        return type == Character.FORMAT
+                || (type == Character.SPACE_SEPARATOR && ch > 0x7F);
     }
 
     /**

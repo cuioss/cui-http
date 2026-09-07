@@ -162,6 +162,71 @@ class CharacterValidationStageTest {
         }
     }
 
+    /**
+     * The C1 range (128-159) is rejected unconditionally, before the {@code allowExtendedAscii}
+     * decision - so {@code lenient()}, which enables that flag, reaches the same verdict as
+     * {@code defaults()} (ADR-0017). U+0085 (NEL) is the motivating case: several parsers treat it
+     * as a line terminator, so admitting it into a header value via an "extended ASCII" opt-in
+     * would smuggle a control character past the {@code ch <= 31} branch.
+     */
+    @Test
+    void shouldRejectC1ControlCharactersInHeaderValueUnderEveryPreset() {
+        for (SecurityConfiguration preset : SHARED_GATE_PRESETS) {
+            CharacterValidationStage stage = new CharacterValidationStage(preset, ValidationType.HEADER_VALUE);
+
+            // Built by code point rather than written literally: U+0085 is invisible in source.
+            String withNel = "value" + (char) 0x85 + "next";
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                    stage.validate(withNel), "U+0085 must be rejected under " + preset);
+
+            assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
+                    "The C1 verdict must not depend on allowExtendedAscii");
+            assertEquals(ValidationType.HEADER_VALUE, exception.getValidationType());
+        }
+    }
+
+    /**
+     * U+2028 LINE SEPARATOR sits above 255, so it is governed by {@code allowExtendedAscii}'s
+     * second blast radius rather than by the unconditional C1 rule. Under {@code defaults()} the
+     * flag is now {@code false}, which makes {@code HEADER_VALUE} ASCII-only and rejects it.
+     */
+    @Test
+    void shouldRejectLineSeparatorInHeaderValueUnderDefaults() {
+        CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.HEADER_VALUE);
+
+        // Built by code point rather than written literally: U+2028 is invisible in source.
+        String withLineSeparator = "value" + (char) 0x2028 + "next";
+
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                stage.validate(withLineSeparator));
+
+        assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
+        assertEquals(ValidationType.HEADER_VALUE, exception.getValidationType());
+    }
+
+    /**
+     * The other half of the flipped default: a header value carrying ordinary non-ASCII text is
+     * rejected under {@code defaults()} and accepted only when the integrator opts in. This is the
+     * documented breaking behaviour change, pinned so it cannot regress silently in either
+     * direction.
+     */
+    @Test
+    void shouldGateAllUnicodeAbove255InHeaderValueOnTheFlag() throws Exception {
+        CharacterValidationStage byDefault = new CharacterValidationStage(config, ValidationType.HEADER_VALUE);
+        assertThrows(UrlSecurityException.class, () -> byDefault.validate("café 你好"),
+                "Non-ASCII header content is rejected under the fail-secure default");
+
+        SecurityConfiguration optedIn = SecurityConfiguration.builder()
+                .allowExtendedAscii(true)
+                .build();
+        CharacterValidationStage byOptIn = new CharacterValidationStage(optedIn, ValidationType.HEADER_VALUE);
+
+        var result = byOptIn.validate("café 你好");
+        assertTrue(result.isPresent(), "An explicit opt-in restores non-ASCII header content");
+        assertEquals("café 你好", result.get());
+    }
+
     @Test
     void shouldAllowValidHeaderCharacters() throws Exception {
         CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.HEADER_NAME);

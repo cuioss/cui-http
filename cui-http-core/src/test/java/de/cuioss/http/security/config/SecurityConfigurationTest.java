@@ -84,7 +84,9 @@ class SecurityConfigurationTest {
         assertFalse(config.allowDoubleEncoding());
         assertFalse(config.allowNullBytes());
         assertFalse(config.allowControlCharacters());
-        assertTrue(config.allowExtendedAscii());
+        // Fail-secure default. lenient() still enables the flag (asserted above), so the two
+        // presets remain distinguishable on it.
+        assertFalse(config.allowExtendedAscii());
         assertFalse(config.failOnSuspiciousPatterns());
     }
 
