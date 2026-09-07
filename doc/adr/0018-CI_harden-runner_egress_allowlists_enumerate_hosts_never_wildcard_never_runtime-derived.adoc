@@ -1,4 +1,4 @@
-= ADR-0016: CI harden-runner egress allowlists enumerate hosts; never wildcard, never runtime-derived
+= ADR-0018: CI harden-runner egress allowlists enumerate hosts; never wildcard, never runtime-derived
 :toc: left
 :toclevels: 2
 :sectnums:

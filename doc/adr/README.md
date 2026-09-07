@@ -29,12 +29,13 @@ filter this repository cannot guarantee.
 | 11 | [CharacterValidationStage validates the wire form; DecodingStage owns decoded-character safety](0011-CharacterValidationStage_validates_the_wire_form_DecodingStage_owns_decoded-character_safety.adoc) | Proposed |
 | 12 | [A security preset must never set caseSensitiveComparison to true](0012-A_security_preset_must_never_set_caseSensitiveComparison_to_true.adoc) | Proposed |
 | 13 | [HttpSecurityValidator's when() and identity() composition primitives are deliberately fail-open](0013-HttpSecurityValidators_when_and_identity_composition_primitives_are_deliberately_fail-open.adoc) | Proposed |
-| 14 | [NormalizationStage clamps root-consumed dot-segments and skips rewriting scheme-bearing input](0014-NormalizationStage_clamps_root-consumed_dot-segments_and_skips_rewriting_scheme-bearing_input.adoc) | Proposed |
+| 14 | [NormalizationStage clamps root-consumed dot-segments and skips rewriting scheme-bearing input](0014-NormalizationStage_clamps_root-consumed_dot-segments_and_skips_rewriting_scheme-bearing_input.adoc) | Superseded in part by 16 |
 | 15 | [A pattern literal enforced by a named preset must be decidable from the HTTP component alone](0015-A_pattern_literal_enforced_by_a_named_preset_must_be_decidable_from_the_HTTP_component_alone.adoc) | Proposed |
 | 16 | [Absolute-path '..' walking is rejected rather than clamped at root](0016-Absolute-path_dot-dot_walking_is_rejected_rather_than_clamped_at_root.adoc) | Proposed |
 | 17 | [DecodingStage security gates must not create a raw-versus-encoded verdict asymmetry](0017-DecodingStage_security_gates_must_not_create_a_raw-versus-encoded_verdict_asymmetry.adoc) | Accepted |
+| 18 | [CI harden-runner egress allowlists enumerate hosts; never wildcard, never runtime-derived](0018-CI_harden-runner_egress_allowlists_enumerate_hosts_never_wildcard_never_runtime-derived.adoc) | Proposed |
 
-The highest allocated number is **17**. This table is maintained by hand and is not derived from
+The highest allocated number is **18**. This table is maintained by hand and is not derived from
 `doc/adr/` at build time, so a rename, addition, or status change elsewhere can leave it stale;
 treat the `.adoc` files as authoritative and update this table in the same change.
 
@@ -61,17 +62,28 @@ properties and only the first is being compared.
 
 ### Observed evidence
 
-This is not hypothetical. It has happened twice, in two independent waves, producing four colliding
-records:
+This is not hypothetical. It has happened three times, in three independent waves, producing six
+colliding records:
 
 - **0004 and 0005** collided on 2026-08-27 — commit `94004bc` (PR #161) against `d042750` (PR #159).
 - **0009 and 0010** collided across 2026-08-31 and 2026-09-01 — commit `30edfa3` (PR #178) against
   `5aba533` (PR #180).
+- **0016** collided across 2026-09-05 and 2026-09-06 — commit `7a0da52` (PR #210, the path-validation
+  decision) against `73afd22` (PR #208, the CI egress decision). This wave is the sharpest illustration
+  of the blindness described above: the two plans touched entirely different subsystems — one edits
+  `cui-http-core/src/main`, the other edits `.github/workflows` — and neither declared the other's
+  files, so nothing in either plan's surface suggested they could contend. The number was the only
+  shared resource. It was resolved on 2026-09-07: `7a0da52`'s record kept `0016` (it landed first, and
+  every in-repo `ADR-0016` reference already pointed at it), and `73afd22`'s moved to `0018`.
 
-Both waves were resolved the same way: the earlier-landed file of each pair kept its original number,
+A third failure mode compounds each wave: the index above is maintained by hand, so the later-landed
+plan can also fail to add its row. In the 0016 wave PR #210 updated this table and PR #208 did not,
+leaving the index listing one `0016` and silent about the other for two days.
+
+Every wave was resolved the same way: the earlier-landed file of each pair kept its original number,
 and the later-landed file moved to a free number at the end of the sequence. That is why the index above
-runs to 14 while the decisions it records were authored as far lower numbers, and why `git log --follow`
-is the way to read their history across the rename.
+runs higher than the count of distinct decisions authored, and why `git log --follow` is the way to read
+their history across the rename.
 
 ### What to do before you allocate
 
