@@ -19,6 +19,8 @@ import de.cuioss.http.security.config.SecurityConfiguration;
 import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
+import de.cuioss.http.security.monitoring.SecurityEventCounter;
+import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -1010,6 +1012,114 @@ class DecodingStageTest {
                     () -> assertEquals("a;b", valueDecoder.validate("a%3Bb").orElseThrow()),
                     () -> assertEquals("a&b", valueDecoder.validate("a&b").orElseThrow()),
                     () -> assertEquals("a&b", valueDecoder.validate("a%26b").orElseThrow()));
+        }
+    }
+
+    /**
+     * The decoded structural-delimiter rule is scoped to exactly one character on exactly one
+     * validation type: {@code #} in a {@code PARAMETER_NAME}.
+     *
+     * <p>The first test is the regression that scoping produces. The rest are negative controls
+     * that pin the scope, so a future widening cannot land silently: each names the stage that
+     * actually owns the verdict for the delimiter it exercises.</p>
+     */
+    @Nested
+    @DisplayName("The decoded structural-delimiter rule is scoped to '#' in a parameter name")
+    class DecodedStructuralDelimiterScope {
+
+        private final SecurityConfiguration lenient = SecurityConfiguration.lenient();
+
+        @Test
+        @DisplayName("'%23' in a parameter name is rejected after decoding, under defaults and lenient")
+        void shouldRejectDecodedHashInParameterName() {
+            // '#' terminates the query component, so a decoded '#' in a structural parameter name
+            // re-parses the query exactly as a decoded '&' would. The raw counterpart is asserted
+            // by CharacterValidationStageTest.shouldRejectRawHashInParameterName, and both reach
+            // INVALID_CHARACTER.
+            for (SecurityConfiguration preset : new SecurityConfiguration[]{defaultConfig, lenient}) {
+                DecodingStage nameDecoder = new DecodingStage(preset, ValidationType.PARAMETER_NAME);
+
+                UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                        () -> nameDecoder.validate("na%23me"), "rejected under " + preset);
+
+                assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
+                assertEquals(ValidationType.PARAMETER_NAME, exception.getValidationType());
+                assertEquals(Optional.of("Decoded parameter-name delimiter '#' at position 2"),
+                        exception.getDetail());
+            }
+        }
+
+        @Test
+        @DisplayName("negative control: '%5B'/'%5D' in a URL path decode to brackets and are accepted here")
+        void shouldAcceptDecodedBracketsInPath() {
+            DecodingStage decoder = new DecodingStage(defaultConfig, ValidationType.URL_PATH);
+
+            // A percent-encoded bracket is RFC 3986's own carriage mechanism, and
+            // LegitimateSpecialCharactersDatabase declares '/array/items%5B0%5D' legitimate.
+            assertEquals("/array/items[0]", decoder.validate("/array/items%5B0%5D").orElseThrow());
+        }
+
+        @Test
+        @DisplayName("negative control: '/array/items%5B0%5D' is accepted end-to-end by the path pipeline")
+        void shouldAcceptEncodedBracketsThroughThePathPipeline() {
+            URLPathValidationPipeline pipeline =
+                    new URLPathValidationPipeline(defaultConfig, new SecurityEventCounter());
+
+            assertEquals("/array/items[0]", pipeline.validate("/array/items%5B0%5D").orElseThrow(),
+                    "matching LegitimateSpecialCharactersDatabase, which declares this path legitimate");
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"%3F", "%23"})
+        @DisplayName("negative control: '%3F'/'%23' in a URL path pass this stage and are NormalizationStage's verdict")
+        void shouldLeaveDecodedComponentDelimitersToNormalizationStage(String encoded) {
+            DecodingStage decoder = new DecodingStage(defaultConfig, ValidationType.URL_PATH);
+            NormalizationStage normalizer = new NormalizationStage(defaultConfig, ValidationType.URL_PATH);
+
+            // This stage passes the value through; the component-delimiter rule belongs to
+            // NormalizationStage, which runs immediately after it, and rejecting here would
+            // silently retype a verdict that stage owns.
+            String decoded = decoder.validate("/api/a" + encoded + "b").orElseThrow();
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                    () -> normalizer.validate(decoded));
+
+            assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
+            assertTrue(exception.getDetail().isPresent());
+            assertTrue(exception.getDetail().get().contains("component delimiter"),
+                    "NormalizationStage owns this verdict: " + exception.getDetail().get());
+        }
+
+        @Test
+        @DisplayName("negative control: '%5C' in a URL path passes this stage and is PatternMatchingStage's verdict")
+        void shouldLeaveDecodedBackslashToPatternMatchingStage() {
+            DecodingStage decoder = new DecodingStage(defaultConfig, ValidationType.URL_PATH);
+
+            assertEquals("/api/\\windows\\system32\\config",
+                    decoder.validate("/api/%5cwindows%5csystem32%5cconfig").orElseThrow(),
+                    "the decoded backslash passes this stage untouched");
+
+            URLPathValidationPipeline paranoidPipeline =
+                    new URLPathValidationPipeline(SecurityConfiguration.paranoid(), new SecurityEventCounter());
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                    () -> paranoidPipeline.validate("/api/%5cwindows%5csystem32%5cconfig"));
+
+            assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType(),
+                    "the post-normalization PatternMatchingStage owns the Windows-path verdict");
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"%3F", "%23", "%5B", "%5D", "%5C", "%20", "%26", "%3D", "%3B", "%2F"})
+        @DisplayName("negative control: every delimiter is ordinary form content inside a parameter VALUE")
+        void shouldAcceptEveryDelimiterInParameterValue(String encoded) {
+            DecodingStage valueDecoder = new DecodingStage(defaultConfig, ValidationType.PARAMETER_VALUE);
+
+            // A parameter value is not structural, so rejecting any of these would collaterally
+            // break ordinary form data - a hex colour '%23', array notation '%5B'/'%5D', a space
+            // '%20' and the widened '%2F' all travel here legitimately.
+            var result = valueDecoder.validate("a" + encoded + "b");
+            assertTrue(result.isPresent(), encoded + " should be accepted in a parameter value");
         }
     }
 

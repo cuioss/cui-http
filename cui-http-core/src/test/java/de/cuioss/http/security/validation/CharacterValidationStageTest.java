@@ -22,6 +22,7 @@ import de.cuioss.http.security.exceptions.UrlSecurityException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.Optional;
 
@@ -30,6 +31,17 @@ import static org.junit.jupiter.api.Assertions.*;
 class CharacterValidationStageTest {
 
     private final SecurityConfiguration config = SecurityConfiguration.defaults();
+
+    /**
+     * ADR-0017: a gate shared by every preset is pinned under both {@code defaults()} and
+     * {@code lenient()}, and must reach the same verdict under each. The character sets this
+     * stage enforces are not configuration-dependent, so relaxing the configuration must not
+     * relax them.
+     */
+    private static final SecurityConfiguration[] SHARED_GATE_PRESETS = {
+            SecurityConfiguration.defaults(),
+            SecurityConfiguration.lenient()
+    };
 
     @Test
     void shouldAllowNullAndEmptyValues() throws Exception {
@@ -69,6 +81,85 @@ class CharacterValidationStageTest {
         var complexResult = stage.validate(complexParam);
         assertTrue(complexResult.isPresent());
         assertEquals(complexParam, complexResult.get());
+    }
+
+    /**
+     * RFC 3986 section 3.4 lists {@code /} and {@code ?} as legal query characters and {@code pchar}
+     * admits {@code :} and {@code @}. Browsers send all three unencoded, so the previous query set -
+     * which omitted them - rejected RFC-legal input.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"a/b", "a:b", "a@b", "https://example.com/cb?x=1"})
+    void shouldAcceptRfc3986QueryCharactersInParameterValue(String value) throws Exception {
+        for (SecurityConfiguration preset : SHARED_GATE_PRESETS) {
+            CharacterValidationStage stage = new CharacterValidationStage(preset, ValidationType.PARAMETER_VALUE);
+
+            var result = stage.validate(value);
+            assertTrue(result.isPresent(), value + " should be accepted under " + preset);
+            assertEquals(value, result.get(), value + " must pass through unchanged under " + preset);
+        }
+    }
+
+    /**
+     * RFC 6265 section 4.1.1 {@code cookie-octet} admits the whole base64 alphabet including
+     * {@code +}, {@code /} and the {@code =} padding. The previous {@code RFC3986_UNRESERVED}
+     * mapping rejected an ordinary padded base64 session cookie.
+     */
+    @Test
+    void shouldAcceptPaddedBase64CookieValue() throws Exception {
+        // A padded base64 session token exercising every character the old unreserved-only
+        // mapping rejected: '+', '/' and the '=' padding.
+        String base64Cookie = "c2Vzc2lvbi10b2tlbg+/ab+/cd==";
+
+        for (SecurityConfiguration preset : SHARED_GATE_PRESETS) {
+            CharacterValidationStage stage = new CharacterValidationStage(preset, ValidationType.COOKIE_VALUE);
+
+            var result = stage.validate(base64Cookie);
+            assertTrue(result.isPresent(), "A padded base64 cookie value should be accepted under " + preset);
+            assertEquals(base64Cookie, result.get());
+        }
+    }
+
+    /**
+     * DQUOTE ({@code 0x22}) is not a {@code cookie-octet} member, so it is rejected wherever it
+     * appears - there is no matched-quote-pair carve-out. The quoted spelling is rejected on its
+     * very first character.
+     */
+    @Test
+    void shouldRejectDoubleQuoteInCookieValueIncludingMatchedPair() {
+        for (SecurityConfiguration preset : SHARED_GATE_PRESETS) {
+            CharacterValidationStage stage = new CharacterValidationStage(preset, ValidationType.COOKIE_VALUE);
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                    stage.validate("\"abc\""), "A matched-pair quoted cookie value must be rejected under " + preset);
+
+            assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
+            assertEquals(ValidationType.COOKIE_VALUE, exception.getValidationType());
+            assertTrue(exception.getDetail().isPresent());
+            assertTrue(exception.getDetail().get().contains("at position 0"),
+                    "The opening quote is the rejected character: " + exception.getDetail().get());
+        }
+    }
+
+    /**
+     * The raw counterpart of the decoded rule asserted by
+     * {@code DecodingStageTest.shouldRejectDecodedHashInParameterName}: {@code #} terminates the
+     * query component, so it is rejected in a parameter <em>name</em> in both its raw spelling
+     * (here, by the wire-form character set) and its {@code %23} spelling (there, after decoding).
+     * Both verdicts are {@link UrlSecurityFailureType#INVALID_CHARACTER}.
+     */
+    @Test
+    void shouldRejectRawHashInParameterName() {
+        for (SecurityConfiguration preset : SHARED_GATE_PRESETS) {
+            CharacterValidationStage stage = new CharacterValidationStage(preset, ValidationType.PARAMETER_NAME);
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                    stage.validate("na#me"), "A raw '#' in a parameter name must be rejected under " + preset);
+
+            assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
+                    "The raw and decoded spellings must share a failure type under " + preset);
+            assertEquals(ValidationType.PARAMETER_NAME, exception.getValidationType());
+        }
     }
 
     @Test

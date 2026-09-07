@@ -502,39 +502,49 @@ class CookieTest {
     }
 
     @Test
-    void shouldRejectHostPrefixSuffixOutsideUnreservedSet() {
-        // Space, '/' and '%' are all outside the RFC 3986 unreserved set
-        // (ALPHA / DIGIT / - / . / _ / ~).
+    void shouldRejectHostPrefixSuffixOutsideCookieOctetSet() {
+        // Space, comma, semicolon, backslash and DQUOTE are all outside RFC 6265 4.1.1
+        // cookie-octet (%x21 / %x23-2B / %x2D-3A / %x3C-5B / %x5D-7E).
         assertThrows(UrlSecurityException.class, () -> Cookie.hostPrefix("a b", "value"),
                 "hostPrefix must reject a suffix containing a space");
-        assertThrows(UrlSecurityException.class, () -> Cookie.hostPrefix("a/b", "value"),
-                "hostPrefix must reject a suffix containing a slash");
-        assertThrows(UrlSecurityException.class, () -> Cookie.hostPrefix("a%b", "value"),
-                "hostPrefix must reject a suffix containing a percent sign");
+        assertThrows(UrlSecurityException.class, () -> Cookie.hostPrefix("a,b", "value"),
+                "hostPrefix must reject a suffix containing a comma");
+        assertThrows(UrlSecurityException.class, () -> Cookie.hostPrefix("a;b", "value"),
+                "hostPrefix must reject a suffix containing a semicolon");
+        assertThrows(UrlSecurityException.class, () -> Cookie.hostPrefix("a\\b", "value"),
+                "hostPrefix must reject a suffix containing a backslash");
+        assertThrows(UrlSecurityException.class, () -> Cookie.hostPrefix("a\"b", "value"),
+                "hostPrefix must reject a suffix containing a double quote");
 
-        // Positive control: a suffix drawn only from the unreserved set is accepted, so the
-        // rejections above cannot be passing vacuously.
-        Cookie accepted = Cookie.hostPrefix("a-b.c_d~e1", "value");
-        assertEquals("__Host-a-b.c_d~e1", accepted.name(),
-                "A suffix within the unreserved set must produce the __Host- prefixed cookie");
+        // Positive control: a suffix drawn only from cookie-octet is accepted, so the rejections
+        // above cannot be passing vacuously. '/' and '%' are cookie-octet members - they were
+        // rejected only while the cookie types mapped to the narrower RFC 3986 unreserved set.
+        Cookie accepted = Cookie.hostPrefix("a-b.c_d~e1/f%g", "value");
+        assertEquals("__Host-a-b.c_d~e1/f%g", accepted.name(),
+                "A suffix within cookie-octet must produce the __Host- prefixed cookie");
     }
 
     @Test
-    void shouldRejectSecurePrefixSuffixOutsideUnreservedSet() {
-        // Space, '/' and '%' are all outside the RFC 3986 unreserved set
-        // (ALPHA / DIGIT / - / . / _ / ~).
+    void shouldRejectSecurePrefixSuffixOutsideCookieOctetSet() {
+        // Space, comma, semicolon, backslash and DQUOTE are all outside RFC 6265 4.1.1
+        // cookie-octet (%x21 / %x23-2B / %x2D-3A / %x3C-5B / %x5D-7E).
         assertThrows(UrlSecurityException.class, () -> Cookie.securePrefix("a b", "value"),
                 "securePrefix must reject a suffix containing a space");
-        assertThrows(UrlSecurityException.class, () -> Cookie.securePrefix("a/b", "value"),
-                "securePrefix must reject a suffix containing a slash");
-        assertThrows(UrlSecurityException.class, () -> Cookie.securePrefix("a%b", "value"),
-                "securePrefix must reject a suffix containing a percent sign");
+        assertThrows(UrlSecurityException.class, () -> Cookie.securePrefix("a,b", "value"),
+                "securePrefix must reject a suffix containing a comma");
+        assertThrows(UrlSecurityException.class, () -> Cookie.securePrefix("a;b", "value"),
+                "securePrefix must reject a suffix containing a semicolon");
+        assertThrows(UrlSecurityException.class, () -> Cookie.securePrefix("a\\b", "value"),
+                "securePrefix must reject a suffix containing a backslash");
+        assertThrows(UrlSecurityException.class, () -> Cookie.securePrefix("a\"b", "value"),
+                "securePrefix must reject a suffix containing a double quote");
 
-        // Positive control: a suffix drawn only from the unreserved set is accepted, so the
-        // rejections above cannot be passing vacuously.
-        Cookie accepted = Cookie.securePrefix("a-b.c_d~e1", "value");
-        assertEquals("__Secure-a-b.c_d~e1", accepted.name(),
-                "A suffix within the unreserved set must produce the __Secure- prefixed cookie");
+        // Positive control: a suffix drawn only from cookie-octet is accepted, so the rejections
+        // above cannot be passing vacuously. '/' and '%' are cookie-octet members - they were
+        // rejected only while the cookie types mapped to the narrower RFC 3986 unreserved set.
+        Cookie accepted = Cookie.securePrefix("a-b.c_d~e1/f%g", "value");
+        assertEquals("__Secure-a-b.c_d~e1/f%g", accepted.name(),
+                "A suffix within cookie-octet must produce the __Secure- prefixed cookie");
     }
 
     @Test

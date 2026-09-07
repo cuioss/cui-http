@@ -24,7 +24,8 @@ import java.util.function.IntPredicate;
  * RFC-compliant character set definitions for HTTP component validation.
  *
  * <p>This utility class exposes the allowed-character sets for different HTTP components
- * according to RFC 3986 (URI) and RFC 7230 (HTTP) specifications as immutable
+ * according to RFC 3986 (URI), RFC 6265 (HTTP State Management) and RFC 7230 (HTTP)
+ * specifications as immutable
  * {@link IntPredicate} membership tests. The predicates are backed by pre-computed,
  * <strong>private</strong> {@link BitSet} instances and provide O(1) character lookups.</p>
  *
@@ -46,6 +47,8 @@ import java.util.function.IntPredicate;
  *   <li><strong>RFC3986_UNRESERVED</strong> - Basic unreserved characters from RFC 3986</li>
  *   <li><strong>RFC3986_PATH_CHARS</strong> - Characters allowed in URL paths</li>
  *   <li><strong>RFC3986_QUERY_CHARS</strong> - Characters allowed in URL query parameters</li>
+ *   <li><strong>RFC6265_COOKIE_OCTET</strong> - Characters allowed in cookie names and values
+ *       ({@code cookie-octet})</li>
  *   <li><strong>RFC7230_TOKEN_CHARS</strong> - Characters allowed in HTTP header names (tchar)</li>
  *   <li><strong>RFC7230_HEADER_CHARS</strong> - Characters allowed in HTTP header field values</li>
  *   <li><strong>HTTP_BODY_CHARS</strong> - Characters allowed in HTTP request/response bodies</li>
@@ -81,6 +84,7 @@ import java.util.function.IntPredicate;
  * <h3>RFC References</h3>
  * <ul>
  *   <li><strong>RFC 3986</strong> - Uniform Resource Identifier (URI) character definitions</li>
+ *   <li><strong>RFC 6265</strong> - HTTP State Management Mechanism {@code cookie-octet} definition</li>
  *   <li><strong>RFC 7230</strong> - HTTP/1.1 Message Syntax and Routing header field definitions</li>
  * </ul>
  *
@@ -116,10 +120,26 @@ public final class CharacterValidationConstants {
 
     /**
      * RFC 3986 query characters including unreserved + query-specific characters.
-     * <p>Includes all unreserved characters plus: ? &amp; = ! $ ' ( ) * + , ;</p>
+     * <p>Per RFC 3986 section 3.4 the {@code query} production is
+     * {@code *( pchar / "/" / "?" )}, and {@code pchar} itself admits {@code ":"} and
+     * {@code "@"}. This set therefore includes all unreserved characters plus:
+     * / : @ ? &amp; = ! $ ' ( ) * + , ;</p>
      * <p>Immutable membership test; the backing {@link BitSet} is private and cannot be mutated.</p>
      */
     public static final IntPredicate RFC3986_QUERY_CHARS;
+
+    /**
+     * RFC 6265 {@code cookie-octet} characters, the character set of a cookie name and value.
+     * <p>Per RFC 6265 section 4.1.1 the {@code cookie-octet} production is
+     * {@code %x21 / %x23-2B / %x2D-3A / %x3C-5B / %x5D-7E} — US-ASCII characters excluding
+     * CTLs, whitespace, DQUOTE, comma, semicolon and backslash.</p>
+     * <p><strong>DQUOTE ({@code 0x22}) is not a member</strong>, so it is rejected wherever it
+     * appears. This is a pure per-character membership test: it carries no quote-pair state and
+     * no carve-out for a matched surrounding DQUOTE, so the quoted spelling
+     * {@code "abc"} is rejected on its first character.</p>
+     * <p>Immutable membership test; the backing {@link BitSet} is private and cannot be mutated.</p>
+     */
+    public static final IntPredicate RFC6265_COOKIE_OCTET;
 
     /**
      * RFC 7230 token characters ({@code tchar}), the character set of an HTTP header <em>name</em>.
@@ -175,14 +195,28 @@ public final class CharacterValidationConstants {
         RFC3986_PATH_CHARS = pathChars::get;
 
         // Initialize RFC3986_QUERY_CHARS
+        // RFC 3986 section 3.4: query = *( pchar / "/" / "?" ), pchar includes ":" and "@"
         BitSet queryChars = new BitSet(256);
         queryChars.or(unreserved);  // Include all unreserved chars
+        queryChars.set('/');
+        queryChars.set(':');
+        queryChars.set('@');
         queryChars.set('?');
         queryChars.set('&');
         queryChars.set('=');
         // sub-delims for query
         "!$'()*+,;".chars().forEach(queryChars::set);
         RFC3986_QUERY_CHARS = queryChars::get;
+
+        // Initialize RFC6265_COOKIE_OCTET (RFC 6265 section 4.1.1)
+        // cookie-octet = %x21 / %x23-2B / %x2D-3A / %x3C-5B / %x5D-7E
+        BitSet cookieOctet = new BitSet(256);
+        cookieOctet.set(0x21);
+        cookieOctet.set(0x23, 0x2C);  // 0x23-0x2B inclusive
+        cookieOctet.set(0x2D, 0x3B);  // 0x2D-0x3A inclusive
+        cookieOctet.set(0x3C, 0x5C);  // 0x3C-0x5B inclusive
+        cookieOctet.set(0x5D, 0x7F);  // 0x5D-0x7E inclusive
+        RFC6265_COOKIE_OCTET = cookieOctet::get;
 
         // Initialize RFC7230_TOKEN_CHARS (RFC 7230 section 3.2.6 tchar - header NAME characters)
         BitSet tokenChars = new BitSet(256);
@@ -243,7 +277,7 @@ public final class CharacterValidationConstants {
      *   <li>{@code HEADER_NAME} → {@link #RFC7230_TOKEN_CHARS}</li>
      *   <li>{@code HEADER_VALUE} → {@link #RFC7230_HEADER_CHARS}</li>
      *   <li>{@code BODY} → {@link #HTTP_BODY_CHARS}</li>
-     *   <li>{@code COOKIE_NAME, COOKIE_VALUE} → {@link #RFC3986_UNRESERVED}</li>
+     *   <li>{@code COOKIE_NAME, COOKIE_VALUE} → {@link #RFC6265_COOKIE_OCTET}</li>
      * </ul>
      *
      * @param type The validation type specifying which HTTP component is being validated
@@ -255,7 +289,7 @@ public final class CharacterValidationConstants {
      * @see #RFC7230_TOKEN_CHARS
      * @see #RFC7230_HEADER_CHARS
      * @see #HTTP_BODY_CHARS
-     * @see #RFC3986_UNRESERVED
+     * @see #RFC6265_COOKIE_OCTET
      */
     public static IntPredicate getCharacterSet(ValidationType type) {
         return switch (type) {
@@ -264,7 +298,7 @@ public final class CharacterValidationConstants {
             case HEADER_NAME -> RFC7230_TOKEN_CHARS;
             case HEADER_VALUE -> RFC7230_HEADER_CHARS;
             case BODY -> HTTP_BODY_CHARS;
-            case COOKIE_NAME, COOKIE_VALUE -> RFC3986_UNRESERVED;
+            case COOKIE_NAME, COOKIE_VALUE -> RFC6265_COOKIE_OCTET;
         };
     }
 

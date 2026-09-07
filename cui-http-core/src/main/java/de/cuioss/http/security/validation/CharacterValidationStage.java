@@ -37,7 +37,8 @@ import java.util.function.IntPredicate;
  *
  * <h3>Design Principles</h3>
  * <ul>
- *   <li><strong>RFC Compliance</strong> - Enforces RFC 3986 (URI) and RFC 7230 (HTTP) character rules</li>
+ *   <li><strong>RFC Compliance</strong> - Enforces RFC 3986 (URI), RFC 6265 (cookies) and RFC 7230
+ *       (HTTP) character rules</li>
  *   <li><strong>Security First</strong> - Rejects dangerous characters before any processing</li>
  *   <li><strong>Context Aware</strong> - Different character sets for different HTTP components</li>
  *   <li><strong>Performance</strong> - Uses BitSet for O(1) character lookups</li>
@@ -68,9 +69,12 @@ import java.util.function.IntPredicate;
  *
  * <ul>
  *   <li><strong>URL Paths</strong> - RFC 3986 unreserved + path-specific characters</li>
- *   <li><strong>Parameters</strong> - RFC 3986 query characters with percent-encoding support</li>
+ *   <li><strong>Parameters</strong> - RFC 3986 section 3.4 {@code query} characters - unreserved plus
+ *       {@code / : @ ? &amp; =} and the query sub-delims - with percent-encoding support</li>
  *   <li><strong>Headers</strong> - RFC 7230 visible ASCII minus delimiters</li>
- *   <li><strong>Cookies</strong> - Restricted character set for cookie safety</li>
+ *   <li><strong>Cookies</strong> - RFC 6265 section 4.1.1 {@code cookie-octet}: US-ASCII excluding
+ *       CTLs, whitespace, DQUOTE, comma, semicolon and backslash. DQUOTE is rejected wherever it
+ *       appears - there is no matched-quote-pair carve-out</li>
  *   <li><strong>Bodies</strong> - Content-type specific character validation</li>
  * </ul>
  *
@@ -265,6 +269,15 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
 
     /**
      * Validates percent encoding at the given position.
+     *
+     * <p>This is a <em>wire-form encoding check only</em>: it asserts that {@code %} is followed by
+     * two hex digits (and rejects the encoded null byte {@code %00}), then skips the triplet without
+     * consulting the type's character set. The character the triplet decodes to is deliberately not
+     * judged here - percent-encoding is RFC 3986's own carriage mechanism, so an encoded reserved
+     * character is normally correct input. {@link DecodingStage} owns the decoded-form re-check and
+     * applies it after decoding, and the pipelines that need that guarantee compose it after this
+     * stage.</p>
+     *
      * @param value The string to validate
      * @param position The position of the percent sign
      * @throws UrlSecurityException if the percent encoding is invalid

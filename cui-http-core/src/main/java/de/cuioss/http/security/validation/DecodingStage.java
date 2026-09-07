@@ -580,7 +580,7 @@ ValidationType validationType) implements HttpSecurityValidator {
                         .build();
             }
 
-            // Parameter names are structural: a decoded delimiter (=, &, ;, space) would split
+            // Parameter names are structural: a decoded delimiter (=, &, ;, #, space) would split
             // the name and enable parameter-injection. These are legitimate inside a parameter
             // VALUE (form data), so this rule is name-only.
             if (validationType == ValidationType.PARAMETER_NAME && isParameterNameDelimiter(cp)) {
@@ -609,18 +609,26 @@ ValidationType validationType) implements HttpSecurityValidator {
      * ({@code ?} and {@code #}) are rejected by {@code NormalizationStage}, which owns the
      * decoded-path rules.</p>
      *
-     * <p>Widening the rule would not close a raw-versus-encoded asymmetry either, because there
-     * is none to close <em>at this stage</em>: a raw input passes through
-     * {@link #decodeForValidationType(String)} unchanged, so
-     * {@link #validateDecodedCharacters(String, String)} reaches the identical verdict for both
-     * spellings of the same value. The residual divergence - a raw {@code &amp;} in a parameter
-     * name is admitted by {@code CharacterValidationStage} while its {@code %26} spelling is
-     * rejected here - originates in that stage's wire-form character set
-     * ({@code RFC3986_QUERY_CHARS} admits {@code &amp;}, {@code =} and {@code ;}), and closing it
-     * means tightening that set rather than loosening this rule.</p>
+     * <h4>Why {@code #} is a member</h4>
+     * <p>{@code #} terminates the query component outright, so a decoded {@code #} inside a
+     * structural parameter name is at least as re-parsing-relevant as a decoded {@code &amp;}. It
+     * belongs alongside {@code &amp;}, {@code =}, {@code ;} and SP for the reason those members
+     * already exist.</p>
+     *
+     * <h4>What is deliberately <em>not</em> a member, and why</h4>
+     * <p>For {@code URL_PATH} and {@code PARAMETER_VALUE} there is nothing left to close here:
+     * {@code NormalizationStage} owns the decoded {@code ?} / {@code #} path rules,
+     * {@code PatternMatchingStage} owns the decoded-backslash verdict, and a percent-encoded
+     * {@code [} / {@code ]} is RFC 3986's own carriage mechanism that the library's
+     * legitimate-input database declares valid. A candidate delimiter is admitted to this set only
+     * if all four of the following hold, which is why {@code #} in a parameter name is the only one
+     * that qualifies: the type's own wire-form character set rejects it raw; no legitimate-input
+     * corpus or documented legitimate-use contract declares its {@code %XX} spelling legitimate; no
+     * existing test asserts a failure type that rejecting here would pre-empt; and the pipeline does
+     * not already reject the decoded spelling downstream.</p>
      */
     private static boolean isParameterNameDelimiter(int ch) {
-        return ch == '&' || ch == '=' || ch == ';' || ch == ' ';
+        return ch == '&' || ch == '=' || ch == ';' || ch == '#' || ch == ' ';
     }
 
     /**

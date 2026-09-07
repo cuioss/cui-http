@@ -102,14 +102,89 @@ class CharacterValidationConstantsTest {
         assertTrue(queryChars.test('&'));
         assertTrue(queryChars.test('='));
 
+        // RFC 3986 section 3.4: query = *( pchar / "/" / "?" ), and pchar admits ":" and "@".
+        // Browsers send all three unencoded, so rejecting them made the set narrower than the RFC.
+        assertTrue(queryChars.test('/'), "RFC 3986 3.4 lists '/' as a legal query character");
+        assertTrue(queryChars.test(':'), "RFC 3986 pchar admits ':' so it is legal in a query");
+        assertTrue(queryChars.test('@'), "RFC 3986 pchar admits '@' so it is legal in a query");
+
         // Should include some sub-delims for query
         assertTrue(queryChars.test('!'));
         assertTrue(queryChars.test('$'));
         assertTrue(queryChars.test('\''));
 
-        // Should NOT include some characters
+        // Should NOT include some characters. '#' terminates the query component outright,
+        // so it stays rejected - see DecodingStage.isParameterNameDelimiter for the decoded
+        // spelling of the same verdict.
         assertFalse(queryChars.test(' '));
         assertFalse(queryChars.test('#'));
+    }
+
+    @Test
+    @SuppressWarnings("java:S5961") // Exhaustive RFC 6265 cookie-octet character-set membership check
+    void shouldInitializeRFC6265CookieOctetCharacters() {
+        IntPredicate cookieOctet = CharacterValidationConstants.RFC6265_COOKIE_OCTET;
+
+        // Should include ALPHA and DIGIT
+        for (char c = 'A'; c <= 'Z'; c++) {
+            assertTrue(cookieOctet.test(c), "Uppercase letter " + c + " should be allowed");
+        }
+        for (char c = 'a'; c <= 'z'; c++) {
+            assertTrue(cookieOctet.test(c), "Lowercase letter " + c + " should be allowed");
+        }
+        for (char c = '0'; c <= '9'; c++) {
+            assertTrue(cookieOctet.test(c), "Digit " + c + " should be allowed");
+        }
+
+        // The base64 alphabet plus its padding character - the canonical legitimate cookie value
+        // that RFC3986_UNRESERVED used to reject.
+        assertTrue(cookieOctet.test('+'), "'+' is a cookie-octet member (base64 alphabet)");
+        assertTrue(cookieOctet.test('/'), "'/' is a cookie-octet member (base64 alphabet)");
+        assertTrue(cookieOctet.test('='), "'=' is a cookie-octet member (base64 padding)");
+
+        // Boundary members of each cookie-octet range: %x21, %x23-2B, %x2D-3A, %x3C-5B, %x5D-7E
+        assertTrue(cookieOctet.test(0x21));
+        assertTrue(cookieOctet.test(0x23));
+        assertTrue(cookieOctet.test(0x2B));
+        assertTrue(cookieOctet.test(0x2D));
+        assertTrue(cookieOctet.test(0x3A));
+        assertTrue(cookieOctet.test(0x3C));
+        assertTrue(cookieOctet.test(0x5B));
+        assertTrue(cookieOctet.test(0x5D));
+        assertTrue(cookieOctet.test(0x7E));
+
+        // The excluded separators that fall between the ranges
+        assertFalse(cookieOctet.test(','), "Comma separates cookie pairs and is excluded");
+        assertFalse(cookieOctet.test(';'), "Semicolon separates cookie attributes and is excluded");
+        assertFalse(cookieOctet.test('\\'), "Backslash is excluded from cookie-octet");
+        assertFalse(cookieOctet.test(' '), "Whitespace is excluded from cookie-octet");
+
+        // Every CTL, plus DEL and anything above it
+        for (int c = 0; c <= 31; c++) {
+            assertFalse(cookieOctet.test(c), "Control character 0x" + Integer.toHexString(c) + " must be rejected");
+        }
+        assertFalse(cookieOctet.test(0x7F), "DEL must be rejected");
+        assertFalse(cookieOctet.test(0x80), "Extended ASCII must be rejected");
+    }
+
+    @Test
+    void shouldRejectDoubleQuoteOutrightInCookieOctet() {
+        IntPredicate cookieOctet = CharacterValidationConstants.RFC6265_COOKIE_OCTET;
+
+        // RFC 6265 4.1.1 omits DQUOTE (0x22) from cookie-octet. The predicate is a pure
+        // per-character membership test: it carries no quote-pair state, so there is no
+        // matched-surrounding-DQUOTE carve-out.
+        assertFalse(cookieOctet.test('"'), "DQUOTE is not a cookie-octet member");
+
+        String quotedValue = "\"abc\"";
+        assertFalse(cookieOctet.test(quotedValue.charAt(0)),
+                "A matched-pair quoted value is rejected on its very first character");
+        assertFalse(cookieOctet.test(quotedValue.charAt(quotedValue.length() - 1)),
+                "The closing quote of a matched pair is rejected too");
+        for (int i = 1; i < quotedValue.length() - 1; i++) {
+            assertTrue(cookieOctet.test(quotedValue.charAt(i)),
+                    "Only the quotes are rejected; the payload characters remain members");
+        }
     }
 
     @Test
@@ -201,9 +276,9 @@ class CharacterValidationConstantsTest {
 
         assertSame(CharacterValidationConstants.HTTP_BODY_CHARS,
                 CharacterValidationConstants.getCharacterSet(ValidationType.BODY));
-        assertSame(CharacterValidationConstants.RFC3986_UNRESERVED,
+        assertSame(CharacterValidationConstants.RFC6265_COOKIE_OCTET,
                 CharacterValidationConstants.getCharacterSet(ValidationType.COOKIE_NAME));
-        assertSame(CharacterValidationConstants.RFC3986_UNRESERVED,
+        assertSame(CharacterValidationConstants.RFC6265_COOKIE_OCTET,
                 CharacterValidationConstants.getCharacterSet(ValidationType.COOKIE_VALUE));
     }
 
