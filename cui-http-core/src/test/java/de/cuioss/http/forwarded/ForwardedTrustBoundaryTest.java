@@ -62,6 +62,10 @@ import static org.junit.jupiter.api.Assertions.*;
  *       port. The symmetric {@code X-Forwarded-Host: [::1]garbage} guard is driven through the
  *       same public surface by {@link ForwardedHeaderResolverTest}, so it is not duplicated
  *       here.</li>
+ *   <li><strong>FW-7</strong> — the corrected trust model as a whole: a garbage {@code Forwarded}
+ *       header suppresses only the fields it actually spoke about, the two de-facto families are
+ *       reconciled by the configured tie-breaker, {@code trustedProxies} gates whether forwarded
+ *       headers are believed at all, and host and port are reconciled as independent fields.</li>
  * </ul>
  *
  * <p>Every attack-shape test carries a matched negative control (a benign, agreeing or single-source
@@ -467,6 +471,148 @@ class ForwardedTrustBoundaryTest {
                     "X-Forwarded-Port", "443")));
 
             assertEquals(443, result.port().orElseThrow());
+        }
+    }
+
+    /**
+     * The corrected trust model, driven end to end from a request-level angle. Each case pins one
+     * production correction and fails when that correction alone is reverted: a garbage
+     * {@code Forwarded} header no longer erases what a legitimate de-facto header attested, the two
+     * de-facto families are reconciled by the configured tie-breaker rather than by header order,
+     * {@code trustedProxies} decides whether forwarded headers are believed at all, and host and
+     * port are compared as independent fields.
+     */
+    @Nested
+    @DisplayName("FW-7 corrected trust model")
+    class CorrectedTrustModel {
+
+        private static final String TRUSTED_PEER = "10.0.0.5";
+        private static final String OUTSIDE_PEER = "203.0.113.9";
+
+        /** One proxy-attested header set, resolved either fully or not at all depending on the peer. */
+        private final Function<String, List<String>> proxyAttestedHeaders = headers(Map.of(
+                "X-Forwarded-Proto", "https",
+                "X-Forwarded-Host", PROXY_HOST,
+                "X-Forwarded-For", "203.0.113.7, 10.0.0.5"));
+
+        private ForwardedHeaderResolver preferringXProxy() {
+            return resolver(ForwardedResolverConfig.builder()
+                    .trustAll(true)
+                    .deFactoPrecedence(ForwardedResolverConfig.DeFactoFamily.X_PROXY)
+                    .build());
+        }
+
+        @Test
+        @DisplayName("a client-supplied garbage Forwarded header leaves the ingress's X-Forwarded-Proto standing")
+        void garbageForwardedLeavesLegitimateSchemeStanding() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "https",
+                    "Forwarded", "garbage")));
+
+            assertEquals("https", result.scheme().orElseThrow(),
+                    "the garbage header reached no proto directive, so it spoke about no field and "
+                            + "must not suppress one the ingress did attest");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "malformed forwarded-pair");
+        }
+
+        @Test
+        @DisplayName("negative control: garbage appended AFTER a proto directive still drops the scheme")
+        void garbageAfterAProtoDirectiveStillDropsScheme() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "https",
+                    "Forwarded", "proto=http;garbage")));
+
+            assertTrue(result.scheme().isEmpty(),
+                    "the parser reached the proto directive before it stopped, so this header DID "
+                            + "speak about the scheme and the field fails closed");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, SOURCES_DISAGREE);
+        }
+
+        @Test
+        @DisplayName("an attacker-supplied X-Forwarded-Host loses to the X-ProxyHost the precedence knob names")
+        void configuredDeFactoFamilyWinsTheHost() {
+            var result = preferringXProxy().resolve(headers(Map.of(
+                    "X-Forwarded-Host", ATTACKER_HOST,
+                    "X-ProxyHost", PROXY_HOST)));
+
+            assertEquals(PROXY_HOST, result.host().orElseThrow(),
+                    "a client-supplied X-Forwarded-Host must not override the family this ingress writes");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "de-facto families disagree");
+        }
+
+        @Test
+        @DisplayName("negative control: agreeing de-facto families resolve quietly")
+        void agreeingDeFactoFamiliesResolveQuietly() {
+            var result = preferringXProxy().resolve(headers(Map.of(
+                    "X-Forwarded-Host", PROXY_HOST,
+                    "X-ProxyHost", PROXY_HOST)));
+
+            assertEquals(PROXY_HOST, result.host().orElseThrow());
+            LogAsserts.assertNoLogMessagePresent(TestLogLevel.WARN, ForwardedHeaderResolver.class);
+        }
+
+        @Test
+        @DisplayName("an untrusted peer resolves nothing for the very header set a peerless request resolves fully")
+        void untrustedPeerAttestsNothing() {
+            var forwardedResolver = chainWalkingResolver();
+            var viaOutsidePeer =
+                    forwardedResolver.resolve(proxyAttestedHeaders, IpAddresses.parse(OUTSIDE_PEER));
+            var withoutPeer = forwardedResolver.resolve(proxyAttestedHeaders);
+
+            assertAll("the same headers attest everything or nothing, decided by the peer alone",
+                    () -> assertEquals(ResolvedForwarding.empty(), viaOutsidePeer,
+                            "a request that did not arrive through the proxy tier attests nothing"),
+                    () -> assertEquals("https", withoutPeer.scheme().orElseThrow()),
+                    () -> assertEquals(PROXY_HOST, withoutPeer.host().orElseThrow()),
+                    () -> assertEquals("203.0.113.7", withoutPeer.clientIp().orElseThrow()));
+        }
+
+        @Test
+        @DisplayName("positive control: a trusted peer resolves exactly what the peerless overload does")
+        void trustedPeerResolvesFully() {
+            var forwardedResolver = chainWalkingResolver();
+
+            assertEquals(forwardedResolver.resolve(proxyAttestedHeaders),
+                    forwardedResolver.resolve(proxyAttestedHeaders, IpAddresses.parse(TRUSTED_PEER)),
+                    "the peer gate admits the request, it does not re-resolve it");
+        }
+
+        @Test
+        @DisplayName("a host and port split across X-Forwarded-Port and a Forwarded host directive resolves both")
+        void hostAndPortSplitAcrossSourcesResolves() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", PROXY_HOST,
+                    "X-Forwarded-Port", "8443",
+                    "Forwarded", "host=\"" + PROXY_HOST + ":8443\"")));
+
+            assertAll("host and port are compared as independent fields",
+                    () -> assertEquals(PROXY_HOST, result.host().orElseThrow(),
+                            "both sources name the same host; comparing the pair as one record "
+                                    + "made the differing port placement look like a conflict"),
+                    () -> assertEquals(8443, result.port().orElseThrow()));
+        }
+
+        @Test
+        @DisplayName("negative control: a real conflict still fails closed, and takes only the field that conflicted")
+        void conflictDropsOnlyTheConflictingField() {
+            var forgedHost = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", PROXY_HOST,
+                    "X-Forwarded-Port", "8443",
+                    "Forwarded", "host=\"" + ATTACKER_HOST + ":8443\"")));
+            var forgedPort = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", PROXY_HOST + ":8443",
+                    "Forwarded", "host=\"" + PROXY_HOST + ":9000\"")));
+
+            assertAll("splitting the comparison must not weaken the fail-closed rule in either direction",
+                    () -> assertTrue(forgedHost.host().isEmpty(),
+                            "the sources name different hosts, so no host may be honored"),
+                    () -> assertEquals(8443, forgedHost.port().orElseThrow(),
+                            "the port was never in dispute, so the host conflict must not erase it"),
+                    () -> assertEquals(PROXY_HOST, forgedPort.host().orElseThrow(),
+                            "the sources name the same host, so the conflicting port must not erase it"),
+                    () -> assertTrue(forgedPort.port().isEmpty(),
+                            "8443 against 9000 is a real conflict, so no port may be honored"));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, SOURCES_DISAGREE);
         }
     }
 }
