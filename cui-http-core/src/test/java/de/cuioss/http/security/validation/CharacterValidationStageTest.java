@@ -245,7 +245,7 @@ class CharacterValidationStageTest {
             CharacterValidationStage stage = new CharacterValidationStage(preset, type);
 
             UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
-                    stage.validate(withVerticalTab),
+                            stage.validate(withVerticalTab),
                     "VT (0x0B) must be rejected in a " + type + " under " + preset);
 
             assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
