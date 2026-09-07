@@ -297,8 +297,8 @@ public class SecurityConfigurationBuilder {
     }
 
     /**
-     * Sets whether extended ASCII characters (128-255) are allowed in content.
-     * For URL paths and parameters, this only affects characters 128-255.
+     * Sets whether extended ASCII characters (160-255) are allowed in content.
+     * For URL paths and parameters, this only affects characters 160-255.
      * For {@code HEADER_VALUE} and {@code BODY} it additionally gates <em>all</em> Unicode above
      * 255, so leaving it at its {@code false} default makes those two types ASCII-only.
      *
