@@ -129,6 +129,25 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  * {@code Forwarded: host="h:8443"} was read as a conflict and dropped the host both sources
  * actually named.</p>
  *
+ * <p><strong>Silence about the port is a non-statement on both sides.</strong> A source contests the
+ * port only when its own {@code host[:port]} token carried one. That holds symmetrically: a
+ * {@code Forwarded: host=h} directive naming a bare host contests no port an
+ * {@code X-Forwarded-Host: h:8443} carried, and an {@code X-Forwarded-Host: h} naming a bare host
+ * contests no port a {@code Forwarded: host="h:8443"} carried. Scoping the de-facto side to whether
+ * the <em>family</em> was sent rather than to what its own token said broke that symmetry: a bare
+ * {@code X-Forwarded-Host} dropped the RFC directive's port and logged a "sources disagree" warning
+ * over a claim only one side ever made. The host keeps the stricter rule — the mere presence of the
+ * header states it, so a present-but-invalid host still contests.</p>
+ *
+ * <p><strong>Separate fields, but not separately believable when they share one value.</strong>
+ * Per-field scoping decides which field a <em>disagreement</em> reaches; it never makes half of a
+ * value credible after the other half was proven forged. So when a host disagreement drops the host,
+ * the port that same {@code host[:port]} token carried is withheld too — unless another source
+ * states that port independently, either an explicit {@code X-Forwarded-Port} / {@code X-ProxyPort}
+ * header or the RFC 7239 {@code host} directive's own port. A port that no other source states has
+ * the rejected value as its sole source, and honoring it let an attacker who could reach only the
+ * de-facto family smuggle an arbitrary port through whenever the trusted side named a bare host.</p>
+ *
  * <p><strong>Present-but-invalid = drop (no fall-through).</strong> A present, non-blank source is
  * validated; if it fails its field guard it is <em>dropped</em> — lower-precedence sources are
  * <em>not</em> consulted as a fallback. In particular a present-but-invalid
@@ -270,7 +289,7 @@ public final class ForwardedHeaderResolver {
                 reconcileDeFacto(lookup, "scheme", X_FORWARDED_PROTO, X_PROXY_SCHEME, this::schemeOf);
         String rfc = forwarded.parsed().proto().orElse(null);
         return reconcileSources("scheme", deFacto.headerName(),
-                deFacto.present(), deFacto.value(),
+                deFacto.stated(), deFacto.value(),
                 rfc != null, rfcResolution(forwarded, rfc, this::schemeOf));
     }
 
@@ -318,20 +337,51 @@ public final class ForwardedHeaderResolver {
         DeFactoResolution<Integer> deFactoPort = reconcileStatedByValue(deFacto, "host port", HostPort::portValue);
 
         Optional<String> host = reconcileSources("host", deFactoHost.headerName(),
-                deFactoHost.present(), deFactoHost.value(),
+                deFactoHost.stated(), deFactoHost.value(),
                 rfcHost.present(), rfcHost.host());
         // The host-token port is only ever a FALLBACK: an explicit port header supersedes it, and
         // resolvePort reconciles that header against RFC 7239 itself. Reconciling a fallback nobody
         // will consult is not merely wasted work — it logs a disagreement about a value that has no
         // bearing on the result, on exactly the split configuration this class documents as
         // legitimate (X-Forwarded-Host: h + X-Forwarded-Port: 8443 + Forwarded: host="h:8443").
-        Optional<Integer> port = explicitPortPresent
+        Optional<Integer> port = explicitPortPresent || deFactoPortDiscredited(deFactoHost, deFactoPort, rfcHost)
                 ? Optional.empty()
                 : reconcileSources("host port", deFactoPort.headerName(),
-                deFactoPort.present(), deFactoPort.value(),
+                deFactoPort.stated(), deFactoPort.value(),
                 rfcHost.statesPort(), rfcHost.port());
 
         return new HostPort(host, port.map(OptionalInt::of).orElseGet(OptionalInt::empty));
+    }
+
+    /**
+     * Whether the de-facto {@code host[:port]} token's embedded port has been discredited along with
+     * the host the same raw value carried.
+     *
+     * <p>The host and the port of a {@code host[:port]} token are two fields, but they are two fields
+     * read out of <em>one</em> raw value. When that value's host is dropped for disagreeing with the
+     * RFC 7239 {@code host} directive, this class's own rule — "a disagreement means at least one
+     * side is forged" — has been applied to the value as a whole, not merely to the host characters
+     * inside it. Honoring its port anyway lets an attacker who can only reach the de-facto family
+     * smuggle an arbitrary port through, because the RFC side's silence about the port leaves the
+     * de-facto value standing unopposed. Per-field scoping is about which field a <em>disagreement</em>
+     * reaches, never about believing half of a value already proven forged.</p>
+     *
+     * <p>Corroboration is what lifts the discredit, and it is deliberately narrow: only the RFC side
+     * <em>itself</em> stating a port counts here, and then the ordinary
+     * {@link #reconcileSources} comparison decides the outcome — agreeing ports stand on the RFC
+     * side's own statement rather than on the rejected value, and disagreeing ones are dropped as
+     * usual. The other corroborating source, an explicit {@code X-Forwarded-Port} /
+     * {@code X-ProxyPort} header, never reaches this fallback at all: it supersedes the host-token
+     * port outright, and {@link #resolvePort} reconciles it against RFC 7239 on its own.</p>
+     *
+     * @return {@code true} when the host disagreed across the two sources <em>and</em> the RFC 7239
+     *         directive stated no port of its own to corroborate the de-facto one
+     */
+    private static boolean deFactoPortDiscredited(DeFactoResolution<String> deFactoHost,
+            DeFactoResolution<Integer> deFactoPort, RfcHost rfcHost) {
+        boolean hostDisagreed = deFactoHost.stated() && rfcHost.present()
+                && !deFactoHost.value().equals(rfcHost.host());
+        return hostDisagreed && deFactoPort.value().isPresent() && !rfcHost.statesPort();
     }
 
     /**
@@ -515,7 +565,7 @@ public final class ForwardedHeaderResolver {
         DeFactoResolution<Integer> deFacto =
                 reconcileDeFacto(lookup, "port", X_FORWARDED_PORT, X_PROXY_PORT, this::portOf);
         return reconcileSources("port", deFacto.headerName(),
-                deFacto.present(), deFacto.value(),
+                deFacto.stated(), deFacto.value(),
                 rfcHost.statesPort(), rfcHost.port())
                 .map(OptionalInt::of)
                 .orElseGet(OptionalInt::empty);
@@ -840,34 +890,40 @@ public final class ForwardedHeaderResolver {
      * disagree and {@link ForwardedResolverConfig#deFactoPrecedence()} breaks the tie, and a field
      * only one family states is taken from that family unopposed.
      *
-     * <p>The returned {@code present} flag is deliberately the <em>family</em>'s presence, not this
-     * field's statement: it feeds the RFC 7239 stage, where "a de-facto header was sent" is what
-     * decides whether that stage compares or simply defers. A family that stated nothing about this
-     * one field was still sent, and an RFC directive for it must therefore still be reconciled rather
-     * than honored unopposed.</p>
+     * <p>The returned {@code stated} flag is this <em>field</em>'s statement, not the family's mere
+     * presence, because that is what the RFC 7239 stage downstream compares against: it decides
+     * whether that stage reconciles the two sides or simply defers to the RFC directive. Scoping it
+     * to the family made a de-facto header that was sent but said nothing about this field contest an
+     * RFC directive that did — dropping the field with a "sources disagree" warning over a claim
+     * only one side ever made. The two statement rules above are what keep this honest per field: for
+     * a field the mere presence of the header states (scheme, port, and the host a
+     * {@code host[:port]} token always carries) a present family still states it, so a
+     * present-but-invalid value still contests; only for the optional port inside a
+     * {@code host[:port]} token do presence and statement come apart, which is exactly the
+     * asymmetry with {@link RfcHost#statesPort()} this scoping removes.</p>
      */
     private <T, F> DeFactoResolution<F> reconcileDeFactoField(String field, DeFactoSources<T> sources,
             FieldContribution<F> xForwarded, FieldContribution<F> xProxy) {
-        boolean familyPresent = sources.familyPresent();
+        boolean stated = xForwarded.stated() || xProxy.stated();
         if (!xForwarded.stated() && !xProxy.stated()) {
-            return new DeFactoResolution<>(sources.attribution(), familyPresent, Optional.empty());
+            return new DeFactoResolution<>(sources.attribution(), stated, Optional.empty());
         }
         if (!xProxy.stated()) {
-            return new DeFactoResolution<>(xForwarded.headerName(), familyPresent, xForwarded.value());
+            return new DeFactoResolution<>(xForwarded.headerName(), stated, xForwarded.value());
         }
         if (!xForwarded.stated()) {
-            return new DeFactoResolution<>(xProxy.headerName(), familyPresent, xProxy.value());
+            return new DeFactoResolution<>(xProxy.headerName(), stated, xProxy.value());
         }
         if (xForwarded.value().equals(xProxy.value())) {
-            return new DeFactoResolution<>(xForwarded.headerName(), familyPresent, xForwarded.value());
+            return new DeFactoResolution<>(xForwarded.headerName(), stated, xForwarded.value());
         }
         ForwardedResolverConfig.DeFactoFamily winner = config.deFactoPrecedence();
         LOGGER.warn(ForwardedLogMessages.WARN.DE_FACTO_FAMILIES_DISAGREE,
                 field, xForwarded.headerName(), describeForLog(xForwarded.value()),
                 xProxy.headerName(), describeForLog(xProxy.value()), winner);
         return winner == ForwardedResolverConfig.DeFactoFamily.X_FORWARDED
-                ? new DeFactoResolution<>(xForwarded.headerName(), familyPresent, xForwarded.value())
-                : new DeFactoResolution<>(xProxy.headerName(), familyPresent, xProxy.value());
+                ? new DeFactoResolution<>(xForwarded.headerName(), stated, xForwarded.value())
+                : new DeFactoResolution<>(xProxy.headerName(), stated, xProxy.value());
     }
 
     /**
@@ -882,10 +938,6 @@ public final class ForwardedHeaderResolver {
      */
     private record DeFactoSources<T>(String xForwardedName, boolean xForwardedPresent, Optional<T> fromXForwarded,
     String xProxyName, boolean xProxyPresent, Optional<T> fromXProxy) {
-
-        private boolean familyPresent() {
-            return xForwardedPresent || xProxyPresent;
-        }
 
         /**
          * The header name a diagnostic should be attributed to when neither family stated the field:
@@ -914,11 +966,13 @@ public final class ForwardedHeaderResolver {
      * winning value so the downstream RFC 7239 disagreement record stays honest about its source.
      *
      * @param headerName the de-facto header name the value came from
-     * @param present    whether either de-facto header was present at all — distinct from being
-     *                   present but resolving to nothing valid, which is a real disagreement
+     * @param stated     whether either de-facto header said anything about <em>this field</em> —
+     *                   distinct from stating it but resolving to nothing valid, which is a real
+     *                   disagreement, and distinct from the family merely having been sent, which
+     *                   says nothing about a field the header's own token never carried
      * @param value      the reconciled resolution
      */
-    private record DeFactoResolution<T>(String headerName, boolean present, Optional<T> value) {
+    private record DeFactoResolution<T>(String headerName, boolean stated, Optional<T> value) {
     }
 
     /**
@@ -932,20 +986,22 @@ public final class ForwardedHeaderResolver {
      * preferring one source is exactly the behaviour an attacker exploits by supplying the family
      * the resolver happens to rank higher.</p>
      *
-     * @param field          the field name, for the disagreement log record
-     * @param deFactoHeader  the de-facto header name the value was actually read from (not the head
-     *                       of the precedence list), for the disagreement log record
-     * @param deFactoPresent whether the de-facto source was present at all (distinct from it being
-     *                       present but unresolvable, which is a real disagreement)
-     * @param fromDeFacto    the de-facto source's independent resolution
-     * @param rfcPresent     whether the RFC 7239 directive was present at all
-     * @param fromRfc        the RFC 7239 source's independent resolution
+     * @param field         the field name, for the disagreement log record
+     * @param deFactoHeader the de-facto header name the value was actually read from (not the head
+     *                      of the precedence list), for the disagreement log record
+     * @param deFactoStated whether the de-facto source said anything about <em>this field</em>
+     *                      (distinct from stating it but resolving to nothing valid, which is a real
+     *                      disagreement, and from the family merely having been sent, which contests
+     *                      nothing about a field it never spoke of)
+     * @param fromDeFacto   the de-facto source's independent resolution
+     * @param rfcPresent    whether the RFC 7239 source spoke about this field at all
+     * @param fromRfc       the RFC 7239 source's independent resolution
      * @return the agreed resolution, or empty when the sources disagree
      */
     private <T> Optional<T> reconcileSources(String field, String deFactoHeader,
-            boolean deFactoPresent, Optional<T> fromDeFacto,
+            boolean deFactoStated, Optional<T> fromDeFacto,
             boolean rfcPresent, Optional<T> fromRfc) {
-        if (!deFactoPresent) {
+        if (!deFactoStated) {
             return fromRfc;
         }
         if (!rfcPresent) {

@@ -302,6 +302,36 @@ class ForwardedHeaderResolverTest {
             LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
         }
 
+        /**
+         * The sibling of {@link #disagreeingHostKeepsExplicitPort()}, and the case it does
+         * <em>not</em> cover: there the surviving port came from a separate header that both sides
+         * corroborated, here the only source for it is the very {@code host[:port]} value the host
+         * comparison just proved forged.
+         */
+        @Test
+        @DisplayName("a rejected host's own embedded port falls with it unless another source states it")
+        void disagreeingHostWithholdsItsOwnEmbeddedPort() {
+            var uncorroborated = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "attacker.example:6666",
+                    "Forwarded", "host=legit-host.example")));
+            var corroborated = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "attacker.example:6666",
+                    "Forwarded", "host=\"legit-host.example:6666\"")));
+
+            assertAll("host and port come from ONE raw value, so proving that value forged discredits both",
+                    () -> assertTrue(uncorroborated.host().isEmpty(),
+                            "the two sources name different hosts, so neither host may be honored"),
+                    () -> assertTrue(uncorroborated.port().isEmpty(),
+                            "6666 was carried by the value just proven forged and no other source states "
+                                    + "a port, so the RFC side's silence must not let it through unopposed"),
+                    () -> assertTrue(corroborated.host().isEmpty(),
+                            "the hosts still disagree in the control case"),
+                    () -> assertEquals(6666, corroborated.port().orElseThrow(),
+                            "here the RFC 7239 host directive states the same port independently, so the "
+                                    + "port stands on that corroboration rather than on the rejected value"));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
+        }
+
         @Test
         @DisplayName("a port disagreement drops the port without taking the agreed host with it")
         void disagreeingPortKeepsHost() {
@@ -328,6 +358,29 @@ class ForwardedHeaderResolverTest {
                     () -> assertEquals("app.example.com", result.host().orElseThrow()),
                     () -> assertEquals(8443, result.port().orElseThrow(),
                             "the Forwarded host directive named a bare host, so it contradicts no port"));
+            LogAsserts.assertNoLogMessagePresent(TestLogLevel.WARN, ForwardedHeaderResolver.class);
+        }
+
+        /**
+         * The mirror of {@link #rfcHostWithoutPortDoesNotContestHostPort()} with the sides swapped.
+         * The RFC side scopes its statement to the directive's own token; the de-facto side must
+         * scope its statement to the header's own token too, rather than to whether the family was
+         * sent at all — a family that was sent but named a bare host made no port claim to contest
+         * with.
+         */
+        @Test
+        @DisplayName("a de-facto host naming no port does not contest the port the RFC 7239 host carried")
+        void deFactoHostWithoutPortDoesNotContestRfcHostPort() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com",
+                    "Forwarded", "host=\"app.example.com:8443\"")));
+
+            assertAll("silence about the port is a non-statement on the de-facto side too",
+                    () -> assertEquals("app.example.com", result.host().orElseThrow(),
+                            "both sources name the same host"),
+                    () -> assertEquals(8443, result.port().orElseThrow(),
+                            "X-Forwarded-Host named a bare host, so it contradicts no port and the "
+                                    + "Forwarded directive's own port stands unopposed"));
             LogAsserts.assertNoLogMessagePresent(TestLogLevel.WARN, ForwardedHeaderResolver.class);
         }
 
