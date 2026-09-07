@@ -134,7 +134,7 @@ class ForwardedHeaderResolverTest {
         }
 
         @Test
-        @DisplayName("falls back to X-ProxyScheme then RFC 7239 proto")
+        @DisplayName("honors a lone X-ProxyScheme, and a lone RFC 7239 proto")
         void precedence() {
             assertEquals("http", trustAllResolver()
                     .resolve(headers(Map.of("X-ProxyScheme", "http"))).scheme().orElseThrow());
@@ -241,7 +241,7 @@ class ForwardedHeaderResolverTest {
         }
 
         @Test
-        @DisplayName("falls back to X-ProxyHost and RFC 7239 host")
+        @DisplayName("honors a lone X-ProxyHost, and a lone RFC 7239 host")
         void hostPrecedence() {
             assertEquals("proxy.example.com", trustAllResolver()
                     .resolve(headers(Map.of("X-ProxyHost", "proxy.example.com"))).host().orElseThrow());
@@ -382,6 +382,126 @@ class ForwardedHeaderResolverTest {
                     .resolve(headers(Map.of("X-Forwarded-Host", "app.example.com:8443")));
             assertTrue(result.host().isEmpty());
             assertTrue(result.port().isEmpty());
+        }
+    }
+
+    /**
+     * The two de-facto families are reconciled against each other BEFORE the RFC 7239 comparison.
+     * A fixed first-present order silently let an attacker-supplied {@code X-Forwarded-*} override
+     * the {@code X-Proxy*} value a deployment's own ingress writes; these cases pin the
+     * reconciliation and the tie-breaker that replaced it.
+     */
+    @Nested
+    @DisplayName("De-facto family reconciliation")
+    class DeFactoFamilyReconciliation {
+
+        private ForwardedHeaderResolver preferring(ForwardedResolverConfig.DeFactoFamily family) {
+            return resolver(ForwardedResolverConfig.builder()
+                    .trustAll(true)
+                    .deFactoPrecedence(family)
+                    .build());
+        }
+
+        @Test
+        @DisplayName("agreeing families resolve their common scheme without a disagreement warning")
+        void agreeingFamiliesResolveQuietly() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "https",
+                    "X-ProxyScheme", "https")));
+
+            assertEquals("https", result.scheme().orElseThrow());
+            LogAsserts.assertNoLogMessagePresent(TestLogLevel.WARN, ForwardedHeaderResolver.class);
+        }
+
+        @Test
+        @DisplayName("disagreeing schemes resolve to X-Forwarded-Proto under the default knob, and warn")
+        void disagreeingSchemesUseDefaultPrecedence() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "https",
+                    "X-ProxyScheme", "http")));
+
+            assertEquals("https", result.scheme().orElseThrow(),
+                    "the default knob reproduces the historical first-present-wins outcome");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "de-facto families disagree");
+        }
+
+        @Test
+        @DisplayName("disagreeing schemes resolve to X-ProxyScheme when that family is configured")
+        void disagreeingSchemesHonorConfiguredFamily() {
+            var result = preferring(ForwardedResolverConfig.DeFactoFamily.X_PROXY)
+                    .resolve(headers(Map.of(
+                            "X-Forwarded-Proto", "https",
+                            "X-ProxyScheme", "http")));
+
+            assertEquals("http", result.scheme().orElseThrow(),
+                    "an ingress that writes X-Proxy* must not be overridden by a client-supplied X-Forwarded-Proto");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "de-facto families disagree");
+        }
+
+        @Test
+        @DisplayName("the host pair is reconciled the same way")
+        void hostPairIsReconciled() {
+            var lookup = headers(Map.of(
+                    "X-Forwarded-Host", "forwarded.example.com",
+                    "X-ProxyHost", "proxy.example.com"));
+
+            assertAll("the tie-breaker selects the whole host, not a merge of the two",
+                    () -> assertEquals("forwarded.example.com",
+                            trustAllResolver().resolve(lookup).host().orElseThrow()),
+                    () -> assertEquals("proxy.example.com",
+                            preferring(ForwardedResolverConfig.DeFactoFamily.X_PROXY)
+                                    .resolve(lookup).host().orElseThrow()));
+        }
+
+        @Test
+        @DisplayName("the port pair is reconciled the same way")
+        void portPairIsReconciled() {
+            var lookup = headers(Map.of(
+                    "X-Forwarded-Port", "8443",
+                    "X-ProxyPort", "9443"));
+
+            assertAll("port carries no host, so the tie-breaker must decide it on its own",
+                    () -> assertEquals(8443, trustAllResolver().resolve(lookup).port().orElseThrow()),
+                    () -> assertEquals(9443, preferring(ForwardedResolverConfig.DeFactoFamily.X_PROXY)
+                            .resolve(lookup).port().orElseThrow()));
+        }
+
+        @Test
+        @DisplayName("a lone family is honored without consulting the tie-breaker")
+        void loneFamilyNeedsNoTieBreak() {
+            assertAll("the knob is a tie-breaker of last resort, not a filter",
+                    () -> assertEquals("http", preferring(ForwardedResolverConfig.DeFactoFamily.X_PROXY)
+                            .resolve(headers(Map.of("X-Forwarded-Proto", "http"))).scheme().orElseThrow(),
+                            "X-Forwarded-Proto still stands when X-ProxyScheme is absent"),
+                    () -> assertEquals("http", trustAllResolver()
+                            .resolve(headers(Map.of("X-ProxyScheme", "http"))).scheme().orElseThrow(),
+                            "X-ProxyScheme still stands when X-Forwarded-Proto is absent"));
+            LogAsserts.assertNoLogMessagePresent(TestLogLevel.WARN, ForwardedHeaderResolver.class);
+        }
+
+        @Test
+        @DisplayName("the reconciled value, not the losing family, is compared against RFC 7239")
+        void reconciledValueFeedsTheRfcComparison() {
+            var result = preferring(ForwardedResolverConfig.DeFactoFamily.X_PROXY)
+                    .resolve(headers(Map.of(
+                            "X-Forwarded-Proto", "https",
+                            "X-ProxyScheme", "http",
+                            "Forwarded", "proto=http")));
+
+            assertEquals("http", result.scheme().orElseThrow(),
+                    "the winning de-facto family agrees with Forwarded, so the field survives");
+        }
+
+        @Test
+        @DisplayName("a de-facto family present but resolving to nothing valid still counts as a side")
+        void invalidSideIsADisagreement() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "ftp",
+                    "X-ProxyScheme", "https")));
+
+            assertTrue(result.scheme().isEmpty(),
+                    "the default knob honors X-Forwarded-Proto, which resolved to nothing valid");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "de-facto families disagree");
         }
     }
 

@@ -24,6 +24,7 @@ import org.jspecify.annotations.Nullable;
 
 import java.net.InetAddress;
 import java.util.*;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
@@ -64,16 +65,28 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  *
  * <h3>Precedence</h3>
  * <ul>
- *   <li>scheme: {@code X-Forwarded-Proto} → {@code X-ProxyScheme}, reconciled against RFC 7239
- *       {@code proto}</li>
- *   <li>host: {@code X-Forwarded-Host} → {@code X-ProxyHost}, reconciled against RFC 7239
- *       {@code host}</li>
- *   <li>port: {@code X-Forwarded-Port} → {@code X-ProxyPort} → host {@code :port} fallback</li>
+ *   <li>scheme: {@code X-Forwarded-Proto} reconciled with {@code X-ProxyScheme}, then reconciled
+ *       against RFC 7239 {@code proto}</li>
+ *   <li>host: {@code X-Forwarded-Host} reconciled with {@code X-ProxyHost}, then reconciled against
+ *       RFC 7239 {@code host}</li>
+ *   <li>port: {@code X-Forwarded-Port} reconciled with {@code X-ProxyPort}, else the host
+ *       {@code :port} fallback</li>
  *   <li>context-path: {@code X-ProxyContextPath} → {@code X-Forwarded-Prefix}
  *       ({@code Forwarded} has no prefix directive)</li>
  *   <li>client-IP: {@code X-Forwarded-For} chain, reconciled against the RFC 7239 {@code for}
  *       chain</li>
  * </ul>
+ *
+ * <p><strong>The de-facto families are reconciled against each other first.</strong> For scheme,
+ * host, and port the {@code X-Forwarded-*} and {@code X-Proxy*} names are resolved
+ * <em>independently</em> rather than by taking whichever name appears first in a fixed order. When
+ * both are present and resolve to the same value, that value stands. When they disagree, the field
+ * is <em>not</em> dropped: the family named by
+ * {@link ForwardedResolverConfig#deFactoPrecedence()} wins and the disagreement is logged. That
+ * knob is a tie-breaker of last resort and presumes the ingress strips the family it does not
+ * itself write — see its Javadoc. The reconciled value, together with the header name it actually
+ * came from, is what the RFC 7239 comparison below then sees; that comparison is unchanged and
+ * still drops the field on disagreement.</p>
  *
  * <p><strong>Nearest hop wins within a header.</strong> Each proxy in a chain <em>appends</em> its
  * own value, so for a comma-separated header value the resolver selects the <em>rightmost</em>
@@ -188,10 +201,11 @@ public final class ForwardedHeaderResolver {
         if (!config.trustAll()) {
             return Optional.empty();
         }
-        SourcedValue deFacto = firstPresent(lookup, X_FORWARDED_PROTO, X_PROXY_SCHEME);
+        DeFactoResolution<String> deFacto =
+                reconcileDeFacto(lookup, "scheme", X_FORWARDED_PROTO, X_PROXY_SCHEME, this::schemeOf);
         String rfc = forwarded.parsed().proto().orElse(null);
-        return reconcileSources("scheme", headerNameOf(deFacto, X_FORWARDED_PROTO),
-                deFacto != null, deFacto == null ? Optional.empty() : schemeOf(deFacto.headerName(), deFacto.value()),
+        return reconcileSources("scheme", deFacto.headerName(),
+                deFacto.present(), deFacto.value(),
                 forwarded.contributes(rfc != null), rfc == null ? Optional.empty() : schemeOf(FORWARDED, rfc));
     }
 
@@ -208,10 +222,11 @@ public final class ForwardedHeaderResolver {
         if (!config.trustAll()) {
             return HostPort.EMPTY;
         }
-        SourcedValue deFacto = firstPresent(lookup, X_FORWARDED_HOST, X_PROXY_HOST);
+        DeFactoResolution<HostPort> deFacto =
+                reconcileDeFacto(lookup, "host", X_FORWARDED_HOST, X_PROXY_HOST, this::hostPortOf);
         String rfc = forwarded.parsed().host().orElse(null);
-        return reconcileSources("host", headerNameOf(deFacto, X_FORWARDED_HOST),
-                deFacto != null, deFacto == null ? Optional.empty() : hostPortOf(deFacto.headerName(), deFacto.value()),
+        return reconcileSources("host", deFacto.headerName(),
+                deFacto.present(), deFacto.value(),
                 forwarded.contributes(rfc != null), rfc == null ? Optional.empty() : hostPortOf(FORWARDED, rfc))
                 .orElse(HostPort.EMPTY);
     }
@@ -330,17 +345,29 @@ public final class ForwardedHeaderResolver {
         if (forwarded.unresolvable()) {
             return OptionalInt.empty();
         }
-        SourcedValue raw = firstPresent(lookup, X_FORWARDED_PORT, X_PROXY_PORT);
-        if (raw == null) {
+        if (!isPresent(lookup.apply(X_FORWARDED_PORT)) && !isPresent(lookup.apply(X_PROXY_PORT))) {
             return hostPortFallback;
         }
         if (!config.trustAll()) {
             return OptionalInt.empty();
         }
-        return sanitize(raw.headerName(), raw.value())
+        return reconcileDeFacto(lookup, "port", X_FORWARDED_PORT, X_PROXY_PORT, this::portOf)
+                .value()
+                .map(OptionalInt::of)
+                .orElse(OptionalInt.empty());
+    }
+
+    /**
+     * Resolves a port header to its validated value, collapsing "absent / rejected / not a valid
+     * port" into a single empty result so the cross-family comparison sees one shape rather than a
+     * nested optional.
+     */
+    private Optional<Integer> portOf(String headerName, String raw) {
+        return sanitize(headerName, raw)
                 .map(ForwardedHeaderResolver::lastToken)
                 .map(ForwardedHeaderResolver::parsePort)
-                .orElse(OptionalInt.empty());
+                .filter(OptionalInt::isPresent)
+                .map(OptionalInt::getAsInt);
     }
 
     /**
@@ -535,6 +562,70 @@ public final class ForwardedHeaderResolver {
     }
 
     /**
+     * Reconciles the two de-facto header families against each other, before the field ever reaches
+     * the RFC 7239 comparison.
+     *
+     * <p>Both names are resolved <em>independently</em> rather than by returning whichever is
+     * present first: a fixed order silently lets an attacker-supplied {@code X-Forwarded-Proto}
+     * override the {@code X-ProxyScheme} a deployment's own ingress writes, because that name heads
+     * the list. When both are present and resolve equal, that value stands. When they disagree the
+     * field is <em>not</em> dropped — unlike the de-facto-versus-RFC-7239 stage, where a
+     * disagreement means one of two sources that a single proxy populates must be forged, either
+     * de-facto family may legitimately be the one this deployment writes. The tie is therefore
+     * broken by {@link ForwardedResolverConfig#deFactoPrecedence()} and logged.</p>
+     *
+     * <p>The winning header <em>name</em> travels with the value so the downstream disagreement
+     * record still names the header the value actually came from.</p>
+     *
+     * @param field       the field name, for the disagreement log record
+     * @param xForwardedName the {@code X-Forwarded-*} header name for this field
+     * @param xProxyName     the {@code X-Proxy*} header name for this field
+     * @param resolver    resolves a (header name, raw value) pair to the field's validated value
+     * @return the reconciled resolution, carrying the header name it came from and whether either
+     *         family was present at all
+     */
+    private <T> DeFactoResolution<T> reconcileDeFacto(UnaryOperator<String> lookup, String field,
+            String xForwardedName, String xProxyName, BiFunction<String, String, Optional<T>> resolver) {
+        String xForwardedRaw = lookup.apply(xForwardedName);
+        String xProxyRaw = lookup.apply(xProxyName);
+        boolean xForwardedPresent = isPresent(xForwardedRaw);
+        boolean xProxyPresent = isPresent(xProxyRaw);
+        if (!xForwardedPresent && !xProxyPresent) {
+            return new DeFactoResolution<>(xForwardedName, false, Optional.empty());
+        }
+        if (!xProxyPresent) {
+            return new DeFactoResolution<>(xForwardedName, true, resolver.apply(xForwardedName, xForwardedRaw));
+        }
+        if (!xForwardedPresent) {
+            return new DeFactoResolution<>(xProxyName, true, resolver.apply(xProxyName, xProxyRaw));
+        }
+        Optional<T> fromXForwarded = resolver.apply(xForwardedName, xForwardedRaw);
+        Optional<T> fromXProxy = resolver.apply(xProxyName, xProxyRaw);
+        if (fromXForwarded.equals(fromXProxy)) {
+            return new DeFactoResolution<>(xForwardedName, true, fromXForwarded);
+        }
+        ForwardedResolverConfig.DeFactoFamily winner = config.deFactoPrecedence();
+        LOGGER.warn(ForwardedLogMessages.WARN.DE_FACTO_FAMILIES_DISAGREE,
+                field, xForwardedName, describeForLog(fromXForwarded),
+                xProxyName, describeForLog(fromXProxy), winner);
+        return winner == ForwardedResolverConfig.DeFactoFamily.X_FORWARDED
+                ? new DeFactoResolution<>(xForwardedName, true, fromXForwarded)
+                : new DeFactoResolution<>(xProxyName, true, fromXProxy);
+    }
+
+    /**
+     * A field resolved from the de-facto families, carrying the header name that produced the
+     * winning value so the downstream RFC 7239 disagreement record stays honest about its source.
+     *
+     * @param headerName the de-facto header name the value came from
+     * @param present    whether either de-facto header was present at all — distinct from being
+     *                   present but resolving to nothing valid, which is a real disagreement
+     * @param value      the reconciled resolution
+     */
+    private record DeFactoResolution<T>(String headerName, boolean present, Optional<T> value) {
+    }
+
+    /**
      * Reconciles a field resolved independently from the de-facto {@code X-Forwarded-*} /
      * {@code X-Proxy*} family and from the RFC 7239 {@code Forwarded} header.
      *
@@ -585,9 +676,14 @@ public final class ForwardedHeaderResolver {
      * name produced it alongside the value.
      *
      * <p>Carrying the matched name is what keeps the diagnostics honest: a rejection of an
-     * {@code X-ProxyScheme} value must not be reported against {@code X-Forwarded-Proto} merely
-     * because that name heads the precedence list. The precedence order itself is unchanged — the
-     * first present name still wins.</p>
+     * {@code X-Forwarded-Prefix} value must not be reported against {@code X-ProxyContextPath}
+     * merely because that name heads the precedence list.</p>
+     *
+     * <p>Ordered precedence survives only for the context path, whose two names are not a de-facto
+     * <em>family pair</em> the way {@code X-Forwarded-Proto} / {@code X-ProxyScheme} are: scheme,
+     * host, and port resolve both families independently and reconcile them through
+     * {@link #reconcileDeFacto}, so a first-present rule would reintroduce exactly the silent
+     * override that reconciliation removes.</p>
      *
      * @return the matched header name and its value, or {@code null} when none of the names is
      *         present
@@ -600,16 +696,6 @@ public final class ForwardedHeaderResolver {
             }
         }
         return null;
-    }
-
-    /**
-     * The header name a disagreement record should attribute the de-facto side to: the actually
-     * matched name when a de-facto source was present, otherwise {@code fallback}. The fallback is
-     * never logged — {@link #reconcileSources} returns before the record is emitted when the
-     * de-facto source is absent — it only keeps the argument non-null.
-     */
-    private static String headerNameOf(@Nullable SourcedValue sourced, String fallback) {
-        return sourced == null ? fallback : sourced.headerName();
     }
 
     /**
