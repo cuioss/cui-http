@@ -49,19 +49,26 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  * {@link RuntimeException} thrown by the caller-supplied lookup, and propagate any exception other
  * than {@link UrlSecurityException} escaping the sanitization pipeline.</p>
  *
- * <h3 id="security-precondition">Security precondition — trusted network placement (MANDATORY)</h3>
- * <p><strong>{@code resolve(...)} trusts HTTP headers, not the socket.</strong> The resolver
+ * <h3 id="security-precondition">Security precondition — trusted network placement</h3>
+ * <p><strong>{@link #resolve(Function)} trusts HTTP headers, not the socket.</strong> That overload
  * receives only a header accessor; the actual TCP peer (the socket remote address) is never passed
  * in and cannot be inspected. Consequently the {@code X-Forwarded-For} / {@code Forwarded} walk
  * cannot verify that the request actually arrived <em>through</em> a trusted proxy — it can only
  * match the addresses <em>inside the headers</em> against the configured {@code trustedProxies}.</p>
- * <p>The deployment therefore <strong>MUST</strong> guarantee that only trusted proxies can connect
- * to this server directly. If an attacker can reach the server without traversing a trusted proxy,
- * they can forge the chain (e.g. a single untrusted entry {@code X-Forwarded-For: 6.6.6.6}) and have
- * it returned verbatim as the client IP. Enforce this with network controls — bind the listener to a
- * private interface, restrict it with firewall / security-group rules, or place it behind a service
- * mesh — so that the socket peer is always a trusted proxy. The resolver cannot make this guarantee
- * for you, and (by design) does not accept the peer address as a parameter.</p>
+ * <p>A deployment using that overload therefore <strong>MUST</strong> guarantee that only trusted
+ * proxies can connect to this server directly. If an attacker can reach the server without
+ * traversing a trusted proxy, they can forge the chain (e.g. a single untrusted entry
+ * {@code X-Forwarded-For: 6.6.6.6}) and have it returned verbatim as the client IP. Enforce this
+ * with network controls — bind the listener to a private interface, restrict it with firewall /
+ * security-group rules, or place it behind a service mesh — so that the socket peer is always a
+ * trusted proxy.</p>
+ * <p><strong>{@link #resolve(Function, InetAddress)} enforces that same property in code, and is
+ * the stronger form.</strong> Given the socket peer it honors forwarded headers only when the peer
+ * is itself a configured trusted proxy, and returns {@link ResolvedForwarding#empty()} otherwise —
+ * so a request that did not arrive through the proxy tier attests nothing, whatever it claims in
+ * its headers. Prefer it wherever the transport exposes the remote address; the network controls
+ * above remain worth having as defence in depth, but are no longer the only thing standing between
+ * a direct connection and a forged chain.</p>
  *
  * <h3>Precedence</h3>
  * <ul>
@@ -194,6 +201,39 @@ public final class ForwardedHeaderResolver {
         Optional<String> clientIp = resolveClientIp(lookup, forwarded);
 
         return new ResolvedForwarding(scheme, hostPort.host(), port, contextPath, clientIp);
+    }
+
+    /**
+     * Resolves the forwarded-header family, but only when the request actually arrived through a
+     * configured trusted proxy.
+     *
+     * <p>This is the stronger of the two overloads (see the
+     * <a href="#security-precondition">security precondition</a>). {@link #resolve(Function)} can
+     * only match addresses <em>inside</em> the headers, so it relies on network placement to
+     * guarantee that a forged chain never reaches it; this one is handed the socket peer and
+     * enforces that guarantee itself. A peer outside {@code trustedProxies} attests nothing, so the
+     * result is {@link ResolvedForwarding#empty()} regardless of what the headers claim.</p>
+     *
+     * <p>The gate is on the peer alone. Once it passes, resolution is the unchanged path — the
+     * chain walk still skips trusted hops and still fails closed on an unparseable one, so a
+     * trusted peer is permission to <em>read</em> the headers, never permission to believe them
+     * uncritically.</p>
+     *
+     * @param headerLookup as {@link #resolve(Function)} — every instance of each header, in wire
+     *                     order
+     * @param peer         the socket remote address the request arrived from
+     * @return the sanitized, honored result, or {@link ResolvedForwarding#empty()} when {@code peer}
+     *         is not a configured trusted proxy (never {@code null})
+     * @throws NullPointerException if {@code headerLookup} or {@code peer} is {@code null}
+     */
+    public ResolvedForwarding resolve(Function<String, List<String>> headerLookup, InetAddress peer) {
+        Objects.requireNonNull(headerLookup, "headerLookup must not be null");
+        Objects.requireNonNull(peer, "peer must not be null");
+        if (!config.isTrustedProxy(peer)) {
+            LOGGER.debug("Ignoring forwarded headers: peer is not a configured trusted proxy");
+            return ResolvedForwarding.empty();
+        }
+        return resolve(headerLookup);
     }
 
     // --- scheme ------------------------------------------------------------------------------
@@ -466,7 +506,7 @@ public final class ForwardedHeaderResolver {
                 : Optional.empty();
         // An unresolvable header contributes nothing, so a chain it DID carry meets an empty
         // resolution and is dropped by the disagreement path rather than being walked and believed.
-        Optional<String> fromRfc = (!rfcPresent || forwarded.unresolvable())
+        Optional<String> fromRfc = !rfcPresent || forwarded.unresolvable()
                 ? Optional.empty()
                 : walkChain(rfcChain);
 

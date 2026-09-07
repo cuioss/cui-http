@@ -471,10 +471,10 @@ class ForwardedHeaderResolverTest {
         void loneFamilyNeedsNoTieBreak() {
             assertAll("the knob is a tie-breaker of last resort, not a filter",
                     () -> assertEquals("http", preferring(ForwardedResolverConfig.DeFactoFamily.X_PROXY)
-                            .resolve(headers(Map.of("X-Forwarded-Proto", "http"))).scheme().orElseThrow(),
+                                    .resolve(headers(Map.of("X-Forwarded-Proto", "http"))).scheme().orElseThrow(),
                             "X-Forwarded-Proto still stands when X-ProxyScheme is absent"),
                     () -> assertEquals("http", trustAllResolver()
-                            .resolve(headers(Map.of("X-ProxyScheme", "http"))).scheme().orElseThrow(),
+                                    .resolve(headers(Map.of("X-ProxyScheme", "http"))).scheme().orElseThrow(),
                             "X-ProxyScheme still stands when X-Forwarded-Proto is absent"));
             LogAsserts.assertNoLogMessagePresent(TestLogLevel.WARN, ForwardedHeaderResolver.class);
         }
@@ -502,6 +502,79 @@ class ForwardedHeaderResolverTest {
             assertTrue(result.scheme().isEmpty(),
                     "the default knob honors X-Forwarded-Proto, which resolved to nothing valid");
             LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "de-facto families disagree");
+        }
+    }
+
+    /**
+     * The peer-aware overload enforces in code what the one-argument overload can only require of
+     * the deployment: that the request actually arrived through a trusted proxy. The gate is on the
+     * peer alone, so these cases pin both directions — a trusted peer changes nothing about how the
+     * headers are resolved, and an untrusted one makes them attest nothing.
+     */
+    @Nested
+    @DisplayName("Peer-aware resolve")
+    class PeerAwareResolve {
+
+        private static final String PROXY_IP = "10.0.7.10";
+        private static final String OUTSIDE_IP = "203.0.113.9";
+
+        private final Function<String, List<String>> validHeaders = headers(Map.of(
+                "X-Forwarded-Proto", "https",
+                "X-Forwarded-Host", "app.example.com",
+                "X-Forwarded-For", "198.51.100.4, 10.0.7.10"));
+
+        private ForwardedHeaderResolver proxyAwareResolver() {
+            return resolver(ForwardedResolverConfig.builder()
+                    .trustAll(true)
+                    .trustedProxies(Set.of("10.0.7.0/24"))
+                    .build());
+        }
+
+        @Test
+        @DisplayName("a trusted peer resolves exactly what the one-argument overload does")
+        void trustedPeerMatchesSingleArgOverload() {
+            var viaPeer = proxyAwareResolver().resolve(validHeaders, IpAddresses.parse(PROXY_IP));
+            var viaHeadersOnly = proxyAwareResolver().resolve(validHeaders);
+
+            assertAll("the peer gate admits, it does not re-resolve",
+                    () -> assertEquals("https", viaPeer.scheme().orElseThrow()),
+                    () -> assertEquals("app.example.com", viaPeer.host().orElseThrow()),
+                    () -> assertEquals("198.51.100.4", viaPeer.clientIp().orElseThrow()),
+                    () -> assertEquals(viaHeadersOnly, viaPeer,
+                            "an admitted request must take the unchanged resolution path"));
+        }
+
+        @Test
+        @DisplayName("an untrusted peer resolves nothing, however valid the headers are")
+        void untrustedPeerResolvesEmpty() {
+            var result = proxyAwareResolver().resolve(validHeaders, IpAddresses.parse(OUTSIDE_IP));
+
+            assertEquals(ResolvedForwarding.empty(), result,
+                    "a request that did not arrive through the proxy tier attests nothing");
+        }
+
+        @Test
+        @DisplayName("an empty trustedProxies set admits no peer, so the overload never widens trust")
+        void emptyTrustedProxiesAdmitsNobody() {
+            var resolver = resolver(ForwardedResolverConfig.builder().trustAll(true).build());
+
+            assertAll("the secure default stays closed on both sides of the gate",
+                    () -> assertEquals(ResolvedForwarding.empty(),
+                            resolver.resolve(validHeaders, IpAddresses.parse(PROXY_IP))),
+                    () -> assertEquals(ResolvedForwarding.empty(),
+                            resolver.resolve(validHeaders, IpAddresses.parse(OUTSIDE_IP))));
+        }
+
+        @Test
+        @DisplayName("rejects a null peer rather than degrading to the one-argument behaviour")
+        void rejectsNullPeer() {
+            ForwardedHeaderResolver resolver = proxyAwareResolver();
+
+            assertAll("a missing peer is a broken caller contract, not an absent gate",
+                    () -> assertThrows(NullPointerException.class,
+                            () -> resolver.resolve(validHeaders, null)),
+                    () -> assertThrows(NullPointerException.class,
+                            () -> resolver.resolve(null, IpAddresses.parse(PROXY_IP))));
         }
     }
 
