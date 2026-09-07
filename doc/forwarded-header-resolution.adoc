@@ -163,26 +163,32 @@ Immutable trust-model configuration built through a validating builder. See xref
 
 === xref:../cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedLogMessages.java[ForwardedLogMessages]
 
-`HTTP-120`..`HTTP-125` WARN records for rejected/malformed values (context-path control
+`HTTP-120`..`HTTP-127` WARN records for rejected/malformed values (context-path control
 characters, protocol-relative/backslash prefixes, values that failed sanitization, unparseable
-client-IP chain entries, — `HTTP-124` — a field dropped because the de-facto `X-Forwarded-*`
-family and the RFC 7239 `Forwarded` header disagree — and `HTTP-125`
-(`FORWARDED_DIRECTIVE_MALFORMED`) — a `Forwarded` header rejected because it carries a malformed
-`forwarded-pair`).
+client-IP chain entries, — `HTTP-124` — a field *dropped* because the de-facto family and the
+RFC 7239 `Forwarded` header disagree — `HTTP-125` (`FORWARDED_DIRECTIVE_MALFORMED`) — a `Forwarded`
+header carrying a malformed `forwarded-pair` — `HTTP-126` — a blank `trustedProxies` entry — and
+`HTTP-127` (`DE_FACTO_FAMILIES_DISAGREE`) — the two de-facto families disagreed and the
+`deFactoPrecedence` knob broke the tie, so the field *survived*).
 
 == Header precedence
 
-Per field, the first present, non-blank value wins:
+Each source is resolved *independently* and the results are then reconciled — the two de-facto
+families (`X-Forwarded-*` and `X-Proxy*`) against each other first, and that result against RFC 7239
+`Forwarded`. Only the context path keeps a first-present order, because its two names are not a
+de-facto family pair. A disagreement between the two de-facto families is broken by the
+`deFactoPrecedence` knob (default `X_FORWARDED`) and logged; a disagreement against RFC 7239 drops
+the field.
 
 [cols="1,4", options="header"]
 |===
-| Field | Precedence
+| Field | Sources
 
-| scheme      | `X-Forwarded-Proto` → `X-ProxyScheme` → RFC 7239 `proto`
-| host        | `X-Forwarded-Host` → `X-ProxyHost` → RFC 7239 `host`
-| port        | `X-Forwarded-Port` → `X-ProxyPort` → port carried by the resolved host (`host:port`)
-| contextPath | `X-ProxyContextPath` → `X-Forwarded-Prefix` (RFC 7239 has no prefix directive → empty)
-| clientIp    | `X-Forwarded-For` chain → RFC 7239 `for` chain
+| scheme      | `X-Forwarded-Proto` reconciled with `X-ProxyScheme`, then against RFC 7239 `proto`
+| host        | `X-Forwarded-Host` reconciled with `X-ProxyHost`, then against RFC 7239 `host` — the host alone, not the `host[:port]` token as a whole
+| port        | `X-Forwarded-Port` reconciled with `X-ProxyPort`, then against the port the RFC 7239 `host` directive carried; when no explicit port header is present at all, the port carried by the resolved host (`host:port`) is the fallback
+| contextPath | `X-ProxyContextPath` → `X-Forwarded-Prefix`, first present (RFC 7239 has no prefix directive)
+| clientIp    | `X-Forwarded-For` chain reconciled against the RFC 7239 `for` chain
 |===
 
 *Repeated header instances are joined in wire order before token selection.* A proxy appends by
@@ -211,7 +217,7 @@ applied to the whole raw string inspects only its leading characters, so `X-Forw
 `//attacker.com` would then be honored unguarded. Selecting the last token first means every guard
 runs against the exact value that will be returned.
 
-*Conflicting sources = drop (fail closed).* For scheme, host, and client IP the de-facto
+*Conflicting sources = drop (fail closed).* For scheme, host, port, and client IP the de-facto
 `X-Forwarded-*` / `X-Proxy*` family and the RFC 7239 `Forwarded` header are resolved
 *independently*. When only one source is present its result is honored. When *both* are present they
 must agree: a proxy that populates both families does not contradict itself, so a disagreement means
@@ -219,11 +225,20 @@ at least one side is forged. The field is then dropped and an `HTTP-124` warning
 letting the higher-precedence family silently win — preferring one source is precisely what an
 attacker exploits by supplying the family the resolver ranks higher.
 
+*Host and port are compared as separate fields, and silence is not a conflict.* A source states both
+in one `host[:port]` token, but the token is compared field by field: a host disagreement drops only
+the host, a port disagreement only the port. A source whose token carried *no* port says nothing
+about the port and therefore contests none — only two sources that both name a port, differently,
+are in conflict.
+
 [source,text]
 ----
-X-Forwarded-Proto: https + Forwarded: proto=https -> scheme = https  (sources agree)
-X-Forwarded-Proto: https + Forwarded: proto=http  -> scheme = empty  (sources disagree -> dropped)
-X-Forwarded-Proto: https                          -> scheme = https  (single source, unaffected)
+X-Forwarded-Proto: https + Forwarded: proto=https  -> scheme = https  (sources agree)
+X-Forwarded-Proto: https + Forwarded: proto=http   -> scheme = empty  (sources disagree -> dropped)
+X-Forwarded-Proto: https                           -> scheme = https  (single source, unaffected)
+X-Forwarded-Port: 8443 + Forwarded: host="h:8443"  -> port   = 8443   (explicit port agrees with the RFC host port)
+X-Forwarded-Port: 8443 + Forwarded: host="h:9000"  -> port   = empty  (explicit port is reconciled, not honored unopposed)
+X-Forwarded-Port: 8443 + Forwarded: host=h         -> port   = 8443   (the RFC host named no port, so it contests none)
 ----
 
 *Present-but-invalid = drop (no fall-through).* Precedence selects the first present, non-blank
@@ -236,24 +251,30 @@ multi-colon value yields no host, because the host is composed back into a URL a
 unbracketed IPv6 literal is malformed and attacker-steerable. Content after the closing `]` is
 rejected unless it is `:` plus the port, so `[::1]garbage` yields no host.
 
-*A malformed `Forwarded` value rejects the whole header.* The rule above applies to the RFC 7239
-`Forwarded` header *as a whole*. When its raw value fails sanitization, *or* when it carries a
-malformed `forwarded-pair`, the header is present-but-unresolvable for *every* field it could have
-carried — scheme, host, port, and client IP alike — and therefore *disagrees* with an otherwise clean
-`X-Forwarded-*` sibling, which drops that field rather than letting the de-facto family win by
-default. A pair is malformed when it is non-blank and carries no `=`, an empty directive name, or an
-empty value. Rejection is logged once as an `HTTP-125` warning with a log-sanitized value.
+*A malformed `Forwarded` value makes the header unbelievable — for the fields it actually spoke
+about.* When its raw value fails sanitization, *or* when it carries a malformed `forwarded-pair`, the
+header contributes *nothing*: every field it did carry a directive for meets an empty RFC resolution
+and is dropped through the ordinary disagreement path above, rather than letting the de-facto family
+win by default. Scope is *per field*, decided by the directives the parser reached before it
+stopped — `Forwarded: proto=http;broken` drops the scheme but leaves an `X-Forwarded-Host` value
+standing, because that header never spoke about the host. Suppressing every field on any garbage
+input was a denial of service on the trust model: an attacker appended one broken directive and
+erased everything a legitimate proxy attested. A pair is malformed when it is non-blank and carries
+no `=`, an empty directive name, or an empty value. Rejection is logged once as an `HTTP-125` warning
+with a log-sanitized value.
 
 RFC 7239 §4 defines `forwarded-element = [ forwarded-pair ] *( ";" [ forwarded-pair ] )`, so a pair
 that is *blank* is grammatically legal: a trailing `;` is still accepted and parses normally.
 
 [source,text]
 ----
-Forwarded: proto=;host=app.internal               -> every field = empty           (malformed pair -> whole header rejected)
-Forwarded: host                                   -> every field = empty           (no "=" -> malformed)
-Forwarded: for=203.0.113.7;                       -> parses normally               (trailing ";" is a legal blank pair)
-X-Forwarded-Proto: https + Forwarded: proto=;host -> scheme = empty                (clean sibling dropped by disagreement)
-X-Forwarded-Port: 8080 + Forwarded: host=t.ex;bad -> port = empty                  (port is reachable via host=...:port, so it drops too)
+Forwarded: for=203.0.113.7;                            -> parses normally      (trailing ";" is a legal blank pair)
+Forwarded: host                                        -> no field dropped     (no "=" -> malformed before any directive was reached)
+X-Forwarded-Proto: https + Forwarded: proto=;host       -> scheme = https       (the empty value broke the parse before "proto" was recorded)
+X-Forwarded-Proto: https + Forwarded: proto=http;broken -> scheme = empty       (the header DID speak about proto, so it fails closed)
+X-Forwarded-Host: app.internal + Forwarded: proto=http;broken -> host = app.internal (it never spoke about the host)
+X-Forwarded-Port: 8080 + Forwarded: host=t.ex;bad       -> port = 8080          (the host directive named no port, so it contests none)
+X-Forwarded-Port: 8080 + Forwarded: host=t.ex:9443;bad  -> port = empty         (it did name one, so the port falls with the header)
 ----
 
 [#trust-model]
@@ -278,6 +299,11 @@ prefix in generated URLs, or the apparent client IP.
 | `trustedProxies`
 | CIDR ranges / IP literals (IPv4 + IPv6) defining trusted proxy hops. Required for
   `X-Forwarded-For` client-IP resolution — an empty set honors no client IP.
+
+| `deFactoPrecedence`
+| Tie-breaker consulted *only* when the two de-facto families disagree on a field:
+  `X_FORWARDED` (default) or `X_PROXY`. Set it to the family this deployment's own ingress writes;
+  it presumes the ingress strips the family it does not write.
 |===
 
 With the secure default (`ForwardedResolverConfig.secureDefault()`: no allowlist, no trusted

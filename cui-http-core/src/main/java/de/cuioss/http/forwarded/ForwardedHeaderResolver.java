@@ -77,7 +77,8 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  *   <li>host: {@code X-Forwarded-Host} reconciled with {@code X-ProxyHost}, then reconciled against
  *       RFC 7239 {@code host} — comparing the <em>host</em> alone, not the {@code host[:port]}
  *       token as a whole</li>
- *   <li>port: {@code X-Forwarded-Port} reconciled with {@code X-ProxyPort}, else the host
+ *   <li>port: {@code X-Forwarded-Port} reconciled with {@code X-ProxyPort} and then, like every
+ *       other field, against the port the RFC 7239 {@code host} directive carried; else the host
  *       {@code :port} fallback — itself the port each source's {@code host[:port]} token carried,
  *       reconciled <em>independently</em> of the host</li>
  *   <li>context-path: {@code X-ProxyContextPath} → {@code X-Forwarded-Prefix}
@@ -97,15 +98,22 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  * came from, is what the RFC 7239 comparison below then sees; that comparison is unchanged and
  * still drops the field on disagreement.</p>
  *
+ * <p><strong>That reconciliation is per field, not per header value.</strong> The host token the two
+ * families carry states two fields, so host is compared against host and port against port here as
+ * well, exactly as at the RFC 7239 stage below. A port only one family states is not in conflict
+ * with the other family's silence and stands unopposed; only a port both state, differently, reaches
+ * the precedence tie-break. A host, by contrast, is stated by the mere presence of the header — a
+ * present-but-invalid one contests rather than falling through to its sibling family.</p>
+ *
  * <p><strong>Nearest hop wins within a header.</strong> Each proxy in a chain <em>appends</em> its
  * own value, so for a comma-separated header value the resolver selects the <em>rightmost</em>
  * token — the one contributed by the closest, most trustworthy proxy. Leading tokens are
  * attacker-supplied whenever the original client sent the header itself. The same rule applies
  * across RFC 7239 elements: the <em>last</em> {@code proto} / {@code host} directive wins.</p>
  *
- * <p><strong>Conflicting sources = drop (fail closed).</strong> For scheme, host, and client-IP the
- * de-facto {@code X-Forwarded-*} / {@code X-Proxy*} family and the RFC 7239 {@code Forwarded} header
- * are resolved <em>independently</em>. When only one source is present its result is honored. When
+ * <p><strong>Conflicting sources = drop (fail closed).</strong> For scheme, host, port, and
+ * client-IP the de-facto {@code X-Forwarded-*} / {@code X-Proxy*} family and the RFC 7239
+ * {@code Forwarded} header are resolved <em>independently</em>. When only one source is present its result is honored. When
  * <em>both</em> are present they must agree: a proxy that populates both families does not
  * contradict itself, so a disagreement means at least one side is forged. The field is then dropped
  * and a warning logged, rather than letting the higher-precedence family silently win — preferring
@@ -206,8 +214,13 @@ public final class ForwardedHeaderResolver {
         ForwardedResult forwarded = parseForwarded(lookup);
 
         Optional<String> scheme = resolveScheme(lookup, forwarded);
-        HostPort hostPort = resolveHost(lookup, forwarded);
-        OptionalInt port = resolvePort(lookup, hostPort.port());
+        // The RFC 7239 host directive states BOTH the host and a port, and both the host stage and
+        // the explicit-port stage must be reconciled against it, so it is resolved once here rather
+        // than by each of them separately.
+        RfcHost rfcHost = rfcHost(forwarded);
+        boolean explicitPort = isPresent(lookup.apply(X_FORWARDED_PORT)) || isPresent(lookup.apply(X_PROXY_PORT));
+        HostPort hostPort = resolveHost(lookup, rfcHost, explicitPort);
+        OptionalInt port = resolvePort(lookup, rfcHost, explicitPort, hostPort.port());
         String contextPath = resolveContextPath(lookup, forwarded);
         Optional<String> clientIp = resolveClientIp(lookup, forwarded);
 
@@ -272,35 +285,97 @@ public final class ForwardedHeaderResolver {
 
     /**
      * Resolves the host and the port its {@code host[:port]} token carried as <em>two independent
-     * fields</em>.
+     * fields</em>, at <em>both</em> reconciliation stages.
      *
      * <p>Each source is still parsed as one {@code host[:port]} token — that is what {@link HostPort}
-     * is — but the de-facto-versus-RFC-7239 comparison runs twice, host against host and port against
-     * port, rather than once over the whole record. Comparing the record as a unit made its equality
-     * demand that both sources agree on host <em>and</em> port simultaneously, so the legitimate split
-     * an ingress writes as {@code X-Forwarded-Host: h} plus {@code X-Forwarded-Port: 8443} alongside
-     * {@code Forwarded: host="h:8443"} produced {@code (h, none)} against {@code (h, 8443)} and dropped
-     * the host both sources actually agreed on. Reconciling field by field keeps each drop scoped to
-     * the field that disagreed.</p>
+     * is — but neither comparison ever runs over the whole record. The de-facto-versus-RFC-7239
+     * comparison runs twice, host against host and port against port; so does the de-facto family
+     * comparison that precedes it. Comparing a record as a unit made its equality demand that both
+     * sides agree on host <em>and</em> port simultaneously, so the legitimate split an ingress writes
+     * as {@code X-Forwarded-Host: h} plus {@code X-Forwarded-Port: 8443} alongside
+     * {@code Forwarded: host="h:8443"} produced {@code (h, none)} against {@code (h, 8443)} and
+     * dropped the host both sources actually agreed on. Reconciling field by field keeps each
+     * outcome scoped to the field that actually disagreed.</p>
+     *
+     * <p><strong>An omitted port is a non-statement, not a conflicting one.</strong> The two de-facto
+     * families are alternative spellings the same ingress writes, so
+     * {@code X-Forwarded-Host: h} alongside {@code X-ProxyHost: h:9443} carries no port
+     * <em>disagreement</em> at all — one spelling simply said nothing about the port. Whole-record
+     * equality read that as a disagreement and handed the whole pair to
+     * {@link ForwardedResolverConfig#deFactoPrecedence()}, which discarded a port no other source
+     * contradicted. Only a port <em>both</em> families state, differently, is a genuine conflict and
+     * reaches the precedence tie-break. The host field keeps the stricter rule — a present de-facto
+     * header states the host even when it resolves to nothing valid, so a present-but-invalid host
+     * still contests (and, losing or winning, never falls through to its sibling family).</p>
      */
-    private HostPort resolveHost(UnaryOperator<String> lookup, ForwardedResult forwarded) {
+    private HostPort resolveHost(UnaryOperator<String> lookup, RfcHost rfcHost, boolean explicitPortPresent) {
         if (!config.trustAll()) {
             return HostPort.EMPTY;
         }
-        DeFactoResolution<HostPort> deFacto =
-                reconcileDeFacto(lookup, "host", X_FORWARDED_HOST, X_PROXY_HOST, this::hostPortOf);
-        String rfc = forwarded.parsed().host().orElse(null);
-        boolean rfcPresent = rfc != null;
-        Optional<HostPort> fromRfc = rfcResolution(forwarded, rfc, this::hostPortOf);
+        DeFactoSources<HostPort> deFacto =
+                resolveDeFactoSources(lookup, X_FORWARDED_HOST, X_PROXY_HOST, this::hostPortOf);
+        DeFactoResolution<String> deFactoHost = reconcileStatedByPresence(deFacto, "host", HostPort::host);
+        DeFactoResolution<Integer> deFactoPort = reconcileStatedByValue(deFacto, "host port", HostPort::portValue);
 
-        Optional<String> host = reconcileSources("host", deFacto.headerName(),
-                deFacto.present(), deFacto.value().flatMap(HostPort::host),
-                rfcPresent, fromRfc.flatMap(HostPort::host));
-        Optional<Integer> port = reconcileSources("host port", deFacto.headerName(),
-                deFacto.present(), deFacto.value().flatMap(HostPort::portValue),
-                rfcPresent, fromRfc.flatMap(HostPort::portValue));
+        Optional<String> host = reconcileSources("host", deFactoHost.headerName(),
+                deFactoHost.present(), deFactoHost.value(),
+                rfcHost.present(), rfcHost.host());
+        // The host-token port is only ever a FALLBACK: an explicit port header supersedes it, and
+        // resolvePort reconciles that header against RFC 7239 itself. Reconciling a fallback nobody
+        // will consult is not merely wasted work — it logs a disagreement about a value that has no
+        // bearing on the result, on exactly the split configuration this class documents as
+        // legitimate (X-Forwarded-Host: h + X-Forwarded-Port: 8443 + Forwarded: host="h:8443").
+        Optional<Integer> port = explicitPortPresent
+                ? Optional.empty()
+                : reconcileSources("host port", deFactoPort.headerName(),
+                deFactoPort.present(), deFactoPort.value(),
+                rfcHost.statesPort(), rfcHost.port());
 
         return new HostPort(host, port.map(OptionalInt::of).orElseGet(OptionalInt::empty));
+    }
+
+    /**
+     * Resolves the RFC 7239 {@code host} directive once, for every stage that must be reconciled
+     * against it.
+     *
+     * <p>The directive states two fields at once — the host and, when its token carries one, the
+     * port — and both the host stage and the explicit-port stage compare against it. Resolving it in
+     * one place keeps those stages reading the same value rather than re-deriving it, and keeps
+     * <em>what the directive spoke about</em> separate from <em>what it may be believed to say</em>:
+     * whether it carried a port is structural and survives the header being unbelievable, whereas
+     * the port's value is withheld the moment the header is unresolvable.</p>
+     */
+    private RfcHost rfcHost(ForwardedResult forwarded) {
+        String rfc = forwarded.parsed().host().orElse(null);
+        if (rfc == null) {
+            return RfcHost.ABSENT;
+        }
+        return new RfcHost(true, parseHostPort(lastToken(rfc)).port().isPresent(),
+                rfcResolution(forwarded, rfc, this::hostPortOf));
+    }
+
+    /**
+     * The RFC 7239 {@code host} directive's contribution, shared by the host and port stages.
+     *
+     * @param present    whether the directive was sent at all — distinct from it being sent but
+     *                   unresolvable, which is a real disagreement rather than an absence
+     * @param statesPort whether its token carried a port at all. A directive that named a bare host
+     *                   says nothing about the port and must not contest one another source states;
+     *                   a directive that DID carry a port still contests it after the header turns
+     *                   out to be unresolvable, which is what keeps that case failing closed
+     * @param value      its resolution ({@code empty} when absent or unresolvable)
+     */
+    private record RfcHost(boolean present, boolean statesPort, Optional<HostPort> value) {
+
+        private static final RfcHost ABSENT = new RfcHost(false, false, Optional.empty());
+
+        private Optional<String> host() {
+            return value.flatMap(HostPort::host);
+        }
+
+        private Optional<Integer> port() {
+            return value.flatMap(HostPort::portValue);
+        }
     }
 
     private Optional<HostPort> hostPortOf(String headerName, String raw) {
@@ -417,18 +492,33 @@ public final class ForwardedHeaderResolver {
      *
      * <p>{@code hostPortFallback} is therefore the port the two {@code host[:port]} sources agreed
      * on, consulted only when no explicit port header is present at all.</p>
+     *
+     * <p><strong>An explicit port header is reconciled against RFC 7239 too.</strong> A
+     * {@code Forwarded: host="h:9000"} directive states a port just as much as
+     * {@code X-Forwarded-Port: 8443} does, so the two are compared through the same fail-closed
+     * {@link #reconcileSources} path scheme, host, and client-IP use: they agree and the port stands,
+     * they disagree and it is dropped with a warning. Returning the de-facto port unconditionally
+     * bypassed the disagreement check for this one field, letting a forged {@code X-Forwarded-Port}
+     * win over the {@code Forwarded} header — which is exactly the "prefer one source" behaviour the
+     * rest of the resolver refuses. The RFC side contests only when its {@code host} directive
+     * actually carried a port: a directive naming a bare host said nothing about the port, so an
+     * explicit port header stands unopposed against it.</p>
      */
-    private OptionalInt resolvePort(UnaryOperator<String> lookup, OptionalInt hostPortFallback) {
-        if (!isPresent(lookup.apply(X_FORWARDED_PORT)) && !isPresent(lookup.apply(X_PROXY_PORT))) {
+    private OptionalInt resolvePort(UnaryOperator<String> lookup, RfcHost rfcHost, boolean explicitPortPresent,
+            OptionalInt hostPortFallback) {
+        if (!explicitPortPresent) {
             return hostPortFallback;
         }
         if (!config.trustAll()) {
             return OptionalInt.empty();
         }
-        return reconcileDeFacto(lookup, "port", X_FORWARDED_PORT, X_PROXY_PORT, this::portOf)
-                .value()
+        DeFactoResolution<Integer> deFacto =
+                reconcileDeFacto(lookup, "port", X_FORWARDED_PORT, X_PROXY_PORT, this::portOf);
+        return reconcileSources("port", deFacto.headerName(),
+                deFacto.present(), deFacto.value(),
+                rfcHost.statesPort(), rfcHost.port())
                 .map(OptionalInt::of)
-                .orElse(OptionalInt.empty());
+                .orElseGet(OptionalInt::empty);
     }
 
     /**
@@ -685,31 +775,138 @@ public final class ForwardedHeaderResolver {
      */
     private <T> DeFactoResolution<T> reconcileDeFacto(UnaryOperator<String> lookup, String field,
             String xForwardedName, String xProxyName, BiFunction<String, String, Optional<T>> resolver) {
+        return reconcileStatedByPresence(
+                resolveDeFactoSources(lookup, xForwardedName, xProxyName, resolver), field, Optional::of);
+    }
+
+    /**
+     * Reads both de-facto header names and resolves each independently, without yet comparing them.
+     *
+     * <p>Separating the read from the comparison is what lets a multi-field value such as
+     * {@code host[:port]} be reconciled field by field: the two families are resolved once, and each
+     * field they carry is then reconciled on its own terms (see {@link #reconcileStatedByPresence}
+     * and {@link #reconcileStatedByValue}).</p>
+     */
+    private <T> DeFactoSources<T> resolveDeFactoSources(UnaryOperator<String> lookup,
+            String xForwardedName, String xProxyName, BiFunction<String, String, Optional<T>> resolver) {
         String xForwardedRaw = lookup.apply(xForwardedName);
         String xProxyRaw = lookup.apply(xProxyName);
         boolean xForwardedPresent = isPresent(xForwardedRaw);
         boolean xProxyPresent = isPresent(xProxyRaw);
-        if (!xForwardedPresent && !xProxyPresent) {
-            return new DeFactoResolution<>(xForwardedName, false, Optional.empty());
+        return new DeFactoSources<>(
+                xForwardedName, xForwardedPresent,
+                xForwardedPresent ? resolver.apply(xForwardedName, xForwardedRaw) : Optional.empty(),
+                xProxyName, xProxyPresent,
+                xProxyPresent ? resolver.apply(xProxyName, xProxyRaw) : Optional.empty());
+    }
+
+    /**
+     * Reconciles one field where <em>presence of the header</em> is the statement: a present de-facto
+     * header speaks about the field even when it resolves to nothing valid, so a present-but-invalid
+     * value still contests and never falls through to its sibling family.
+     *
+     * <p>This is the rule for a field that is the whole header value (scheme, port) and for the host
+     * a {@code host[:port]} token always carries.</p>
+     */
+    private <T, F> DeFactoResolution<F> reconcileStatedByPresence(DeFactoSources<T> sources, String field,
+            Function<T, Optional<F>> extractor) {
+        return reconcileDeFactoField(field, sources,
+                new FieldContribution<>(sources.xForwardedName(), sources.xForwardedPresent(),
+                        sources.fromXForwarded().flatMap(extractor)),
+                new FieldContribution<>(sources.xProxyName(), sources.xProxyPresent(),
+                        sources.fromXProxy().flatMap(extractor)));
+    }
+
+    /**
+     * Reconciles one field where <em>a resolved value</em> is the statement: a family that carried no
+     * value for this field says nothing about it and does not contest.
+     *
+     * <p>This is the rule for the optional port inside a {@code host[:port]} token. Treating its
+     * absence as a contested empty value made {@code X-Forwarded-Host: h} versus
+     * {@code X-ProxyHost: h:9443} look like a conflict and let the precedence tie-break discard a
+     * port no source contradicted.</p>
+     */
+    private <T, F> DeFactoResolution<F> reconcileStatedByValue(DeFactoSources<T> sources, String field,
+            Function<T, Optional<F>> extractor) {
+        Optional<F> fromXForwarded = sources.fromXForwarded().flatMap(extractor);
+        Optional<F> fromXProxy = sources.fromXProxy().flatMap(extractor);
+        return reconcileDeFactoField(field, sources,
+                new FieldContribution<>(sources.xForwardedName(), fromXForwarded.isPresent(), fromXForwarded),
+                new FieldContribution<>(sources.xProxyName(), fromXProxy.isPresent(), fromXProxy));
+    }
+
+    /**
+     * The shared comparison behind both statement rules: agree and the value stands, genuinely
+     * disagree and {@link ForwardedResolverConfig#deFactoPrecedence()} breaks the tie, and a field
+     * only one family states is taken from that family unopposed.
+     *
+     * <p>The returned {@code present} flag is deliberately the <em>family</em>'s presence, not this
+     * field's statement: it feeds the RFC 7239 stage, where "a de-facto header was sent" is what
+     * decides whether that stage compares or simply defers. A family that stated nothing about this
+     * one field was still sent, and an RFC directive for it must therefore still be reconciled rather
+     * than honored unopposed.</p>
+     */
+    private <T, F> DeFactoResolution<F> reconcileDeFactoField(String field, DeFactoSources<T> sources,
+            FieldContribution<F> xForwarded, FieldContribution<F> xProxy) {
+        boolean familyPresent = sources.familyPresent();
+        if (!xForwarded.stated() && !xProxy.stated()) {
+            return new DeFactoResolution<>(sources.attribution(), familyPresent, Optional.empty());
         }
-        if (!xProxyPresent) {
-            return new DeFactoResolution<>(xForwardedName, true, resolver.apply(xForwardedName, xForwardedRaw));
+        if (!xProxy.stated()) {
+            return new DeFactoResolution<>(xForwarded.headerName(), familyPresent, xForwarded.value());
         }
-        if (!xForwardedPresent) {
-            return new DeFactoResolution<>(xProxyName, true, resolver.apply(xProxyName, xProxyRaw));
+        if (!xForwarded.stated()) {
+            return new DeFactoResolution<>(xProxy.headerName(), familyPresent, xProxy.value());
         }
-        Optional<T> fromXForwarded = resolver.apply(xForwardedName, xForwardedRaw);
-        Optional<T> fromXProxy = resolver.apply(xProxyName, xProxyRaw);
-        if (fromXForwarded.equals(fromXProxy)) {
-            return new DeFactoResolution<>(xForwardedName, true, fromXForwarded);
+        if (xForwarded.value().equals(xProxy.value())) {
+            return new DeFactoResolution<>(xForwarded.headerName(), familyPresent, xForwarded.value());
         }
         ForwardedResolverConfig.DeFactoFamily winner = config.deFactoPrecedence();
         LOGGER.warn(ForwardedLogMessages.WARN.DE_FACTO_FAMILIES_DISAGREE,
-                field, xForwardedName, describeForLog(fromXForwarded),
-                xProxyName, describeForLog(fromXProxy), winner);
+                field, xForwarded.headerName(), describeForLog(xForwarded.value()),
+                xProxy.headerName(), describeForLog(xProxy.value()), winner);
         return winner == ForwardedResolverConfig.DeFactoFamily.X_FORWARDED
-                ? new DeFactoResolution<>(xForwardedName, true, fromXForwarded)
-                : new DeFactoResolution<>(xProxyName, true, fromXProxy);
+                ? new DeFactoResolution<>(xForwarded.headerName(), familyPresent, xForwarded.value())
+                : new DeFactoResolution<>(xProxy.headerName(), familyPresent, xProxy.value());
+    }
+
+    /**
+     * Both de-facto families read and resolved, before any field of them has been compared.
+     *
+     * @param xForwardedName    the {@code X-Forwarded-*} header name for this field family
+     * @param xForwardedPresent whether that header was sent at all
+     * @param fromXForwarded    its independent resolution ({@code empty} when absent or invalid)
+     * @param xProxyName        the {@code X-Proxy*} header name for this field family
+     * @param xProxyPresent     whether that header was sent at all
+     * @param fromXProxy        its independent resolution ({@code empty} when absent or invalid)
+     */
+    private record DeFactoSources<T>(String xForwardedName, boolean xForwardedPresent, Optional<T> fromXForwarded,
+    String xProxyName, boolean xProxyPresent, Optional<T> fromXProxy) {
+
+        private boolean familyPresent() {
+            return xForwardedPresent || xProxyPresent;
+        }
+
+        /**
+         * The header name a diagnostic should be attributed to when neither family stated the field:
+         * the one that was actually sent, so a log line never names a header the request never
+         * carried.
+         */
+        private String attribution() {
+            return !xForwardedPresent && xProxyPresent ? xProxyName : xForwardedName;
+        }
+    }
+
+    /**
+     * One de-facto family's contribution to a single field.
+     *
+     * @param headerName the header name the contribution came from
+     * @param stated     whether this family says anything about the field at all — the two statement
+     *                   rules differ only in how they answer this
+     * @param value      the stated value ({@code empty} when the family stated the field but resolved
+     *                   to nothing valid)
+     */
+    private record FieldContribution<F>(String headerName, boolean stated, Optional<F> value) {
     }
 
     /**
