@@ -332,6 +332,39 @@ class ForwardedHeaderResolverTest {
             LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
         }
 
+        /**
+         * The mirror of {@link #disagreeingHostWithholdsItsOwnEmbeddedPort()} with the sides
+         * swapped: here the {@code Forwarded} header is the side carrying the forged
+         * {@code host[:port]} token and the de-facto side names a bare host. The discredit rule
+         * must be symmetric, because which side an attacker can reach is not something the resolver
+         * gets to assume — scoping it to the de-facto side let the same smuggle through in the other
+         * direction, with the trusted side's silence about the port standing in for corroboration.
+         */
+        @Test
+        @DisplayName("a rejected RFC 7239 host's own embedded port falls with it unless another source states it")
+        void disagreeingRfcHostWithholdsItsOwnEmbeddedPort() {
+            var uncorroborated = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "legit-host.example",
+                    "Forwarded", "host=\"attacker.example:6666\"")));
+            var corroborated = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "legit-host.example:6666",
+                    "Forwarded", "host=\"attacker.example:6666\"")));
+
+            assertAll("the RFC 7239 host directive states host and port in ONE value too",
+                    () -> assertTrue(uncorroborated.host().isEmpty(),
+                            "the two sources name different hosts, so neither host may be honored"),
+                    () -> assertTrue(uncorroborated.port().isEmpty(),
+                            "6666 was carried by the Forwarded token just proven forged and no other "
+                                    + "source states a port, so the de-facto side's silence must not let "
+                                    + "it through unopposed"),
+                    () -> assertTrue(corroborated.host().isEmpty(),
+                            "the hosts still disagree in the control case"),
+                    () -> assertEquals(6666, corroborated.port().orElseThrow(),
+                            "here X-Forwarded-Host states the same port independently, so the port "
+                                    + "stands on that corroboration rather than on the rejected value"));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
+        }
+
         @Test
         @DisplayName("a port disagreement drops the port without taking the agreed host with it")
         void disagreeingPortKeepsHost() {

@@ -142,11 +142,15 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  * <p><strong>Separate fields, but not separately believable when they share one value.</strong>
  * Per-field scoping decides which field a <em>disagreement</em> reaches; it never makes half of a
  * value credible after the other half was proven forged. So when a host disagreement drops the host,
- * the port that same {@code host[:port]} token carried is withheld too — unless another source
- * states that port independently, either an explicit {@code X-Forwarded-Port} / {@code X-ProxyPort}
- * header or the RFC 7239 {@code host} directive's own port. A port that no other source states has
- * the rejected value as its sole source, and honoring it let an attacker who could reach only the
- * de-facto family smuggle an arbitrary port through whenever the trusted side named a bare host.</p>
+ * the port a {@code host[:port]} token carried is withheld too — unless <em>both</em> sides stated a
+ * port independently, in which case they corroborate each other and are compared like any other
+ * field. A port only the losing side of the host comparison states has a rejected value as its sole
+ * source, and honoring it lets an attacker smuggle an arbitrary port through whenever the other side
+ * names a bare host. That rule is <em>symmetric</em>: it holds whether the forged {@code host[:port]}
+ * token arrived in the de-facto family or in the RFC 7239 {@code host} directive, because which side
+ * an attacker can reach is not something this resolver may assume. An explicit
+ * {@code X-Forwarded-Port} / {@code X-ProxyPort} header never depends on this rule at all — it
+ * supersedes the host-token port outright and is reconciled against RFC 7239 on its own.</p>
  *
  * <p><strong>Present-but-invalid = drop (no fall-through).</strong> A present, non-blank source is
  * validated; if it fails its field guard it is <em>dropped</em> — lower-precedence sources are
@@ -344,7 +348,7 @@ public final class ForwardedHeaderResolver {
         // will consult is not merely wasted work — it logs a disagreement about a value that has no
         // bearing on the result, on exactly the split configuration this class documents as
         // legitimate (X-Forwarded-Host: h + X-Forwarded-Port: 8443 + Forwarded: host="h:8443").
-        Optional<Integer> port = explicitPortPresent || deFactoPortDiscredited(deFactoHost, deFactoPort, rfcHost)
+        Optional<Integer> port = explicitPortPresent || hostTokenPortDiscredited(deFactoHost, deFactoPort, rfcHost)
                 ? Optional.empty()
                 : reconcileSources("host port", deFactoPort.headerName(),
                 deFactoPort.stated(), deFactoPort.value(),
@@ -354,34 +358,45 @@ public final class ForwardedHeaderResolver {
     }
 
     /**
-     * Whether the de-facto {@code host[:port]} token's embedded port has been discredited along with
-     * the host the same raw value carried.
+     * Whether a {@code host[:port]} token's embedded port has been discredited along with the host
+     * the same raw value carried — on <em>either</em> side of the comparison.
      *
      * <p>The host and the port of a {@code host[:port]} token are two fields, but they are two fields
-     * read out of <em>one</em> raw value. When that value's host is dropped for disagreeing with the
-     * RFC 7239 {@code host} directive, this class's own rule — "a disagreement means at least one
-     * side is forged" — has been applied to the value as a whole, not merely to the host characters
-     * inside it. Honoring its port anyway lets an attacker who can only reach the de-facto family
-     * smuggle an arbitrary port through, because the RFC side's silence about the port leaves the
-     * de-facto value standing unopposed. Per-field scoping is about which field a <em>disagreement</em>
-     * reaches, never about believing half of a value already proven forged.</p>
+     * read out of <em>one</em> raw value. When the de-facto and RFC 7239 hosts disagree, this class's
+     * own rule — "a disagreement means at least one side is forged" — has been applied to those raw
+     * values as wholes, not merely to the host characters inside them. Honoring a port that only one
+     * of them carried lets an attacker smuggle an arbitrary port through, because the other side's
+     * silence about the port leaves the surviving claim standing unopposed. Per-field scoping is
+     * about which field a <em>disagreement</em> reaches, never about believing half of a value
+     * already proven forged.</p>
      *
-     * <p>Corroboration is what lifts the discredit, and it is deliberately narrow: only the RFC side
-     * <em>itself</em> stating a port counts here, and then the ordinary
-     * {@link #reconcileSources} comparison decides the outcome — agreeing ports stand on the RFC
-     * side's own statement rather than on the rejected value, and disagreeing ones are dropped as
-     * usual. The other corroborating source, an explicit {@code X-Forwarded-Port} /
-     * {@code X-ProxyPort} header, never reaches this fallback at all: it supersedes the host-token
-     * port outright, and {@link #resolvePort} reconciles it against RFC 7239 on its own.</p>
+     * <p><strong>The rule is symmetric, and must be.</strong> Scoping the discredit to the de-facto
+     * side alone covered only the direction where the forged token arrived as
+     * {@code X-Forwarded-Host} / {@code X-ProxyHost}. The mirrored direction — a forged
+     * {@code Forwarded: host="attacker.example:6666"} against a de-facto header naming a bare host —
+     * fell through to {@link #reconcileSources}, which returns the RFC value unconditionally when the
+     * de-facto side stated nothing, so the attacker-controlled port survived the very comparison that
+     * had just rejected the host half of its own token. Which family an attacker can reach is not
+     * something this resolver may assume, so the discredit is stated over both sides at once.</p>
      *
-     * @return {@code true} when the host disagreed across the two sources <em>and</em> the RFC 7239
-     *         directive stated no port of its own to corroborate the de-facto one
+     * <p>Corroboration is what lifts the discredit, and it is deliberately narrow: <em>both</em>
+     * sides must independently state a port, and the ordinary {@link #reconcileSources} comparison
+     * then decides the outcome unchanged — agreeing ports stand on the two independent statements
+     * rather than on a rejected value, and disagreeing ones are dropped as usual. A port stated by
+     * one side only is not corroboration; it is the rejected value speaking for itself. The other
+     * corroborating source, an explicit {@code X-Forwarded-Port} / {@code X-ProxyPort} header, never
+     * reaches this fallback at all: it supersedes the host-token port outright, and
+     * {@link #resolvePort} reconciles it against RFC 7239 on its own.</p>
+     *
+     * @return {@code true} when the host disagreed across the two sources <em>and</em> the two sides
+     *         did not both state a port of their own to corroborate each other
      */
-    private static boolean deFactoPortDiscredited(DeFactoResolution<String> deFactoHost,
+    private static boolean hostTokenPortDiscredited(DeFactoResolution<String> deFactoHost,
             DeFactoResolution<Integer> deFactoPort, RfcHost rfcHost) {
         boolean hostDisagreed = deFactoHost.stated() && rfcHost.present()
                 && !deFactoHost.value().equals(rfcHost.host());
-        return hostDisagreed && deFactoPort.value().isPresent() && !rfcHost.statesPort();
+        boolean bothSidesStatePort = deFactoPort.value().isPresent() && rfcHost.statesPort();
+        return hostDisagreed && !bothSidesStatePort;
     }
 
     /**
