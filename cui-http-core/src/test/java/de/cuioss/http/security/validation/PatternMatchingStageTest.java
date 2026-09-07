@@ -197,6 +197,71 @@ class PatternMatchingStageTest {
         assertEquals(legitimatePath, result.get());
     }
 
+    /**
+     * The path block-list is segment matching, which is path semantics. Applying it to a parameter
+     * value rejected a bare value of exactly {@code etc} under {@code paranoid()}, because
+     * {@code stripSurroundingSlashes("/etc/")} yields {@code etc} and the whole value is a single
+     * segment - a value that is not a path being judged as one.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"etc", "dev", "sys", "root", "boot", "proc"})
+    void shouldNotApplyPathBlockListToParameterValues(String value) {
+        SecurityConfiguration config = SecurityConfiguration.paranoid();
+        PatternMatchingStage stage = new PatternMatchingStage(config, ValidationType.PARAMETER_VALUE);
+
+        Optional<String> result = stage.validate(value);
+        assertTrue(result.isPresent(), "'" + value + "' is an ordinary parameter value, not a path");
+        assertEquals(value, result.get());
+    }
+
+    /**
+     * The narrowing above must not disarm the path case it was scoped away from: the same literal
+     * as a {@code URL_PATH} segment is still rejected.
+     */
+    @Test
+    void shouldStillApplyPathBlockListToUrlPaths() {
+        SecurityConfiguration config = SecurityConfiguration.paranoid();
+        PatternMatchingStage stage = new PatternMatchingStage(config, ValidationType.URL_PATH);
+
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> stage.validate("/etc/passwd"));
+
+        assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType());
+        assertEquals(ValidationType.URL_PATH, exception.getValidationType());
+    }
+
+    /**
+     * Control for the other gate that spans parameter values: traversal detection (step 1) is
+     * untouched by the block-list narrowing, and the widened query character set of deliverable 1 -
+     * which now admits a raw {@code /} - must not weaken it.
+     */
+    @Test
+    void shouldStillDetectTraversalInParameterValues() {
+        SecurityConfiguration config = SecurityConfiguration.paranoid();
+        PatternMatchingStage stage = new PatternMatchingStage(config, ValidationType.PARAMETER_VALUE);
+
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> stage.validate("../../etc/passwd"));
+
+        assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, exception.getFailureType());
+        assertEquals(ValidationType.PARAMETER_VALUE, exception.getValidationType());
+    }
+
+    /**
+     * Control that the narrowing is scoped to the block-list alone: a protocol-handler scheme in a
+     * parameter value is still rejected, because that gate remains applied to both types.
+     */
+    @Test
+    void shouldStillDetectProtocolHandlerSchemeInParameterValues() {
+        SecurityConfiguration config = SecurityConfiguration.paranoid();
+        PatternMatchingStage stage = new PatternMatchingStage(config, ValidationType.PARAMETER_VALUE);
+
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> stage.validate("javascript:alert(1)"));
+
+        assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType());
+    }
+
     // ========== Protocol Handler Scheme Tests ==========
 
     @ParameterizedTest

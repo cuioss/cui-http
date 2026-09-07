@@ -112,9 +112,11 @@ import java.util.Set;
  * @param blockedContentTypes Case-insensitive block-list of content types (takes precedence over
  *        the allow-list). Enforced by the content-type validator ({@code AllowBlockListStage}).
  * @param blockedPathPatterns Block-list of sensitive path literals; empty (the default) means
- *        block-none. Enforced by {@code PatternMatchingStage} for {@code URL_PATH} and
- *        {@code PARAMETER_VALUE} whenever the set is non-empty, matching a whole {@code /}-delimited
- *        path segment. Seed it from {@link SecurityDefaults#SENSITIVE_PATH_PATTERNS} — via
+ *        block-none. Enforced by {@code PatternMatchingStage} for {@code URL_PATH} <em>only</em>
+ *        whenever the set is non-empty, matching a whole {@code /}-delimited path segment. It is
+ *        deliberately not applied to {@code PARAMETER_VALUE}: segment matching is path semantics,
+ *        and a parameter value is not a path. Seed it from
+ *        {@link SecurityDefaults#SENSITIVE_PATH_PATTERNS} — via
  *        {@link #withContentBlockLists(Set, Set)} on any base preset, or via the builder on the
  *        default preset — to reproduce the {@link #paranoid()} detection.
  * @param blockedParameterNames Block-list of parameter names; empty (the default) means block-none.
@@ -298,7 +300,8 @@ Set<String> blockedParameterNames
      *                 SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES);
      * </pre>
      *
-     * @param blockedPathPatterns Block-list of sensitive path literals; empty means block-none
+     * @param blockedPathPatterns Block-list of sensitive path literals; empty means block-none.
+     *        Enforced for {@code URL_PATH} only
      * @param blockedParameterNames Block-list of parameter names; empty means block-none
      * @return A new SecurityConfiguration identical to this one except for the two block-lists
      */
