@@ -75,9 +75,11 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  *   <li>scheme: {@code X-Forwarded-Proto} reconciled with {@code X-ProxyScheme}, then reconciled
  *       against RFC 7239 {@code proto}</li>
  *   <li>host: {@code X-Forwarded-Host} reconciled with {@code X-ProxyHost}, then reconciled against
- *       RFC 7239 {@code host}</li>
+ *       RFC 7239 {@code host} — comparing the <em>host</em> alone, not the {@code host[:port]}
+ *       token as a whole</li>
  *   <li>port: {@code X-Forwarded-Port} reconciled with {@code X-ProxyPort}, else the host
- *       {@code :port} fallback</li>
+ *       {@code :port} fallback — itself the port each source's {@code host[:port]} token carried,
+ *       reconciled <em>independently</em> of the host</li>
  *   <li>context-path: {@code X-ProxyContextPath} → {@code X-Forwarded-Prefix}
  *       ({@code Forwarded} has no prefix directive)</li>
  *   <li>client-IP: {@code X-Forwarded-For} chain, reconciled against the RFC 7239 {@code for}
@@ -109,6 +111,15 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  * and a warning logged, rather than letting the higher-precedence family silently win — preferring
  * one source is precisely what an attacker exploits by supplying the family the resolver ranks
  * higher.</p>
+ *
+ * <p><strong>Host and port are compared as separate fields.</strong> A source states both in one
+ * {@code host[:port]} token, but that token is compared field by field: host against host, and the
+ * port it carried against the port the other source carried. A host disagreement therefore drops
+ * only the host, and a port disagreement only the port. Comparing the pair as one unit demanded
+ * that both sources agree on host <em>and</em> port at once, so the legitimate split an ingress
+ * writes as {@code X-Forwarded-Host: h} plus {@code X-Forwarded-Port: 8443} alongside
+ * {@code Forwarded: host="h:8443"} was read as a conflict and dropped the host both sources
+ * actually named.</p>
  *
  * <p><strong>Present-but-invalid = drop (no fall-through).</strong> A present, non-blank source is
  * validated; if it fails its field guard it is <em>dropped</em> — lower-precedence sources are
@@ -259,6 +270,19 @@ public final class ForwardedHeaderResolver {
 
     // --- host --------------------------------------------------------------------------------
 
+    /**
+     * Resolves the host and the port its {@code host[:port]} token carried as <em>two independent
+     * fields</em>.
+     *
+     * <p>Each source is still parsed as one {@code host[:port]} token — that is what {@link HostPort}
+     * is — but the de-facto-versus-RFC-7239 comparison runs twice, host against host and port against
+     * port, rather than once over the whole record. Comparing the record as a unit made its equality
+     * demand that both sources agree on host <em>and</em> port simultaneously, so the legitimate split
+     * an ingress writes as {@code X-Forwarded-Host: h} plus {@code X-Forwarded-Port: 8443} alongside
+     * {@code Forwarded: host="h:8443"} produced {@code (h, none)} against {@code (h, 8443)} and dropped
+     * the host both sources actually agreed on. Reconciling field by field keeps each drop scoped to
+     * the field that disagreed.</p>
+     */
     private HostPort resolveHost(UnaryOperator<String> lookup, ForwardedResult forwarded) {
         if (!config.trustAll()) {
             return HostPort.EMPTY;
@@ -266,10 +290,17 @@ public final class ForwardedHeaderResolver {
         DeFactoResolution<HostPort> deFacto =
                 reconcileDeFacto(lookup, "host", X_FORWARDED_HOST, X_PROXY_HOST, this::hostPortOf);
         String rfc = forwarded.parsed().host().orElse(null);
-        return reconcileSources("host", deFacto.headerName(),
-                deFacto.present(), deFacto.value(),
-                rfc != null, rfcResolution(forwarded, rfc, this::hostPortOf))
-                .orElse(HostPort.EMPTY);
+        boolean rfcPresent = rfc != null;
+        Optional<HostPort> fromRfc = rfcResolution(forwarded, rfc, this::hostPortOf);
+
+        Optional<String> host = reconcileSources("host", deFacto.headerName(),
+                deFacto.present(), deFacto.value().flatMap(HostPort::host),
+                rfcPresent, fromRfc.flatMap(HostPort::host));
+        Optional<Integer> port = reconcileSources("host port", deFacto.headerName(),
+                deFacto.present(), deFacto.value().flatMap(HostPort::portValue),
+                rfcPresent, fromRfc.flatMap(HostPort::portValue));
+
+        return new HostPort(host, port.map(OptionalInt::of).orElseGet(OptionalInt::empty));
     }
 
     private Optional<HostPort> hostPortOf(String headerName, String raw) {
@@ -378,9 +409,14 @@ public final class ForwardedHeaderResolver {
      *
      * <p>The port is dropped only when the header actually carried a {@code host} directive bearing
      * one — and that drop needs no guard here, because it arrives through {@code hostPortFallback}:
-     * a {@code host} directive the header did carry makes the RFC side present for the host, whose
-     * empty resolution then drops the host <em>and</em> the port it would have supplied. A header
-     * that broke before any {@code host} directive leaves an {@code X-Forwarded-Port} standing.</p>
+     * a {@code host} directive the header did carry makes the RFC side present, whose empty
+     * resolution then drops the host-derived port through {@link #resolveHost}'s own port
+     * reconciliation. That reconciliation is independent of the host one, so the host may still
+     * stand. A header that broke before any {@code host} directive leaves an
+     * {@code X-Forwarded-Port} standing.</p>
+     *
+     * <p>{@code hostPortFallback} is therefore the port the two {@code host[:port]} sources agreed
+     * on, consulted only when no explicit port header is present at all.</p>
      */
     private OptionalInt resolvePort(UnaryOperator<String> lookup, OptionalInt hostPortFallback) {
         if (!isPresent(lookup.apply(X_FORWARDED_PORT)) && !isPresent(lookup.apply(X_PROXY_PORT))) {
@@ -849,6 +885,16 @@ public final class ForwardedHeaderResolver {
      */
     private record HostPort(Optional<String> host, OptionalInt port) {
         private static final HostPort EMPTY = new HostPort(Optional.empty(), OptionalInt.empty());
+
+        /**
+         * The port as an {@link Optional}, so {@link #reconcileSources} can compare it on the same
+         * shape it compares every other field on. {@link OptionalInt} is not an {@link Optional} and
+         * carries none of its combinators, so without this the port could not be reconciled
+         * independently of the host.
+         */
+        private Optional<Integer> portValue() {
+            return port.isPresent() ? Optional.of(port.getAsInt()) : Optional.empty();
+        }
 
         /**
          * Renders as {@code host[:port]} so a disagreement log line reads as the header value it

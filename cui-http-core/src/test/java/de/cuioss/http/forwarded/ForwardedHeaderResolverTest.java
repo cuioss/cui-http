@@ -271,6 +271,53 @@ class ForwardedHeaderResolverTest {
         }
 
         @Test
+        @DisplayName("honors a host both sources name when only one of them also carries the port")
+        void hostSplitAcrossPortHeaderHonored() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com",
+                    "X-Forwarded-Port", "8443",
+                    "Forwarded", "host=\"app.example.com:8443\"")));
+
+            assertAll("the sources are compared host against host and port against port",
+                    () -> assertEquals("app.example.com", result.host().orElseThrow(),
+                            "both sources name the same host; only the port placement differs, and "
+                                    + "comparing the pair as one record used to drop the host over it"),
+                    () -> assertEquals(8443, result.port().orElseThrow(),
+                            "the explicit port header resolves on its own"));
+        }
+
+        @Test
+        @DisplayName("a host disagreement drops the host without taking the port with it")
+        void disagreeingHostKeepsExplicitPort() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com",
+                    "X-Forwarded-Port", "8443",
+                    "Forwarded", "host=\"attacker.example:8443\"")));
+
+            assertAll("the drop is scoped to the field that actually disagreed",
+                    () -> assertTrue(result.host().isEmpty(),
+                            "the two sources name different hosts, so neither may be honored"),
+                    () -> assertEquals(8443, result.port().orElseThrow(),
+                            "the port was never in dispute, so the host conflict must not erase it"));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
+        }
+
+        @Test
+        @DisplayName("a port disagreement drops the port without taking the agreed host with it")
+        void disagreeingPortKeepsHost() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com:8443",
+                    "Forwarded", "host=\"app.example.com:9000\"")));
+
+            assertAll("the drop is scoped to the field that actually disagreed",
+                    () -> assertEquals("app.example.com", result.host().orElseThrow(),
+                            "both sources name the same host, so the conflicting port must not erase it"),
+                    () -> assertTrue(result.port().isEmpty(),
+                            "8443 against 9000 is a real conflict, so no port may be honored"));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
+        }
+
+        @Test
         @DisplayName("drops an out-of-range or non-numeric port")
         void dropsInvalidPort() {
             assertTrue(trustAllResolver()
