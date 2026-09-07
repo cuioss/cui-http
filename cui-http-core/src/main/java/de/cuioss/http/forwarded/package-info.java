@@ -81,7 +81,10 @@
  * // The accessor MUST expose every instance of a repeated header, not just the first:
  * ResolvedForwarding forwarding =
  *     resolver.resolve(name -> Collections.list(request.getHeaders(name)));
- * String scheme = forwarding.scheme().orElse("http");
+ * // An empty scheme is the fail-closed signal: nothing was honored, so there is no
+ * // proxy-attested scheme to act on. Handle it explicitly rather than defaulting to http.
+ * String scheme = forwarding.scheme()
+ *         .orElseThrow(() -> new IllegalStateException("no trusted forwarded scheme"));
  * String prefix = forwarding.contextPath(); // "" when none / not honored
  * }</pre>
  *
