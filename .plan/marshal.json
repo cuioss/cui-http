@@ -32,7 +32,7 @@
       "revalidation": "auto"
     },
     "phase-3-outline": {
-      "plan_without_asking": false,
+      "plan_without_asking": true,
       "q_gate_validation": "once",
       "effort": "level-4"
     },
@@ -70,7 +70,7 @@
     "phase-6-finalize": {
       "max_iterations": 3,
       "finalize_without_asking": true,
-      "loop_back_without_asking": false,
+      "loop_back_without_asking": true,
       "checks_wait_timeout_seconds": 600,
       "steps": {
         "default:finalize-step-sync-baseline": {
@@ -98,7 +98,7 @@
           "re_review_on_branch_cleanup": true,
           "re_review_await_timeout_seconds": 600,
           "re_review_on_timeout": "ask",
-          "review_rate_window_await": false,
+          "review_rate_window_await": true,
           "review_rate_window_timeout_seconds": 3600,
           "required_bots": "coderabbit,cuioss-review-bot",
           "optional_bots": "sourcery",
@@ -126,7 +126,7 @@
         },
         "default:branch-cleanup": {
           "pr_merge_strategy": "squash",
-          "final_merge_without_asking": false,
+          "final_merge_without_asking": true,
           "auto_rebase_threshold": "no_overlap_only",
           "merge_queue_wait_budget_seconds": 1800,
           "merge_hold_window": "full_window_release_at_waits",
@@ -216,7 +216,7 @@
     "pr_strategy": "compact",
     "pr_compact_max_changed_files": 150,
     "merge_queue_managed_externally": true,
-    "user_language": "auto"
+    "user_language": "english"
   },
   "providers": [
     {
@@ -280,7 +280,7 @@
       "plugin_cache_keep_versions": 5,
       "plugin_cache_keep_days": 3
     },
-    "provisioned_version": "0.1.1586",
+    "provisioned_version": "0.1.1619",
     "config_seed_fingerprint": "cf572469"
   }
 }
