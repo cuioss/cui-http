@@ -742,7 +742,7 @@ class ForwardedHeaderResolverTest {
         }
 
         @Test
-        @DisplayName("a sanitization-rejected Forwarded header drops every de-facto field it covers")
+        @DisplayName("a sanitization-rejected Forwarded header suppresses no de-facto field")
         void rejectedForwardedDropsDeFactoFields() {
             var result = proxyAwareResolver().resolve(headers(Map.of(
                     "X-Forwarded-Proto", "https",
@@ -750,19 +750,16 @@ class ForwardedHeaderResolverTest {
                     "X-Forwarded-For", "203.0.113.7, 10.0.0.5",
                     "Forwarded", REJECTED)));
 
-            assertAll("a present-but-unresolvable RFC source disagrees with every resolving sibling",
-                    () -> assertTrue(result.scheme().isEmpty(),
-                            "a rejected Forwarded header must not silently fall back to X-Forwarded-Proto"),
-                    () -> assertTrue(result.host().isEmpty(),
-                            "a rejected Forwarded header must not silently fall back to X-Forwarded-Host"),
-                    () -> assertTrue(result.clientIp().isEmpty(),
-                            "a rejected Forwarded header must not silently fall back to X-Forwarded-For"));
+            assertAll("a value that never sanitized yields no directive, so it spoke about no field",
+                    () -> assertEquals("https", result.scheme().orElseThrow()),
+                    () -> assertEquals("app.example.com", result.host().orElseThrow()),
+                    () -> assertEquals("203.0.113.7", result.clientIp().orElseThrow()));
             LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "failed security sanitization");
-            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
+            LogAsserts.assertNoLogMessagePresent(TestLogLevel.WARN, "sources disagree");
         }
 
         @Test
-        @DisplayName("a sanitization-rejected Forwarded header is not mistaken for an absent one")
+        @DisplayName("a sanitization-rejected Forwarded header is still reported, though it suppresses nothing")
         void rejectedForwardedIsNotAbsent() {
             var deFactoOnly = proxyAwareResolver()
                     .resolve(headers(Map.of("X-Forwarded-Host", "app.example.com")));
@@ -770,10 +767,29 @@ class ForwardedHeaderResolverTest {
                     "X-Forwarded-Host", "app.example.com",
                     "Forwarded", REJECTED)));
 
-            assertAll("the two cases must not resolve identically",
+            assertAll("the header is not silently swallowed merely because it changes no value",
                     () -> assertEquals("app.example.com", deFactoOnly.host().orElseThrow()),
-                    () -> assertTrue(withRejected.host().isEmpty()),
-                    () -> assertNotEquals(deFactoOnly, withRejected));
+                    () -> assertEquals("app.example.com", withRejected.host().orElseThrow(),
+                            "the rejected header carried no host directive, so it drops nothing"),
+                    () -> assertEquals(deFactoOnly, withRejected,
+                            "suppressing nothing means the two now resolve alike"));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "failed security sanitization");
+        }
+
+        @Test
+        @DisplayName("a malformed Forwarded header drops the field it spoke about and only that field")
+        void malformedForwardedDropsOnlyTheFieldItCarried() {
+            var result = proxyAwareResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "https",
+                    "X-Forwarded-Host", "app.example.com",
+                    "Forwarded", "proto=http;broken")));
+
+            assertAll("the parser retained proto, so scope is per field rather than total",
+                    () -> assertTrue(result.scheme().isEmpty(),
+                            "the header did carry a proto directive, so the scheme fails closed"),
+                    () -> assertEquals("app.example.com", result.host().orElseThrow(),
+                            "it carried no host directive, so X-Forwarded-Host must stand"));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
         }
 
         @Test
@@ -798,22 +814,36 @@ class ForwardedHeaderResolverTest {
                     "an unresolvable header contributes no value of its own");
         }
 
+        /**
+         * Port is where the per-field rule is easiest to get wrong, because a {@code Forwarded}
+         * header speaks about the port only indirectly — through a {@code host} directive that
+         * happens to carry one. The two halves below are a matched pair: the same malformed header
+         * drops the port when its {@code host} directive bore one, and leaves it standing when it
+         * did not.
+         */
         @Test
-        @DisplayName("a malformed Forwarded header drops X-Forwarded-Port")
+        @DisplayName("a malformed Forwarded header drops the port only when its host directive bore one")
         void malformedForwardedDropsDeFactoPort() {
             var portOnly = proxyAwareResolver()
                     .resolve(headers(Map.of("X-Forwarded-Port", "8080")));
-            var withMalformed = proxyAwareResolver().resolve(headers(Map.of(
+            var hostWithoutPort = proxyAwareResolver().resolve(headers(Map.of(
                     "X-Forwarded-Port", "8080",
+                    "X-Forwarded-Host", "app.example.com",
                     "Forwarded", "host=trusted.example;broken")));
+            var hostBearingPort = proxyAwareResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com:8443",
+                    "Forwarded", "host=trusted.example:9443;broken")));
 
-            assertAll("port obeys the present-but-unresolvable rule like every other field",
+            assertAll("scope follows the directive the header actually carried",
                     () -> assertEquals(8080, portOnly.port().orElseThrow(),
-                            "the same X-Forwarded-Port resolves on its own, so the drop below is the header's doing"),
-                    () -> assertTrue(withMalformed.port().isEmpty(),
-                            "a malformed forwarded-pair must not leave port as the one field that still honors X-Forwarded-Port"),
-                    () -> assertEquals(ResolvedForwarding.empty(), withMalformed,
-                            "no field survives an unresolvable Forwarded header"));
+                            "the same X-Forwarded-Port resolves on its own, so any drop below is the header's doing"),
+                    () -> assertEquals(8080, hostWithoutPort.port().orElseThrow(),
+                            "the malformed header's host directive carried no port, so X-Forwarded-Port stands"),
+                    () -> assertTrue(hostWithoutPort.host().isEmpty(),
+                            "it did carry a host directive, so the host itself still fails closed"),
+                    () -> assertTrue(hostBearingPort.port().isEmpty(),
+                            "here the host directive bore a port, so the port falls with the host"),
+                    () -> assertTrue(hostBearingPort.host().isEmpty()));
         }
     }
 

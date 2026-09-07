@@ -42,14 +42,21 @@ import java.util.Optional;
  * {@code Forwarded} header of its own. The {@code for} list is unaffected — it stays in appearance
  * order, because the chain walk consumes it right-to-left itself.</p>
  *
- * <p><strong>A malformed pair rejects the whole header.</strong> A {@code forwarded-pair} that is
- * non-blank yet carries no {@code =}, an empty directive name, or an empty (post-unquoting) value
- * violates the grammar. Such a pair is not discarded: it marks the result
- * {@linkplain Parsed#malformed() malformed}, parsing stops immediately, and no directive is reported.
- * The caller treats the entire {@code Forwarded} value as present-but-unresolvable, matching the
- * abort severity the {@code X-Forwarded-For} chain walk already applies to the same input class.
- * The grammar's optional {@code forwarded-pair} is honored: a pair that is blank after stripping
- * (e.g. a trailing {@code ;}) is legal and is skipped.</p>
+ * <p><strong>A malformed pair stops the parse and is reported, not swallowed.</strong> A
+ * {@code forwarded-pair} that is non-blank yet carries no {@code =}, an empty directive name, or an
+ * empty (post-unquoting) value violates the grammar. Such a pair is not discarded: it marks the
+ * result {@linkplain Parsed#malformed() malformed} and parsing stops immediately. The directives
+ * accumulated <em>before</em> the offending pair are <strong>retained</strong>, so the caller can
+ * still tell which fields the header actually spoke about — {@code proto=https;broken} reports
+ * {@code proto} as {@code https} with {@code malformed=true}, while {@code broken;proto=https}
+ * reports no {@code proto} at all, because the parse never reached it.</p>
+ *
+ * <p>Retaining them is a <em>presence</em> signal, not a licence to honor them: a malformed header
+ * is unresolvable, and the caller supplies nothing from it to the reconciliation. What the retained
+ * directives buy is per-field scope — a header that carried a {@code proto} and then broke drops
+ * only the scheme, instead of erasing every field a legitimate proxy attested. The grammar's
+ * optional {@code forwarded-pair} is honored: a pair that is blank after stripping (e.g. a trailing
+ * {@code ;}) is legal and is skipped.</p>
  */
 final class RfcForwardedParser {
 
@@ -59,20 +66,19 @@ final class RfcForwardedParser {
     /**
      * The relevant directives pulled from a {@code Forwarded} header value.
      *
-     * <p>When {@code malformed} is {@code true} the header violated the grammar and no directive was
-     * kept: {@code proto} and {@code host} are empty and {@code forValues} is empty. Callers must
-     * treat the whole header as unresolvable rather than reading the (deliberately empty)
-     * directives as "carried nothing".</p>
+     * <p>When {@code malformed} is {@code true} the header violated the grammar and the parse
+     * stopped at the offending pair — the directives reported are the ones accumulated
+     * <em>before</em> it. Read them as "which fields did this header speak about", never as values
+     * to honor: the header is unresolvable, so the caller contributes nothing from it and the
+     * fields it did speak about fail closed through the ordinary disagreement path.</p>
      *
-     * @param proto     the last {@code proto} directive, if any
-     * @param host      the last {@code host} directive, if any
-     * @param forValues the ordered {@code for} node identifiers (unquoted), possibly empty
+     * @param proto     the last {@code proto} directive parsed before the stop, if any
+     * @param host      the last {@code host} directive parsed before the stop, if any
+     * @param forValues the ordered {@code for} node identifiers (unquoted) parsed before the stop,
+     *                  possibly empty
      * @param malformed whether a non-blank {@code forwarded-pair} violated the grammar
      */
     record Parsed(Optional<String> proto, Optional<String> host, List<String> forValues, boolean malformed) {
-
-        /** The single outcome for a header carrying a grammar-violating pair. */
-        static final Parsed MALFORMED_RESULT = new Parsed(Optional.empty(), Optional.empty(), List.of(), true);
     }
 
     static Parsed parse(String headerValue) {
@@ -81,11 +87,11 @@ final class RfcForwardedParser {
             for (String pair : splitTopLevel(element, ';')) {
                 acc.apply(pair);
                 if (acc.malformed) {
-                    return Parsed.MALFORMED_RESULT;
+                    return acc.toParsed();
                 }
             }
         }
-        return new Parsed(Optional.ofNullable(acc.proto), Optional.ofNullable(acc.host), acc.forValues, false);
+        return acc.toParsed();
     }
 
     /**
@@ -99,6 +105,16 @@ final class RfcForwardedParser {
         private String host;
         private boolean malformed;
         private final List<String> forValues = new ArrayList<>();
+
+        /**
+         * Snapshots what has been accumulated so far. Called both on a clean finish and at the stop
+         * a malformed pair forces, so the retained-directives rule has a single implementation and
+         * the two exits cannot drift apart.
+         */
+        private Parsed toParsed() {
+            return new Parsed(Optional.ofNullable(proto), Optional.ofNullable(host),
+                    List.copyOf(forValues), malformed);
+        }
 
         private void apply(String pair) {
             String stripped = pair.strip();

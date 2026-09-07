@@ -355,16 +355,35 @@ class ForwardedTrustBoundaryTest {
     class ParserStrictness {
 
         @Test
-        @DisplayName("a malformed Forwarded directive drops the fields a clean de-facto sibling attests")
+        @DisplayName("a malformed Forwarded directive drops only the fields it reached before breaking")
         void malformedForwardedDropsDeFactoFields() {
             var result = trustAllResolver().resolve(headers(Map.of(
                     "X-Forwarded-Proto", "https",
                     "X-Forwarded-Host", PROXY_HOST,
                     "Forwarded", "proto=;host=" + PROXY_HOST)));
 
-            assertAll("the malformed header is present-but-unresolvable for every field it could carry",
-                    () -> assertTrue(result.scheme().isEmpty()),
-                    () -> assertTrue(result.host().isEmpty()));
+            assertAll("the parse broke on the very first pair, so this header spoke about no field at all",
+                    () -> assertEquals("https", result.scheme().orElseThrow(),
+                            "proto= carries no value, so no proto directive was ever accumulated"),
+                    () -> assertEquals(PROXY_HOST, result.host().orElseThrow(),
+                            "the host directive sits after the stop and was never read"));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "malformed forwarded-pair");
+            LogAsserts.assertNoLogMessagePresent(TestLogLevel.WARN, SOURCES_DISAGREE);
+        }
+
+        @Test
+        @DisplayName("the same malformed header drops the field it did reach, when order puts that field first")
+        void malformedForwardedDropsTheFieldItReached() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "https",
+                    "X-Forwarded-Host", PROXY_HOST,
+                    "Forwarded", "host=" + PROXY_HOST + ";proto=")));
+
+            assertAll("swapping the order moves the boundary, and nothing else",
+                    () -> assertEquals("https", result.scheme().orElseThrow(),
+                            "the broken proto= pair IS the stop, so no proto directive is accumulated from it"),
+                    () -> assertTrue(result.host().isEmpty(),
+                            "host was read before the stop, so the field fails closed even though the values match"));
             LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "malformed forwarded-pair");
             LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, SOURCES_DISAGREE);
         }

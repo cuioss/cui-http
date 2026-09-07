@@ -113,17 +113,18 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  * A source that is present but resolves to nothing valid also <em>disagrees</em> with a sibling
  * source that resolved successfully, so the conflicting-source rule above drops the field.</p>
  *
- * <p>This applies to the RFC 7239 {@code Forwarded} header as a whole: when its raw value fails
- * sanitization, <em>or</em> when it carries a malformed {@code forwarded-pair} (a non-blank pair with
- * no {@code =}, an empty directive name, or an empty value — a grammatically legal blank pair is
- * still accepted), the header is treated as present-but-unresolvable for <em>every</em> field it could
- * have carried (scheme, host, port, client-IP), not as absent. The port belongs in that enumeration
- * because a {@code Forwarded} header carries one through a {@code host=example.com:8443} directive.
- * A garbage {@code Forwarded} header therefore
- * disagrees with — and drops — an otherwise clean {@code X-Forwarded-*} value, instead of letting the
- * de-facto family win by default. Only a header that is genuinely absent, or one that sanitizes and
- * parses cleanly while simply carrying no directive for a given field, leaves that field's de-facto
- * value to stand on its own.</p>
+ * <p><strong>An unresolvable {@code Forwarded} header drops only the fields it spoke about.</strong>
+ * When its raw value fails sanitization, <em>or</em> when it carries a malformed
+ * {@code forwarded-pair} (a non-blank pair with no {@code =}, an empty directive name, or an empty
+ * value — a grammatically legal blank pair is still accepted), the header contributes
+ * <em>nothing</em>: it never supplies a value to the reconciliation, so any field it did carry a
+ * directive for fails closed through the ordinary disagreement path. It is <em>not</em> treated as
+ * present for every field it could theoretically have carried. Scope is per field, decided by the
+ * directives the parser reached before it stopped: {@code Forwarded: proto=http;broken} drops the
+ * scheme but leaves an {@code X-Forwarded-Host} value standing, because that header never spoke
+ * about the host. Suppressing every field on any garbage input was a denial of service on the trust
+ * model — an attacker appended one broken directive and erased everything a legitimate proxy
+ * attested, which is the inverse of the fail-closed intent.</p>
  *
  * <h3>Usage Example</h3>
  * <pre>{@code
@@ -188,7 +189,7 @@ public final class ForwardedHeaderResolver {
 
         Optional<String> scheme = resolveScheme(lookup, forwarded);
         HostPort hostPort = resolveHost(lookup, forwarded);
-        OptionalInt port = resolvePort(lookup, forwarded, hostPort.port());
+        OptionalInt port = resolvePort(lookup, hostPort.port());
         String contextPath = resolveContextPath(lookup, forwarded);
         Optional<String> clientIp = resolveClientIp(lookup, forwarded);
 
@@ -206,7 +207,7 @@ public final class ForwardedHeaderResolver {
         String rfc = forwarded.parsed().proto().orElse(null);
         return reconcileSources("scheme", deFacto.headerName(),
                 deFacto.present(), deFacto.value(),
-                forwarded.contributes(rfc != null), rfc == null ? Optional.empty() : schemeOf(FORWARDED, rfc));
+                rfc != null, rfcResolution(forwarded, rfc, this::schemeOf));
     }
 
     private Optional<String> schemeOf(String headerName, String raw) {
@@ -227,7 +228,7 @@ public final class ForwardedHeaderResolver {
         String rfc = forwarded.parsed().host().orElse(null);
         return reconcileSources("host", deFacto.headerName(),
                 deFacto.present(), deFacto.value(),
-                forwarded.contributes(rfc != null), rfc == null ? Optional.empty() : hostPortOf(FORWARDED, rfc))
+                rfc != null, rfcResolution(forwarded, rfc, this::hostPortOf))
                 .orElse(HostPort.EMPTY);
     }
 
@@ -331,20 +332,17 @@ public final class ForwardedHeaderResolver {
     // --- port --------------------------------------------------------------------------------
 
     /**
-     * Resolves the port, honoring the present-but-unresolvable rule that already governs scheme,
-     * host, and client-IP: an unresolvable {@code Forwarded} header counts as present for the port
-     * too — it could have carried one via a {@code host=example.com:8443} directive — so it
-     * disagrees with, and drops, any {@code X-Forwarded-Port} value.
+     * Resolves the port under the same per-field rule that governs scheme, host, and client-IP: an
+     * unresolvable {@code Forwarded} header is <em>not</em> treated as speaking about the port
+     * merely because it could have carried one via a {@code host=example.com:8443} directive.
      *
-     * <p>The unresolvable check precedes the {@code hostPortFallback} branch deliberately. That
-     * fallback is derived from the {@code host} directive, so returning it for an unresolvable
-     * header would leak the very source the rule drops; guarding only the explicit port-header
-     * branch would leave that leak open.</p>
+     * <p>The port is dropped only when the header actually carried a {@code host} directive bearing
+     * one — and that drop needs no guard here, because it arrives through {@code hostPortFallback}:
+     * a {@code host} directive the header did carry makes the RFC side present for the host, whose
+     * empty resolution then drops the host <em>and</em> the port it would have supplied. A header
+     * that broke before any {@code host} directive leaves an {@code X-Forwarded-Port} standing.</p>
      */
-    private OptionalInt resolvePort(UnaryOperator<String> lookup, ForwardedResult forwarded, OptionalInt hostPortFallback) {
-        if (forwarded.unresolvable()) {
-            return OptionalInt.empty();
-        }
+    private OptionalInt resolvePort(UnaryOperator<String> lookup, OptionalInt hostPortFallback) {
         if (!isPresent(lookup.apply(X_FORWARDED_PORT)) && !isPresent(lookup.apply(X_PROXY_PORT))) {
             return hostPortFallback;
         }
@@ -461,12 +459,16 @@ public final class ForwardedHeaderResolver {
         String xff = lookup.apply(X_FORWARDED_FOR);
         boolean xffPresent = isPresent(xff);
         List<String> rfcChain = forwarded.parsed().forValues();
-        boolean rfcPresent = forwarded.contributes(!rfcChain.isEmpty());
+        boolean rfcPresent = !rfcChain.isEmpty();
 
         Optional<String> fromXff = xffPresent
                 ? sanitize(X_FORWARDED_FOR, xff).map(value -> List.of(value.split(","))).flatMap(this::walkChain)
                 : Optional.empty();
-        Optional<String> fromRfc = rfcChain.isEmpty() ? Optional.empty() : walkChain(rfcChain);
+        // An unresolvable header contributes nothing, so a chain it DID carry meets an empty
+        // resolution and is dropped by the disagreement path rather than being walked and believed.
+        Optional<String> fromRfc = (!rfcPresent || forwarded.unresolvable())
+                ? Optional.empty()
+                : walkChain(rfcChain);
 
         return reconcileSources("client IP", X_FORWARDED_FOR, xffPresent, fromXff, rfcPresent, fromRfc);
     }
@@ -532,14 +534,16 @@ public final class ForwardedHeaderResolver {
         // and disagrees with any de-facto sibling that resolves (fail closed).
         Optional<String> sanitized = sanitize(FORWARDED, raw);
         if (sanitized.isEmpty()) {
-            return ForwardedResult.UNRESOLVABLE_RESULT;
+            // Nothing parsed, so the header spoke about no field and suppresses none.
+            return ForwardedResult.SANITIZATION_REJECTED;
         }
-        // A grammar-violating forwarded-pair rejects the whole header with the same severity as a
-        // sanitization failure — the directives it could have carried are all unresolvable.
+        // A grammar-violating forwarded-pair makes the header unbelievable, but the directives the
+        // parser reached before it stopped are RETAINED — they are what scopes the drop to the
+        // fields this header actually spoke about instead of erasing all of them.
         RfcForwardedParser.Parsed parsed = RfcForwardedParser.parse(sanitized.get());
         if (parsed.malformed()) {
             LOGGER.warn(ForwardedLogMessages.WARN.FORWARDED_DIRECTIVE_MALFORMED, sanitizeForLog(raw));
-            return ForwardedResult.UNRESOLVABLE_RESULT;
+            return new ForwardedResult(true, true, parsed);
         }
         return new ForwardedResult(true, false, parsed);
     }
@@ -559,6 +563,25 @@ public final class ForwardedHeaderResolver {
                     headerName, sanitizeForLog(raw));
             return Optional.empty();
         }
+    }
+
+    /**
+     * The RFC 7239 side's contribution for one field: the directive's resolution, or nothing when
+     * the header is unresolvable.
+     *
+     * <p>The two halves of the per-field rule meet here. Presence is decided by the directive alone
+     * (the caller passes {@code rfc != null}), so a header that never spoke about this field leaves
+     * the de-facto value to stand. Belief is decided by the header as a whole: an unresolvable one
+     * supplies nothing, so a field it DID speak about meets an empty RFC resolution and is dropped
+     * by the ordinary disagreement path in {@link #reconcileSources}. Keeping the two separate is
+     * what makes the failure per-field instead of total.</p>
+     */
+    private <T> Optional<T> rfcResolution(ForwardedResult forwarded, @Nullable String rfc,
+            BiFunction<String, String, Optional<T>> resolver) {
+        if (rfc == null || forwarded.unresolvable()) {
+            return Optional.empty();
+        }
+        return resolver.apply(FORWARDED, rfc);
     }
 
     /**
@@ -747,20 +770,28 @@ public final class ForwardedHeaderResolver {
      * <ol>
      *   <li>{@link #ABSENT} — no {@code Forwarded} header was sent; the RFC source contributes
      *       nothing and the de-facto family is honored on its own.</li>
-     *   <li>{@link #UNRESOLVABLE_RESULT} — the header WAS sent but its raw value failed sanitization
-     *       (over-length, NUL, other control characters including CR/LF) or violated the RFC 7239
-     *       grammar with a malformed {@code forwarded-pair}. The source counts as present for
-     *       <em>every</em> field, so it disagrees with any de-facto sibling that resolves and the
-     *       field is dropped (fail closed).</li>
+     *   <li>Unresolvable — the header WAS sent but its raw value failed sanitization (over-length,
+     *       NUL, other control characters including CR/LF) or violated the RFC 7239 grammar with a
+     *       malformed {@code forwarded-pair}. It supplies no value to any field
+     *       ({@link #rfcResolution} returns empty), so each field it actually carried a directive
+     *       for meets an empty RFC resolution and is dropped (fail closed) — and each field it did
+     *       NOT carry a directive for is untouched. Scope is per field; the header's directives
+     *       still say which fields those are, because the parser retains what it read before it
+     *       stopped.</li>
      *   <li>Present and sanitized — the parsed directives decide per field. A well-formed value that
      *       simply carries no {@code proto} (say) leaves that one field's RFC source with nothing to
      *       contribute, which is an ordinary fallback rather than a disagreement.</li>
      * </ol>
      *
+     * <p>Presence and belief are therefore separate axes, and only their combination is per-field:
+     * {@code parsed} answers "did this header speak about the field", {@code unresolvable} answers
+     * "may anything it said be believed". A sanitization failure yields no directives at all
+     * ({@link #NO_DIRECTIVES}) and so drops nothing beyond what a de-facto source can stand on.</p>
+     *
      * @param present      whether a non-blank {@code Forwarded} header was sent at all
      * @param unresolvable whether that header failed sanitization outright or parsed as malformed
-     * @param parsed       the directives parsed from the sanitized value; empty unless present and
-     *                     sanitized
+     * @param parsed       the directives parsed before the parse stopped; empty when the raw value
+     *                     never sanitized
      */
     private record ForwardedResult(boolean present, boolean unresolvable, RfcForwardedParser.Parsed parsed) {
 
@@ -769,16 +800,8 @@ public final class ForwardedHeaderResolver {
 
         private static final ForwardedResult ABSENT = new ForwardedResult(false, false, NO_DIRECTIVES);
 
-        private static final ForwardedResult UNRESOLVABLE_RESULT = new ForwardedResult(true, true, NO_DIRECTIVES);
-
-        /**
-         * Whether the RFC 7239 source counts as present for a field whose directive presence is
-         * {@code directivePresent}. An unresolvable header counts as present for every field — that
-         * is precisely what forces the disagreement path instead of a silent fallback.
-         */
-        private boolean contributes(boolean directivePresent) {
-            return unresolvable || directivePresent;
-        }
+        /** A header whose raw value failed sanitization: present, unresolvable, and directive-less. */
+        private static final ForwardedResult SANITIZATION_REJECTED = new ForwardedResult(true, true, NO_DIRECTIVES);
     }
 
     /**
