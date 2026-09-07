@@ -228,18 +228,28 @@ class CharacterValidationStageTest {
     }
 
     /**
-     * Every C0 control except the header-legal whitespace is rejected in a header name and value
-     * regardless of {@code allowControlCharacters} - so {@code lenient()}, which enables that flag,
-     * reaches the same verdict as {@code defaults()} (ADR-0017).
+     * Every C0 control except the type-legal whitespace is rejected in a header or cookie name and
+     * value regardless of {@code allowControlCharacters} - so {@code lenient()}, which enables that
+     * flag, reaches the same verdict as {@code defaults()} (ADR-0017).
      *
-     * <p>{@code HTTPHeaderValidationPipeline} composes no {@code DecodingStage}, so this stage is
-     * the sole character guard for headers: a VT admitted here would reach the application with no
-     * downstream re-check.</p>
+     * <p>{@code HTTPHeaderValidationPipeline} composes no {@code DecodingStage}, and no pipeline
+     * composes a {@code DecodingStage} with a cookie type either, so this stage is the sole
+     * character guard for both: a VT admitted here would reach the application with no downstream
+     * re-check.</p>
+     *
+     * <p>Header types report {@link UrlSecurityFailureType#INVALID_CHARACTER} (RFC 7230 treats a
+     * rejected header character as simply invalid), while cookie types report the more specific
+     * {@link UrlSecurityFailureType#CONTROL_CHARACTERS} - the same split already applied to every
+     * other non-header validation type.</p>
      */
     @ParameterizedTest
-    @EnumSource(value = ValidationType.class, names = {"HEADER_NAME", "HEADER_VALUE"})
-    void shouldRejectC0ControlCharactersInHeadersUnderEveryPreset(ValidationType type) {
+    @EnumSource(value = ValidationType.class, names = {"HEADER_NAME", "HEADER_VALUE", "COOKIE_NAME", "COOKIE_VALUE"})
+    void shouldRejectC0ControlCharactersInHeadersAndCookiesUnderEveryPreset(ValidationType type) {
         String withVerticalTab = "head" + (char) 0x0B + "er";
+        boolean isHeaderType = type == ValidationType.HEADER_NAME || type == ValidationType.HEADER_VALUE;
+        UrlSecurityFailureType expectedFailureType = isHeaderType
+                ? UrlSecurityFailureType.INVALID_CHARACTER
+                : UrlSecurityFailureType.CONTROL_CHARACTERS;
 
         for (SecurityConfiguration preset : SHARED_GATE_PRESETS) {
             CharacterValidationStage stage = new CharacterValidationStage(preset, type);
@@ -248,8 +258,8 @@ class CharacterValidationStageTest {
                             stage.validate(withVerticalTab),
                     "VT (0x0B) must be rejected in a " + type + " under " + preset);
 
-            assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
-                    "The C0 header verdict must not depend on allowControlCharacters");
+            assertEquals(expectedFailureType, exception.getFailureType(),
+                    "The C0 verdict must not depend on allowControlCharacters");
             assertEquals(type, exception.getValidationType());
         }
     }

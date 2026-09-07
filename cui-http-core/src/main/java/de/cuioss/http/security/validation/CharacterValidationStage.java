@@ -145,10 +145,12 @@ import java.util.function.IntPredicate;
  *   <li><strong>CR/LF in header and cookie names and values</strong> - rejected regardless of
  *       {@code allowControlCharacters}, because cookies travel in the Cookie/Set-Cookie headers and
  *       a CR or LF there is HTTP response splitting</li>
- *   <li><strong>Every C0 control in a header name or value</strong> - rejected regardless of
- *       {@code allowControlCharacters}, except the whitespace the type's own character set admits
- *       (HTAB in a header value). The header pipeline composes no {@link DecodingStage}, so this
- *       stage is the sole character guard for headers and a VT or FF admitted here would reach the
+ *   <li><strong>Every C0 control in a header or cookie name or value</strong> - rejected regardless
+ *       of {@code allowControlCharacters}, except the whitespace the type's own character set
+ *       admits (HTAB in a header value; no cookie type admits any C0 control, including HTAB, per
+ *       RFC 6265's {@code cookie-octet}). The header pipeline composes no {@link DecodingStage},
+ *       and no pipeline composes a {@code DecodingStage} with a cookie type either, so this stage
+ *       is the sole character guard for both and a VT or FF admitted here would reach the
  *       application unchecked</li>
  *   <li><strong>The C1 range (128-159)</strong> - rejected regardless of {@code allowExtendedAscii}
  *       for every validation type. These are non-printing controls, not extended-ASCII text, and
@@ -382,13 +384,13 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
             if (allowedChars.test(ch)) {
                 return true;
             }
-            // Every other C0 control is rejected unconditionally in a header name or value.
-            // HTTPHeaderValidationPipeline composes only a length stage and this character stage
-            // (plus AllowBlockListStage for names) and no DecodingStage, so this stage is the sole
-            // character guard for headers - there is no downstream re-check that could catch a
+            // Every other C0 control is rejected unconditionally in a header or cookie name or
+            // value. HTTPHeaderValidationPipeline composes only a length stage and this character
+            // stage (plus AllowBlockListStage for names) and no DecodingStage, and no pipeline
+            // composes a DecodingStage with a cookie type either, so this stage is the sole
+            // character guard for both - there is no downstream re-check that could catch a
             // VT (0x0B) or FF (0x0C) that allowControlCharacters waved through here.
-            if (validationType == ValidationType.HEADER_NAME
-                    || validationType == ValidationType.HEADER_VALUE) {
+            if (isHeaderOrCookieType()) {
                 return false;
             }
             // Other control characters depend on configuration
