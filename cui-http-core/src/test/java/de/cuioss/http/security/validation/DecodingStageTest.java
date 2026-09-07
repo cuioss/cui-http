@@ -25,11 +25,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.lang.reflect.Modifier;
 import java.util.Optional;
 import java.util.stream.Stream;
 
@@ -511,11 +513,13 @@ class DecodingStageTest {
     @DisplayName("Should be immutable and thread-safe")
     @SuppressWarnings("java:S1612")
     void shouldBeImmutableAndThreadSafe() {
-        // Verify immutability via Lombok @Value annotation (check class methods are present)
-        // Lombok @Value generates equals, hashCode, toString, and makes fields final
-        assertDoesNotThrow(() -> DecodingStage.class.getMethod("equals", Object.class));
-        assertDoesNotThrow(() -> DecodingStage.class.getMethod("hashCode"));
-        assertDoesNotThrow(() -> DecodingStage.class.getMethod("toString"));
+        // Immutability is carried by record-ness itself: a record's declared fields are final, so
+        // no state can be swapped out from under a concurrent caller.
+        assertTrue(DecodingStage.class.isRecord(), "DecodingStage must remain a record");
+        assertAll("every declared field is final",
+                Stream.of(DecodingStage.class.getDeclaredFields())
+                        .<Executable>map(field -> () -> assertTrue(Modifier.isFinal(field.getModifiers()),
+                                "field must be final: " + field.getName())));
 
         // Test concurrent access
         DecodingStage decoder = new DecodingStage(defaultConfig, ValidationType.URL_PATH);
