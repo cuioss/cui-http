@@ -227,6 +227,51 @@ class CharacterValidationStageTest {
         assertEquals("café 你好", result.get());
     }
 
+    /**
+     * Every C0 control except the header-legal whitespace is rejected in a header name and value
+     * regardless of {@code allowControlCharacters} - so {@code lenient()}, which enables that flag,
+     * reaches the same verdict as {@code defaults()} (ADR-0017).
+     *
+     * <p>{@code HTTPHeaderValidationPipeline} composes no {@code DecodingStage}, so this stage is
+     * the sole character guard for headers: a VT admitted here would reach the application with no
+     * downstream re-check.</p>
+     */
+    @ParameterizedTest
+    @EnumSource(value = ValidationType.class, names = {"HEADER_NAME", "HEADER_VALUE"})
+    void shouldRejectC0ControlCharactersInHeadersUnderEveryPreset(ValidationType type) {
+        String withVerticalTab = "head" + (char) 0x0B + "er";
+
+        for (SecurityConfiguration preset : SHARED_GATE_PRESETS) {
+            CharacterValidationStage stage = new CharacterValidationStage(preset, type);
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                    stage.validate(withVerticalTab),
+                    "VT (0x0B) must be rejected in a " + type + " under " + preset);
+
+            assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
+                    "The C0 header verdict must not depend on allowControlCharacters");
+            assertEquals(type, exception.getValidationType());
+        }
+    }
+
+    /**
+     * Positive control for the rule above: the widened rejection runs AFTER the character-set
+     * allowance, so HTAB - which {@code RFC7230_HEADER_CHARS} admits - is still accepted in a
+     * header value. Without this the rule could pass by rejecting all C0 controls indiscriminately.
+     */
+    @Test
+    void shouldStillAcceptHorizontalTabInHeaderValue() throws Exception {
+        String withTab = "value\twith\ttabs";
+
+        for (SecurityConfiguration preset : SHARED_GATE_PRESETS) {
+            CharacterValidationStage stage = new CharacterValidationStage(preset, ValidationType.HEADER_VALUE);
+
+            var result = stage.validate(withTab);
+            assertTrue(result.isPresent(), "HTAB is header-legal and must survive under " + preset);
+            assertEquals(withTab, result.get());
+        }
+    }
+
     @Test
     void shouldAllowValidHeaderCharacters() throws Exception {
         CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.HEADER_NAME);

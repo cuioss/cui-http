@@ -145,6 +145,11 @@ import java.util.function.IntPredicate;
  *   <li><strong>CR/LF in header and cookie names and values</strong> - rejected regardless of
  *       {@code allowControlCharacters}, because cookies travel in the Cookie/Set-Cookie headers and
  *       a CR or LF there is HTTP response splitting</li>
+ *   <li><strong>Every C0 control in a header name or value</strong> - rejected regardless of
+ *       {@code allowControlCharacters}, except the whitespace the type's own character set admits
+ *       (HTAB in a header value). The header pipeline composes no {@link DecodingStage}, so this
+ *       stage is the sole character guard for headers and a VT or FF admitted here would reach the
+ *       application unchecked</li>
  *   <li><strong>The C1 range (128-159)</strong> - rejected regardless of {@code allowExtendedAscii}
  *       for every validation type. These are non-printing controls, not extended-ASCII text, and
  *       {@code U+0085} (NEL) is treated as a line terminator by several parsers</li>
@@ -351,9 +356,10 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
     /**
      * Checks if a character is allowed based on configuration flags and character sets.
      */
-    // S3776: cognitive complexity is 16 vs the 15 limit — the sequential per-character-class
-    // guards (null byte, control chars incl. the unconditional CR/LF header rejection, extended
-    // ASCII, Unicode) are each simple and clearer inline than split across helpers.
+    // S3776: cognitive complexity exceeds the 15 limit — the sequential per-character-class
+    // guards (null byte, C0 controls including the two unconditional header rules, the
+    // unconditional C1 rejection, extended ASCII, Unicode) are each simple and clearer inline
+    // than split across helpers.
     @SuppressWarnings("java:S3776")
     private boolean isCharacterAllowed(int ch) {
         // Null byte (0) - should be allowed if configured (already checked earlier but may reach here)
@@ -370,9 +376,20 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
             if ((ch == '\r' || ch == '\n') && isHeaderOrCookieType()) {
                 return false;
             }
-            // Always allow common whitespace characters that are in the base character set
+            // Always allow common whitespace characters that are in the base character set.
+            // This is what keeps HTAB legal in a header value (RFC7230_HEADER_CHARS admits it),
+            // and it deliberately runs BEFORE the header rule below.
             if (allowedChars.test(ch)) {
                 return true;
+            }
+            // Every other C0 control is rejected unconditionally in a header name or value.
+            // HTTPHeaderValidationPipeline composes only a length stage and this character stage
+            // (plus AllowBlockListStage for names) and no DecodingStage, so this stage is the sole
+            // character guard for headers - there is no downstream re-check that could catch a
+            // VT (0x0B) or FF (0x0C) that allowControlCharacters waved through here.
+            if (validationType == ValidationType.HEADER_NAME
+                    || validationType == ValidationType.HEADER_VALUE) {
+                return false;
             }
             // Other control characters depend on configuration
             return allowControlCharacters;
