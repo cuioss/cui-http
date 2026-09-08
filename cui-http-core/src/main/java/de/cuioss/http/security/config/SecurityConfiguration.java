@@ -56,7 +56,11 @@ import java.util.Set;
  * Implements: Task C1 from HTTP verification specification
  *
  * @param maxPathLength Maximum allowed URL path length in characters (positive)
- * @param allowDoubleEncoding Whether double URL encoding (e.g. {@code %252e}) is allowed
+ * @param allowDoubleEncoding Retained property that <strong>no longer gates any validation
+ *        path</strong>. PLAN-01 made both of {@code DecodingStage}'s double-encoding gates
+ *        unconditional (ADR-0017), so a double-encoded input such as {@code %252e} is rejected
+ *        whatever this flag is set to. Its only remaining observable effect is on what
+ *        {@link #isStrict()} and {@link #isLenient()} report.
  * @param maxParameterNameLength Maximum allowed parameter name length in characters (positive)
  * @param maxParameterValueLength Maximum allowed parameter value length in characters (positive)
  * @param maxHeaderNameLength Maximum allowed header name length in characters (positive)
@@ -324,6 +328,10 @@ Set<String> blockedParameterNames
     /**
      * Checks if this configuration is considered "strict" based on key security settings.
      *
+     * <p>{@code allowDoubleEncoding} still participates in this predicate even though it no longer
+     * gates any validation path (ADR-0017) - being reported here is that flag's only remaining
+     * observable effect.</p>
+     *
      * @return true if this configuration uses strict security policies
      */
     public boolean isStrict() {
@@ -337,6 +345,11 @@ Set<String> blockedParameterNames
 
     /**
      * Checks if this configuration is considered "lenient" based on key security settings.
+     *
+     * <p>{@code allowDoubleEncoding} still participates in this predicate even though it no longer
+     * gates any validation path (ADR-0017) - being reported here is that flag's only remaining
+     * observable effect. In particular, a {@code true} value does not mean double-encoded input is
+     * accepted.</p>
      *
      * @return true if this configuration uses lenient security policies
      */

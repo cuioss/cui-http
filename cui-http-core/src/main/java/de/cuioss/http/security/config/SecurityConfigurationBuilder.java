@@ -160,9 +160,16 @@ public class SecurityConfigurationBuilder {
     }
 
     /**
-     * Sets whether double URL encoding is allowed.
+     * Sets the retained {@code allowDoubleEncoding} property, which <strong>no longer gates any
+     * validation path</strong>.
      *
-     * @param allow true to allow double encoding, false to block it
+     * <p>PLAN-01 made both of {@code DecodingStage}'s double-encoding gates unconditional
+     * (ADR-0017), so a double-encoded input such as {@code %252e} is rejected whatever this flag is
+     * set to. Setting it {@code true} does not permit double-encoded input; the only observable
+     * effect is on what {@link SecurityConfiguration#isStrict()} and
+     * {@link SecurityConfiguration#isLenient()} report.</p>
+     *
+     * @param allow the value to record; it does not enable or disable any validation
      * @return This builder for method chaining
      */
     public SecurityConfigurationBuilder allowDoubleEncoding(boolean allow) {
