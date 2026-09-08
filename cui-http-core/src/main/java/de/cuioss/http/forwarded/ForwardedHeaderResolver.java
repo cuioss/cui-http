@@ -918,7 +918,7 @@ public final class ForwardedHeaderResolver {
      * <p>Separating the read from the comparison is what lets a multi-field value such as
      * {@code host[:port]} be reconciled field by field: the two families are resolved once, and each
      * field they carry is then reconciled on its own terms (see {@link #reconcileStatedByPresence}
-     * and {@link #reconcileStatedByValue}).</p>
+     * and {@link #reconcileStatedByPortToken}).</p>
      */
     private <T> DeFactoSources<T> resolveDeFactoSources(UnaryOperator<String> lookup,
             String xForwardedName, String xProxyName, BiFunction<String, String, Optional<T>> resolver) {
