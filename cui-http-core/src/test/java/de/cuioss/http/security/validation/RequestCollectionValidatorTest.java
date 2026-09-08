@@ -24,6 +24,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -111,6 +112,89 @@ class RequestCollectionValidatorTest {
                 SecurityConfiguration.builder().maxParameterCount(2).build(), eventCounter);
         assertDoesNotThrow(() -> custom.validateParameterCount(2));
         assertThrows(UrlSecurityException.class, () -> custom.validateParameterCount(3));
+    }
+
+    @Test
+    @DisplayName("A single parameter key carrying an array of values cannot evade the limit")
+    void shouldCountParameterArrayValueInstances() {
+        String[] flood = new String[10_000];
+        Arrays.fill(flood, "v");
+        Map<String, String[]> oneKey = Map.of("q", flood);
+
+        var exception = assertThrows(UrlSecurityException.class,
+                () -> validator.validateParameters(oneKey));
+
+        assertAll("single-key array flood",
+                () -> assertEquals(UrlSecurityFailureType.TOO_MANY_ELEMENTS, exception.getFailureType()),
+                () -> assertTrue(exception.getDetail().orElse("").contains("parameter"),
+                        "Detail should name the parameter limit"),
+                () -> assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.TOO_MANY_ELEMENTS),
+                        "Exactly one TOO_MANY_ELEMENTS event should be recorded"));
+    }
+
+    @Test
+    @DisplayName("A single parameter key carrying a collection of values cannot evade the limit")
+    void shouldCountParameterCollectionValueInstances() {
+        Map<String, List<String>> oneKey = Map.of("q",
+                IntStream.range(0, 200).mapToObj(i -> "v" + i).toList());
+
+        var exception = assertThrows(UrlSecurityException.class,
+                () -> validator.validateParameters(oneKey));
+
+        assertEquals(UrlSecurityFailureType.TOO_MANY_ELEMENTS, exception.getFailureType());
+        assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.TOO_MANY_ELEMENTS));
+    }
+
+    @Test
+    @DisplayName("A single header name carrying many values cannot evade the limit")
+    void shouldCountHeaderValueInstances() {
+        Map<String, List<String>> oneName = Map.of("X-Forwarded-For",
+                IntStream.range(0, SecurityDefaults.MAX_HEADER_COUNT_DEFAULT + 1)
+                        .mapToObj(i -> "10.0.0." + i).toList());
+
+        var exception = assertThrows(UrlSecurityException.class,
+                () -> validator.validateHeaders(oneName));
+
+        assertAll("single-name header flood",
+                () -> assertEquals(UrlSecurityFailureType.TOO_MANY_ELEMENTS, exception.getFailureType()),
+                () -> assertTrue(exception.getDetail().orElse("").contains("header"),
+                        "Detail should name the header limit"),
+                () -> assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.TOO_MANY_ELEMENTS)));
+    }
+
+    @Test
+    @DisplayName("Single-valued header map is bounded by maxHeaderCount")
+    void shouldBoundSingleValuedHeaderMap() {
+        assertDoesNotThrow(() -> validator.validateHeaders(mapOfSize(SecurityDefaults.MAX_HEADER_COUNT_DEFAULT)));
+        assertThrows(UrlSecurityException.class,
+                () -> validator.validateHeaders(mapOfSize(SecurityDefaults.MAX_HEADER_COUNT_DEFAULT + 1)));
+    }
+
+    @Test
+    @DisplayName("A negative configured count limit is rejected")
+    void shouldRejectNegativeConfiguredLimits() {
+        assertAll("negative count limits",
+                () -> assertThrows(IllegalArgumentException.class,
+                        () -> new RequestCollectionValidator(
+                                SecurityConfiguration.builder().maxParameterCount(-1).build(), eventCounter),
+                        "Negative maxParameterCount should be rejected"),
+                () -> assertThrows(IllegalArgumentException.class,
+                        () -> new RequestCollectionValidator(
+                                SecurityConfiguration.builder().maxHeaderCount(-1).build(), eventCounter),
+                        "Negative maxHeaderCount should be rejected"),
+                () -> assertThrows(IllegalArgumentException.class,
+                        () -> new RequestCollectionValidator(
+                                SecurityConfiguration.builder().maxCookieCount(-1).build(), eventCounter),
+                        "Negative maxCookieCount should be rejected"));
+    }
+
+    @Test
+    @DisplayName("Cookie counting stays collection-based and unchanged")
+    void shouldCountCookiesByCollectionSize() {
+        assertDoesNotThrow(() -> validator.validateCookies(
+                IntStream.range(0, SecurityDefaults.MAX_COOKIE_COUNT_DEFAULT).boxed().toList()));
+        assertThrows(UrlSecurityException.class, () -> validator.validateCookies(
+                IntStream.range(0, SecurityDefaults.MAX_COOKIE_COUNT_DEFAULT + 1).boxed().toList()));
     }
 
     @Test

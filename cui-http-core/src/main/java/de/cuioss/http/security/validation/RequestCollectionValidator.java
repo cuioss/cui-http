@@ -21,6 +21,7 @@ import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
 
+import java.lang.reflect.Array;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Objects;
@@ -36,9 +37,13 @@ import java.util.Objects;
  * collection and it rejects the request when a count exceeds its configured limit
  * ({@code maxParameterCount} / {@code maxHeaderCount} / {@code maxCookieCount}).</p>
  *
- * <p>Count limits defend against resource-exhaustion and hash-collision denial-of-service attacks.
- * Defaults come from {@link de.cuioss.http.security.config.SecurityDefaults} (parameters 100,
- * headers 50, cookies 20; strict 20/20/10, lenient 500/100/50).</p>
+ * <p>Count limits defend against parameter- and header-flooding attacks, where a request carries
+ * far more parameter or header instances than an application is built to process and so exhausts
+ * parsing, allocation, or downstream per-item work. Parameter and header counts are therefore
+ * counted as <em>value instances</em>, not as distinct keys: a single key carrying many values
+ * contributes one to the count per value, so flooding one key cannot evade the limit. Defaults come
+ * from {@link de.cuioss.http.security.config.SecurityDefaults} (parameters 100, headers 50,
+ * cookies 20; strict 20/20/10, lenient 500/100/50).</p>
  *
  * <h3>Usage Example</h3>
  * <pre>
@@ -68,34 +73,54 @@ public final class RequestCollectionValidator {
      * @param config the security configuration providing the count limits
      * @param eventCounter the counter for recording security violations
      * @throws NullPointerException if either argument is null
+     * @throws IllegalArgumentException if {@code maxParameterCount}, {@code maxHeaderCount}, or
+     *         {@code maxCookieCount} is negative
      */
     public RequestCollectionValidator(SecurityConfiguration config, SecurityEventCounter eventCounter) {
         this.config = Objects.requireNonNull(config, "config must not be null");
         this.eventCounter = Objects.requireNonNull(eventCounter, "eventCounter must not be null");
+        requireNonNegativeLimit(config.maxParameterCount(), CountKind.PARAMETER);
+        requireNonNegativeLimit(config.maxHeaderCount(), CountKind.HEADER);
+        requireNonNegativeLimit(config.maxCookieCount(), CountKind.COOKIE);
     }
 
     /**
-     * Validates the number of request parameters against {@code maxParameterCount}.
+     * Validates the number of request parameter <em>value instances</em> against
+     * {@code maxParameterCount}.
      *
-     * @param parameters the parameter map (keys are parameter names)
+     * <p>The count is the total number of parameter values across all keys, not the number of
+     * distinct keys: a key mapped to an array or {@link Collection} contributes one per element,
+     * and a key mapped to a scalar (or to {@code null}) contributes one. A single key carrying many
+     * values therefore cannot evade the limit.</p>
+     *
+     * @param parameters the parameter map (keys are parameter names, values are the value instances
+     *        for that name - typically a {@code String[]} or a {@code Collection<String>})
      * @throws NullPointerException if {@code parameters} is null
-     * @throws UrlSecurityException if the parameter count exceeds the configured maximum
+     * @throws UrlSecurityException if the parameter value-instance count exceeds the configured
+     *         maximum
      */
     public void validateParameters(Map<String, ?> parameters) {
         Objects.requireNonNull(parameters, "parameters must not be null");
-        validateParameterCount(parameters.size());
+        validateParameterCount(countValueInstances(parameters));
     }
 
     /**
-     * Validates the number of request headers against {@code maxHeaderCount}.
+     * Validates the number of request header <em>value instances</em> against
+     * {@code maxHeaderCount}.
      *
-     * @param headers the header map (keys are header names)
+     * <p>The count is the total number of header values across all names, not the number of
+     * distinct names: a name mapped to an array or {@link Collection} contributes one per element,
+     * and a name mapped to a scalar (or to {@code null}) contributes one. A single repeated header
+     * name therefore cannot evade the limit.</p>
+     *
+     * @param headers the header map (keys are header names, values are the value instances for that
+     *        name - typically a {@code Collection<String>} or a {@code String[]})
      * @throws NullPointerException if {@code headers} is null
-     * @throws UrlSecurityException if the header count exceeds the configured maximum
+     * @throws UrlSecurityException if the header value-instance count exceeds the configured maximum
      */
     public void validateHeaders(Map<String, ?> headers) {
         Objects.requireNonNull(headers, "headers must not be null");
-        validateHeaderCount(headers.size());
+        validateHeaderCount(countValueInstances(headers));
     }
 
     /**
@@ -111,23 +136,25 @@ public final class RequestCollectionValidator {
     }
 
     /**
-     * Validates a parameter count against {@code maxParameterCount}.
+     * Validates a parameter value-instance count against {@code maxParameterCount}.
      *
-     * @param count the number of parameters (non-negative)
+     * @param count the number of parameter value instances (non-negative)
      * @throws UrlSecurityException if the count exceeds the configured maximum
+     * @throws IllegalArgumentException if the configured {@code maxParameterCount} is negative
      */
     public void validateParameterCount(int count) {
-        enforce(count, config.maxParameterCount(), ValidationType.PARAMETER_NAME, "parameter");
+        enforce(count, config.maxParameterCount(), CountKind.PARAMETER);
     }
 
     /**
-     * Validates a header count against {@code maxHeaderCount}.
+     * Validates a header value-instance count against {@code maxHeaderCount}.
      *
-     * @param count the number of headers (non-negative)
+     * @param count the number of header value instances (non-negative)
      * @throws UrlSecurityException if the count exceeds the configured maximum
+     * @throws IllegalArgumentException if the configured {@code maxHeaderCount} is negative
      */
     public void validateHeaderCount(int count) {
-        enforce(count, config.maxHeaderCount(), ValidationType.HEADER_NAME, "header");
+        enforce(count, config.maxHeaderCount(), CountKind.HEADER);
     }
 
     /**
@@ -135,20 +162,95 @@ public final class RequestCollectionValidator {
      *
      * @param count the number of cookies (non-negative)
      * @throws UrlSecurityException if the count exceeds the configured maximum
+     * @throws IllegalArgumentException if the configured {@code maxCookieCount} is negative
      */
     public void validateCookieCount(int count) {
-        enforce(count, config.maxCookieCount(), ValidationType.COOKIE_NAME, "cookie");
+        enforce(count, config.maxCookieCount(), CountKind.COOKIE);
     }
 
-    private void enforce(int actual, int max, ValidationType validationType, String kind) {
+    /**
+     * Sums the value instances held by a request map.
+     *
+     * <p>Each entry contributes the length of its array value, the size of its {@link Collection}
+     * value, or {@code 1} for any other value including {@code null}. The total saturates at
+     * {@link Integer#MAX_VALUE} rather than overflowing, so a hostile map can never wrap the count
+     * around into a small number that passes the limit.</p>
+     *
+     * @param map the request map to count
+     * @return the total number of value instances, saturated at {@link Integer#MAX_VALUE}
+     */
+    private static int countValueInstances(Map<String, ?> map) {
+        long total = 0;
+        for (Object value : map.values()) {
+            total += valueInstanceCount(value);
+            if (total >= Integer.MAX_VALUE) {
+                return Integer.MAX_VALUE;
+            }
+        }
+        return (int) total;
+    }
+
+    private static int valueInstanceCount(Object value) {
+        if (value != null && value.getClass().isArray()) {
+            return Array.getLength(value);
+        }
+        if (value instanceof Collection<?> collection) {
+            return collection.size();
+        }
+        return 1;
+    }
+
+    private static void requireNonNegativeLimit(int limit, CountKind countKind) {
+        if (limit < 0) {
+            throw new IllegalArgumentException(
+                    countKind.limitName() + " must not be negative: " + limit);
+        }
+    }
+
+    private void enforce(int actual, int max, CountKind countKind) {
+        requireNonNegativeLimit(max, countKind);
         if (actual > max) {
             eventCounter.increment(UrlSecurityFailureType.TOO_MANY_ELEMENTS);
             throw UrlSecurityException.builder()
                     .failureType(UrlSecurityFailureType.TOO_MANY_ELEMENTS)
-                    .validationType(validationType)
-                    .originalInput(actual + " " + kind + "s")
-                    .detail("Too many " + kind + "s: " + actual + " exceeds maximum of " + max)
+                    .validationType(countKind.validationType())
+                    .originalInput(actual + " " + countKind.kind() + "s")
+                    .detail("Too many " + countKind.kind() + "s: " + actual
+                            + " exceeds maximum of " + max)
                     .build();
+        }
+    }
+
+    /**
+     * Binds each countable request element to its {@link ValidationType}, its human-readable noun,
+     * and the name of the configuration limit that bounds it.
+     */
+    private enum CountKind {
+
+        PARAMETER(ValidationType.PARAMETER_NAME, "parameter", "maxParameterCount"),
+        HEADER(ValidationType.HEADER_NAME, "header", "maxHeaderCount"),
+        COOKIE(ValidationType.COOKIE_NAME, "cookie", "maxCookieCount");
+
+        private final ValidationType validationType;
+        private final String kind;
+        private final String limitName;
+
+        CountKind(ValidationType validationType, String kind, String limitName) {
+            this.validationType = validationType;
+            this.kind = kind;
+            this.limitName = limitName;
+        }
+
+        ValidationType validationType() {
+            return validationType;
+        }
+
+        String kind() {
+            return kind;
+        }
+
+        String limitName() {
+            return limitName;
         }
     }
 }
