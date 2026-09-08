@@ -75,7 +75,7 @@ class ContentTypeValidationPipelineTest {
         var stages = pipeline.getStages();
         assertEquals(3, stages.size(), "Content-type pipeline must consist of exactly three stages");
         assertAll("stage order",
-                () -> assertInstanceOf(LengthValidationStage.class, stages.get(0)),
+                () -> assertInstanceOf(LengthValidationStage.class, stages.getFirst()),
                 () -> assertInstanceOf(CharacterValidationStage.class, stages.get(1)),
                 () -> assertInstanceOf(AllowBlockListStage.class, stages.get(2)),
                 () -> assertEquals(ValidationType.HEADER_VALUE, pipeline.getValidationType()));

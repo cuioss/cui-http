@@ -288,7 +288,7 @@ class HeaderAndContentTypeEnforcementRegressionTest {
             List<HttpSecurityValidator> stages = stagesOf(pipeline());
 
             assertAll("the two stages the pipeline previously omitted are now wired",
-                    () -> assertInstanceOf(LengthValidationStage.class, stages.get(0),
+                    () -> assertInstanceOf(LengthValidationStage.class, stages.getFirst(),
                             "Content-type pipeline must run a LengthValidationStage first"),
                     () -> assertInstanceOf(CharacterValidationStage.class, stages.get(1),
                             "Content-type pipeline must run a CharacterValidationStage second"));
