@@ -318,22 +318,32 @@ public final class SecurityDefaults {
      * Even this preset never permits null bytes; path traversal is always
      * blocked by the validation stages regardless of configuration.</p>
      *
-     * <p><strong>Security callout - this preset disables two independent detection
-     * gates.</strong> A single {@link SecurityConfiguration#lenient()} selection turns
-     * both of the following off together, so a caller choosing this preset gives up
-     * both detections at once:</p>
+     * <p><strong>Security callout - this preset gives up no encoding or normalization
+     * detection.</strong> Two of its settings once disabled a detection gate outright and no
+     * longer do; both gates are now unconditional (ADR-0017), because letting a relaxed
+     * configuration soften them made the encoded spelling of a value outrank its raw
+     * spelling:</p>
      * <ul>
-     *   <li>{@code allowDoubleEncoding = true} disables the double-encoding gate, so an
-     *       input that hides an attack behind a second layer of percent-encoding (for
-     *       example {@code %252e%252e%252f}) is no longer rejected on that basis.</li>
-     *   <li>{@code normalizeUnicode = false} disables Unicode normalization, and with it
-     *       the homoglyph/confusable detection that depends on normalization - so
-     *       visually-identical characters from different scripts are no longer folded
-     *       together before the input is compared against the pattern sets.</li>
+     *   <li>{@code allowDoubleEncoding = true} no longer disables the double-encoding gate.
+     *       {@code DecodingStage} rejects both the wire-form {@code %25XX} pattern and a
+     *       percent-encoding layer that survives decoding, whatever this flag is set to, so an
+     *       input such as {@code %252e%252e%252f} <em>is</em> rejected under this preset. The
+     *       flag's only remaining observable effect is on what
+     *       {@link SecurityConfiguration#isStrict()} and
+     *       {@link SecurityConfiguration#isLenient()} report.</li>
+     *   <li>{@code normalizeUnicode = false} no longer disables the homoglyph/confusable
+     *       detection. The canonical fold is always computed and always inspected, and a fold
+     *       that introduces a structural separator (fullwidth solidus {@code U+FF0F} &rarr;
+     *       {@code /}) is always rejected. What the flag narrows is which form is
+     *       <em>returned</em>: under this preset the caller receives the un-normalised decoded
+     *       form, so any downstream comparison the caller performs itself sees the unfolded
+     *       text.</li>
      * </ul>
      *
-     * <p>Choose this preset only where maximum compatibility genuinely outweighs both
-     * of those detections; prefer {@link #DEFAULT_CONFIGURATION} when it does not.</p>
+     * <p>What this preset does relax is its length and count limits and its character rules -
+     * it permits control characters and extended ASCII. Choose it only where that added
+     * compatibility is genuinely required; prefer {@link #DEFAULT_CONFIGURATION} when it is
+     * not.</p>
      */
     public static final SecurityConfiguration LENIENT_CONFIGURATION = new SecurityConfiguration(
             MAX_PATH_LENGTH_LENIENT, true,

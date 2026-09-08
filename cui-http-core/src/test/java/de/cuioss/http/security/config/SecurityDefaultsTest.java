@@ -271,11 +271,13 @@ class SecurityDefaultsTest {
         assertEquals(SecurityDefaults.MAX_HEADER_VALUE_LENGTH_LENIENT, lenient.maxHeaderValueLength());
         assertEquals(SecurityDefaults.MAX_BODY_SIZE_LENIENT, lenient.maxBodySize());
 
-        // The two detection gates the LENIENT_CONFIGURATION security callout names as
-        // disabled together by a single lenient() selection.
-        assertTrue(lenient.allowDoubleEncoding(), "Lenient preset disables the double-encoding gate");
+        // Both flags keep their lenient values, but neither disables a detection gate any more
+        // (ADR-0017): the double-encoding gates and the Unicode structural-fold check are
+        // unconditional. These assertions pin the recorded VALUES, not a relaxation.
+        assertTrue(lenient.allowDoubleEncoding(),
+                "Lenient preset records allowDoubleEncoding=true, which no longer relaxes the gate");
         assertFalse(lenient.normalizeUnicode(),
-                "Lenient preset disables Unicode normalization and the homoglyph detection depending on it");
+                "Lenient preset returns the un-normalised form; the fold is still computed and inspected");
 
         assertFalse(lenient.allowNullBytes()); // Never allowed, even in lenient mode
         assertTrue(lenient.allowControlCharacters());
