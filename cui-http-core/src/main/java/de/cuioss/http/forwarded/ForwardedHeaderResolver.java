@@ -828,8 +828,9 @@ public final class ForwardedHeaderResolver {
             return ForwardedResult.ABSENT;
         }
         // Sanitize the Forwarded header value before parsing its directives. A rejected value must
-        // NOT collapse into the absent case: the header WAS sent, so it stays present-but-unresolvable
-        // and disagrees with any de-facto sibling that resolves (fail closed).
+        // NOT collapse into the absent case: the header WAS sent, so it stays present-but-unresolvable.
+        // But it carries no parseable directives, so it suppresses no field and contests nothing —
+        // reconcileSources sees rfcPresent=false everywhere and simply defers to the de-facto sibling.
         Optional<String> sanitized = sanitize(FORWARDED, raw);
         if (sanitized.isEmpty()) {
             // Nothing parsed, so the header spoke about no field and suppresses none.
