@@ -1,0 +1,123 @@
+= ADR-0020: Header and cookie character gates ignore preset flags when no later stage can re-check them
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: Character-validation gates for header and cookie types reject control characters unconditionally and default extended-ASCII/Unicode acceptance to false, because those pipelines compose no later stage that could re-check what a permissive flag admitted.
+// tags: security, character-validation, fail-secure, defaults, headers, cookies
+// affects: cui-http-core
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+A security-validation pipeline is typically a sequence of stages, each narrowing what the next stage
+has to consider. Configuration flags that widen a single stage's acceptance are ordinarily safe
+precisely because a later stage in the same pipeline gets a chance to catch whatever the earlier stage
+let through in a more permissive mode.
+
+That assumption does not hold uniformly across this library's pipelines. The header pipeline composes
+only a length stage and the character-validation stage (plus an allow/block-list stage for header
+names); it composes no decoding stage. Cookie validation is invoked directly against the
+character-validation stage as well, independent of any pipeline that would add a later stage. For
+both validation-type families, the character-validation stage is not one gate among several — it is
+the only gate that ever inspects the characters at all. A configuration flag that widens what this
+single gate accepts for these types is therefore not "more lenient", it is a complete removal of the
+corresponding protection for the whole request, because nothing downstream is positioned to reconsider
+the verdict.
+
+Two independent flags interact with this single-gate reality. `allowControlCharacters` governs whether
+non-CR/LF C0 control characters are accepted, and — until this decision — governed that acceptance
+uniformly across every validation type, including header and cookie names/values, whose named
+permissive preset sets it `true`. `allowExtendedAscii` governs whether characters above the base ASCII
+range are accepted for several validation types, including header values and bodies, where it further
+governs *all* Unicode above the extended-ASCII range, not merely the 128-255 band; a builder-constructed
+configuration that never mentions the flag inherited a permissive default that admitted this input
+without the caller opting into it, and that default also contradicted the stage's own Javadoc.
+
+== Decision
+
+Two gates in the character-validation stage are made unconditional or fail-secure by default,
+specifically for the validation-type families whose pipeline provides no later re-check.
+
+1. For `HEADER_NAME`, `HEADER_VALUE`, `COOKIE_NAME` and `COOKIE_VALUE`, every C0 control character is
+   rejected unconditionally — after the type's own base character set has had the chance to admit a
+   legitimate control such as HTAB in a header value. The `allowControlCharacters` flag continues to
+   govern acceptance for every validation type whose pipeline composes a later stage able to
+   reconsider the input; it no longer governs acceptance for the four types named above, under any
+   preset.
+2. `allowExtendedAscii` defaults to `false` on the configuration builder, so a configuration built
+   without explicitly setting the flag rejects extended-ASCII and non-ASCII Unicode input rather than
+   admitting it. Only the library's own designated permissive preset sets the flag `true`; every other
+   preset, and the unconfigured builder default, stay fail-secure.
+
+== Consequences
+
+=== Positive
+
+* A caller cannot silently disable header- or cookie-injection control-character protection by
+  selecting any preset, named or custom, because the gate that would need to widen for that class of
+  input is not wired to the flag for those types at all.
+* The library's out-of-the-box behavior — a configuration nobody has explicitly widened — rejects
+  non-ASCII and control-character input rather than admitting it, so a caller who never touches either
+  flag gets the protection the stage's own documentation always claimed.
+* The two flags keep a single, consistent meaning across the codebase: "opt into broader acceptance
+  for the types where a later stage — or the type's own inherent lack of injection risk — makes that
+  safe", rather than "opt into broader acceptance everywhere, including where nothing downstream can
+  catch the result".
+
+=== Negative
+
+* Integrators who relied on the previous permissive `allowExtendedAscii` default — accepting
+  non-ASCII header, body, path, or parameter content without configuring anything — see that content
+  rejected after upgrading. This is a deliberate, documented breaking behavior change, not a silent
+  regression: the flag remains available, and setting it restores the previous acceptance.
+* A caller who genuinely needs a permissive preset with relaxed control-character handling for header
+  or cookie types specifically has no flag-driven way to obtain that combination; the two properties
+  (permissive elsewhere, unconditionally strict for headers/cookies) are no longer independently
+  selectable for those four types.
+
+=== Risks
+
+* A future validation type added to the header or cookie pipelines, or a future pipeline composition
+  change that removes the decoding stage from a currently multi-stage pipeline, must be re-evaluated
+  against this same single-gate reasoning; nothing in the flag's own name signals which validation
+  types it still governs.
+
+== Alternatives Considered
+
+**Let `allowControlCharacters` govern C0 rejection uniformly across every validation type, including
+header and cookie types.** This was the shipped behavior before this decision, and it keeps the flag's
+semantics simple — one flag, one meaning, applied identically everywhere. Rejected because it makes a
+general permissiveness flag double as the sole guard against response-splitting and header-injection
+attacks reachable through C0 controls, for exactly the validation-type families whose pipeline provides
+no other opportunity to catch what the flag admits. A flag meant to relax generic pattern strictness
+should not simultaneously be the off-switch for a specific, well-known injection class.
+
+**Keep `allowExtendedAscii`'s permissive `true` default and correct only the stage's Javadoc, which
+had documented `false`.** This resolves the code/documentation discrepancy without changing behavior
+for any existing caller. Rejected as fail-open: it leaves the shipped default at its most permissive
+setting for every caller who never sets the flag — the majority of callers of a builder-defaulted API —
+and resolves the discrepancy by making the documentation describe the permissive behavior rather than
+by making the behavior match the secure default the documentation always claimed. A security-validation
+library's documented and actual defaults should converge by hardening the code, not by relaxing the
+prose.
+
+The two alternatives share a common shape: both accept the status quo's permissiveness as the fixed
+point and adapt something else — the flag's semantics, or the documentation — to match it, rather than
+treating "the pipeline has no downstream re-check" and "the documented default is the secure one" as
+the fixed points the implementation must actually satisfy.
+
+== References
+
+* `de.cuioss.http.security.validation.CharacterValidationStage` — the `isCharacterAllowed` control-
+  character and extended-ASCII/Unicode branches.
+* `de.cuioss.http.security.config.SecurityConfigurationBuilder` — the `allowExtendedAscii` field
+  default.
+* `de.cuioss.http.security.pipeline.HTTPHeaderValidationPipeline` — the stage composition that leaves
+  the character-validation stage as the sole character guard for header types.
