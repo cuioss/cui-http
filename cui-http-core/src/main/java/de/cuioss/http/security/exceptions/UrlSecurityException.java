@@ -161,11 +161,29 @@ public class UrlSecurityException extends RuntimeException {
             sb.append(" - ").append(escapeControlCharacters(detail));
         }
 
-        // Safely truncate input for logging to prevent log injection
-        String truncatedInput = truncateForLogging(originalInput);
-        sb.append(" (input: '").append(truncatedInput).append("')");
+        sb.append(" (input: ").append(describeRedactedInput(originalInput)).append(")");
 
         return sb.toString();
+    }
+
+    /**
+     * Describes the offending input without reproducing it.
+     *
+     * <p>{@code HTTPHeaderValidationPipeline} validates {@code Authorization} header values, so a
+     * rejected bearer token or session cookie would otherwise be written verbatim into every
+     * {@code getMessage()} log statement. Only the length is reported: no content, no hash and no
+     * fingerprint, and no configuration knob - the redaction is unconditional, so credential
+     * material cannot reach a log by construction rather than by correct configuration. Callers
+     * that genuinely need the value opt in through {@link #getOriginalInput()} at their own trust
+     * boundary.</p>
+     *
+     * @param input The input that caused the failure
+     * @return {@code <redacted, null>} for a null input, otherwise {@code <redacted, length=N>}
+     */
+    private static String describeRedactedInput(@Nullable String input) {
+        return input == null
+                ? "<redacted, null>"
+                : "<redacted, length=%d>".formatted(input.length());
     }
 
     /**
@@ -212,7 +230,7 @@ public class UrlSecurityException extends RuntimeException {
         return getClass().getSimpleName() + "{" +
                 "failureType=" + failureType +
                 ", validationType=" + validationType +
-                ", originalInput='" + truncateForLogging(originalInput) + '\'' +
+                ", originalInput=" + describeRedactedInput(originalInput) +
                 ", sanitizedInput='" + (sanitizedInput != null ? truncateForLogging(sanitizedInput) : null) + '\'' +
                 ", detail='" + (detail != null ? truncateForLogging(detail) : null) + '\'' +
                 ", cause=" + getCause() +
