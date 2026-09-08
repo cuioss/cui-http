@@ -252,10 +252,17 @@
       "bundle": "pm-dev-java",
       "workflow_skill_extensions": {
         "triage": "pm-dev-java:ext-triage-java"
-      }
+      },
+      "file_globs": [
+        "**/*.java",
+        "**/pom.xml"
+      ]
     },
     "java-cui": {
-      "bundle": "pm-dev-java-cui"
+      "bundle": "pm-dev-java-cui",
+      "file_globs": [
+        "**/*.java"
+      ]
     },
     "documentation": {
       "bundle": "pm-documents",
