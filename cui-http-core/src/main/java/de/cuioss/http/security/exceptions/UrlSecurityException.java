@@ -75,10 +75,15 @@ import java.util.regex.Pattern;
 public class UrlSecurityException extends RuntimeException {
 
     /**
-     * Pre-compiled pattern for removing control characters from log output.
-     * Matches control characters (0x00-0x1F) and DEL character (0x7F).
+     * Pre-compiled pattern for neutralising line-forging code points in log output.
+     *
+     * <p>Matches every code point that can terminate a line in a log viewer or a JSON-lines
+     * consumer: the C0 controls (U+0000-U+001F), DEL (U+007F), the C1 controls
+     * (U+0080-U+009F, notably NEL U+0085), and the Unicode line and paragraph separators
+     * U+2028 and U+2029.</p>
      */
-    private static final Pattern CONTROL_CHARS_PATTERN = Pattern.compile("[\\x00-\\x1F\\x7F]");
+    private static final Pattern CONTROL_CHARS_PATTERN =
+            Pattern.compile("[\\x00-\\x1F\\x7F-\\u009F\\u2028\\u2029]");
 
     @Getter
     private final UrlSecurityFailureType failureType;

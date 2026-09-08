@@ -32,6 +32,13 @@ class UrlSecurityExceptionTest {
     private static final String TEST_SANITIZED = "etc/passwd";
     private static final String TEST_DETAIL = "Path traversal attempt detected";
 
+    /** NUL (U+0000). Held as a named constant so no invisible byte appears in this source file. */
+    private static final String NUL = String.valueOf((char) 0x0000);
+    /** NEL (U+0085), a C1 control that terminates a line in common log viewers. */
+    private static final String NEXT_LINE = String.valueOf((char) 0x0085);
+    /** LINE SEPARATOR (U+2028), a line terminator for JSON-lines consumers and JavaScript. */
+    private static final String LINE_SEPARATOR = String.valueOf((char) 0x2028);
+
     @Test
     void shouldBuildMinimalException() {
         UrlSecurityException exception = UrlSecurityException.builder()
@@ -142,7 +149,7 @@ class UrlSecurityExceptionTest {
 
     @Test
     void shouldSanitizeControlCharactersInMessage() {
-        String inputWithControlChars = "test\r\n\ttab\u0000null";
+        String inputWithControlChars = "test\r\n\ttab" + NUL + "null";
 
         UrlSecurityException exception = UrlSecurityException.builder()
                 .failureType(UrlSecurityFailureType.CONTROL_CHARACTERS)
@@ -155,7 +162,7 @@ class UrlSecurityExceptionTest {
         assertFalse(message.contains("\r"));
         assertFalse(message.contains("\n"));
         assertFalse(message.contains("\t"));
-        assertFalse(message.contains("\u0000"));
+        assertFalse(message.contains(NUL));
         assertTrue(message.contains("?"));
     }
 
@@ -178,6 +185,44 @@ class UrlSecurityExceptionTest {
                 () -> assertTrue(message.contains("U+000A"), "LF must render as U+000A"),
                 () -> assertEquals(detailWithLineBreaks, exception.getDetail().orElseThrow(),
                         "the stored detail is unaltered"));
+    }
+
+    @Test
+    void shouldNeutraliseNextLineCharacterOnBothRenderingPaths() {
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(TEST_FAILURE_TYPE)
+                .validationType(TEST_VALIDATION_TYPE)
+                .originalInput(TEST_INPUT)
+                .detail("line" + NEXT_LINE + "break")
+                .build();
+
+        assertAll("NEL neutralised on both rendering paths",
+                () -> assertEquals("Security validation failed [%s]: %s - lineU+0085break (input: '%s')"
+                        .formatted(TEST_VALIDATION_TYPE, TEST_FAILURE_TYPE.getDescription(), TEST_INPUT),
+                        exception.getMessage()),
+                () -> assertEquals("UrlSecurityException{failureType=%s, validationType=%s, originalInput='%s', "
+                        .formatted(TEST_FAILURE_TYPE, TEST_VALIDATION_TYPE, TEST_INPUT)
+                        + "sanitizedInput='null', detail='line?break', cause=null}",
+                        exception.toString()));
+    }
+
+    @Test
+    void shouldNeutraliseLineSeparatorCharacterOnBothRenderingPaths() {
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(TEST_FAILURE_TYPE)
+                .validationType(TEST_VALIDATION_TYPE)
+                .originalInput(TEST_INPUT)
+                .detail("line" + LINE_SEPARATOR + "break")
+                .build();
+
+        assertAll("LINE SEPARATOR neutralised on both rendering paths",
+                () -> assertEquals("Security validation failed [%s]: %s - lineU+2028break (input: '%s')"
+                        .formatted(TEST_VALIDATION_TYPE, TEST_FAILURE_TYPE.getDescription(), TEST_INPUT),
+                        exception.getMessage()),
+                () -> assertEquals("UrlSecurityException{failureType=%s, validationType=%s, originalInput='%s', "
+                        .formatted(TEST_FAILURE_TYPE, TEST_VALIDATION_TYPE, TEST_INPUT)
+                        + "sanitizedInput='null', detail='line?break', cause=null}",
+                        exception.toString()));
     }
 
     @Test
