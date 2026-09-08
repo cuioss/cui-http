@@ -22,6 +22,7 @@ import de.cuioss.http.security.exceptions.UrlSecurityException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.Optional;
 
@@ -30,6 +31,17 @@ import static org.junit.jupiter.api.Assertions.*;
 class CharacterValidationStageTest {
 
     private final SecurityConfiguration config = SecurityConfiguration.defaults();
+
+    /**
+     * ADR-0017: a gate shared by every preset is pinned under both {@code defaults()} and
+     * {@code lenient()}, and must reach the same verdict under each. The character sets this
+     * stage enforces are not configuration-dependent, so relaxing the configuration must not
+     * relax them.
+     */
+    private static final SecurityConfiguration[] SHARED_GATE_PRESETS = {
+            SecurityConfiguration.defaults(),
+            SecurityConfiguration.lenient()
+    };
 
     @Test
     void shouldAllowNullAndEmptyValues() throws Exception {
@@ -69,6 +81,243 @@ class CharacterValidationStageTest {
         var complexResult = stage.validate(complexParam);
         assertTrue(complexResult.isPresent());
         assertEquals(complexParam, complexResult.get());
+    }
+
+    /**
+     * RFC 3986 section 3.4 lists {@code /} and {@code ?} as legal query characters and {@code pchar}
+     * admits {@code :} and {@code @}. Browsers send all three unencoded, so the previous query set -
+     * which omitted them - rejected RFC-legal input.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"a/b", "a:b", "a@b", "https://example.com/cb?x=1"})
+    void shouldAcceptRfc3986QueryCharactersInParameterValue(String value) throws Exception {
+        for (SecurityConfiguration preset : SHARED_GATE_PRESETS) {
+            CharacterValidationStage stage = new CharacterValidationStage(preset, ValidationType.PARAMETER_VALUE);
+
+            var result = stage.validate(value);
+            assertTrue(result.isPresent(), value + " should be accepted under " + preset);
+            assertEquals(value, result.get(), value + " must pass through unchanged under " + preset);
+        }
+    }
+
+    /**
+     * RFC 6265 section 4.1.1 {@code cookie-octet} admits the whole base64 alphabet including
+     * {@code +}, {@code /} and the {@code =} padding. The previous {@code RFC3986_UNRESERVED}
+     * mapping rejected an ordinary padded base64 session cookie.
+     */
+    @Test
+    void shouldAcceptPaddedBase64CookieValue() throws Exception {
+        // A padded base64 session token exercising every character the old unreserved-only
+        // mapping rejected: '+', '/' and the '=' padding.
+        String base64Cookie = "c2Vzc2lvbi10b2tlbg+/ab+/cd==";
+
+        for (SecurityConfiguration preset : SHARED_GATE_PRESETS) {
+            CharacterValidationStage stage = new CharacterValidationStage(preset, ValidationType.COOKIE_VALUE);
+
+            var result = stage.validate(base64Cookie);
+            assertTrue(result.isPresent(), "A padded base64 cookie value should be accepted under " + preset);
+            assertEquals(base64Cookie, result.get());
+        }
+    }
+
+    /**
+     * DQUOTE ({@code 0x22}) is not a {@code cookie-octet} member, so it is rejected wherever it
+     * appears - there is no matched-quote-pair carve-out. The quoted spelling is rejected on its
+     * very first character.
+     */
+    @Test
+    void shouldRejectDoubleQuoteInCookieValueIncludingMatchedPair() {
+        for (SecurityConfiguration preset : SHARED_GATE_PRESETS) {
+            CharacterValidationStage stage = new CharacterValidationStage(preset, ValidationType.COOKIE_VALUE);
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                    stage.validate("\"abc\""), "A matched-pair quoted cookie value must be rejected under " + preset);
+
+            assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
+            assertEquals(ValidationType.COOKIE_VALUE, exception.getValidationType());
+            assertTrue(exception.getDetail().isPresent());
+            assertTrue(exception.getDetail().get().contains("at position 0"),
+                    "The opening quote is the rejected character: " + exception.getDetail().get());
+        }
+    }
+
+    /**
+     * RFC 6265 defines {@code cookie-name} as the RFC 7230/2616 {@code token} grammar, which
+     * excludes {@code =} - unlike {@code cookie-octet}, which a cookie <em>value</em> uses and
+     * which admits it as base64 padding. Before this rule both {@code COOKIE_NAME} and
+     * {@code COOKIE_VALUE} shared {@code cookie-octet}, so a cookie-name suffix such as
+     * {@code a=b} passed validation and, once serialized as {@code name=value}, changed which
+     * text is read as the name and which as the value (CWE-20). Pinned under every preset since
+     * the token/cookie-octet split is not itself configuration-dependent.
+     */
+    @Test
+    void shouldRejectEqualsSignInCookieNameUnderEveryPreset() {
+        for (SecurityConfiguration preset : SHARED_GATE_PRESETS) {
+            CharacterValidationStage stage = new CharacterValidationStage(preset, ValidationType.COOKIE_NAME);
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                    stage.validate("a=b"), "'=' in a cookie name must be rejected under " + preset);
+
+            assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
+            assertEquals(ValidationType.COOKIE_NAME, exception.getValidationType());
+        }
+    }
+
+    /**
+     * Negative control for the rule above: {@code =} is ordinary {@code cookie-octet} content in
+     * a cookie <em>value</em> (base64 padding), so the token-grammar tightening of
+     * {@code COOKIE_NAME} must not collaterally narrow {@code COOKIE_VALUE}.
+     */
+    @Test
+    void shouldStillAcceptEqualsSignInCookieValue() throws Exception {
+        for (SecurityConfiguration preset : SHARED_GATE_PRESETS) {
+            CharacterValidationStage stage = new CharacterValidationStage(preset, ValidationType.COOKIE_VALUE);
+
+            var result = stage.validate("a=b");
+            assertTrue(result.isPresent(), "'=' should remain accepted in a cookie value under " + preset);
+            assertEquals("a=b", result.get());
+        }
+    }
+
+    /**
+     * The raw counterpart of the decoded rule asserted by
+     * {@code DecodingStageTest.shouldRejectDecodedHashInParameterName}: {@code #} terminates the
+     * query component, so it is rejected in a parameter <em>name</em> in both its raw spelling
+     * (here, by the wire-form character set) and its {@code %23} spelling (there, after decoding).
+     * Both verdicts are {@link UrlSecurityFailureType#INVALID_CHARACTER}.
+     */
+    @Test
+    void shouldRejectRawHashInParameterName() {
+        for (SecurityConfiguration preset : SHARED_GATE_PRESETS) {
+            CharacterValidationStage stage = new CharacterValidationStage(preset, ValidationType.PARAMETER_NAME);
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                    stage.validate("na#me"), "A raw '#' in a parameter name must be rejected under " + preset);
+
+            assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
+                    "The raw and decoded spellings must share a failure type under " + preset);
+            assertEquals(ValidationType.PARAMETER_NAME, exception.getValidationType());
+        }
+    }
+
+    /**
+     * The C1 range (128-159) is rejected unconditionally, before the {@code allowExtendedAscii}
+     * decision - so {@code lenient()}, which enables that flag, reaches the same verdict as
+     * {@code defaults()} (ADR-0017). U+0085 (NEL) is the motivating case: several parsers treat it
+     * as a line terminator, so admitting it into a header value via an "extended ASCII" opt-in
+     * would smuggle a control character past the {@code ch <= 31} branch.
+     */
+    @Test
+    void shouldRejectC1ControlCharactersInHeaderValueUnderEveryPreset() {
+        for (SecurityConfiguration preset : SHARED_GATE_PRESETS) {
+            CharacterValidationStage stage = new CharacterValidationStage(preset, ValidationType.HEADER_VALUE);
+
+            // Built by code point rather than written literally: U+0085 is invisible in source.
+            String withNel = "value" + (char) 0x85 + "next";
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                    stage.validate(withNel), "U+0085 must be rejected under " + preset);
+
+            assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
+                    "The C1 verdict must not depend on allowExtendedAscii");
+            assertEquals(ValidationType.HEADER_VALUE, exception.getValidationType());
+        }
+    }
+
+    /**
+     * U+2028 LINE SEPARATOR sits above 255, so it is governed by {@code allowExtendedAscii}'s
+     * second blast radius rather than by the unconditional C1 rule. Under {@code defaults()} the
+     * flag is now {@code false}, which makes {@code HEADER_VALUE} ASCII-only and rejects it.
+     */
+    @Test
+    void shouldRejectLineSeparatorInHeaderValueUnderDefaults() {
+        CharacterValidationStage stage = new CharacterValidationStage(config, ValidationType.HEADER_VALUE);
+
+        // Built by code point rather than written literally: U+2028 is invisible in source.
+        String withLineSeparator = "value" + (char) 0x2028 + "next";
+
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                stage.validate(withLineSeparator));
+
+        assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
+        assertEquals(ValidationType.HEADER_VALUE, exception.getValidationType());
+    }
+
+    /**
+     * The other half of the flipped default: a header value carrying ordinary non-ASCII text is
+     * rejected under {@code defaults()} and accepted only when the integrator opts in. This is the
+     * documented breaking behaviour change, pinned so it cannot regress silently in either
+     * direction.
+     */
+    @Test
+    void shouldGateAllUnicodeAbove255InHeaderValueOnTheFlag() throws Exception {
+        CharacterValidationStage byDefault = new CharacterValidationStage(config, ValidationType.HEADER_VALUE);
+        assertThrows(UrlSecurityException.class, () -> byDefault.validate("café 你好"),
+                "Non-ASCII header content is rejected under the fail-secure default");
+
+        SecurityConfiguration optedIn = SecurityConfiguration.builder()
+                .allowExtendedAscii(true)
+                .build();
+        CharacterValidationStage byOptIn = new CharacterValidationStage(optedIn, ValidationType.HEADER_VALUE);
+
+        var result = byOptIn.validate("café 你好");
+        assertTrue(result.isPresent(), "An explicit opt-in restores non-ASCII header content");
+        assertEquals("café 你好", result.get());
+    }
+
+    /**
+     * Every C0 control except the type-legal whitespace is rejected in a header or cookie name and
+     * value regardless of {@code allowControlCharacters} - so {@code lenient()}, which enables that
+     * flag, reaches the same verdict as {@code defaults()} (ADR-0017).
+     *
+     * <p>{@code HTTPHeaderValidationPipeline} composes no {@code DecodingStage}, and no pipeline
+     * composes a {@code DecodingStage} with a cookie type either, so this stage is the sole
+     * character guard for both: a VT admitted here would reach the application with no downstream
+     * re-check.</p>
+     *
+     * <p>Header types report {@link UrlSecurityFailureType#INVALID_CHARACTER} (RFC 7230 treats a
+     * rejected header character as simply invalid), while cookie types report the more specific
+     * {@link UrlSecurityFailureType#CONTROL_CHARACTERS} - the same split already applied to every
+     * other non-header validation type.</p>
+     */
+    @ParameterizedTest
+    @EnumSource(value = ValidationType.class, names = {"HEADER_NAME", "HEADER_VALUE", "COOKIE_NAME", "COOKIE_VALUE"})
+    void shouldRejectC0ControlCharactersInHeadersAndCookiesUnderEveryPreset(ValidationType type) {
+        String withVerticalTab = "head" + (char) 0x0B + "er";
+        boolean isHeaderType = type == ValidationType.HEADER_NAME || type == ValidationType.HEADER_VALUE;
+        UrlSecurityFailureType expectedFailureType = isHeaderType
+                ? UrlSecurityFailureType.INVALID_CHARACTER
+                : UrlSecurityFailureType.CONTROL_CHARACTERS;
+
+        for (SecurityConfiguration preset : SHARED_GATE_PRESETS) {
+            CharacterValidationStage stage = new CharacterValidationStage(preset, type);
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                            stage.validate(withVerticalTab),
+                    "VT (0x0B) must be rejected in a " + type + " under " + preset);
+
+            assertEquals(expectedFailureType, exception.getFailureType(),
+                    "The C0 verdict must not depend on allowControlCharacters");
+            assertEquals(type, exception.getValidationType());
+        }
+    }
+
+    /**
+     * Positive control for the rule above: the widened rejection runs AFTER the character-set
+     * allowance, so HTAB - which {@code RFC7230_HEADER_CHARS} admits - is still accepted in a
+     * header value. Without this the rule could pass by rejecting all C0 controls indiscriminately.
+     */
+    @Test
+    void shouldStillAcceptHorizontalTabInHeaderValue() throws Exception {
+        String withTab = "value\twith\ttabs";
+
+        for (SecurityConfiguration preset : SHARED_GATE_PRESETS) {
+            CharacterValidationStage stage = new CharacterValidationStage(preset, ValidationType.HEADER_VALUE);
+
+            var result = stage.validate(withTab);
+            assertTrue(result.isPresent(), "HTAB is header-legal and must survive under " + preset);
+            assertEquals(withTab, result.get());
+        }
     }
 
     @Test

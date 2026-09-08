@@ -305,9 +305,17 @@ ValidationType validationType) implements HttpSecurityValidator {
 
         // XSS pattern checking removed - application layer responsibility.
 
-        // Step 3: Check for protocol handler schemes and blocked path literals (paths and parameters)
+        // Step 3a: Protocol handler schemes (paths and parameter values). A javascript: or data:
+        // scheme is dangerous wherever it appears, so this gate spans both types.
         if (validationType == ValidationType.URL_PATH || validationType == ValidationType.PARAMETER_VALUE) {
             checkProtocolHandlerSchemes(value, testValue);
+        }
+
+        // Step 3b: Blocked path literals (URL paths ONLY). checkBlockedPathPatterns splits the
+        // value on '/' and matches whole segments, which is path semantics. Applying it to a
+        // parameter value rejected a bare value of exactly "etc", "dev", "sys", "root", "boot" or
+        // "proc" under paranoid() - a value that is not a path being judged as one.
+        if (validationType == ValidationType.URL_PATH) {
             checkBlockedPathPatterns(value, testValue);
         }
 
@@ -432,6 +440,11 @@ ValidationType validationType) implements HttpSecurityValidator {
 
     /**
      * Checks the input against the configured path block-list.
+     *
+     * <p><strong>Applies to {@link ValidationType#URL_PATH} only.</strong> The rule is segment
+     * matching, which is path semantics: a parameter value is not a path, and judging one as a path
+     * rejected a bare value of exactly {@code etc} under {@code paranoid()}. Protocol-handler
+     * schemes remain checked for parameter values - only this segment rule is path-scoped.</p>
      *
      * <p>Enforced whenever {@link SecurityConfiguration#blockedPathPatterns()} is non-empty -
      * mirroring {@code AllowBlockListStage}, whose block-list is likewise not gated by any boolean.

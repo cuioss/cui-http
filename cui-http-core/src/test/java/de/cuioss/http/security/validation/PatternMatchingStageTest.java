@@ -197,6 +197,71 @@ class PatternMatchingStageTest {
         assertEquals(legitimatePath, result.get());
     }
 
+    /**
+     * The path block-list is segment matching, which is path semantics. Applying it to a parameter
+     * value rejected a bare value of exactly {@code etc} under {@code paranoid()}, because
+     * {@code stripSurroundingSlashes("/etc/")} yields {@code etc} and the whole value is a single
+     * segment - a value that is not a path being judged as one.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"etc", "dev", "sys", "root", "boot", "proc"})
+    void shouldNotApplyPathBlockListToParameterValues(String value) {
+        SecurityConfiguration config = SecurityConfiguration.paranoid();
+        PatternMatchingStage stage = new PatternMatchingStage(config, ValidationType.PARAMETER_VALUE);
+
+        Optional<String> result = stage.validate(value);
+        assertTrue(result.isPresent(), "'" + value + "' is an ordinary parameter value, not a path");
+        assertEquals(value, result.get());
+    }
+
+    /**
+     * The narrowing above must not disarm the path case it was scoped away from: the same literal
+     * as a {@code URL_PATH} segment is still rejected.
+     */
+    @Test
+    void shouldStillApplyPathBlockListToUrlPaths() {
+        SecurityConfiguration config = SecurityConfiguration.paranoid();
+        PatternMatchingStage stage = new PatternMatchingStage(config, ValidationType.URL_PATH);
+
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> stage.validate("/etc/passwd"));
+
+        assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType());
+        assertEquals(ValidationType.URL_PATH, exception.getValidationType());
+    }
+
+    /**
+     * Control for the other gate that spans parameter values: traversal detection (step 1) is
+     * untouched by the block-list narrowing, and the widened query character set of deliverable 1 -
+     * which now admits a raw {@code /} - must not weaken it.
+     */
+    @Test
+    void shouldStillDetectTraversalInParameterValues() {
+        SecurityConfiguration config = SecurityConfiguration.paranoid();
+        PatternMatchingStage stage = new PatternMatchingStage(config, ValidationType.PARAMETER_VALUE);
+
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> stage.validate("../../etc/passwd"));
+
+        assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, exception.getFailureType());
+        assertEquals(ValidationType.PARAMETER_VALUE, exception.getValidationType());
+    }
+
+    /**
+     * Control that the narrowing is scoped to the block-list alone: a protocol-handler scheme in a
+     * parameter value is still rejected, because that gate remains applied to both types.
+     */
+    @Test
+    void shouldStillDetectProtocolHandlerSchemeInParameterValues() {
+        SecurityConfiguration config = SecurityConfiguration.paranoid();
+        PatternMatchingStage stage = new PatternMatchingStage(config, ValidationType.PARAMETER_VALUE);
+
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> stage.validate("javascript:alert(1)"));
+
+        assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType());
+    }
+
     // ========== Protocol Handler Scheme Tests ==========
 
     @ParameterizedTest
@@ -297,17 +362,52 @@ class PatternMatchingStageTest {
         assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, exception.getFailureType());
     }
 
-    @Test
-    void shouldRespectCaseSensitiveConfiguration() {
+    /**
+     * The two databases the {@code paranoid()} content block-lists are seeded from -
+     * {@link SecurityDefaults#SENSITIVE_PATH_PATTERNS} and
+     * {@link SecurityDefaults#PROTOCOL_HANDLER_SCHEMES} - are all-lowercase literals, so on a
+     * mixed-case value the flag alone decides the verdict: case-insensitive comparison lowercases
+     * both sides and rejects, while case-sensitive comparison matches verbatim and cannot reach the
+     * literal at all. The two arms must therefore disagree; a wiring that ignored the flag would
+     * make one of them fail.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"/ETC/passwd", "JavaScript:alert(1)"})
+    void shouldRespectCaseSensitiveConfiguration(String mixedCaseValue) {
+        PatternMatchingStage caseSensitive = contentBlockingStage(true);
+        PatternMatchingStage caseInsensitive = contentBlockingStage(false);
+
+        Optional<String> accepted = caseSensitive.validate(mixedCaseValue);
+        UrlSecurityException rejection = assertThrows(UrlSecurityException.class,
+                () -> caseInsensitive.validate(mixedCaseValue));
+
+        assertAll("case sensitivity decides the verdict on a mixed-case value",
+                () -> assertTrue(accepted.isPresent(),
+                        "case-sensitive comparison cannot match an all-lowercase literal"),
+                () -> assertEquals(mixedCaseValue, accepted.orElseThrow(),
+                        "the accepting arm returns the input verbatim"),
+                () -> assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED,
+                        rejection.getFailureType(),
+                        "case-insensitive comparison rejects the same value"),
+                () -> assertEquals(ValidationType.URL_PATH, rejection.getValidationType()));
+    }
+
+    /**
+     * Builds a stage carrying the {@code paranoid()} content detection with case sensitivity as the
+     * only free variable. The preset itself cannot serve as the sensitive arm: ADR-0012 forbids any
+     * named preset enabling {@code caseSensitiveComparison}, so that arm is hand-assembled from the
+     * same databases.
+     *
+     * @param caseSensitive the {@code caseSensitiveComparison} setting under test
+     * @return a URL_PATH stage seeded with the sensitive-path and protocol-handler databases
+     */
+    private static PatternMatchingStage contentBlockingStage(boolean caseSensitive) {
         SecurityConfiguration config = SecurityConfiguration.builder()
-                .caseSensitiveComparison(true)
+                .failOnSuspiciousPatterns(true)
+                .blockedPathPatterns(SecurityDefaults.SENSITIVE_PATH_PATTERNS)
+                .caseSensitiveComparison(caseSensitive)
                 .build();
-        PatternMatchingStage stage = new PatternMatchingStage(config, ValidationType.URL_PATH);
-
-        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
-                () -> stage.validate("../etc/passwd"));
-
-        assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, exception.getFailureType());
+        return new PatternMatchingStage(config, ValidationType.URL_PATH);
     }
 
     // ========== Validation Type Context Tests ==========

@@ -37,7 +37,8 @@ import java.util.function.IntPredicate;
  *
  * <h3>Design Principles</h3>
  * <ul>
- *   <li><strong>RFC Compliance</strong> - Enforces RFC 3986 (URI) and RFC 7230 (HTTP) character rules</li>
+ *   <li><strong>RFC Compliance</strong> - Enforces RFC 3986 (URI), RFC 6265 (cookies) and RFC 7230
+ *       (HTTP) character rules</li>
  *   <li><strong>Security First</strong> - Rejects dangerous characters before any processing</li>
  *   <li><strong>Context Aware</strong> - Different character sets for different HTTP components</li>
  *   <li><strong>Performance</strong> - Uses BitSet for O(1) character lookups</li>
@@ -68,9 +69,15 @@ import java.util.function.IntPredicate;
  *
  * <ul>
  *   <li><strong>URL Paths</strong> - RFC 3986 unreserved + path-specific characters</li>
- *   <li><strong>Parameters</strong> - RFC 3986 query characters with percent-encoding support</li>
+ *   <li><strong>Parameters</strong> - RFC 3986 section 3.4 {@code query} characters - unreserved plus
+ *       {@code / : @ ? &amp; =} and the query sub-delims - with percent-encoding support</li>
  *   <li><strong>Headers</strong> - RFC 7230 visible ASCII minus delimiters</li>
- *   <li><strong>Cookies</strong> - Restricted character set for cookie safety</li>
+ *   <li><strong>Cookie names</strong> - the RFC 6265 {@code cookie-name} grammar, which is the
+ *       RFC 7230/2616 {@code token} set (same as a header name) - notably excluding {@code =},
+ *       so a name cannot smuggle a second {@code name=value} boundary</li>
+ *   <li><strong>Cookie values</strong> - RFC 6265 section 4.1.1 {@code cookie-octet}: US-ASCII
+ *       excluding CTLs, whitespace, DQUOTE, comma, semicolon and backslash. DQUOTE is rejected
+ *       wherever it appears - there is no matched-quote-pair carve-out</li>
  *   <li><strong>Bodies</strong> - Content-type specific character validation</li>
  * </ul>
  *
@@ -120,14 +127,37 @@ import java.util.function.IntPredicate;
  * <ul>
  *   <li><strong>allowNullBytes</strong> - Whether to permit null bytes (default: false)</li>
  *   <li><strong>allowControlCharacters</strong> - Whether to permit control characters (default: false)</li>
- *   <li><strong>allowExtendedAscii</strong> - Whether to permit extended ASCII characters (128-255).
+ *   <li><strong>allowExtendedAscii</strong> - Whether to permit extended ASCII characters (160-255).
  *       <ul>
- *         <li>For URL paths and parameters: Allows characters 128-255 when enabled</li>
+ *         <li>For URL paths and parameters: Allows characters 160-255 when enabled</li>
  *         <li>For header names and cookies: Always rejected per RFC (setting ignored)</li>
- *         <li>For header values and body: Enables both extended ASCII and Unicode support</li>
+ *         <li>For header values and body: Enables both extended ASCII and <em>all</em> Unicode
+ *             above 255 - so at the {@code false} default those two types are ASCII-only, and an
+ *             integrator carrying non-ASCII header values or bodies must opt in explicitly</li>
  *         <li>Note: Unicode beyond 255 is always rejected for URLs per RFC 3986</li>
+ *         <li>Note: the C1 range (128-159) is <em>not</em> reachable through this flag - see the
+ *             unconditional rule below</li>
  *       </ul>
  *       (default: false)</li>
+ * </ul>
+ *
+ * <h3>Unconditional Rules (not reachable through configuration)</h3>
+ * <p>Two rules hold regardless of every configuration flag, because relaxing them would hand an
+ * attacker a parser-level primitive rather than merely widen an allowed character set:</p>
+ * <ul>
+ *   <li><strong>CR/LF in header and cookie names and values</strong> - rejected regardless of
+ *       {@code allowControlCharacters}, because cookies travel in the Cookie/Set-Cookie headers and
+ *       a CR or LF there is HTTP response splitting</li>
+ *   <li><strong>Every C0 control in a header or cookie name or value</strong> - rejected regardless
+ *       of {@code allowControlCharacters}, except the whitespace the type's own character set
+ *       admits (HTAB in a header value; no cookie type admits any C0 control, including HTAB, per
+ *       RFC 6265's {@code cookie-octet}). The header pipeline composes no {@link DecodingStage},
+ *       and no pipeline composes a {@code DecodingStage} with a cookie type either, so this stage
+ *       is the sole character guard for both and a VT or FF admitted here would reach the
+ *       application unchecked</li>
+ *   <li><strong>The C1 range (128-159)</strong> - rejected regardless of {@code allowExtendedAscii}
+ *       for every validation type. These are non-printing controls, not extended-ASCII text, and
+ *       {@code U+0085} (NEL) is treated as a line terminator by several parsers</li>
  * </ul>
  *
  * <h3>Performance Characteristics</h3>
@@ -265,6 +295,15 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
 
     /**
      * Validates percent encoding at the given position.
+     *
+     * <p>This is a <em>wire-form encoding check only</em>: it asserts that {@code %} is followed by
+     * two hex digits (and rejects the encoded null byte {@code %00}), then skips the triplet without
+     * consulting the type's character set. The character the triplet decodes to is deliberately not
+     * judged here - percent-encoding is RFC 3986's own carriage mechanism, so an encoded reserved
+     * character is normally correct input. {@link DecodingStage} owns the decoded-form re-check and
+     * applies it after decoding, and the pipelines that need that guarantee compose it after this
+     * stage.</p>
+     *
      * @param value The string to validate
      * @param position The position of the percent sign
      * @throws UrlSecurityException if the percent encoding is invalid
@@ -322,9 +361,10 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
     /**
      * Checks if a character is allowed based on configuration flags and character sets.
      */
-    // S3776: cognitive complexity is 16 vs the 15 limit — the sequential per-character-class
-    // guards (null byte, control chars incl. the unconditional CR/LF header rejection, extended
-    // ASCII, Unicode) are each simple and clearer inline than split across helpers.
+    // S3776: cognitive complexity exceeds the 15 limit — the sequential per-character-class
+    // guards (null byte, C0 controls including the two unconditional header rules, the
+    // unconditional C1 rejection, extended ASCII, Unicode) are each simple and clearer inline
+    // than split across helpers.
     @SuppressWarnings("java:S3776")
     private boolean isCharacterAllowed(int ch) {
         // Null byte (0) - should be allowed if configured (already checked earlier but may reach here)
@@ -341,9 +381,20 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
             if ((ch == '\r' || ch == '\n') && isHeaderOrCookieType()) {
                 return false;
             }
-            // Always allow common whitespace characters that are in the base character set
+            // Always allow common whitespace characters that are in the base character set.
+            // This is what keeps HTAB legal in a header value (RFC7230_HEADER_CHARS admits it),
+            // and it deliberately runs BEFORE the header rule below.
             if (allowedChars.test(ch)) {
                 return true;
+            }
+            // Every other C0 control is rejected unconditionally in a header or cookie name or
+            // value. HTTPHeaderValidationPipeline composes only a length stage and this character
+            // stage (plus AllowBlockListStage for names) and no DecodingStage, and no pipeline
+            // composes a DecodingStage with a cookie type either, so this stage is the sole
+            // character guard for both - there is no downstream re-check that could catch a
+            // VT (0x0B) or FF (0x0C) that allowControlCharacters waved through here.
+            if (isHeaderOrCookieType()) {
+                return false;
             }
             // Other control characters depend on configuration
             return allowControlCharacters;
@@ -357,6 +408,14 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
         // Extended ASCII characters (128-255)
         // Different validation types have different rules for extended ASCII
         if (ch <= 255) {
+            // C1 control characters (128-159) are rejected unconditionally, before the
+            // allowExtendedAscii decision, exactly as CR/LF is above. They are non-printing
+            // controls, not extended-ASCII text, and U+0085 (NEL) is treated as a line
+            // terminator by several parsers - so admitting them via an "extended ASCII"
+            // opt-in would smuggle a control character past the ch<=31 branch.
+            if (ch <= 159) {
+                return false;
+            }
             // Header names and cookie names/values must be ASCII-only per RFC
             if (validationType == ValidationType.HEADER_NAME ||
                     validationType == ValidationType.COOKIE_NAME ||
@@ -370,7 +429,10 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
 
         // Unicode characters above 255:
         // For URLs (paths/parameters): Always rejected per RFC 3986 (ASCII-only)
-        // For headers/body: Allowed if allowExtendedAscii is true (which enables full Unicode support for these contexts)
+        // For headers/body: Allowed if allowExtendedAscii is true. NOTE the flag's second blast
+        // radius: for HEADER_VALUE and BODY it governs ALL Unicode above 255, not just the
+        // 128-255 range, so with the fail-secure default (false) those two types are ASCII-only
+        // and an integrator carrying non-ASCII header values or bodies must opt in explicitly.
         // Always reject combining marks (any Unicode combining block) as they can cause
         // normalization issues and enable homograph attacks.
         if (CharacterValidationConstants.isCombiningMark(ch)) {

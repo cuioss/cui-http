@@ -19,15 +19,19 @@ import de.cuioss.http.security.config.SecurityConfiguration;
 import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
+import de.cuioss.http.security.monitoring.SecurityEventCounter;
+import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.lang.reflect.Modifier;
 import java.util.Optional;
 import java.util.stream.Stream;
 
@@ -509,11 +513,13 @@ class DecodingStageTest {
     @DisplayName("Should be immutable and thread-safe")
     @SuppressWarnings("java:S1612")
     void shouldBeImmutableAndThreadSafe() {
-        // Verify immutability via Lombok @Value annotation (check class methods are present)
-        // Lombok @Value generates equals, hashCode, toString, and makes fields final
-        assertDoesNotThrow(() -> DecodingStage.class.getMethod("equals", Object.class));
-        assertDoesNotThrow(() -> DecodingStage.class.getMethod("hashCode"));
-        assertDoesNotThrow(() -> DecodingStage.class.getMethod("toString"));
+        // Immutability is carried by record-ness itself: a record's declared fields are final, so
+        // no state can be swapped out from under a concurrent caller.
+        assertTrue(DecodingStage.class.isRecord(), "DecodingStage must remain a record");
+        assertAll("every declared field is final",
+                Stream.of(DecodingStage.class.getDeclaredFields())
+                        .<Executable>map(field -> () -> assertTrue(Modifier.isFinal(field.getModifiers()),
+                                "field must be final: " + field.getName())));
 
         // Test concurrent access
         DecodingStage decoder = new DecodingStage(defaultConfig, ValidationType.URL_PATH);
@@ -1010,6 +1016,219 @@ class DecodingStageTest {
                     () -> assertEquals("a;b", valueDecoder.validate("a%3Bb").orElseThrow()),
                     () -> assertEquals("a&b", valueDecoder.validate("a&b").orElseThrow()),
                     () -> assertEquals("a&b", valueDecoder.validate("a%26b").orElseThrow()));
+        }
+    }
+
+    /**
+     * Invisible code points are rejected after decoding, in the same class as combining marks.
+     *
+     * <p>{@link Character#isISOControl(int)} covers category {@code Cc} only, so before this rule
+     * a decoded {@code U+202E} RLO, {@code U+200B} ZWSP, {@code U+FEFF} BOM or {@code U+00A0} NBSP
+     * passed in a URL path despite enabling exactly the visual-spoofing class the combining-mark
+     * rule exists to stop. The rule is unconditional, so {@code lenient()} reaches the same verdict
+     * (ADR-0017).</p>
+     */
+    @Nested
+    @DisplayName("Decoded invisible characters are rejected under every preset")
+    class DecodedInvisibleCharacters {
+
+        private final SecurityConfiguration lenient = SecurityConfiguration.lenient();
+
+        /**
+         * @return the encoded spelling and a label, for each invisible code point the rule adds.
+         */
+        static Stream<Arguments> invisibleCodePoints() {
+            return Stream.of(
+                    Arguments.of("%E2%80%AE", "U+202E RIGHT-TO-LEFT OVERRIDE (Cf)"),
+                    Arguments.of("%E2%80%8B", "U+200B ZERO WIDTH SPACE (Cf)"),
+                    Arguments.of("%EF%BB%BF", "U+FEFF BYTE ORDER MARK (Cf)"),
+                    Arguments.of("%C2%A0", "U+00A0 NO-BREAK SPACE (Zs)"));
+        }
+
+        @ParameterizedTest
+        @MethodSource("invisibleCodePoints")
+        @DisplayName("a decoded invisible character in a URL path is rejected under defaults and lenient")
+        void shouldRejectDecodedInvisibleCharactersInPath(String encoded, String description) {
+            for (SecurityConfiguration preset : new SecurityConfiguration[]{defaultConfig, lenient}) {
+                DecodingStage decoder = new DecodingStage(preset, ValidationType.URL_PATH);
+
+                UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                        () -> decoder.validate("/api/a" + encoded + "b"),
+                        description + " must be rejected under " + preset);
+
+                assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
+                        description + " is an invisible-character rejection, not a control-character one");
+                assertEquals(ValidationType.URL_PATH, exception.getValidationType());
+                assertTrue(exception.getDetail().orElse("").contains("Decoded invisible character"),
+                        "Detail must name the rule: " + exception.getDetail().orElse(""));
+            }
+        }
+
+        @Test
+        @DisplayName("negative control: ASCII SP is not caught by the invisible-character rule")
+        void shouldNotTreatAsciiSpaceAsInvisible() {
+            DecodingStage valueDecoder = new DecodingStage(defaultConfig, ValidationType.PARAMETER_VALUE);
+
+            // ASCII SP is ordinary form content and keeps its existing per-type treatment; only
+            // Zs code points ABOVE ASCII are invisible-spoofing candidates.
+            assertEquals("a b", valueDecoder.validate("a%20b").orElseThrow());
+        }
+    }
+
+    /**
+     * A decoded C1 control (0x80-0x9F) must be rejected regardless of {@code allowControlCharacters},
+     * mirroring the unconditional raw-form guarantee in
+     * {@link CharacterValidationStage#isCharacterAllowed}. Before this rule, a percent-encoded C1
+     * byte such as {@code %C2%85} (U+0085 NEL) reached {@code URL_PATH} unrejected once
+     * {@code allowControlCharacters(true)} was configured, because the wire-form character stage
+     * never inspects what a percent-encoding decodes to and the decoded-character check deferred
+     * to the flag for {@code URL_PATH}. That let the encoded spelling of a C1 byte outrank its raw
+     * spelling - the raw-versus-encoded asymmetry class ADR-0017 exists to close - so the fix is
+     * pinned under BOTH {@code defaults()} and {@code lenient()}.
+     */
+    @Nested
+    @DisplayName("Decoded C1 controls are rejected unconditionally, under every preset")
+    class DecodedC1ControlsAreUnconditional {
+
+        private final SecurityConfiguration lenient = SecurityConfiguration.lenient();
+
+        @ParameterizedTest
+        @DisplayName("a decoded C1 control in a URL path is rejected under defaults and lenient (allowControlCharacters=true)")
+        @ValueSource(strings = {"%C2%80", "%C2%85", "%C2%9F"})
+        void shouldRejectDecodedC1ControlInPathUnderEveryPreset(String encodedControl) {
+            for (SecurityConfiguration preset : new SecurityConfiguration[]{defaultConfig, lenient}) {
+                DecodingStage decoder = new DecodingStage(preset, ValidationType.URL_PATH);
+
+                UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                        () -> decoder.validate("/a" + encodedControl + "b"),
+                        encodedControl + " must be rejected under " + preset
+                                + " - allowControlCharacters must not relax the C1 range");
+
+                assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType());
+                assertEquals(ValidationType.URL_PATH, exception.getValidationType());
+            }
+        }
+
+        @Test
+        @DisplayName("negative control: a C0 control (ESC/BS) still survives decoding when explicitly allowed")
+        void shouldStillAcceptC0ControlsWhenAllowed() {
+            // The C1 fix must not widen to swallow the pre-existing, deliberately configurable
+            // C0 carve-out this same method grants for URL_PATH under allowControlCharacters(true).
+            DecodingStage decoder = new DecodingStage(lenient, ValidationType.URL_PATH);
+
+            String expected = "/a" + (char) 0x1B + (char) 0x08 + "b";
+
+            assertEquals(expected, decoder.validate("/a%1B%08b").orElseThrow(),
+                    "ESC (0x1B) and BS (0x08) are C0, not C1, and must still be governed by "
+                            + "allowControlCharacters");
+        }
+    }
+
+    /**
+     * The decoded structural-delimiter rule is scoped to exactly one character on exactly one
+     * validation type: {@code #} in a {@code PARAMETER_NAME}.
+     *
+     * <p>The first test is the regression that scoping produces. The rest are negative controls
+     * that pin the scope, so a future widening cannot land silently: each names the stage that
+     * actually owns the verdict for the delimiter it exercises.</p>
+     */
+    @Nested
+    @DisplayName("The decoded structural-delimiter rule is scoped to '#' in a parameter name")
+    class DecodedStructuralDelimiterScope {
+
+        private final SecurityConfiguration lenient = SecurityConfiguration.lenient();
+
+        @Test
+        @DisplayName("'%23' in a parameter name is rejected after decoding, under defaults and lenient")
+        void shouldRejectDecodedHashInParameterName() {
+            // '#' terminates the query component, so a decoded '#' in a structural parameter name
+            // re-parses the query exactly as a decoded '&' would. The raw counterpart is asserted
+            // by CharacterValidationStageTest.shouldRejectRawHashInParameterName, and both reach
+            // INVALID_CHARACTER.
+            for (SecurityConfiguration preset : new SecurityConfiguration[]{defaultConfig, lenient}) {
+                DecodingStage nameDecoder = new DecodingStage(preset, ValidationType.PARAMETER_NAME);
+
+                UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                        () -> nameDecoder.validate("na%23me"), "rejected under " + preset);
+
+                assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
+                assertEquals(ValidationType.PARAMETER_NAME, exception.getValidationType());
+                assertEquals(Optional.of("Decoded parameter-name delimiter '#' at position 2"),
+                        exception.getDetail());
+            }
+        }
+
+        @Test
+        @DisplayName("negative control: '%5B'/'%5D' in a URL path decode to brackets and are accepted here")
+        void shouldAcceptDecodedBracketsInPath() {
+            DecodingStage decoder = new DecodingStage(defaultConfig, ValidationType.URL_PATH);
+
+            // A percent-encoded bracket is RFC 3986's own carriage mechanism, and
+            // LegitimateSpecialCharactersDatabase declares '/array/items%5B0%5D' legitimate.
+            assertEquals("/array/items[0]", decoder.validate("/array/items%5B0%5D").orElseThrow());
+        }
+
+        @Test
+        @DisplayName("negative control: '/array/items%5B0%5D' is accepted end-to-end by the path pipeline")
+        void shouldAcceptEncodedBracketsThroughThePathPipeline() {
+            URLPathValidationPipeline pipeline =
+                    new URLPathValidationPipeline(defaultConfig, new SecurityEventCounter());
+
+            assertEquals("/array/items[0]", pipeline.validate("/array/items%5B0%5D").orElseThrow(),
+                    "matching LegitimateSpecialCharactersDatabase, which declares this path legitimate");
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"%3F", "%23"})
+        @DisplayName("negative control: '%3F'/'%23' in a URL path pass this stage and are NormalizationStage's verdict")
+        void shouldLeaveDecodedComponentDelimitersToNormalizationStage(String encoded) {
+            DecodingStage decoder = new DecodingStage(defaultConfig, ValidationType.URL_PATH);
+            NormalizationStage normalizer = new NormalizationStage(defaultConfig, ValidationType.URL_PATH);
+
+            // This stage passes the value through; the component-delimiter rule belongs to
+            // NormalizationStage, which runs immediately after it, and rejecting here would
+            // silently retype a verdict that stage owns.
+            String decoded = decoder.validate("/api/a" + encoded + "b").orElseThrow();
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                    () -> normalizer.validate(decoded));
+
+            assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
+            assertTrue(exception.getDetail().isPresent());
+            assertTrue(exception.getDetail().get().contains("component delimiter"),
+                    "NormalizationStage owns this verdict: " + exception.getDetail().get());
+        }
+
+        @Test
+        @DisplayName("negative control: '%5C' in a URL path passes this stage and is PatternMatchingStage's verdict")
+        void shouldLeaveDecodedBackslashToPatternMatchingStage() {
+            DecodingStage decoder = new DecodingStage(defaultConfig, ValidationType.URL_PATH);
+
+            assertEquals("/api/\\windows\\system32\\config",
+                    decoder.validate("/api/%5cwindows%5csystem32%5cconfig").orElseThrow(),
+                    "the decoded backslash passes this stage untouched");
+
+            URLPathValidationPipeline paranoidPipeline =
+                    new URLPathValidationPipeline(SecurityConfiguration.paranoid(), new SecurityEventCounter());
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                    () -> paranoidPipeline.validate("/api/%5cwindows%5csystem32%5cconfig"));
+
+            assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType(),
+                    "the post-normalization PatternMatchingStage owns the Windows-path verdict");
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"%3F", "%23", "%5B", "%5D", "%5C", "%20", "%26", "%3D", "%3B", "%2F"})
+        @DisplayName("negative control: every delimiter is ordinary form content inside a parameter VALUE")
+        void shouldAcceptEveryDelimiterInParameterValue(String encoded) {
+            DecodingStage valueDecoder = new DecodingStage(defaultConfig, ValidationType.PARAMETER_VALUE);
+
+            // A parameter value is not structural, so rejecting any of these would collaterally
+            // break ordinary form data - a hex colour '%23', array notation '%5B'/'%5D', a space
+            // '%20' and the widened '%2F' all travel here legitimately.
+            var result = valueDecoder.validate("a" + encoded + "b");
+            assertTrue(result.isPresent(), encoded + " should be accepted in a parameter value");
         }
     }
 

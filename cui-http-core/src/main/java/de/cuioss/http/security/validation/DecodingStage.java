@@ -153,6 +153,14 @@ ValidationType validationType) implements HttpSecurityValidator {
     private static final Pattern SURVIVING_ENCODING_PATTERN = Pattern.compile("%[0-9a-fA-F]{2}");
 
     /**
+     * Shared detail-message suffix for a decoded-character rejection, naming the escaped code
+     * point and its position. Extracted once (java:S1192) since three separate rejection sites
+     * below - combining character, invisible character, and control character - all report the
+     * same shape.
+     */
+    private static final String AT_POSITION_SUFFIX = ") at position ";
+
+    /**
      * Validates input through HTTP protocol-layer decoding with security checks.
      *
      * <p><strong>Architectural Boundary:</strong> This stage operates strictly at the HTTP protocol layer,
@@ -192,7 +200,9 @@ ValidationType validationType) implements HttpSecurityValidator {
      *                                <li>CONTROL_CHARACTERS - if the decoded output contains a control
      *                                    character that this validation type forbids</li>
      *                                <li>INVALID_CHARACTER - if the decoded output contains a combining
-     *                                    mark, or a delimiter inside a parameter name</li>
+     *                                    mark, an invisible format ({@code Cf}) or non-ASCII space
+     *                                    separator ({@code Zs}) character, or a delimiter inside a
+     *                                    parameter name</li>
      *                                <li>UNICODE_NORMALIZATION_CHANGED - if normalization introduces a
      *                                    structurally significant separator character</li>
      *                              </ul>
@@ -534,7 +544,17 @@ ValidationType validationType) implements HttpSecurityValidator {
      *       are legitimate form data, but reject the remaining control characters unless
      *       explicitly allowed. The offending code point is reported in escaped {@code U+XXXX}
      *       form so no raw control character reaches a log.</li>
-     *   <li><strong>Decoded parameter-name delimiters</strong> ({@code = &amp; ; space}) - rejected
+     *   <li><strong>Format characters</strong> (Unicode category {@code Cf}: {@code U+200B} ZWSP,
+     *       {@code U+200E}/{@code U+200F} and {@code U+202A}-{@code U+202E} bidi controls including
+     *       RLO, {@code U+FEFF} BOM) - always rejected. These are invisible when rendered, so they
+     *       enable exactly the visual-spoofing class the combining-mark rule above exists to stop,
+     *       yet {@link Character#isISOControl(int)} does not see them: it covers category
+     *       {@code Cc} only</li>
+     *   <li><strong>Non-ASCII space separators</strong> (category {@code Zs} above {@code U+007F},
+     *       e.g. {@code U+00A0} NBSP) - always rejected, for the same reason: they render as
+     *       whitespace but are not the ASCII SP the parsers and the character sets reason about.
+     *       ASCII SP itself is excluded from this rule and keeps its existing per-type treatment</li>
+     *   <li><strong>Decoded parameter-name delimiters</strong> ({@code = &amp; ; # space}) - rejected
      *       for parameter <em>names</em> only, since a decoded delimiter would split the name and
      *       enable parameter injection</li>
      * </ul>
@@ -565,7 +585,20 @@ ValidationType validationType) implements HttpSecurityValidator {
                         .failureType(UrlSecurityFailureType.INVALID_CHARACTER)
                         .validationType(validationType)
                         .originalInput(originalInput)
-                        .detail("Decoded combining character (" + escaped(cp) + ") at position " + i)
+                        .detail("Decoded combining character (" + escaped(cp) + AT_POSITION_SUFFIX + i)
+                        .build();
+            }
+
+            // Format (Cf) and non-ASCII space-separator (Zs) code points are invisible when
+            // rendered, so they carry the same spoofing capability as a combining mark. They are
+            // rejected unconditionally: Character.isISOControl covers category Cc only and never
+            // sees them, which is why they need their own rule rather than a wider control check.
+            if (isInvisibleSpoofingCharacter(cp)) {
+                throw UrlSecurityException.builder()
+                        .failureType(UrlSecurityFailureType.INVALID_CHARACTER)
+                        .validationType(validationType)
+                        .originalInput(originalInput)
+                        .detail("Decoded invisible character (" + escaped(cp) + AT_POSITION_SUFFIX + i)
                         .build();
             }
 
@@ -576,11 +609,11 @@ ValidationType validationType) implements HttpSecurityValidator {
                         .failureType(UrlSecurityFailureType.CONTROL_CHARACTERS)
                         .validationType(validationType)
                         .originalInput(originalInput)
-                        .detail("Decoded control character (" + escaped(cp) + ") at position " + i)
+                        .detail("Decoded control character (" + escaped(cp) + AT_POSITION_SUFFIX + i)
                         .build();
             }
 
-            // Parameter names are structural: a decoded delimiter (=, &, ;, space) would split
+            // Parameter names are structural: a decoded delimiter (=, &, ;, #, space) would split
             // the name and enable parameter-injection. These are legitimate inside a parameter
             // VALUE (form data), so this rule is name-only.
             if (validationType == ValidationType.PARAMETER_NAME && isParameterNameDelimiter(cp)) {
@@ -597,6 +630,30 @@ ValidationType validationType) implements HttpSecurityValidator {
     }
 
     /**
+     * Whether a decoded code point is invisible when rendered and therefore a visual-spoofing
+     * vector, in the same class as a combining mark.
+     *
+     * <p>Two Unicode general categories qualify, and neither is reachable through
+     * {@link Character#isISOControl(int)}, which covers category {@code Cc} alone:</p>
+     * <ul>
+     *   <li>{@link Character#FORMAT} ({@code Cf}) - zero-width and bidi-control code points such as
+     *       {@code U+200B} ZWSP, {@code U+202E} RLO and {@code U+FEFF} BOM</li>
+     *   <li>{@link Character#SPACE_SEPARATOR} ({@code Zs}) <em>above ASCII</em> - notably
+     *       {@code U+00A0} NBSP. ASCII SP ({@code 0x20}) is deliberately excluded: it is ordinary
+     *       form content in a parameter value and is already judged per validation type by
+     *       {@link #isParameterNameDelimiter(int)} and by the wire-form character sets</li>
+     * </ul>
+     *
+     * @param ch the decoded code point to classify
+     * @return {@code true} if the code point is invisible when rendered
+     */
+    private static boolean isInvisibleSpoofingCharacter(int ch) {
+        int type = Character.getType(ch);
+        return type == Character.FORMAT
+                || (type == Character.SPACE_SEPARATOR && ch > 0x7F);
+    }
+
+    /**
      * Characters that delimit parameters in a query string and therefore must not appear
      * inside a decoded parameter <em>name</em>.
      *
@@ -609,18 +666,26 @@ ValidationType validationType) implements HttpSecurityValidator {
      * ({@code ?} and {@code #}) are rejected by {@code NormalizationStage}, which owns the
      * decoded-path rules.</p>
      *
-     * <p>Widening the rule would not close a raw-versus-encoded asymmetry either, because there
-     * is none to close <em>at this stage</em>: a raw input passes through
-     * {@link #decodeForValidationType(String)} unchanged, so
-     * {@link #validateDecodedCharacters(String, String)} reaches the identical verdict for both
-     * spellings of the same value. The residual divergence - a raw {@code &amp;} in a parameter
-     * name is admitted by {@code CharacterValidationStage} while its {@code %26} spelling is
-     * rejected here - originates in that stage's wire-form character set
-     * ({@code RFC3986_QUERY_CHARS} admits {@code &amp;}, {@code =} and {@code ;}), and closing it
-     * means tightening that set rather than loosening this rule.</p>
+     * <h4>Why {@code #} is a member</h4>
+     * <p>{@code #} terminates the query component outright, so a decoded {@code #} inside a
+     * structural parameter name is at least as re-parsing-relevant as a decoded {@code &amp;}. It
+     * belongs alongside {@code &amp;}, {@code =}, {@code ;} and SP for the reason those members
+     * already exist.</p>
+     *
+     * <h4>What is deliberately <em>not</em> a member, and why</h4>
+     * <p>For {@code URL_PATH} and {@code PARAMETER_VALUE} there is nothing left to close here:
+     * {@code NormalizationStage} owns the decoded {@code ?} / {@code #} path rules,
+     * {@code PatternMatchingStage} owns the decoded-backslash verdict, and a percent-encoded
+     * {@code [} / {@code ]} is RFC 3986's own carriage mechanism that the library's
+     * legitimate-input database declares valid. A candidate delimiter is admitted to this set only
+     * if all four of the following hold, which is why {@code #} in a parameter name is the only one
+     * that qualifies: the type's own wire-form character set rejects it raw; no legitimate-input
+     * corpus or documented legitimate-use contract declares its {@code %XX} spelling legitimate; no
+     * existing test asserts a failure type that rejecting here would pre-empt; and the pipeline does
+     * not already reject the decoded spelling downstream.</p>
      */
     private static boolean isParameterNameDelimiter(int ch) {
-        return ch == '&' || ch == '=' || ch == ';' || ch == ' ';
+        return ch == '&' || ch == '=' || ch == ';' || ch == '#' || ch == ' ';
     }
 
     /**
@@ -650,10 +715,24 @@ ValidationType validationType) implements HttpSecurityValidator {
      * {@code COOKIE_VALUE} and {@code PARAMETER_NAME}, and {@code allowControlCharacters} does
      * not relax them.</p>
      *
+     * <h3>The C1 range (0x80-0x9F) is unconditional, mirroring the raw-form guarantee</h3>
+     * <p>{@link CharacterValidationStage#isCharacterAllowed} rejects the C1 range regardless of
+     * {@code allowControlCharacters} for every validation type - they are non-printing controls,
+     * not extended-ASCII text, and {@code U+0085} (NEL) is treated as a line terminator by several
+     * parsers. Without a matching unconditional check here, a percent-encoded C1 byte (e.g.
+     * {@code %C2%85}) is invisible to the wire-form character stage - which validates the hex
+     * digits only, never what they decode to - and reached only this decoded-character check,
+     * where {@code URL_PATH} deferred to {@code allowControlCharacters}. That let the encoded
+     * spelling buy a softer verdict than the identical raw byte, exactly the CWE-20
+     * raw-versus-encoded asymmetry class ADR-0017 exists to close.</p>
+     *
      * @param cp the decoded control code point under test
      * @return {@code true} if the code point must be rejected for this validation type
      */
     private boolean decodedControlCharacterForbidden(int cp) {
+        if (cp >= 0x80 && cp <= 0x9F) {
+            return true;
+        }
         return switch (validationType) {
             case HEADER_NAME, HEADER_VALUE, COOKIE_NAME, COOKIE_VALUE, PARAMETER_NAME -> true;
             case URL_PATH -> !config.allowControlCharacters();

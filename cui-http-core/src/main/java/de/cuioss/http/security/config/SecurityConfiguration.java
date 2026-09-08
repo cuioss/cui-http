@@ -66,7 +66,16 @@ import java.util.Set;
  * @param maxBodySize Maximum allowed body size in bytes (non-negative)
  * @param allowNullBytes Whether null bytes are allowed in content
  * @param allowControlCharacters Whether control characters are allowed in content
- * @param allowExtendedAscii Whether extended ASCII (128-255) and applicable Unicode characters are allowed
+ * @param allowExtendedAscii Whether extended ASCII (128-255) and applicable Unicode characters are
+ *        allowed. <strong>Defaults to {@code false}</strong> (fail-secure); {@link #lenient()} still
+ *        enables it. The flag has two blast radii, and the second is easy to miss: for
+ *        {@code URL_PATH}, {@code PARAMETER_NAME} and {@code PARAMETER_VALUE} it gates only the
+ *        128-255 range, but for {@code HEADER_VALUE} and {@code BODY} it gates <em>all</em> Unicode
+ *        above 255 as well. An integrator whose header values or bodies legitimately carry non-ASCII
+ *        text (CJK, emoji, accented Latin) must therefore opt in explicitly - under the default those
+ *        code points are rejected, and the header pipeline composes no {@code DecodingStage} that
+ *        could soften or re-type the verdict. The C1 range (128-159) is rejected unconditionally and
+ *        is not reachable through this flag.
  * @param normalizeUnicode Whether Unicode normalization is applied during decoding. When enabled,
  *        input is canonicalized (normalize-and-continue: the canonical form flows to downstream
  *        stages) and rejected only when a compatibility/canonical fold introduces a structurally
@@ -103,9 +112,11 @@ import java.util.Set;
  * @param blockedContentTypes Case-insensitive block-list of content types (takes precedence over
  *        the allow-list). Enforced by the content-type validator ({@code AllowBlockListStage}).
  * @param blockedPathPatterns Block-list of sensitive path literals; empty (the default) means
- *        block-none. Enforced by {@code PatternMatchingStage} for {@code URL_PATH} and
- *        {@code PARAMETER_VALUE} whenever the set is non-empty, matching a whole {@code /}-delimited
- *        path segment. Seed it from {@link SecurityDefaults#SENSITIVE_PATH_PATTERNS} — via
+ *        block-none. Enforced by {@code PatternMatchingStage} for {@code URL_PATH} <em>only</em>
+ *        whenever the set is non-empty, matching a whole {@code /}-delimited path segment. It is
+ *        deliberately not applied to {@code PARAMETER_VALUE}: segment matching is path semantics,
+ *        and a parameter value is not a path. Seed it from
+ *        {@link SecurityDefaults#SENSITIVE_PATH_PATTERNS} — via
  *        {@link #withContentBlockLists(Set, Set)} on any base preset, or via the builder on the
  *        default preset — to reproduce the {@link #paranoid()} detection.
  * @param blockedParameterNames Block-list of parameter names; empty (the default) means block-none.
@@ -289,7 +300,8 @@ Set<String> blockedParameterNames
      *                 SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES);
      * </pre>
      *
-     * @param blockedPathPatterns Block-list of sensitive path literals; empty means block-none
+     * @param blockedPathPatterns Block-list of sensitive path literals; empty means block-none.
+     *        Enforced for {@code URL_PATH} only
      * @param blockedParameterNames Block-list of parameter names; empty means block-none
      * @return A new SecurityConfiguration identical to this one except for the two block-lists
      */

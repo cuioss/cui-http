@@ -142,12 +142,15 @@ class URLParameterValidationPipelineTest {
         }
 
         /**
-         * The two spellings are rejected by <em>different</em> stages, and the assertions record
-         * which. The percent-encoded values survive the query character set and are caught as
-         * traversal once decoded. The unencoded values never reach traversal detection at all: a
-         * literal {@code /} is not a member of the RFC 3986 query character set, so the character
-         * stage rejects them first as an invalid character. Both are rejected, but only the encoded
-         * pair exercises traversal detection.
+         * Both spellings are rejected as traversal, by the same stage. A literal {@code /} is a
+         * member of the RFC 3986 section 3.4 query character set, so an unencoded traversal
+         * sequence passes the character stage and reaches traversal detection - the stage that
+         * owns this verdict - exactly as the percent-encoded spelling does once decoded.
+         *
+         * <p>This is the settled post-widening behaviour: while the query set omitted {@code /},
+         * the unencoded pair was rejected earlier as {@code INVALID_CHARACTER} and never exercised
+         * traversal detection at all. Widening the set to match the RFC it cites moved the verdict
+         * to its documented owner rather than weakening it.</p>
          */
         @Test
         void shouldRejectSpecificPathTraversalValues() {
@@ -167,12 +170,12 @@ class URLParameterValidationPipelineTest {
             String unencoded1 = "../../../etc/passwd";
             String unencoded2 = "../../config";
 
-            assertAll("An unencoded slash is not a query character, so it is rejected earlier",
-                    () -> assertEquals(UrlSecurityFailureType.INVALID_CHARACTER,
+            assertAll("An unencoded slash IS a query character, so traversal detection owns the verdict",
+                    () -> assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
                             assertThrows(UrlSecurityException.class,
                                     () -> pipeline.validate(unencoded1)).getFailureType(),
                             "Unencoded traversal pattern: " + unencoded1),
-                    () -> assertEquals(UrlSecurityFailureType.INVALID_CHARACTER,
+                    () -> assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
                             assertThrows(UrlSecurityException.class,
                                     () -> pipeline.validate(unencoded2)).getFailureType(),
                             "Unencoded traversal pattern: " + unencoded2));

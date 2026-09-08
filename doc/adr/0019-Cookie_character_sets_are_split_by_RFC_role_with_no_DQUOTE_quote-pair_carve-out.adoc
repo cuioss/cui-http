@@ -1,0 +1,118 @@
+= ADR-0019: Cookie character sets are split by RFC role with no DQUOTE quote-pair carve-out
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: A cookie-pair's name and value validate against two distinct character sets mirroring their RFC 6265 grammars, and the value's cookie-octet predicate rejects DQUOTE outright with no matched-surrounding-quote-pair carve-out.
+// tags: security, cookies, character-validation, rfc-6265, input-validation
+// affects: cui-http-core
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+RFC 6265 defines a cookie-pair as `cookie-name "=" cookie-value`, where `cookie-name` is the RFC
+7230/2616 `token` grammar and `cookie-value` alone is the `cookie-octet` grammar. The two grammars
+are not interchangeable: `token` excludes the characters that carry protocol structure (including
+`=`), while `cookie-octet` is the broader set a value's content may contain because a value never
+occupies the position where a delimiter would be ambiguous.
+
+A character-validation library that exposes one allowed-character predicate per logical role has to
+decide, for a compound grammar like `cookie-pair`, whether `cookie-name` and `cookie-value` share a
+predicate or each get their own. Sharing the broader `cookie-octet` predicate for both is the more
+convenient shape — one set, one Javadoc entry, one BitSet to maintain — but it silently widens what a
+`cookie-name` character-validation gate accepts to include every character `cookie-octet` admits,
+regardless of whether that character is safe to appear in a name specifically. Because `=` is itself
+the delimiter that separates a name from its value, a character-validation gate that admits `=` inside
+a value the caller intends to treat as a name has created a channel for the name to carry a second,
+attacker-controlled `name=value` boundary once the pair is re-serialized into a `Set-Cookie` header.
+
+Separately, RFC 6265 §4.1.1 permits (but does not require) a `cookie-value` to be wrapped in a matched
+pair of DQUOTE characters. A character-set predicate that is a pure per-character membership test has
+no way to represent "this DQUOTE is legal because it is matched by another DQUOTE elsewhere in the
+same value" — recognizing a matched pair requires tracking position and parse state across the whole
+string, which is a different kind of check than "is this one character a member of the allowed set".
+The library has to decide whether cookie-value validation stays a stateless per-character test, or
+grows a stateful quote-pair exception to admit the optional RFC form.
+
+== Decision
+
+Cookie character validation is split by RFC role, and the value predicate carries no quote-pair
+state.
+
+1. `cookie-name` validates against the same character set used for HTTP header names — the RFC 7230
+   `tchar` / `token` grammar (ALPHA, DIGIT, and a fixed punctuation set that excludes every RFC 2616
+   `separator`, including `=`). `cookie-value` validates against a dedicated `cookie-octet` predicate
+   built directly from RFC 6265 §4.1.1's grammar (`%x21 / %x23-2B / %x2D-3A / %x3C-5B / %x5D-7E`). The
+   two predicates are never conflated: neither role is ever validated against the other's set.
+2. The `cookie-octet` predicate is a pure per-character membership test. DQUOTE (`0x22`) is simply
+   absent from the accepted bit range, so it is rejected at every position a value can carry it,
+   including the first and last character of an otherwise well-formed matched-quote spelling. No
+   quote-pair state, no two-pass scan, and no exception for a matched surrounding pair exists anywhere
+   in the predicate.
+
+== Consequences
+
+=== Positive
+
+* A cookie-name character-validation gate cannot admit `=`, so a name cannot smuggle a second
+  `name=value` boundary through character validation alone — the injection path this decision closes
+  requires no decode step and no downstream re-check to be structurally unreachable.
+* Both predicates remain O(1) per-character lookups with zero parse state, preserving the
+  thread-safety and immutability properties every other character-set predicate in the library
+  already has; a quote-aware predicate would have been the one exception to that shape.
+* The name/value split is directly traceable to the RFC grammar it encodes, so a future reader
+  checking "what characters can a cookie name contain" gets an answer scoped to the role that
+  actually asked the question.
+
+=== Negative
+
+* An RFC-legal DQUOTE-wrapped cookie value — the optional quoted form RFC 6265 permits — is rejected
+  by this library. A caller that receives or constructs quoted cookie values must strip the
+  surrounding quotes before validation, or must not route quoted values through this predicate.
+
+=== Risks
+
+* A future maintainer adding a new cookie-adjacent validation type may default to reusing whichever
+  of the two predicates is already in scope, re-introducing the conflation this decision separates,
+  unless the choice is re-derived from the RFC role the new type actually plays.
+
+== Alternatives Considered
+
+**A single `cookie-octet` predicate shared by both `cookie-name` and `cookie-value`.** This was the
+simpler predicate set to maintain — one BitSet, one Javadoc block, one mapping target for both
+`ValidationType` values. Rejected because `cookie-octet` admits `=`, a character load-bearing to the
+`cookie-pair` grammar itself: a name of `a=b` passes character validation under this shape, and once
+re-serialized into a `Set-Cookie` header is indistinguishable from two separate `name=value` pairs.
+The failure is a protocol delimiter smuggled past an allow-list whose entire purpose is to catch
+exactly that class of character.
+
+**A `cookie-octet` predicate with a matched-surrounding-DQUOTE carve-out**, admitting a value when the
+DQUOTE at its first position is matched by a DQUOTE at its last position. This would support the
+optional RFC 6265 quoted form. Rejected: it converts a stateless, position-independent per-character
+test into a two-pass, position-aware parser, embedding cookie-value framing logic inside what every
+other call site in the library treats as a pure membership predicate. Its edge cases — an odd
+quote count, an escaped internal quote, an opening quote with no closing one — are exactly the shape
+of parsing ambiguity a character-set gate exists to avoid rather than reproduce; a predicate that
+tracks "am I inside a matched pair" is one mismatched-quote input away from admitting content the
+unquoted form would correctly reject. This alternative was raised twice against this codebase — once
+during initial design and once by an automated code-review pass re-examining the same predicate — and
+rejected both times on the identical fail-secure, no-parse-state rationale, which is the pattern this
+ADR records so a third re-proposal does not need to re-derive it from scratch.
+
+Both rejected alternatives share a single failure mode: each trades a small authoring convenience (one
+shared set, or one optional RFC form supported) for a character-validation gate that either admits a
+protocol delimiter it should exclude, or carries parsing state a pure membership predicate is not
+built to hold safely.
+
+== References
+
+* `de.cuioss.http.security.validation.CharacterValidationConstants` — `RFC6265_COOKIE_OCTET` and
+  `RFC7230_TOKEN_CHARS`, and the `getCharacterSet` role mapping.
+* RFC 6265 §4.1.1 (`cookie-pair`, `cookie-name`, `cookie-value`, `cookie-octet`).
+* RFC 7230 §3.2.6 (`tchar` / `token`).

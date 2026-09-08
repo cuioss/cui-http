@@ -63,6 +63,10 @@ import java.util.Set;
  *   <li>Cookie name/value length: 128 / 2048 characters</li>
  *   <li>Body size: 5MB</li>
  *   <li>Null bytes and control characters: blocked</li>
+ *   <li>Extended ASCII: {@code false} - blocked. Note this flag also gates <em>all</em> Unicode
+ *       above 255 for {@code HEADER_VALUE} and {@code BODY}, so those two types are ASCII-only
+ *       unless the integrator opts in with {@link #allowExtendedAscii(boolean)}</li>
+ *   <li>Unicode normalization: {@code true} - the canonical form is the value handed downstream</li>
  * </ul>
  *
  * Implements: Task C2 from HTTP verification specification
@@ -94,7 +98,7 @@ public class SecurityConfigurationBuilder {
     // Encoding Security defaults
     private boolean allowNullBytes = false;
     private boolean allowControlCharacters = false;
-    private boolean allowExtendedAscii = true;
+    private boolean allowExtendedAscii = false;
     private boolean normalizeUnicode = true;
 
     // General Policy defaults
@@ -293,9 +297,15 @@ public class SecurityConfigurationBuilder {
     }
 
     /**
-     * Sets whether extended ASCII characters (128-255) are allowed in content.
-     * For URL paths and parameters, this only affects characters 128-255.
-     * For headers and body content, this also enables Unicode support.
+     * Sets whether extended ASCII characters (160-255) are allowed in content.
+     * For URL paths and parameters, this only affects characters 160-255.
+     * For {@code HEADER_VALUE} and {@code BODY} it additionally gates <em>all</em> Unicode above
+     * 255, so leaving it at its {@code false} default makes those two types ASCII-only.
+     *
+     * <p>The C1 range (128-159) is rejected unconditionally and is not reachable through this
+     * flag.</p>
+     *
+     * <p>Default: {@code false} (fail-secure). {@code SecurityConfiguration.lenient()} enables it.</p>
      *
      * @param allow true to allow extended ASCII and applicable Unicode characters, false to block them
      * @return This builder for method chaining
