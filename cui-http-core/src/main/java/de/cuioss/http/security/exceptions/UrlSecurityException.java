@@ -75,15 +75,41 @@ import java.util.regex.Pattern;
 public class UrlSecurityException extends RuntimeException {
 
     /**
-     * Pre-compiled pattern for removing control characters from log output.
-     * Matches control characters (0x00-0x1F) and DEL character (0x7F).
+     * Pre-compiled pattern for neutralising line-forging code points in log output.
+     *
+     * <p>Matches every code point that can terminate a line in a log viewer or a JSON-lines
+     * consumer: the C0 controls (U+0000-U+001F), DEL (U+007F), the C1 controls
+     * (U+0080-U+009F, notably NEL U+0085), and the Unicode line and paragraph separators
+     * U+2028 and U+2029.</p>
      */
-    private static final Pattern CONTROL_CHARS_PATTERN = Pattern.compile("[\\x00-\\x1F\\x7F]");
+    private static final Pattern CONTROL_CHARS_PATTERN =
+            Pattern.compile("[\\x00-\\x1F\\x7F-\\u009F\\u2028\\u2029]");
+
+    /**
+     * Maximum number of characters of rendered detail either rendering path emits.
+     *
+     * <p>Both {@link #getMessage()} and {@link #toString()} bound the same field to this limit, so
+     * an unbounded {@code detail} cannot inflate a log line through either path (CWE-400).</p>
+     */
+    private static final int MAX_RENDERED_DETAIL_LENGTH = 200;
+
+    /** Marker appended by both rendering paths when the detail was cut at the limit. */
+    private static final String TRUNCATION_MARKER = "...";
 
     @Getter
     private final UrlSecurityFailureType failureType;
     @Getter
     private final ValidationType validationType;
+    /**
+     * The rejected input, stored verbatim.
+     *
+     * <p><strong>Raw accessor - attacker-controlled.</strong> The rendering paths
+     * ({@link #getMessage()} and {@link #toString()}) never reproduce this value; the accessor
+     * generated for this field returns it unescaped and unbounded, so a caller that logs the
+     * returned value re-opens the log-injection (CWE-117 / CWE-93) and log-flooding (CWE-400)
+     * exposure the rendering paths close. Reading it is a deliberate opt-in at the caller's own
+     * trust boundary.</p>
+     */
     @Getter
     private final String originalInput;
     @Nullable
@@ -120,6 +146,13 @@ public class UrlSecurityException extends RuntimeException {
     /**
      * Gets the sanitized version of the input, if available.
      *
+     * <p><strong>Raw accessor - attacker-controlled.</strong> The sanitized form derives from the
+     * same rejected value as {@link #getOriginalInput()} and carries the same material; it is
+     * returned unescaped and unbounded. The rendering paths never reproduce it, so a caller that
+     * logs the returned value re-opens the log-injection (CWE-117 / CWE-93) and log-flooding
+     * (CWE-400) exposure they close. Reading it is a deliberate opt-in at the caller's own trust
+     * boundary.</p>
+     *
      * @return The sanitized input wrapped in Optional, or empty if not provided
      */
     public Optional<String> getSanitizedInput() {
@@ -128,6 +161,15 @@ public class UrlSecurityException extends RuntimeException {
 
     /**
      * Gets additional detail about the security failure.
+     *
+     * <p><strong>Raw accessor - may be attacker-controlled.</strong> The stored detail is returned
+     * verbatim: unescaped and unbounded. Both rendering paths defend it - {@link #getMessage()}
+     * escapes and bounds it, {@link #toString()} bounds it - but this accessor does neither, so a
+     * caller that logs the returned value re-opens the log-injection (CWE-117 / CWE-93) and
+     * log-flooding (CWE-400) exposure those paths close. A stage that embeds a rejected value in
+     * the detail escapes it first, but that is the producing stage's contract rather than a
+     * guarantee of this accessor. Reading it is a deliberate opt-in at the caller's own trust
+     * boundary.</p>
      *
      * @return Additional detail wrapped in Optional, or empty if not provided
      */
@@ -153,14 +195,101 @@ public class UrlSecurityException extends RuntimeException {
         sb.append(failureType.getDescription());
 
         if (detail != null && !detail.trim().isEmpty()) {
-            sb.append(" - ").append(detail);
+            sb.append(" - ").append(escapeAndBound(detail));
         }
 
-        // Safely truncate input for logging to prevent log injection
-        String truncatedInput = truncateForLogging(originalInput);
-        sb.append(" (input: '").append(truncatedInput).append("')");
+        sb.append(" (input: ").append(describeRedactedInput(originalInput)).append(")");
 
         return sb.toString();
+    }
+
+    /**
+     * Describes the offending input without reproducing it.
+     *
+     * <p>{@code HTTPHeaderValidationPipeline} validates {@code Authorization} header values, so a
+     * rejected bearer token or session cookie would otherwise be written verbatim into every
+     * {@code getMessage()} log statement. Only the length is reported: no content, no hash and no
+     * fingerprint, and no configuration knob - the redaction is unconditional, so credential
+     * material cannot reach a log by construction rather than by correct configuration.</p>
+     *
+     * <p>Both the original and the sanitized input are rendered through this helper, because the
+     * sanitized form derives from the same rejected header value and therefore carries the same
+     * credential material. Callers that genuinely need a value opt in through
+     * {@link #getOriginalInput()}, {@link #getSanitizedInput()} or {@link #getDetail()} at their
+     * own trust boundary; each of those accessors carries the same warning.</p>
+     *
+     * @param input The input that caused the failure
+     * @return {@code <redacted, null>} for a null input, otherwise {@code <redacted, length=N>}
+     */
+    private static String describeRedactedInput(@Nullable String input) {
+        return input == null
+                ? "<redacted, null>"
+                : "<redacted, length=%d>".formatted(input.length());
+    }
+
+    /**
+     * Escapes control characters in text rendered into the exception message and bounds the result.
+     *
+     * <p>The message is what callers habitually log, so a raw CR/LF reaching it would let an
+     * attacker-supplied fragment forge a log line (CWE-117 / CWE-93). Control characters are
+     * rendered in the {@code U+XXXX} shape used by
+     * {@code CharacterValidationStage.handleInvalidCharacter}, which keeps the offending code
+     * point readable instead of collapsing it into an opaque placeholder.</p>
+     *
+     * <p>Escaping is expansive - one control character renders as six - so escaping alone would
+     * let an unbounded {@code detail} amplify the message sixfold (CWE-400). The escaped text is
+     * therefore bounded by {@link #MAX_RENDERED_DETAIL_LENGTH} with the {@link #TRUNCATION_MARKER}
+     * {@link #truncateForLogging(String)} already applies, so both rendering paths bound the same
+     * neutralised operand at the same limit rather than merely producing similar output.</p>
+     *
+     * <p>Iteration is by code point rather than by UTF-16 {@code char}, matching
+     * {@code AllowBlockListStage.renderForDetail}. Both the escape and the cut therefore operate on
+     * whole code points, so a {@code U+XXXX} sequence is never split and a cut falling inside an
+     * astral character drops it whole rather than leaving a lone surrogate before the marker.</p>
+     *
+     * @param text The text to render
+     * @return The text with every control code point replaced by its escaped form, bounded to
+     *         {@link #MAX_RENDERED_DETAIL_LENGTH} characters plus the truncation marker
+     */
+    private static String escapeAndBound(String text) {
+        StringBuilder rendered = new StringBuilder();
+        int index = 0;
+        while (index < text.length()) {
+            int codePoint = text.codePointAt(index);
+            index += Character.charCount(codePoint);
+            String literal = new String(Character.toChars(codePoint));
+            String escaped = CONTROL_CHARS_PATTERN.matcher(literal).matches()
+                    ? "U+%04X".formatted(codePoint)
+                    : literal;
+            if (rendered.length() + escaped.length() > MAX_RENDERED_DETAIL_LENGTH) {
+                return rendered.append(TRUNCATION_MARKER).toString();
+            }
+            rendered.append(escaped);
+        }
+        return rendered.toString();
+    }
+
+    /**
+     * Renders the cause for {@link #toString()} through the same bounded, escaped path the other
+     * rendered fields use.
+     *
+     * <p>A {@code Throwable} echoes its own message into {@code toString()}, and nothing constrains
+     * what that message carries: {@code NumberFormatException}'s {@code For input string: "<raw>"}
+     * shape is the canonical example of a JDK exception that reproduces its input verbatim. Left
+     * raw, such a cause reopens CWE-117 / CWE-93 and CWE-400 through the one rendered field the
+     * class enforced nothing on. Escaping and bounding it makes the defence hold by construction
+     * rather than by the good behaviour of the current callers.</p>
+     *
+     * <p>The cause is <em>not</em> redacted the way {@code originalInput} is: it is library-authored
+     * diagnostic context rather than attacker-supplied credential material, so it must stay
+     * readable. An absent cause renders as the literal {@code null}, keeping it distinguishable
+     * from a cause that rendered to nothing.</p>
+     *
+     * @param cause The cause to render, or {@code null} when there is none
+     * @return {@code null} for an absent cause, otherwise the escaped and bounded rendering
+     */
+    private static String describeCause(@Nullable Throwable cause) {
+        return cause == null ? "null" : escapeAndBound(cause.toString());
     }
 
     /**
@@ -177,8 +306,8 @@ public class UrlSecurityException extends RuntimeException {
         // Remove control characters and limit length
         String safe = CONTROL_CHARS_PATTERN.matcher(input).replaceAll("?");
 
-        if (safe.length() > 200) {
-            return safe.substring(0, 200) + "...";
+        if (safe.length() > MAX_RENDERED_DETAIL_LENGTH) {
+            return safe.substring(0, MAX_RENDERED_DETAIL_LENGTH) + TRUNCATION_MARKER;
         }
 
         return safe;
@@ -190,10 +319,10 @@ public class UrlSecurityException extends RuntimeException {
         return getClass().getSimpleName() + "{" +
                 "failureType=" + failureType +
                 ", validationType=" + validationType +
-                ", originalInput='" + truncateForLogging(originalInput) + '\'' +
-                ", sanitizedInput='" + (sanitizedInput != null ? truncateForLogging(sanitizedInput) : null) + '\'' +
+                ", originalInput=" + describeRedactedInput(originalInput) +
+                ", sanitizedInput='" + describeRedactedInput(sanitizedInput) + '\'' +
                 ", detail='" + (detail != null ? truncateForLogging(detail) : null) + '\'' +
-                ", cause=" + getCause() +
+                ", cause=" + describeCause(getCause()) +
                 '}';
     }
 

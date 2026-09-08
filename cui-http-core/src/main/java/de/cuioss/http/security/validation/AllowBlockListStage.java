@@ -25,6 +25,7 @@ import lombok.ToString;
 import org.jspecify.annotations.Nullable;
 
 import java.util.*;
+import java.util.regex.Pattern;
 
 /**
  * Allow/block-list enforcement stage for single-value HTTP components (header names, content types).
@@ -56,6 +57,41 @@ import java.util.*;
 @EqualsAndHashCode
 @ToString
 public final class AllowBlockListStage implements HttpSecurityValidator {
+
+    /**
+     * Maximum number of rendered characters {@link #renderForDetail(String)} emits.
+     *
+     * <p>This is the same limit {@code UrlSecurityException} applies to the detail it renders, and
+     * that class is the source of the convention. The value is duplicated rather than shared
+     * because sharing it would mean publishing an internal rendering limit on the exception's
+     * public API for the sake of one collaborator in another package.</p>
+     */
+    private static final int MAX_RENDERED_DETAIL_LENGTH = 200;
+
+    /**
+     * Marker appended when the rendered value was cut at {@link #MAX_RENDERED_DETAIL_LENGTH}.
+     * Duplicated from {@code UrlSecurityException} for the reason given on that constant.
+     */
+    private static final String TRUNCATION_MARKER = "...";
+
+    /**
+     * Code points {@link #renderForDetail(String)} escapes: the C0 controls (U+0000-U+001F), DEL
+     * (U+007F), the C1 controls (U+0080-U+009F, notably NEL U+0085) and the Unicode line and
+     * paragraph separators U+2028 and U+2029.
+     *
+     * <p>The expression is character-identical to {@code UrlSecurityException}'s
+     * {@code CONTROL_CHARS_PATTERN}, and that class is the source of the convention. It is
+     * duplicated rather than shared for the reason given on {@link #MAX_RENDERED_DETAIL_LENGTH}:
+     * sharing it would mean publishing an internal rendering detail on the exception's public API
+     * - every package here is exported, so there is no package-private route across the
+     * {@code exceptions} / {@code validation} split - for the sake of one collaborator.</p>
+     *
+     * <p>{@code Character.isISOControl} is deliberately <em>not</em> used: it covers only
+     * U+0000-U+001F and U+007F-U+009F, so it leaves U+2028 and U+2029 unescaped and the two
+     * sanitisers would neutralise different code-point sets.</p>
+     */
+    private static final Pattern CONTROL_CHARS_PATTERN =
+            Pattern.compile("[\\x00-\\x1F\\x7F-\\u009F\\u2028\\u2029]");
 
     private final Set<String> allowedLowercase;
     private final Set<String> blockedLowercase;
@@ -143,7 +179,7 @@ public final class AllowBlockListStage implements HttpSecurityValidator {
                     .failureType(UrlSecurityFailureType.INVALID_INPUT)
                     .validationType(validationType)
                     .originalInput(value)
-                    .detail("Value '" + value + "' is block-listed")
+                    .detail("Value '" + renderForDetail(value) + "' is block-listed")
                     .build();
         }
 
@@ -152,11 +188,49 @@ public final class AllowBlockListStage implements HttpSecurityValidator {
                     .failureType(UrlSecurityFailureType.INVALID_INPUT)
                     .validationType(validationType)
                     .originalInput(value)
-                    .detail("Value '" + value + "' is not in the allow-list")
+                    .detail("Value '" + renderForDetail(value) + "' is not in the allow-list")
                     .build();
         }
 
         return Optional.of(value);
+    }
+
+    /**
+     * Renders a rejected value for the exception detail. Every code point
+     * {@link #CONTROL_CHARS_PATTERN} matches is replaced by its escaped {@code U+XXXX} form - the
+     * shape {@link CharacterValidationStage} already uses - so a value carrying CR/LF, NEL or a
+     * Unicode line/paragraph separator cannot forge a log line through the detail callers log.
+     *
+     * <p>Escaping is expansive - one control code point renders as six characters - so an
+     * unbounded value would be amplified sixfold here and then stored verbatim in the exception's
+     * {@code detail} for the exception's lifetime (CWE-400). Bounding the renderers alone does not
+     * close that: {@code ContentTypeValidationPipeline} documents that it applies neither a length
+     * limit nor character validation and wires this stage as its only stage, so the value reaching
+     * this method can be arbitrarily long. The result is therefore capped at
+     * {@link #MAX_RENDERED_DETAIL_LENGTH} characters plus the {@link #TRUNCATION_MARKER} at the
+     * source, and the loop exits at the cut so the amplified string is never built. The cut is
+     * taken between rendered code points, so a {@code U+XXXX} sequence is never split.</p>
+     *
+     * @param value the rejected value
+     * @return the value with every {@link #CONTROL_CHARS_PATTERN} match escaped, bounded to
+     *         {@link #MAX_RENDERED_DETAIL_LENGTH} characters plus the truncation marker
+     */
+    private static String renderForDetail(String value) {
+        StringBuilder rendered = new StringBuilder();
+        int index = 0;
+        while (index < value.length()) {
+            int codePoint = value.codePointAt(index);
+            index += Character.charCount(codePoint);
+            String literal = new String(Character.toChars(codePoint));
+            String escaped = CONTROL_CHARS_PATTERN.matcher(literal).matches()
+                    ? "U+%04X".formatted(codePoint)
+                    : literal;
+            if (rendered.length() + escaped.length() > MAX_RENDERED_DETAIL_LENGTH) {
+                return rendered.append(TRUNCATION_MARKER).toString();
+            }
+            rendered.append(escaped);
+        }
+        return rendered.toString();
     }
 
     /**

@@ -32,6 +32,18 @@ class UrlSecurityExceptionTest {
     private static final String TEST_SANITIZED = "etc/passwd";
     private static final String TEST_DETAIL = "Path traversal attempt detected";
 
+    /** NUL (U+0000). Held as a named constant so no invisible byte appears in this source file. */
+    private static final String NUL = String.valueOf((char) 0x0000);
+    /** NEL (U+0085), a C1 control that terminates a line in common log viewers. */
+    private static final String NEXT_LINE = String.valueOf((char) 0x0085);
+    /** LINE SEPARATOR (U+2028), a line terminator for JSON-lines consumers and JavaScript. */
+    private static final String LINE_SEPARATOR = String.valueOf((char) 0x2028);
+    /** GRINNING FACE (U+1F600), an astral code point whose UTF-16 form is a surrogate pair. */
+    private static final String ASTRAL_CHARACTER = new String(Character.toChars(0x1F600));
+
+    /** The bound both rendering paths apply, mirrored from the class under test. */
+    private static final int MAX_RENDERED_DETAIL_LENGTH = 200;
+
     @Test
     void shouldBuildMinimalException() {
         UrlSecurityException exception = UrlSecurityException.builder()
@@ -104,7 +116,7 @@ class UrlSecurityExceptionTest {
         // Should not throw - null originalInput is handled gracefully
         UrlSecurityException exception = assertDoesNotThrow(builder::build);
         assertNotNull(exception);
-        assertTrue(exception.getMessage().contains("'null'"));
+        assertTrue(exception.getMessage().endsWith("(input: <redacted, null>)"));
     }
 
     @Test
@@ -120,12 +132,13 @@ class UrlSecurityExceptionTest {
         assertNotNull(message);
         assertTrue(message.contains(TEST_VALIDATION_TYPE.toString()));
         assertTrue(message.contains(TEST_FAILURE_TYPE.getDescription()));
-        assertTrue(message.contains(TEST_INPUT));
+        assertFalse(message.contains(TEST_INPUT), "the input is described, never reproduced");
+        assertTrue(message.endsWith("(input: <redacted, length=%d>)".formatted(TEST_INPUT.length())));
         assertTrue(message.contains(TEST_DETAIL));
     }
 
     @Test
-    void shouldTruncateLongInputInMessage() {
+    void shouldReportLengthOnlyForLongInputInMessage() {
         String longInput = "A".repeat(300);
 
         UrlSecurityException exception = UrlSecurityException.builder()
@@ -137,26 +150,220 @@ class UrlSecurityExceptionTest {
         String message = exception.getMessage();
         assertNotNull(message);
         assertFalse(message.contains(longInput));
-        assertTrue(message.contains("..."));
+        assertFalse(message.contains("..."),
+                "the input path renders no content, so there is nothing to truncate");
+        assertTrue(message.endsWith("(input: <redacted, length=300>)"));
     }
 
     @Test
-    void shouldSanitizeControlCharactersInMessage() {
-        String inputWithControlChars = "test\r\n\ttab\u0000null";
+    void shouldSanitizeControlCharactersInDetailRendering() {
+        String detailWithControlChars = "test\r\n\ttab" + NUL + "null";
 
         UrlSecurityException exception = UrlSecurityException.builder()
                 .failureType(UrlSecurityFailureType.CONTROL_CHARACTERS)
                 .validationType(TEST_VALIDATION_TYPE)
-                .originalInput(inputWithControlChars)
+                .originalInput(TEST_INPUT)
+                .detail(detailWithControlChars)
                 .build();
 
         String message = exception.getMessage();
-        assertNotNull(message);
-        assertFalse(message.contains("\r"));
-        assertFalse(message.contains("\n"));
-        assertFalse(message.contains("\t"));
-        assertFalse(message.contains("\u0000"));
-        assertTrue(message.contains("?"));
+        String rendered = exception.toString();
+        assertAll("control characters neutralised on both rendering paths",
+                () -> assertFalse(message.contains("\r"), "message must not carry a raw CR"),
+                () -> assertFalse(message.contains("\n"), "message must not carry a raw LF"),
+                () -> assertFalse(message.contains("\t"), "message must not carry a raw tab"),
+                () -> assertFalse(message.contains(NUL), "message must not carry a raw NUL"),
+                () -> assertTrue(message.contains("testU+000DU+000AU+0009tabU+0000null"),
+                        "the message path escapes each control character"),
+                () -> assertFalse(rendered.contains("\r"), "toString must not carry a raw CR"),
+                () -> assertFalse(rendered.contains("\n"), "toString must not carry a raw LF"),
+                () -> assertFalse(rendered.contains("\t"), "toString must not carry a raw tab"),
+                () -> assertFalse(rendered.contains(NUL), "toString must not carry a raw NUL"),
+                () -> assertTrue(rendered.contains("detail='test???tab?null'"),
+                        "the toString path replaces each control character"));
+    }
+
+    @Test
+    void shouldEscapeControlCharactersFromDetailOnMessagePath() {
+        String detailWithLineBreaks = "Value 'application/octet-stream\r\nX-Injected: evil' is block-listed";
+
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(TEST_FAILURE_TYPE)
+                .validationType(TEST_VALIDATION_TYPE)
+                .originalInput(TEST_INPUT)
+                .detail(detailWithLineBreaks)
+                .build();
+
+        String message = exception.getMessage();
+        assertAll("detail rendered on the message path",
+                () -> assertFalse(message.contains("\r"), "message must not carry a raw CR"),
+                () -> assertFalse(message.contains("\n"), "message must not carry a raw LF"),
+                () -> assertTrue(message.contains("U+000D"), "CR must render as U+000D"),
+                () -> assertTrue(message.contains("U+000A"), "LF must render as U+000A"),
+                () -> assertEquals(detailWithLineBreaks, exception.getDetail().orElseThrow(),
+                        "the stored detail is unaltered"));
+    }
+
+    @Test
+    void shouldNeutraliseNextLineCharacterOnBothRenderingPaths() {
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(TEST_FAILURE_TYPE)
+                .validationType(TEST_VALIDATION_TYPE)
+                .originalInput(TEST_INPUT)
+                .detail("line" + NEXT_LINE + "break")
+                .build();
+
+        assertAll("NEL neutralised on both rendering paths",
+                () -> assertEquals("Security validation failed [%s]: %s - lineU+0085break (input: <redacted, length=%d>)"
+                        .formatted(TEST_VALIDATION_TYPE, TEST_FAILURE_TYPE.getDescription(), TEST_INPUT.length()),
+                        exception.getMessage()),
+                () -> assertEquals("UrlSecurityException{failureType=%s, validationType=%s, "
+                        .formatted(TEST_FAILURE_TYPE, TEST_VALIDATION_TYPE)
+                        + "originalInput=<redacted, length=%d>, ".formatted(TEST_INPUT.length())
+                        + "sanitizedInput='<redacted, null>', detail='line?break', cause=null}",
+                        exception.toString()));
+    }
+
+    @Test
+    void shouldNeutraliseLineSeparatorCharacterOnBothRenderingPaths() {
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(TEST_FAILURE_TYPE)
+                .validationType(TEST_VALIDATION_TYPE)
+                .originalInput(TEST_INPUT)
+                .detail("line" + LINE_SEPARATOR + "break")
+                .build();
+
+        assertAll("LINE SEPARATOR neutralised on both rendering paths",
+                () -> assertEquals("Security validation failed [%s]: %s - lineU+2028break (input: <redacted, length=%d>)"
+                        .formatted(TEST_VALIDATION_TYPE, TEST_FAILURE_TYPE.getDescription(), TEST_INPUT.length()),
+                        exception.getMessage()),
+                () -> assertEquals("UrlSecurityException{failureType=%s, validationType=%s, "
+                        .formatted(TEST_FAILURE_TYPE, TEST_VALIDATION_TYPE)
+                        + "originalInput=<redacted, length=%d>, ".formatted(TEST_INPUT.length())
+                        + "sanitizedInput='<redacted, null>', detail='line?break', cause=null}",
+                        exception.toString()));
+    }
+
+    @Test
+    void shouldBoundOverLongDetailOnMessagePathToTheSameLimitAsToString() {
+        String overLongDetail = "B".repeat(300);
+
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(TEST_FAILURE_TYPE)
+                .validationType(TEST_VALIDATION_TYPE)
+                .originalInput(TEST_INPUT)
+                .detail(overLongDetail)
+                .build();
+
+        String expectedDetail = "B".repeat(200) + "...";
+        assertAll("both rendering paths bound the detail at the same limit with the same marker",
+                () -> assertEquals("Security validation failed [%s]: %s - %s (input: <redacted, length=%d>)"
+                        .formatted(TEST_VALIDATION_TYPE, TEST_FAILURE_TYPE.getDescription(),
+                                expectedDetail, TEST_INPUT.length()),
+                        exception.getMessage()),
+                () -> assertTrue(exception.toString().contains("detail='%s'".formatted(expectedDetail)),
+                        "toString renders the same bounded detail"),
+                () -> assertEquals(overLongDetail, exception.getDetail().orElseThrow(),
+                        "the stored detail is unaltered"));
+    }
+
+    @Test
+    void shouldBoundEscapedDetailSoControlCharactersCannotAmplifyTheMessage() {
+        String overLongControlDetail = "x" + "\r".repeat(300);
+
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(UrlSecurityFailureType.CONTROL_CHARACTERS)
+                .validationType(TEST_VALIDATION_TYPE)
+                .originalInput(TEST_INPUT)
+                .detail(overLongControlDetail)
+                .build();
+
+        // The leading 'x' plus 33 whole U+000D sequences occupy 199 characters; a 34th would exceed
+        // the 200-character limit, so the cut falls on a sequence boundary and leaves no partial escape.
+        String expectedDetail = "x" + "U+000D".repeat(33) + "...";
+        assertAll("escaping cannot amplify the message beyond the bound",
+                () -> assertEquals("Security validation failed [%s]: %s - %s (input: <redacted, length=%d>)"
+                        .formatted(TEST_VALIDATION_TYPE, UrlSecurityFailureType.CONTROL_CHARACTERS.getDescription(),
+                                expectedDetail, TEST_INPUT.length()),
+                        exception.getMessage()),
+                () -> assertEquals(202, expectedDetail.length(),
+                        "199 characters of whole rendered characters plus the 3-character marker"),
+                () -> assertFalse(exception.getMessage().contains("\r"),
+                        "message must not carry a raw CR"));
+    }
+
+    @Test
+    void shouldNotReproduceCredentialMaterialOnEitherRenderingPath() {
+        String bearerToken = "Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature";
+
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(UrlSecurityFailureType.INVALID_CHARACTER)
+                .validationType(ValidationType.HEADER_VALUE)
+                .originalInput(bearerToken)
+                .build();
+
+        String message = exception.getMessage();
+        String rendered = exception.toString();
+        assertAll("credential material is never reproduced",
+                () -> assertFalse(message.contains(bearerToken), "getMessage must not echo the token"),
+                () -> assertFalse(rendered.contains(bearerToken), "toString must not echo the token"),
+                () -> assertFalse(message.contains("eyJhbGciOiJIUzI1NiJ9"),
+                        "getMessage must not echo the token header"),
+                () -> assertFalse(rendered.contains("eyJhbGciOiJIUzI1NiJ9"),
+                        "toString must not echo the token header"),
+                () -> assertFalse(message.contains(".payload.signature"),
+                        "getMessage must not echo the token payload or signature"),
+                () -> assertFalse(rendered.contains(".payload.signature"),
+                        "toString must not echo the token payload or signature"),
+                () -> assertTrue(message.endsWith("(input: <redacted, length=%d>)".formatted(bearerToken.length())),
+                        "the message reports the length only"),
+                () -> assertEquals(bearerToken, exception.getOriginalInput(),
+                        "the accessor still returns the raw value"));
+    }
+
+    @Test
+    void shouldNotReproduceCredentialMaterialFromSanitizedInput() {
+        String bearerToken = "Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature";
+        String sanitizedToken = "Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature-stripped";
+
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(UrlSecurityFailureType.INVALID_CHARACTER)
+                .validationType(ValidationType.HEADER_VALUE)
+                .originalInput(bearerToken)
+                .sanitizedInput(sanitizedToken)
+                .build();
+
+        String message = exception.getMessage();
+        String rendered = exception.toString();
+        assertAll("the sanitized rendering reproduces no credential material either",
+                () -> assertFalse(message.contains("eyJhbGciOiJIUzI1NiJ9"),
+                        "getMessage must not echo the token header"),
+                () -> assertFalse(rendered.contains("eyJhbGciOiJIUzI1NiJ9"),
+                        "toString must not echo the token header"),
+                () -> assertFalse(rendered.contains(".payload.signature"),
+                        "toString must not echo the token payload or signature"),
+                () -> assertTrue(rendered.contains("sanitizedInput='<redacted, length=%d>'"
+                                .formatted(sanitizedToken.length())),
+                        "toString reports the sanitized length only"),
+                () -> assertEquals(sanitizedToken, exception.getSanitizedInput().orElseThrow(),
+                        "the accessor still returns the raw value"));
+    }
+
+    @Test
+    void shouldDistinguishNullInputFromEmptyInput() {
+        UrlSecurityException nullInput = UrlSecurityException.builder()
+                .failureType(TEST_FAILURE_TYPE)
+                .validationType(TEST_VALIDATION_TYPE)
+                .build();
+        UrlSecurityException emptyInput = UrlSecurityException.builder()
+                .failureType(TEST_FAILURE_TYPE)
+                .validationType(TEST_VALIDATION_TYPE)
+                .originalInput("")
+                .build();
+
+        assertAll("a null input stays distinguishable from an empty one",
+                () -> assertTrue(nullInput.getMessage().endsWith("(input: <redacted, null>)")),
+                () -> assertTrue(emptyInput.getMessage().endsWith("(input: <redacted, length=0>)")));
     }
 
     @Test
@@ -171,7 +378,8 @@ class UrlSecurityExceptionTest {
         assertTrue(result.contains("UrlSecurityException"));
         assertTrue(result.contains(TEST_FAILURE_TYPE.toString()));
         assertTrue(result.contains(TEST_VALIDATION_TYPE.toString()));
-        assertTrue(result.contains(TEST_INPUT));
+        assertFalse(result.contains(TEST_INPUT), "the input is described, never reproduced");
+        assertTrue(result.contains("originalInput=<redacted, length=%d>".formatted(TEST_INPUT.length())));
         assertTrue(result.contains("detail='null'"));
     }
 
@@ -189,6 +397,88 @@ class UrlSecurityExceptionTest {
         assertTrue(result.contains(TEST_DETAIL));
         assertTrue(result.contains("detail='"));
         assertFalse(result.contains("detail='null'"));
+    }
+
+    @Test
+    void toStringShouldEscapeControlCharactersCarriedByTheCause() {
+        Throwable cause = new NumberFormatException("For input string: \"a\r\nb" + NUL + "\"");
+
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(TEST_FAILURE_TYPE)
+                .validationType(TEST_VALIDATION_TYPE)
+                .originalInput(TEST_INPUT)
+                .cause(cause)
+                .build();
+
+        String rendered = exception.toString();
+        assertAll("the cause is rendered through the same escaping the other fields use",
+                () -> assertEquals("UrlSecurityException{failureType=%s, validationType=%s, "
+                        .formatted(TEST_FAILURE_TYPE, TEST_VALIDATION_TYPE)
+                        + "originalInput=<redacted, length=%d>, ".formatted(TEST_INPUT.length())
+                        + "sanitizedInput='<redacted, null>', detail='null', "
+                        + "cause=java.lang.NumberFormatException: "
+                        + "For input string: \"aU+000DU+000AbU+0000\"}",
+                        rendered),
+                () -> assertFalse(rendered.contains("\r"), "toString must not carry a raw CR"),
+                () -> assertFalse(rendered.contains("\n"), "toString must not carry a raw LF"),
+                () -> assertFalse(rendered.contains(NUL), "toString must not carry a raw NUL"),
+                () -> assertSame(cause, exception.getCause(), "the stored cause is unaltered"));
+    }
+
+    @Test
+    void toStringShouldBoundAnOverLongCause() {
+        Throwable cause = new IllegalStateException("B".repeat(300));
+
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(TEST_FAILURE_TYPE)
+                .validationType(TEST_VALIDATION_TYPE)
+                .originalInput(TEST_INPUT)
+                .cause(cause)
+                .build();
+
+        String expectedCause = cause.toString().substring(0, MAX_RENDERED_DETAIL_LENGTH) + "...";
+        assertAll("an unbounded cause cannot inflate the rendered line",
+                () -> assertTrue(exception.toString().endsWith(", cause=%s}".formatted(expectedCause)),
+                        "the cause is bounded at the same limit as every other rendered field"),
+                () -> assertFalse(exception.toString().contains("B".repeat(300)),
+                        "the full cause message is never rendered"));
+    }
+
+    @Test
+    void toStringShouldRenderAnAbsentCauseDistinguishably() {
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(TEST_FAILURE_TYPE)
+                .validationType(TEST_VALIDATION_TYPE)
+                .originalInput(TEST_INPUT)
+                .build();
+
+        assertAll("an absent cause stays legible as absent, never as empty or redacted",
+                () -> assertTrue(exception.toString().endsWith(", cause=null}"),
+                        "a null cause renders as the literal null"),
+                () -> assertFalse(exception.toString().endsWith(", cause=}"),
+                        "a null cause must not collapse into an empty rendering"),
+                () -> assertNull(exception.getCause()));
+    }
+
+    @Test
+    void shouldNotSplitAnAstralCharacterAtTheRenderingBound() {
+        String detail = "a".repeat(MAX_RENDERED_DETAIL_LENGTH - 1) + ASTRAL_CHARACTER;
+
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(TEST_FAILURE_TYPE)
+                .validationType(TEST_VALIDATION_TYPE)
+                .originalInput(TEST_INPUT)
+                .detail(detail)
+                .build();
+
+        String message = exception.getMessage();
+        assertAll("the cut falls between whole code points, never between surrogate halves",
+                () -> assertTrue(message.contains("a".repeat(MAX_RENDERED_DETAIL_LENGTH - 1) + "..."),
+                        "the astral character does not fit, so the cut drops it whole"),
+                () -> assertTrue(message.codePoints().noneMatch(
+                                codePoint -> codePoint >= Character.MIN_SURROGATE
+                                        && codePoint <= Character.MAX_SURROGATE),
+                        "no lone surrogate survives the cut"));
     }
 
     @Test
