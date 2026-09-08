@@ -35,19 +35,15 @@ import java.util.Set;
  * <h3>Constant Categories</h3>
  * <ul>
  *   <li><strong>Length Limits</strong> - Maximum sizes for various HTTP components</li>
- *   <li><strong>Count Limits</strong> - Maximum quantities for collections (advisory, see below)</li>
+ *   <li><strong>Count Limits</strong> - Maximum quantities for collections</li>
  *   <li><strong>Security Patterns</strong> - Common attack patterns to detect</li>
- *   <li><strong>Content Types</strong> - Standard MIME types and their security implications</li>
- *   <li><strong>Character Sets</strong> - Character validation patterns</li>
  *   <li><strong>Configuration Presets</strong> - Pre-built configurations for common scenarios</li>
  * </ul>
  *
- * <h3>Count and Classification Constants</h3>
+ * <h3>Count Constants</h3>
  * <p>The count limits (parameter/header/cookie counts) are the preset defaults enforced by
  * {@code RequestCollectionValidator} (parameters 100, headers 50, cookies 20; strict 20/20/10,
- * lenient 500/100/50). The header/content-type classification sets
- * ({@code DANGEROUS_HEADER_NAMES}, {@code DANGEROUS_CONTENT_TYPES}, etc.) remain reference
- * values you may feed into the configurable allow/block lists.</p>
+ * lenient 500/100/50).</p>
  *
  * <h3>Usage Examples</h3>
  * <pre>
@@ -57,10 +53,10 @@ import java.util.Set;
  *     .maxParameterValueLength(SecurityDefaults.MAX_PARAMETER_VALUE_LENGTH_DEFAULT)
  *     .build();
  *
- * // Use advisory constants for application-layer enforcement
- * if (request.getParameterMap().size() > SecurityDefaults.MAX_PARAMETER_COUNT_DEFAULT) {
- *     // reject request
- * }
+ * // Enforce the count limits. The validator counts value instances rather than keys, so a
+ * // single parameter name carrying many values cannot evade maxParameterCount.
+ * RequestCollectionValidator validator = new RequestCollectionValidator(config, counter);
+ * validator.validateParameters(request.getParameterMap());
  *
  * // Check against limits (UrlSecurityException is builder-constructed; its constructor is private)
  * if (path.length() > SecurityDefaults.MAX_PATH_LENGTH_STRICT) {
