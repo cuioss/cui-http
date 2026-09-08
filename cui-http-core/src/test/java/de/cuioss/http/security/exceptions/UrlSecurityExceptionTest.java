@@ -38,6 +38,11 @@ class UrlSecurityExceptionTest {
     private static final String NEXT_LINE = String.valueOf((char) 0x0085);
     /** LINE SEPARATOR (U+2028), a line terminator for JSON-lines consumers and JavaScript. */
     private static final String LINE_SEPARATOR = String.valueOf((char) 0x2028);
+    /** GRINNING FACE (U+1F600), an astral code point whose UTF-16 form is a surrogate pair. */
+    private static final String ASTRAL_CHARACTER = new String(Character.toChars(0x1F600));
+
+    /** The bound both rendering paths apply, mirrored from the class under test. */
+    private static final int MAX_RENDERED_DETAIL_LENGTH = 200;
 
     @Test
     void shouldBuildMinimalException() {
@@ -392,6 +397,88 @@ class UrlSecurityExceptionTest {
         assertTrue(result.contains(TEST_DETAIL));
         assertTrue(result.contains("detail='"));
         assertFalse(result.contains("detail='null'"));
+    }
+
+    @Test
+    void toStringShouldEscapeControlCharactersCarriedByTheCause() {
+        Throwable cause = new NumberFormatException("For input string: \"a\r\nb" + NUL + "\"");
+
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(TEST_FAILURE_TYPE)
+                .validationType(TEST_VALIDATION_TYPE)
+                .originalInput(TEST_INPUT)
+                .cause(cause)
+                .build();
+
+        String rendered = exception.toString();
+        assertAll("the cause is rendered through the same escaping the other fields use",
+                () -> assertEquals("UrlSecurityException{failureType=%s, validationType=%s, "
+                        .formatted(TEST_FAILURE_TYPE, TEST_VALIDATION_TYPE)
+                        + "originalInput=<redacted, length=%d>, ".formatted(TEST_INPUT.length())
+                        + "sanitizedInput='<redacted, null>', detail='null', "
+                        + "cause=java.lang.NumberFormatException: "
+                        + "For input string: \"aU+000DU+000AbU+0000\"}",
+                        rendered),
+                () -> assertFalse(rendered.contains("\r"), "toString must not carry a raw CR"),
+                () -> assertFalse(rendered.contains("\n"), "toString must not carry a raw LF"),
+                () -> assertFalse(rendered.contains(NUL), "toString must not carry a raw NUL"),
+                () -> assertSame(cause, exception.getCause(), "the stored cause is unaltered"));
+    }
+
+    @Test
+    void toStringShouldBoundAnOverLongCause() {
+        Throwable cause = new IllegalStateException("B".repeat(300));
+
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(TEST_FAILURE_TYPE)
+                .validationType(TEST_VALIDATION_TYPE)
+                .originalInput(TEST_INPUT)
+                .cause(cause)
+                .build();
+
+        String expectedCause = cause.toString().substring(0, MAX_RENDERED_DETAIL_LENGTH) + "...";
+        assertAll("an unbounded cause cannot inflate the rendered line",
+                () -> assertTrue(exception.toString().endsWith(", cause=%s}".formatted(expectedCause)),
+                        "the cause is bounded at the same limit as every other rendered field"),
+                () -> assertFalse(exception.toString().contains("B".repeat(300)),
+                        "the full cause message is never rendered"));
+    }
+
+    @Test
+    void toStringShouldRenderAnAbsentCauseDistinguishably() {
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(TEST_FAILURE_TYPE)
+                .validationType(TEST_VALIDATION_TYPE)
+                .originalInput(TEST_INPUT)
+                .build();
+
+        assertAll("an absent cause stays legible as absent, never as empty or redacted",
+                () -> assertTrue(exception.toString().endsWith(", cause=null}"),
+                        "a null cause renders as the literal null"),
+                () -> assertFalse(exception.toString().endsWith(", cause=}"),
+                        "a null cause must not collapse into an empty rendering"),
+                () -> assertNull(exception.getCause()));
+    }
+
+    @Test
+    void shouldNotSplitAnAstralCharacterAtTheRenderingBound() {
+        String detail = "a".repeat(MAX_RENDERED_DETAIL_LENGTH - 1) + ASTRAL_CHARACTER;
+
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(TEST_FAILURE_TYPE)
+                .validationType(TEST_VALIDATION_TYPE)
+                .originalInput(TEST_INPUT)
+                .detail(detail)
+                .build();
+
+        String message = exception.getMessage();
+        assertAll("the cut falls between whole code points, never between surrogate halves",
+                () -> assertTrue(message.contains("a".repeat(MAX_RENDERED_DETAIL_LENGTH - 1) + "..."),
+                        "the astral character does not fit, so the cut drops it whole"),
+                () -> assertTrue(message.codePoints().noneMatch(
+                                codePoint -> codePoint >= Character.MIN_SURROGATE
+                                        && codePoint <= Character.MAX_SURROGATE),
+                        "no lone surrogate survives the cut"));
     }
 
     @Test

@@ -213,26 +213,56 @@ public class UrlSecurityException extends RuntimeException {
      * let an unbounded {@code detail} amplify the message sixfold (CWE-400). The escaped text is
      * therefore bounded by {@link #MAX_RENDERED_DETAIL_LENGTH} with the {@link #TRUNCATION_MARKER}
      * {@link #truncateForLogging(String)} already applies, so both rendering paths bound the same
-     * neutralised operand at the same limit rather than merely producing similar output. The cut
-     * is taken between rendered characters, so a {@code U+XXXX} sequence is never split.</p>
+     * neutralised operand at the same limit rather than merely producing similar output.</p>
+     *
+     * <p>Iteration is by code point rather than by UTF-16 {@code char}, matching
+     * {@code AllowBlockListStage.renderForDetail}. Both the escape and the cut therefore operate on
+     * whole code points, so a {@code U+XXXX} sequence is never split and a cut falling inside an
+     * astral character drops it whole rather than leaving a lone surrogate before the marker.</p>
      *
      * @param text The text to render
-     * @return The text with every control character replaced by its escaped form, bounded to
+     * @return The text with every control code point replaced by its escaped form, bounded to
      *         {@link #MAX_RENDERED_DETAIL_LENGTH} characters plus the truncation marker
      */
     private static String escapeAndBound(String text) {
         StringBuilder rendered = new StringBuilder();
-        for (int index = 0; index < text.length(); index++) {
-            char current = text.charAt(index);
-            String escaped = CONTROL_CHARS_PATTERN.matcher(String.valueOf(current)).matches()
-                    ? "U+%04X".formatted((int) current)
-                    : String.valueOf(current);
+        int index = 0;
+        while (index < text.length()) {
+            int codePoint = text.codePointAt(index);
+            index += Character.charCount(codePoint);
+            String literal = new String(Character.toChars(codePoint));
+            String escaped = CONTROL_CHARS_PATTERN.matcher(literal).matches()
+                    ? "U+%04X".formatted(codePoint)
+                    : literal;
             if (rendered.length() + escaped.length() > MAX_RENDERED_DETAIL_LENGTH) {
                 return rendered.append(TRUNCATION_MARKER).toString();
             }
             rendered.append(escaped);
         }
         return rendered.toString();
+    }
+
+    /**
+     * Renders the cause for {@link #toString()} through the same bounded, escaped path the other
+     * rendered fields use.
+     *
+     * <p>A {@code Throwable} echoes its own message into {@code toString()}, and nothing constrains
+     * what that message carries: {@code NumberFormatException}'s {@code For input string: "<raw>"}
+     * shape is the canonical example of a JDK exception that reproduces its input verbatim. Left
+     * raw, such a cause reopens CWE-117 / CWE-93 and CWE-400 through the one rendered field the
+     * class enforced nothing on. Escaping and bounding it makes the defence hold by construction
+     * rather than by the good behaviour of the current callers.</p>
+     *
+     * <p>The cause is <em>not</em> redacted the way {@code originalInput} is: it is library-authored
+     * diagnostic context rather than attacker-supplied credential material, so it must stay
+     * readable. An absent cause renders as the literal {@code null}, keeping it distinguishable
+     * from a cause that rendered to nothing.</p>
+     *
+     * @param cause The cause to render, or {@code null} when there is none
+     * @return {@code null} for an absent cause, otherwise the escaped and bounded rendering
+     */
+    private static String describeCause(@Nullable Throwable cause) {
+        return cause == null ? "null" : escapeAndBound(cause.toString());
     }
 
     /**
@@ -265,7 +295,7 @@ public class UrlSecurityException extends RuntimeException {
                 ", originalInput=" + describeRedactedInput(originalInput) +
                 ", sanitizedInput='" + describeRedactedInput(sanitizedInput) + '\'' +
                 ", detail='" + (detail != null ? truncateForLogging(detail) : null) + '\'' +
-                ", cause=" + getCause() +
+                ", cause=" + describeCause(getCause()) +
                 '}';
     }
 
