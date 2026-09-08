@@ -240,6 +240,54 @@ class UrlSecurityExceptionTest {
     }
 
     @Test
+    void shouldBoundOverLongDetailOnMessagePathToTheSameLimitAsToString() {
+        String overLongDetail = "B".repeat(300);
+
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(TEST_FAILURE_TYPE)
+                .validationType(TEST_VALIDATION_TYPE)
+                .originalInput(TEST_INPUT)
+                .detail(overLongDetail)
+                .build();
+
+        String expectedDetail = "B".repeat(200) + "...";
+        assertAll("both rendering paths bound the detail at the same limit with the same marker",
+                () -> assertEquals("Security validation failed [%s]: %s - %s (input: <redacted, length=%d>)"
+                        .formatted(TEST_VALIDATION_TYPE, TEST_FAILURE_TYPE.getDescription(),
+                                expectedDetail, TEST_INPUT.length()),
+                        exception.getMessage()),
+                () -> assertTrue(exception.toString().contains("detail='%s'".formatted(expectedDetail)),
+                        "toString renders the same bounded detail"),
+                () -> assertEquals(overLongDetail, exception.getDetail().orElseThrow(),
+                        "the stored detail is unaltered"));
+    }
+
+    @Test
+    void shouldBoundEscapedDetailSoControlCharactersCannotAmplifyTheMessage() {
+        String overLongControlDetail = "x" + "\r".repeat(300);
+
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(UrlSecurityFailureType.CONTROL_CHARACTERS)
+                .validationType(TEST_VALIDATION_TYPE)
+                .originalInput(TEST_INPUT)
+                .detail(overLongControlDetail)
+                .build();
+
+        // The leading 'x' plus 33 whole U+000D sequences occupy 199 characters; a 34th would exceed
+        // the 200-character limit, so the cut falls on a sequence boundary and leaves no partial escape.
+        String expectedDetail = "x" + "U+000D".repeat(33) + "...";
+        assertAll("escaping cannot amplify the message beyond the bound",
+                () -> assertEquals("Security validation failed [%s]: %s - %s (input: <redacted, length=%d>)"
+                        .formatted(TEST_VALIDATION_TYPE, UrlSecurityFailureType.CONTROL_CHARACTERS.getDescription(),
+                                expectedDetail, TEST_INPUT.length()),
+                        exception.getMessage()),
+                () -> assertEquals(202, expectedDetail.length(),
+                        "199 characters of whole rendered characters plus the 3-character marker"),
+                () -> assertFalse(exception.getMessage().contains("\r"),
+                        "message must not carry a raw CR"));
+    }
+
+    @Test
     void shouldNotReproduceCredentialMaterialOnEitherRenderingPath() {
         String bearerToken = "Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature";
 

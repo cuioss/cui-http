@@ -85,6 +85,17 @@ public class UrlSecurityException extends RuntimeException {
     private static final Pattern CONTROL_CHARS_PATTERN =
             Pattern.compile("[\\x00-\\x1F\\x7F-\\u009F\\u2028\\u2029]");
 
+    /**
+     * Maximum number of characters of rendered detail either rendering path emits.
+     *
+     * <p>Both {@link #getMessage()} and {@link #toString()} bound the same field to this limit, so
+     * an unbounded {@code detail} cannot inflate a log line through either path (CWE-400).</p>
+     */
+    private static final int MAX_RENDERED_DETAIL_LENGTH = 200;
+
+    /** Marker appended by both rendering paths when the detail was cut at the limit. */
+    private static final String TRUNCATION_MARKER = "...";
+
     @Getter
     private final UrlSecurityFailureType failureType;
     @Getter
@@ -158,7 +169,7 @@ public class UrlSecurityException extends RuntimeException {
         sb.append(failureType.getDescription());
 
         if (detail != null && !detail.trim().isEmpty()) {
-            sb.append(" - ").append(escapeControlCharacters(detail));
+            sb.append(" - ").append(escapeAndBound(detail));
         }
 
         sb.append(" (input: ").append(describeRedactedInput(originalInput)).append(")");
@@ -190,7 +201,7 @@ public class UrlSecurityException extends RuntimeException {
     }
 
     /**
-     * Escapes control characters in text rendered into the exception message.
+     * Escapes control characters in text rendered into the exception message and bounds the result.
      *
      * <p>The message is what callers habitually log, so a raw CR/LF reaching it would let an
      * attacker-supplied fragment forge a log line (CWE-117 / CWE-93). Control characters are
@@ -198,12 +209,30 @@ public class UrlSecurityException extends RuntimeException {
      * {@code CharacterValidationStage.handleInvalidCharacter}, which keeps the offending code
      * point readable instead of collapsing it into an opaque placeholder.</p>
      *
+     * <p>Escaping is expansive - one control character renders as six - so escaping alone would
+     * let an unbounded {@code detail} amplify the message sixfold (CWE-400). The escaped text is
+     * therefore bounded by {@link #MAX_RENDERED_DETAIL_LENGTH} with the {@link #TRUNCATION_MARKER}
+     * {@link #truncateForLogging(String)} already applies, so both rendering paths bound the same
+     * neutralised operand at the same limit rather than merely producing similar output. The cut
+     * is taken between rendered characters, so a {@code U+XXXX} sequence is never split.</p>
+     *
      * @param text The text to render
-     * @return The text with every control character replaced by its escaped form
+     * @return The text with every control character replaced by its escaped form, bounded to
+     *         {@link #MAX_RENDERED_DETAIL_LENGTH} characters plus the truncation marker
      */
-    private static String escapeControlCharacters(String text) {
-        return CONTROL_CHARS_PATTERN.matcher(text)
-                .replaceAll(match -> "U+%04X".formatted((int) match.group().charAt(0)));
+    private static String escapeAndBound(String text) {
+        StringBuilder rendered = new StringBuilder();
+        for (int index = 0; index < text.length(); index++) {
+            char current = text.charAt(index);
+            String escaped = CONTROL_CHARS_PATTERN.matcher(String.valueOf(current)).matches()
+                    ? "U+%04X".formatted((int) current)
+                    : String.valueOf(current);
+            if (rendered.length() + escaped.length() > MAX_RENDERED_DETAIL_LENGTH) {
+                return rendered.append(TRUNCATION_MARKER).toString();
+            }
+            rendered.append(escaped);
+        }
+        return rendered.toString();
     }
 
     /**
@@ -220,8 +249,8 @@ public class UrlSecurityException extends RuntimeException {
         // Remove control characters and limit length
         String safe = CONTROL_CHARS_PATTERN.matcher(input).replaceAll("?");
 
-        if (safe.length() > 200) {
-            return safe.substring(0, 200) + "...";
+        if (safe.length() > MAX_RENDERED_DETAIL_LENGTH) {
+            return safe.substring(0, MAX_RENDERED_DETAIL_LENGTH) + TRUNCATION_MARKER;
         }
 
         return safe;
