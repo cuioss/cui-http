@@ -239,11 +239,13 @@ class HeaderAndContentTypeEnforcementRegressionTest {
             // Longer than the lenient limit, so the same value is overlong under both presets.
             String overlongValue = ALLOWED_MEDIA_TYPE + "; boundary="
                     + syntheticToken(SecurityDefaults.MAX_HEADER_VALUE_LENGTH_LENIENT + 100);
+            HttpSecurityValidator pipeline = pipeline();
+            HttpSecurityValidator lenientPipeline = lenientPipeline();
 
             UrlSecurityException underDefaults = assertThrows(UrlSecurityException.class,
-                    () -> pipeline().validate(overlongValue));
+                    () -> pipeline.validate(overlongValue));
             UrlSecurityException underLenient = assertThrows(UrlSecurityException.class,
-                    () -> lenientPipeline().validate(overlongValue));
+                    () -> lenientPipeline.validate(overlongValue));
 
             assertAll("the length stage cuts the value before the list stage sees its media type",
                     () -> assertEquals(UrlSecurityFailureType.INPUT_TOO_LONG, underDefaults.getFailureType()),
@@ -258,11 +260,13 @@ class HeaderAndContentTypeEnforcementRegressionTest {
             // Media-type-only matching strips everything from the first ';', so the allow/block-list
             // stage alone would have accepted this value: the character stage is what rejects it.
             String injected = ALLOWED_MEDIA_TYPE + "; x\r\nX: y";
+            HttpSecurityValidator pipeline = pipeline();
+            HttpSecurityValidator lenientPipeline = lenientPipeline();
 
             UrlSecurityException underDefaults = assertThrows(UrlSecurityException.class,
-                    () -> pipeline().validate(injected));
+                    () -> pipeline.validate(injected));
             UrlSecurityException underLenient = assertThrows(UrlSecurityException.class,
-                    () -> lenientPipeline().validate(injected));
+                    () -> lenientPipeline.validate(injected));
 
             assertAll("CR/LF is rejected unconditionally for header types (ADR-0017)",
                     () -> assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, underDefaults.getFailureType()),
