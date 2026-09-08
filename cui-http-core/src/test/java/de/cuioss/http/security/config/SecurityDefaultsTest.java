@@ -17,7 +17,11 @@ package de.cuioss.http.security.config;
 
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -172,96 +176,31 @@ class SecurityDefaultsTest {
         assertTrue(SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES.contains("path"));
     }
 
-    @Test
-    void shouldHaveDangerousHeaderNames() {
-        assertNotNull(SecurityDefaults.DANGEROUS_HEADER_NAMES);
-        assertFalse(SecurityDefaults.DANGEROUS_HEADER_NAMES.isEmpty());
-
-        assertTrue(SecurityDefaults.DANGEROUS_HEADER_NAMES.contains("X-Debug"));
-        assertTrue(SecurityDefaults.DANGEROUS_HEADER_NAMES.contains("X-Admin"));
-        assertTrue(SecurityDefaults.DANGEROUS_HEADER_NAMES.contains("X-Execute"));
-    }
-
-    @Test
-    void shouldHaveDebugHeaderNames() {
-        assertNotNull(SecurityDefaults.DEBUG_HEADER_NAMES);
-        assertFalse(SecurityDefaults.DEBUG_HEADER_NAMES.isEmpty());
-
-        assertTrue(SecurityDefaults.DEBUG_HEADER_NAMES.contains("X-Debug"));
-        assertTrue(SecurityDefaults.DEBUG_HEADER_NAMES.contains("X-Trace"));
-        assertTrue(SecurityDefaults.DEBUG_HEADER_NAMES.contains("X-Development"));
-    }
-
-    @Test
-    void shouldHaveSuspiciousCookieNames() {
-        assertNotNull(SecurityDefaults.SUSPICIOUS_COOKIE_NAMES);
-        assertFalse(SecurityDefaults.SUSPICIOUS_COOKIE_NAMES.isEmpty());
-
-        assertTrue(SecurityDefaults.SUSPICIOUS_COOKIE_NAMES.contains("debug"));
-        assertTrue(SecurityDefaults.SUSPICIOUS_COOKIE_NAMES.contains("admin"));
-        assertTrue(SecurityDefaults.SUSPICIOUS_COOKIE_NAMES.contains("password"));
-    }
-
-    @Test
-    void shouldHaveSafeContentTypes() {
-        assertNotNull(SecurityDefaults.SAFE_CONTENT_TYPES);
-        assertFalse(SecurityDefaults.SAFE_CONTENT_TYPES.isEmpty());
-
-        assertTrue(SecurityDefaults.SAFE_CONTENT_TYPES.contains("application/json"));
-        assertTrue(SecurityDefaults.SAFE_CONTENT_TYPES.contains("text/plain"));
-        assertTrue(SecurityDefaults.SAFE_CONTENT_TYPES.contains("application/xml"));
-    }
-
-    @Test
-    void shouldHaveDangerousContentTypes() {
-        assertNotNull(SecurityDefaults.DANGEROUS_CONTENT_TYPES);
-        assertFalse(SecurityDefaults.DANGEROUS_CONTENT_TYPES.isEmpty());
-
-        assertTrue(SecurityDefaults.DANGEROUS_CONTENT_TYPES.contains("application/x-executable"));
-        assertTrue(SecurityDefaults.DANGEROUS_CONTENT_TYPES.contains("application/x-msdownload"));
-        assertTrue(SecurityDefaults.DANGEROUS_CONTENT_TYPES.contains("text/x-script"));
-    }
-
-    @Test
-    void shouldHaveUploadContentTypes() {
-        assertNotNull(SecurityDefaults.UPLOAD_CONTENT_TYPES);
-        assertFalse(SecurityDefaults.UPLOAD_CONTENT_TYPES.isEmpty());
-
-        assertTrue(SecurityDefaults.UPLOAD_CONTENT_TYPES.contains("multipart/form-data"));
-        assertTrue(SecurityDefaults.UPLOAD_CONTENT_TYPES.contains("image/jpeg"));
-        assertTrue(SecurityDefaults.UPLOAD_CONTENT_TYPES.contains("application/pdf"));
-    }
-
-    @Test
-    void shouldHaveCharacterConstants() {
-        assertEquals('\0', SecurityDefaults.NULL_BYTE);
-
-        assertNotNull(SecurityDefaults.PROBLEMATIC_CONTROL_CHARS);
-        assertTrue(SecurityDefaults.PROBLEMATIC_CONTROL_CHARS.contains('\0'));
-        assertTrue(SecurityDefaults.PROBLEMATIC_CONTROL_CHARS.contains('\b'));
-
-        assertNotNull(SecurityDefaults.INJECTION_CHARACTERS);
-        assertTrue(SecurityDefaults.INJECTION_CHARACTERS.contains('<'));
-        assertTrue(SecurityDefaults.INJECTION_CHARACTERS.contains('>'));
-        assertTrue(SecurityDefaults.INJECTION_CHARACTERS.contains('\''));
-    }
-
     // XSS patterns removed - application layer responsibility.
     // Application layers have proper context for HTML/JS escaping and validation.
 
+    /**
+     * The eleven constants named here were unenforced published surface and were deleted outright,
+     * with no deprecation window. Re-introducing any of them would silently re-grow the advisory
+     * surface this plan removed, so the deletion is pinned by name rather than left to review.
+     */
     @Test
-    void shouldHaveEncodingPatterns() {
-        assertNotNull(SecurityDefaults.DOUBLE_ENCODING_PATTERNS);
-        assertFalse(SecurityDefaults.DOUBLE_ENCODING_PATTERNS.isEmpty());
+    void shouldNotDeclareTheDeletedUnenforcedConstants() {
+        Set<String> deleted = Set.of(
+                "DANGEROUS_HEADER_NAMES", "DEBUG_HEADER_NAMES", "SUSPICIOUS_COOKIE_NAMES",
+                "SAFE_CONTENT_TYPES", "DANGEROUS_CONTENT_TYPES", "UPLOAD_CONTENT_TYPES",
+                "NULL_BYTE", "PROBLEMATIC_CONTROL_CHARS", "INJECTION_CHARACTERS",
+                "DOUBLE_ENCODING_PATTERNS", "UNICODE_NORMALIZATION_FORMS");
 
-        assertTrue(SecurityDefaults.DOUBLE_ENCODING_PATTERNS.contains("%25"));
-        assertTrue(SecurityDefaults.DOUBLE_ENCODING_PATTERNS.contains("%2525"));
+        Set<String> declared = Arrays.stream(SecurityDefaults.class.getDeclaredFields())
+                .map(Field::getName)
+                .collect(Collectors.toSet());
 
-        assertNotNull(SecurityDefaults.UNICODE_NORMALIZATION_FORMS);
-        assertFalse(SecurityDefaults.UNICODE_NORMALIZATION_FORMS.isEmpty());
+        Set<String> reintroduced = new HashSet<>(deleted);
+        reintroduced.retainAll(declared);
 
-        assertTrue(SecurityDefaults.UNICODE_NORMALIZATION_FORMS.contains("NFC"));
-        assertTrue(SecurityDefaults.UNICODE_NORMALIZATION_FORMS.contains("NFKD"));
+        assertTrue(reintroduced.isEmpty(),
+                "Deliberately deleted unenforced constants must not be re-introduced: " + reintroduced);
     }
 
     @Test
@@ -352,10 +291,7 @@ class SecurityDefaultsTest {
                 SecurityDefaults.PATH_TRAVERSAL_PATTERNS.add("test"));
 
         assertThrows(UnsupportedOperationException.class, () ->
-                SecurityDefaults.DANGEROUS_HEADER_NAMES.add("test"));
-
-        assertThrows(UnsupportedOperationException.class, () ->
-                SecurityDefaults.SAFE_CONTENT_TYPES.add("test"));
+                SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES.add("test"));
     }
 
     @Test
@@ -364,11 +300,6 @@ class SecurityDefaultsTest {
         assertTrue(SecurityDefaults.SENSITIVE_PATH_PATTERNS.size() > 5);
         assertTrue(SecurityDefaults.PROTOCOL_HANDLER_SCHEMES.size() > 3);
         assertTrue(SecurityDefaults.SUSPICIOUS_PARAMETER_NAMES.size() > 5);
-        assertTrue(SecurityDefaults.DANGEROUS_HEADER_NAMES.size() > 3);
-        assertTrue(SecurityDefaults.SAFE_CONTENT_TYPES.size() > 5);
-        assertTrue(SecurityDefaults.DANGEROUS_CONTENT_TYPES.size() > 3);
-        assertTrue(SecurityDefaults.PROBLEMATIC_CONTROL_CHARS.size() > 10);
-        assertTrue(SecurityDefaults.INJECTION_CHARACTERS.size() > 5);
         // XSS patterns removed - application layer responsibility
     }
 }

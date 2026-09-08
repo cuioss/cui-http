@@ -232,19 +232,6 @@ public final class SecurityDefaults {
     /** Maximum header value length for lenient configurations */
     public static final int MAX_HEADER_VALUE_LENGTH_LENIENT = 8192;
 
-    /** Headers that should typically be blocked for security */
-    public static final Set<String> DANGEROUS_HEADER_NAMES = Set.of(
-            "X-Debug", "X-Test", "X-Development", "X-Admin",
-            "X-Execute", "X-Command", "X-Shell", "X-Eval",
-            "Proxy-Authorization", "Proxy-Connection"
-    );
-
-    /** Headers commonly used for debugging that may expose sensitive information */
-    public static final Set<String> DEBUG_HEADER_NAMES = Set.of(
-            "X-Debug", "X-Trace", "X-Profile", "X-Test-Mode",
-            "X-Development", "X-Internal", "X-System-Info"
-    );
-
     // ========== COOKIE SECURITY CONSTANTS ==========
 
     /** Maximum cookie count for strict security configurations */
@@ -274,12 +261,6 @@ public final class SecurityDefaults {
     /** Maximum cookie value length for lenient configurations */
     public static final int MAX_COOKIE_VALUE_LENGTH_LENIENT = 8192;
 
-    /** Cookie names that may indicate security issues */
-    public static final Set<String> SUSPICIOUS_COOKIE_NAMES = Set.of(
-            "debug", "test", "admin", "root", "system", "internal",
-            "password", "secret", "token", "key", "auth", "session"
-    );
-
     // ========== BODY SECURITY CONSTANTS ==========
 
     /** Maximum body size for strict security configurations (1MB) */
@@ -290,62 +271,6 @@ public final class SecurityDefaults {
 
     /** Maximum body size for lenient security configurations (10MB) */
     public static final long MAX_BODY_SIZE_LENIENT = 10L * 1024 * 1024;
-
-    /** Content types that are generally safe for most applications */
-    public static final Set<String> SAFE_CONTENT_TYPES = Set.of(
-            "application/json", "application/xml", "text/plain", "text/html",
-            "application/x-www-form-urlencoded", "multipart/form-data",
-            "text/css", "text/javascript", "application/javascript"
-    );
-
-    /** Content types that may pose security risks */
-    public static final Set<String> DANGEROUS_CONTENT_TYPES = Set.of(
-            "application/octet-stream", "application/x-executable",
-            "application/x-msdownload", "application/x-msdos-program",
-            "application/x-java-archive", "application/java-archive",
-            "text/x-script", "text/x-shellscript", "application/x-sh"
-    );
-
-    /** Content types used for file uploads */
-    public static final Set<String> UPLOAD_CONTENT_TYPES = Set.of(
-            "multipart/form-data", "application/octet-stream",
-            "image/jpeg", "image/png", "image/gif", "image/webp",
-            "application/pdf", "text/csv", "application/zip"
-    );
-
-    // ========== CHARACTER SECURITY CONSTANTS ==========
-
-    /** Null byte character */
-    public static final char NULL_BYTE = '\0';
-
-    /** Common control characters that may be problematic */
-    public static final Set<Character> PROBLEMATIC_CONTROL_CHARS = Set.of(
-            '\0', '\1', '\2', '\3', '\4', '\5', '\6', '\7',
-            '\b', '\f', '\016', '\017', '\020', '\021', '\022',
-            '\023', '\024', '\025', '\026', '\027', '\030', '\031'
-    );
-
-    /** Characters commonly used in injection attacks */
-    public static final Set<Character> INJECTION_CHARACTERS = Set.of(
-            '<', '>', '\'', '"', '&', ';', '|', '`', '$', '(', ')', '{', '}'
-    );
-
-
-    // XSS patterns removed - application layer responsibility.
-    // Application layers have proper context for HTML escaping and validation.
-
-    // ========== ENCODING CONSTANTS ==========
-
-    /** Common double-encoding patterns */
-    public static final Set<String> DOUBLE_ENCODING_PATTERNS = Set.of(
-            "%25", "%2525", "%252e", "%252f", "%255c",
-            "%2e%2e", "%2f%2e%2e", "%5c%2e%2e"
-    );
-
-    /** Unicode normalization forms that should be checked */
-    public static final Set<String> UNICODE_NORMALIZATION_FORMS = Set.of(
-            "NFC", "NFD", "NFKC", "NFKD"
-    );
 
     // ========== SIZE LIMITS FOR DIFFERENT SECURITY LEVELS ==========
 
