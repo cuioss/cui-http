@@ -143,7 +143,7 @@ public final class AllowBlockListStage implements HttpSecurityValidator {
                     .failureType(UrlSecurityFailureType.INVALID_INPUT)
                     .validationType(validationType)
                     .originalInput(value)
-                    .detail("Value '" + value + "' is block-listed")
+                    .detail("Value '" + renderForDetail(value) + "' is block-listed")
                     .build();
         }
 
@@ -152,11 +152,32 @@ public final class AllowBlockListStage implements HttpSecurityValidator {
                     .failureType(UrlSecurityFailureType.INVALID_INPUT)
                     .validationType(validationType)
                     .originalInput(value)
-                    .detail("Value '" + value + "' is not in the allow-list")
+                    .detail("Value '" + renderForDetail(value) + "' is not in the allow-list")
                     .build();
         }
 
         return Optional.of(value);
+    }
+
+    /**
+     * Renders a rejected value for the exception detail. Control code points are replaced by their
+     * escaped {@code U+XXXX} form - the shape
+     * {@link CharacterValidationStage} already uses - so a value carrying CR/LF cannot forge a log
+     * line through the message callers log.
+     *
+     * @param value the rejected value
+     * @return the value with every control code point escaped
+     */
+    private static String renderForDetail(String value) {
+        StringBuilder rendered = new StringBuilder(value.length());
+        value.codePoints().forEach(codePoint -> {
+            if (Character.isISOControl(codePoint)) {
+                rendered.append("U+%04X".formatted(codePoint));
+            } else {
+                rendered.appendCodePoint(codePoint);
+            }
+        });
+        return rendered.toString();
     }
 
     /**

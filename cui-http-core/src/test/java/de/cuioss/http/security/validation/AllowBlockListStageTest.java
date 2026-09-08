@@ -137,6 +137,56 @@ class AllowBlockListStageTest {
     }
 
     @Test
+    @DisplayName("Block-list rejection escapes a CR/LF payload in the rendered value")
+    void shouldEscapeControlCharactersOnBlockListRejection() {
+        SecurityConfiguration config = SecurityConfiguration.builder()
+                .blockedContentTypes(Set.of("application/octet-stream"))
+                .build();
+        var stage = AllowBlockListStage.forContentTypes(config);
+        String forgingValue = "application/octet-stream; name=evil\r\nX-Injected: yes";
+
+        var exception = assertThrows(UrlSecurityException.class, () -> stage.validate(forgingValue));
+
+        String detail = exception.getDetail().orElseThrow();
+        String message = exception.getMessage();
+        assertAll("block-listed value rendered without raw line breaks",
+                () -> assertTrue(detail.contains("block-listed"), "the rejection wording is unchanged"),
+                () -> assertFalse(detail.contains("\r"), "detail must not carry a raw CR"),
+                () -> assertFalse(detail.contains("\n"), "detail must not carry a raw LF"),
+                () -> assertTrue(detail.contains("U+000D"), "CR must render as U+000D"),
+                () -> assertTrue(detail.contains("U+000A"), "LF must render as U+000A"),
+                () -> assertFalse(message.contains("\r"), "message must not carry a raw CR"),
+                () -> assertFalse(message.contains("\n"), "message must not carry a raw LF"),
+                () -> assertEquals(forgingValue, exception.getOriginalInput(),
+                        "the original input is unaltered"));
+    }
+
+    @Test
+    @DisplayName("Allow-list rejection escapes a CR/LF payload in the rendered value")
+    void shouldEscapeControlCharactersOnAllowListRejection() {
+        SecurityConfiguration config = SecurityConfiguration.builder()
+                .allowedContentTypes(Set.of("application/json"))
+                .build();
+        var stage = AllowBlockListStage.forContentTypes(config);
+        String forgingValue = "text/html; name=evil\r\nX-Injected: yes";
+
+        var exception = assertThrows(UrlSecurityException.class, () -> stage.validate(forgingValue));
+
+        String detail = exception.getDetail().orElseThrow();
+        String message = exception.getMessage();
+        assertAll("allow-list rejected value rendered without raw line breaks",
+                () -> assertTrue(detail.contains("allow-list"), "the rejection wording is unchanged"),
+                () -> assertFalse(detail.contains("\r"), "detail must not carry a raw CR"),
+                () -> assertFalse(detail.contains("\n"), "detail must not carry a raw LF"),
+                () -> assertTrue(detail.contains("U+000D"), "CR must render as U+000D"),
+                () -> assertTrue(detail.contains("U+000A"), "LF must render as U+000A"),
+                () -> assertFalse(message.contains("\r"), "message must not carry a raw CR"),
+                () -> assertFalse(message.contains("\n"), "message must not carry a raw LF"),
+                () -> assertEquals(forgingValue, exception.getOriginalInput(),
+                        "the original input is unaltered"));
+    }
+
+    @Test
     @DisplayName("Null arguments are rejected")
     void shouldRejectNullArguments() {
         assertThrows(NullPointerException.class,

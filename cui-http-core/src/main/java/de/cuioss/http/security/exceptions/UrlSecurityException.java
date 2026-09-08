@@ -153,7 +153,7 @@ public class UrlSecurityException extends RuntimeException {
         sb.append(failureType.getDescription());
 
         if (detail != null && !detail.trim().isEmpty()) {
-            sb.append(" - ").append(detail);
+            sb.append(" - ").append(escapeControlCharacters(detail));
         }
 
         // Safely truncate input for logging to prevent log injection
@@ -161,6 +161,23 @@ public class UrlSecurityException extends RuntimeException {
         sb.append(" (input: '").append(truncatedInput).append("')");
 
         return sb.toString();
+    }
+
+    /**
+     * Escapes control characters in text rendered into the exception message.
+     *
+     * <p>The message is what callers habitually log, so a raw CR/LF reaching it would let an
+     * attacker-supplied fragment forge a log line (CWE-117 / CWE-93). Control characters are
+     * rendered in the {@code U+XXXX} shape used by
+     * {@code CharacterValidationStage.handleInvalidCharacter}, which keeps the offending code
+     * point readable instead of collapsing it into an opaque placeholder.</p>
+     *
+     * @param text The text to render
+     * @return The text with every control character replaced by its escaped form
+     */
+    private static String escapeControlCharacters(String text) {
+        return CONTROL_CHARS_PATTERN.matcher(text)
+                .replaceAll(match -> "U+%04X".formatted((int) match.group().charAt(0)));
     }
 
     /**

@@ -160,6 +160,27 @@ class UrlSecurityExceptionTest {
     }
 
     @Test
+    void shouldEscapeControlCharactersFromDetailOnMessagePath() {
+        String detailWithLineBreaks = "Value 'application/octet-stream\r\nX-Injected: evil' is block-listed";
+
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(TEST_FAILURE_TYPE)
+                .validationType(TEST_VALIDATION_TYPE)
+                .originalInput(TEST_INPUT)
+                .detail(detailWithLineBreaks)
+                .build();
+
+        String message = exception.getMessage();
+        assertAll("detail rendered on the message path",
+                () -> assertFalse(message.contains("\r"), "message must not carry a raw CR"),
+                () -> assertFalse(message.contains("\n"), "message must not carry a raw LF"),
+                () -> assertTrue(message.contains("U+000D"), "CR must render as U+000D"),
+                () -> assertTrue(message.contains("U+000A"), "LF must render as U+000A"),
+                () -> assertEquals(detailWithLineBreaks, exception.getDetail().orElseThrow(),
+                        "the stored detail is unaltered"));
+    }
+
+    @Test
     void toStringShouldIncludeFields() {
         UrlSecurityException exception = UrlSecurityException.builder()
                 .failureType(TEST_FAILURE_TYPE)
