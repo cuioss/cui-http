@@ -257,10 +257,11 @@ String encoding) {
     /**
      * Checks if the content type indicates plain text.
      *
-     * @return true if the content type is "text/plain"
+     * @return true if the content type contains "text/plain"
      */
+    @SuppressWarnings("ConstantConditions")
     public boolean isPlainText() {
-        return hasContentType() && "text/plain".equalsIgnoreCase(contentType);
+        return hasContentType() && contentType.toLowerCase().contains("text/plain");
     }
 
     /**
