@@ -27,11 +27,16 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class SecurityConfigurationBuilderTest {
 
+    // The default assertions below deliberately compare against the SecurityDefaults MAX_*_DEFAULT
+    // constants rather than literal numerals: their contract is that the builder READS those
+    // constants. The numerals themselves are pinned independently by SecurityDefaultsTest, so the
+    // two suites together still fail if a value drifts.
+
     @Test
     void shouldCreateBuilderWithDefaultPathSettings() {
         SecurityConfiguration config = SecurityConfiguration.builder().build();
 
-        assertEquals(4096, config.maxPathLength());
+        assertEquals(SecurityDefaults.MAX_PATH_LENGTH_DEFAULT, config.maxPathLength());
         assertFalse(config.allowDoubleEncoding());
     }
 
@@ -39,31 +44,50 @@ class SecurityConfigurationBuilderTest {
     void shouldCreateBuilderWithDefaultParameterSettings() {
         SecurityConfiguration config = SecurityConfiguration.builder().build();
 
-        assertEquals(128, config.maxParameterNameLength());
-        assertEquals(2048, config.maxParameterValueLength());
+        assertEquals(SecurityDefaults.MAX_PARAMETER_NAME_LENGTH_DEFAULT, config.maxParameterNameLength());
+        assertEquals(SecurityDefaults.MAX_PARAMETER_VALUE_LENGTH_DEFAULT, config.maxParameterValueLength());
     }
 
     @Test
     void shouldCreateBuilderWithDefaultHeaderSettings() {
         SecurityConfiguration config = SecurityConfiguration.builder().build();
 
-        assertEquals(128, config.maxHeaderNameLength());
-        assertEquals(2048, config.maxHeaderValueLength());
+        assertEquals(SecurityDefaults.MAX_HEADER_NAME_LENGTH_DEFAULT, config.maxHeaderNameLength());
+        assertEquals(SecurityDefaults.MAX_HEADER_VALUE_LENGTH_DEFAULT, config.maxHeaderValueLength());
     }
 
     @Test
     void shouldCreateBuilderWithDefaultCookieSettings() {
         SecurityConfiguration config = SecurityConfiguration.builder().build();
 
-        assertEquals(128, config.maxCookieNameLength());
-        assertEquals(2048, config.maxCookieValueLength());
+        assertEquals(SecurityDefaults.MAX_COOKIE_NAME_LENGTH_DEFAULT, config.maxCookieNameLength());
+        assertEquals(SecurityDefaults.MAX_COOKIE_VALUE_LENGTH_DEFAULT, config.maxCookieValueLength());
     }
 
     @Test
     void shouldCreateBuilderWithDefaultBodySettings() {
         SecurityConfiguration config = SecurityConfiguration.builder().build();
 
-        assertEquals(5L * 1024 * 1024, config.maxBodySize());
+        assertEquals(SecurityDefaults.MAX_BODY_SIZE_DEFAULT, config.maxBodySize());
+    }
+
+    @Test
+    void shouldCreateBuilderWithDefaultCountSettings() {
+        SecurityConfiguration config = SecurityConfiguration.builder().build();
+
+        assertEquals(SecurityDefaults.MAX_PARAMETER_COUNT_DEFAULT, config.maxParameterCount());
+        assertEquals(SecurityDefaults.MAX_HEADER_COUNT_DEFAULT, config.maxHeaderCount());
+        assertEquals(SecurityDefaults.MAX_COOKIE_COUNT_DEFAULT, config.maxCookieCount());
+    }
+
+    @Test
+    void defaultBuildShouldEqualDefaultConfiguration() {
+        SecurityConfiguration config = SecurityConfiguration.builder().build();
+
+        // SecurityConfiguration is a record, so equals() compares every component - this is the
+        // field-for-field check that the builder defaults and the DEFAULT_CONFIGURATION preset
+        // cannot drift apart.
+        assertEquals(SecurityDefaults.DEFAULT_CONFIGURATION, config);
     }
 
     @Test
