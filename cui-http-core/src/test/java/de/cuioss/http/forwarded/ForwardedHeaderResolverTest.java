@@ -417,6 +417,37 @@ class ForwardedHeaderResolverTest {
             LogAsserts.assertNoLogMessagePresent(TestLogLevel.WARN, ForwardedHeaderResolver.class);
         }
 
+        /**
+         * The mirror of {@link #malformedRfcHostPortContestsExplicitPort()} with the sides swapped,
+         * on the {@code host[:port]} fallback the two families share. An
+         * {@code X-Forwarded-Host: h:bogus} DID carry a port token, so it states a port and must
+         * contest the one the RFC 7239 {@code host} directive carried, exactly as a well-formed
+         * conflicting one does. Deriving the de-facto statement from the <em>parsed</em> port value
+         * instead made one unparseable character indistinguishable from genuine silence, so the RFC
+         * port was returned unopposed and unlogged — leaving this class's headline reconciliation
+         * rule applied to only one of its two mirror sides.
+         *
+         * <p>{@link #deFactoHostWithoutPortDoesNotContestRfcHostPort()} is this case's matched
+         * control: the same header pair with a genuinely absent de-facto port token, where the RFC
+         * directive's port still stands unopposed and quietly. Without that control the fix could be
+         * satisfied by making every present de-facto host header contest the port.</p>
+         */
+        @Test
+        @DisplayName("a malformed port in the de-facto host header still contests the RFC 7239 host port")
+        void malformedDeFactoHostPortContestsRfcHostPort() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com:bogus",
+                    "Forwarded", "host=\"app.example.com:9999\"")));
+
+            assertAll("a port token that was present but unparseable is a statement on this side too",
+                    () -> assertEquals("app.example.com", result.host().orElseThrow(),
+                            "the hosts agree, so the port conflict must stay scoped to the port"),
+                    () -> assertTrue(result.port().isEmpty(),
+                            "X-Forwarded-Host carried a port token, so it contests the Forwarded "
+                                    + "directive's port and the field fails closed"));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
+        }
+
         @Test
         @DisplayName("an explicit port header agreeing with the RFC 7239 host port is honored")
         void explicitPortAgreeingWithRfcHonored() {

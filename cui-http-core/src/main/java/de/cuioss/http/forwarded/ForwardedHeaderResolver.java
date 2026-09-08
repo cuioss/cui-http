@@ -139,13 +139,16 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  * over a claim only one side ever made. The host keeps the stricter rule — the mere presence of the
  * header states it, so a present-but-invalid host still contests.</p>
  *
- * <p><strong>Silence is the absence of a port token, not the absence of a valid one.</strong> A
- * {@code host[:port]} token that carried a port which fails to parse — {@code Forwarded:
- * host="h:bogus"} — has <em>stated</em> a port and contests exactly as a well-formed one does: the
- * field is dropped fail-closed with a warning. Reading "states a port" off the parsed <em>value</em>
- * instead made one unparseable character indistinguishable from genuine silence, so a conflicting
- * {@code X-Forwarded-Port} was accepted unopposed and unlogged on precisely the input a well-formed
- * conflict would have dropped.</p>
+ * <p><strong>Silence is the absence of a port token, not the absence of a valid one — on both
+ * sides.</strong> A {@code host[:port]} token that carried a port which fails to parse has
+ * <em>stated</em> a port and contests exactly as a well-formed one does: the field is dropped
+ * fail-closed with a warning. That holds symmetrically for {@code Forwarded: host="h:bogus"} and for
+ * {@code X-Forwarded-Host: h:bogus} / {@code X-ProxyHost: h:bogus}, because which side an attacker
+ * can reach is not something this resolver may assume. Reading "states a port" off the parsed
+ * <em>value</em> instead made one unparseable character indistinguishable from genuine silence, so
+ * the other source's port was accepted unopposed and unlogged on precisely the input a well-formed
+ * conflict would have dropped. Applying the structural reading to only one of the two mirror sides
+ * left that same hole open on the other.</p>
  *
  * <p><strong>Separate fields, but not separately believable when they share one value.</strong>
  * Per-field scoping decides which field a <em>disagreement</em> reaches; it never makes half of a
@@ -338,6 +341,14 @@ public final class ForwardedHeaderResolver {
      * reaches the precedence tie-break. The host field keeps the stricter rule — a present de-facto
      * header states the host even when it resolves to nothing valid, so a present-but-invalid host
      * still contests (and, losing or winning, never falls through to its sibling family).</p>
+     *
+     * <p><strong>The port statement is structural on this side too.</strong> "Carried a port" is
+     * decided by {@link #reconcileStatedByPortToken} from the raw {@code host[:port]} token through
+     * the same {@link #statesPort(String)} predicate {@link RfcHost#statesPort()} uses, so a token
+     * whose port is present but unparseable ({@code X-Forwarded-Host: h:bogus}) states a port and
+     * contests one the RFC 7239 directive carried — its resolution is simply empty, and the ordinary
+     * disagreement path drops the field. A bare host still states nothing and still does not
+     * contest.</p>
      */
     private HostPort resolveHost(UnaryOperator<String> lookup, RfcHost rfcHost, boolean explicitPortPresent) {
         if (!config.trustAll()) {
@@ -346,7 +357,7 @@ public final class ForwardedHeaderResolver {
         DeFactoSources<HostPort> deFacto =
                 resolveDeFactoSources(lookup, X_FORWARDED_HOST, X_PROXY_HOST, this::hostPortOf);
         DeFactoResolution<String> deFactoHost = reconcileStatedByPresence(deFacto, "host", HostPort::host);
-        DeFactoResolution<Integer> deFactoPort = reconcileStatedByValue(deFacto, "host port", HostPort::portValue);
+        DeFactoResolution<Integer> deFactoPort = reconcileStatedByPortToken(deFacto, "host port", HostPort::portValue);
 
         Optional<String> host = reconcileSources("host", deFactoHost.headerName(),
                 deFactoHost.stated(), deFactoHost.value(),
@@ -396,6 +407,13 @@ public final class ForwardedHeaderResolver {
      * reaches this fallback at all: it supersedes the host-token port outright, and
      * {@link #resolvePort} reconciles it against RFC 7239 on its own.</p>
      *
+     * <p>Corroboration reads the de-facto side's <em>resolved</em> port, not merely its structural
+     * statement, because a token whose port cannot be parsed carries no value to corroborate with.
+     * That asymmetry with {@link #reconcileStatedByPortToken} costs nothing: whichever way an
+     * unparseable de-facto port token is counted the field ends up empty, either discredited here or
+     * dropped by the disagreement path in {@link #reconcileSources}. Reading the statement instead
+     * would only move where the same fail-closed outcome is decided.</p>
+     *
      * @return {@code true} when the host disagreed across the two sources <em>and</em> the two sides
      *         did not both state a port of their own to corroborate each other
      */
@@ -440,6 +458,10 @@ public final class ForwardedHeaderResolver {
      * dropped. One unparseable character therefore switched the fail-closed disagreement check off,
      * which is the inverse of this class's intent and contradicts {@link RfcHost#statesPort()}'s own
      * rule that a directive which DID carry a port still contests it once it cannot be believed.</p>
+     *
+     * <p>It is the single answer <em>both</em> sides give: {@link #rfcHost} applies it to the RFC 7239
+     * directive and {@link #reconcileStatedByPortToken} applies it to each de-facto family's raw
+     * header, so the mirror sides cannot drift apart about what counts as stating a port.</p>
      *
      * <p>The predicate is deliberately <em>structural</em> and mirrors {@link #parseHostPort}'s
      * tokenization exactly, so the two never disagree about where the port token is: after a
@@ -904,9 +926,9 @@ public final class ForwardedHeaderResolver {
         boolean xForwardedPresent = isPresent(xForwardedRaw);
         boolean xProxyPresent = isPresent(xProxyRaw);
         return new DeFactoSources<>(
-                xForwardedName, xForwardedPresent,
+                xForwardedName, xForwardedPresent, xForwardedPresent ? xForwardedRaw : "",
                 xForwardedPresent ? resolver.apply(xForwardedName, xForwardedRaw) : Optional.empty(),
-                xProxyName, xProxyPresent,
+                xProxyName, xProxyPresent, xProxyPresent ? xProxyRaw : "",
                 xProxyPresent ? resolver.apply(xProxyName, xProxyRaw) : Optional.empty());
     }
 
@@ -928,21 +950,40 @@ public final class ForwardedHeaderResolver {
     }
 
     /**
-     * Reconciles one field where <em>a resolved value</em> is the statement: a family that carried no
-     * value for this field says nothing about it and does not contest.
+     * Reconciles one field where <em>a port token in the raw value</em> is the statement: a family
+     * whose {@code host[:port]} token carried no port token says nothing about the port and does not
+     * contest, while one that carried a port token states a port even if that token fails to parse.
      *
-     * <p>This is the rule for the optional port inside a {@code host[:port]} token. Treating its
-     * absence as a contested empty value made {@code X-Forwarded-Host: h} versus
-     * {@code X-ProxyHost: h:9443} look like a conflict and let the precedence tie-break discard a
-     * port no source contradicted.</p>
+     * <p>This is the rule for the optional port inside a {@code host[:port]} token, and it is the
+     * de-facto <em>mirror</em> of {@link RfcHost#statesPort()}. Both sides answer it through the one
+     * {@link #statesPort(String)} predicate, so they cannot drift apart about where a port token
+     * is.</p>
+     *
+     * <p>Treating the absence of a port as a contested empty value made {@code X-Forwarded-Host: h}
+     * versus {@code X-ProxyHost: h:9443} look like a conflict and let the precedence tie-break
+     * discard a port no source contradicted; that half of the rule is unchanged, because a token
+     * bearing no port token still states nothing. Deriving the statement from the <em>resolved</em>
+     * port value instead collapsed the other half: {@code X-Forwarded-Host: h}, which stated no
+     * port, and {@code X-Forwarded-Host: h:bogus}, which stated one that failed digit parsing, both
+     * resolve to an empty port, so the de-facto side reported that it stated no port,
+     * {@link #reconcileSources} deferred to the RFC directive, and a conflicting
+     * {@code Forwarded: host="h:9999"} was honored <em>unopposed</em> and unlogged — on precisely
+     * the input a well-formed conflict would have dropped. That was the same defect
+     * {@link #statesPort(String)} had already removed from the RFC side, left standing on this
+     * one.</p>
+     *
+     * <p>The predicate runs against the <em>raw</em> header value, exactly as {@link #rfcHost} runs
+     * it against the raw directive: whether a token carried a port is structural and must survive
+     * the value turning out to be unbelievable. Re-sanitizing here would also emit a second
+     * rejection warning for a value already reported once.</p>
      */
-    private <T, F> DeFactoResolution<F> reconcileStatedByValue(DeFactoSources<T> sources, String field,
+    private <T, F> DeFactoResolution<F> reconcileStatedByPortToken(DeFactoSources<T> sources, String field,
             Function<T, Optional<F>> extractor) {
-        Optional<F> fromXForwarded = sources.fromXForwarded().flatMap(extractor);
-        Optional<F> fromXProxy = sources.fromXProxy().flatMap(extractor);
         return reconcileDeFactoField(field, sources,
-                new FieldContribution<>(sources.xForwardedName(), fromXForwarded.isPresent(), fromXForwarded),
-                new FieldContribution<>(sources.xProxyName(), fromXProxy.isPresent(), fromXProxy));
+                new FieldContribution<>(sources.xForwardedName(), statesPort(lastToken(sources.xForwardedRaw())),
+                        sources.fromXForwarded().flatMap(extractor)),
+                new FieldContribution<>(sources.xProxyName(), statesPort(lastToken(sources.xProxyRaw())),
+                        sources.fromXProxy().flatMap(extractor)));
     }
 
     /**
@@ -959,8 +1000,9 @@ public final class ForwardedHeaderResolver {
      * a field the mere presence of the header states (scheme, port, and the host a
      * {@code host[:port]} token always carries) a present family still states it, so a
      * present-but-invalid value still contests; only for the optional port inside a
-     * {@code host[:port]} token do presence and statement come apart, which is exactly the
-     * asymmetry with {@link RfcHost#statesPort()} this scoping removes.</p>
+     * {@code host[:port]} token do presence and statement come apart, and there the statement is
+     * read structurally off the raw token ({@link #reconcileStatedByPortToken}) through the very
+     * predicate {@link RfcHost#statesPort()} uses, so the two mirror sides answer it alike.</p>
      */
     private <T, F> DeFactoResolution<F> reconcileDeFactoField(String field, DeFactoSources<T> sources,
             FieldContribution<F> xForwarded, FieldContribution<F> xProxy) {
@@ -991,13 +1033,21 @@ public final class ForwardedHeaderResolver {
      *
      * @param xForwardedName    the {@code X-Forwarded-*} header name for this field family
      * @param xForwardedPresent whether that header was sent at all
+     * @param xForwardedRaw     its raw value as sent, or {@code ""} when the header was absent or
+     *                          blank. Retained because a <em>structural</em> statement rule
+     *                          ({@link #reconcileStatedByPortToken}) must read what the token
+     *                          literally carried, which the resolution below has already discarded;
+     *                          the empty stand-in is what keeps that rule total without a nullable
+     *                          component
      * @param fromXForwarded    its independent resolution ({@code empty} when absent or invalid)
      * @param xProxyName        the {@code X-Proxy*} header name for this field family
      * @param xProxyPresent     whether that header was sent at all
+     * @param xProxyRaw         its raw value as sent, or {@code ""} when absent or blank
      * @param fromXProxy        its independent resolution ({@code empty} when absent or invalid)
      */
-    private record DeFactoSources<T>(String xForwardedName, boolean xForwardedPresent, Optional<T> fromXForwarded,
-    String xProxyName, boolean xProxyPresent, Optional<T> fromXProxy) {
+    private record DeFactoSources<T>(String xForwardedName, boolean xForwardedPresent, String xForwardedRaw,
+    Optional<T> fromXForwarded,
+    String xProxyName, boolean xProxyPresent, String xProxyRaw, Optional<T> fromXProxy) {
 
         /**
          * The header name a diagnostic should be attributed to when neither family stated the field:
