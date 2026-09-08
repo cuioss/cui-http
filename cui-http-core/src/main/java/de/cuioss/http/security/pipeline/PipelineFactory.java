@@ -107,7 +107,8 @@ public final class PipelineFactory {
      *
      * <p>This pipeline validates URL parameter values for HTTP-layer security threats including:</p>
      * <ul>
-     *   <li>XSS attack patterns</li>
+     *   <li>Values starting with a protocol handler scheme such as {@code javascript:}
+     *       (gated on {@code failOnSuspiciousPatterns})</li>
      *   <li>Path traversal attempts</li>
      *   <li>Invalid URL encoding</li>
      *   <li>Parameter-based attacks</li>
@@ -160,7 +161,8 @@ public final class PipelineFactory {
      *   <li>Invalid header name characters</li>
      *   <li>Header injection attempts</li>
      *   <li>CRLF injection patterns</li>
-     *   <li>Suspicious header names</li>
+     *   <li>Header names rejected by the configured {@code allowedHeaderNames} /
+     *       {@code blockedHeaderNames} lists</li>
      * </ul>
      *
      * @param config The security configuration to use
@@ -182,7 +184,7 @@ public final class PipelineFactory {
      *   <li>Invalid header value characters</li>
      *   <li>Header injection attempts</li>
      *   <li>CRLF injection patterns</li>
-     *   <li>Malicious header content</li>
+     *   <li>Header values exceeding the configured {@code maxHeaderValueLength} limit</li>
      * </ul>
      *
      * @param config The security configuration to use
