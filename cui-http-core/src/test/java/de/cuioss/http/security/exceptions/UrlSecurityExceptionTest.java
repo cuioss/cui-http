@@ -215,7 +215,7 @@ class UrlSecurityExceptionTest {
                 () -> assertEquals("UrlSecurityException{failureType=%s, validationType=%s, "
                         .formatted(TEST_FAILURE_TYPE, TEST_VALIDATION_TYPE)
                         + "originalInput=<redacted, length=%d>, ".formatted(TEST_INPUT.length())
-                        + "sanitizedInput='null', detail='line?break', cause=null}",
+                        + "sanitizedInput='<redacted, null>', detail='line?break', cause=null}",
                         exception.toString()));
     }
 
@@ -235,7 +235,7 @@ class UrlSecurityExceptionTest {
                 () -> assertEquals("UrlSecurityException{failureType=%s, validationType=%s, "
                         .formatted(TEST_FAILURE_TYPE, TEST_VALIDATION_TYPE)
                         + "originalInput=<redacted, length=%d>, ".formatted(TEST_INPUT.length())
-                        + "sanitizedInput='null', detail='line?break', cause=null}",
+                        + "sanitizedInput='<redacted, null>', detail='line?break', cause=null}",
                         exception.toString()));
     }
 
@@ -265,6 +265,34 @@ class UrlSecurityExceptionTest {
                 () -> assertTrue(message.endsWith("(input: <redacted, length=%d>)".formatted(bearerToken.length())),
                         "the message reports the length only"),
                 () -> assertEquals(bearerToken, exception.getOriginalInput(),
+                        "the accessor still returns the raw value"));
+    }
+
+    @Test
+    void shouldNotReproduceCredentialMaterialFromSanitizedInput() {
+        String bearerToken = "Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature";
+        String sanitizedToken = "Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature-stripped";
+
+        UrlSecurityException exception = UrlSecurityException.builder()
+                .failureType(UrlSecurityFailureType.INVALID_CHARACTER)
+                .validationType(ValidationType.HEADER_VALUE)
+                .originalInput(bearerToken)
+                .sanitizedInput(sanitizedToken)
+                .build();
+
+        String message = exception.getMessage();
+        String rendered = exception.toString();
+        assertAll("the sanitized rendering reproduces no credential material either",
+                () -> assertFalse(message.contains("eyJhbGciOiJIUzI1NiJ9"),
+                        "getMessage must not echo the token header"),
+                () -> assertFalse(rendered.contains("eyJhbGciOiJIUzI1NiJ9"),
+                        "toString must not echo the token header"),
+                () -> assertFalse(rendered.contains(".payload.signature"),
+                        "toString must not echo the token payload or signature"),
+                () -> assertTrue(rendered.contains("sanitizedInput='<redacted, length=%d>'"
+                                .formatted(sanitizedToken.length())),
+                        "toString reports the sanitized length only"),
+                () -> assertEquals(sanitizedToken, exception.getSanitizedInput().orElseThrow(),
                         "the accessor still returns the raw value"));
     }
 

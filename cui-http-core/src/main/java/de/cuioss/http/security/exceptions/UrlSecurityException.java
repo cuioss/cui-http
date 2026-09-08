@@ -173,9 +173,12 @@ public class UrlSecurityException extends RuntimeException {
      * rejected bearer token or session cookie would otherwise be written verbatim into every
      * {@code getMessage()} log statement. Only the length is reported: no content, no hash and no
      * fingerprint, and no configuration knob - the redaction is unconditional, so credential
-     * material cannot reach a log by construction rather than by correct configuration. Callers
-     * that genuinely need the value opt in through {@link #getOriginalInput()} at their own trust
-     * boundary.</p>
+     * material cannot reach a log by construction rather than by correct configuration.</p>
+     *
+     * <p>Both the original and the sanitized input are rendered through this helper, because the
+     * sanitized form derives from the same rejected header value and therefore carries the same
+     * credential material. Callers that genuinely need a value opt in through
+     * {@link #getOriginalInput()} or {@link #getSanitizedInput()} at their own trust boundary.</p>
      *
      * @param input The input that caused the failure
      * @return {@code <redacted, null>} for a null input, otherwise {@code <redacted, length=N>}
@@ -231,7 +234,7 @@ public class UrlSecurityException extends RuntimeException {
                 "failureType=" + failureType +
                 ", validationType=" + validationType +
                 ", originalInput=" + describeRedactedInput(originalInput) +
-                ", sanitizedInput='" + (sanitizedInput != null ? truncateForLogging(sanitizedInput) : null) + '\'' +
+                ", sanitizedInput='" + describeRedactedInput(sanitizedInput) + '\'' +
                 ", detail='" + (detail != null ? truncateForLogging(detail) : null) + '\'' +
                 ", cause=" + getCause() +
                 '}';
