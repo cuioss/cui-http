@@ -291,7 +291,31 @@ class HTTPHeaderValidationPipelineTest {
             HTTPHeaderValidationPipeline pipeline = new HTTPHeaderValidationPipeline(config, eventCounter, ValidationType.HEADER_VALUE);
 
             String toString = pipeline.toString();
-            assertTrue(toString.contains("HTTPHeaderValidationPipeline"));
+
+            assertAll("Rendered pipeline carries diagnostic content, not just an identity hash",
+                    () -> assertTrue(toString.contains("HTTPHeaderValidationPipeline"),
+                            "Rendering must name the concrete pipeline: " + toString),
+                    () -> assertTrue(toString.contains(ValidationType.HEADER_VALUE.name()),
+                            "Rendering must state the validated component: " + toString),
+                    () -> assertTrue(toString.contains("LengthValidationStage"),
+                            "Rendering must list the composed stages: " + toString),
+                    () -> assertTrue(toString.contains("CharacterValidationStage"),
+                            "Rendering must list the composed stages: " + toString),
+                    () -> assertFalse(toString.contains("AllowBlockListStage"),
+                            "The header-value pipeline composes no allow/block-list stage, so the rendering must not claim one: " + toString));
+        }
+
+        @Test
+        void shouldRenderTheHeaderNameAllowBlockListStage() {
+            HTTPHeaderValidationPipeline pipeline = new HTTPHeaderValidationPipeline(config, eventCounter, ValidationType.HEADER_NAME);
+
+            String toString = pipeline.toString();
+
+            assertAll("The header-name pipeline renders the extra list stage that distinguishes it",
+                    () -> assertTrue(toString.contains(ValidationType.HEADER_NAME.name()),
+                            "Rendering must state the validated component: " + toString),
+                    () -> assertTrue(toString.contains("AllowBlockListStage"),
+                            "Rendering must list the header-name allow/block-list stage: " + toString));
         }
 
         @Test

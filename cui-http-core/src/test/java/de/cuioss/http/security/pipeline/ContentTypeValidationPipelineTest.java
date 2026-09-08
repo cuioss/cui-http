@@ -304,6 +304,24 @@ class ContentTypeValidationPipelineTest {
         }
 
         @Test
+        @DisplayName("toString() renders the validation type and the composed stages")
+        void shouldHaveCorrectToString() {
+            String toString = pipeline(SecurityConfiguration.defaults()).toString();
+
+            assertAll("Rendered pipeline carries diagnostic content, not just an identity hash",
+                    () -> assertTrue(toString.contains("ContentTypeValidationPipeline"),
+                            "Rendering must name the concrete pipeline: " + toString),
+                    () -> assertTrue(toString.contains(ValidationType.HEADER_VALUE.name()),
+                            "A content type travels as a header value, so that is the type rendered: " + toString),
+                    () -> assertTrue(toString.contains("LengthValidationStage"),
+                            "Rendering must list the composed stages: " + toString),
+                    () -> assertTrue(toString.contains("CharacterValidationStage"),
+                            "Rendering must list the composed stages: " + toString),
+                    () -> assertTrue(toString.contains("AllowBlockListStage"),
+                            "Rendering must list the composed stages: " + toString));
+        }
+
+        @Test
         @DisplayName("the retained configuration is excluded from toString()")
         void shouldNotExposeConfigInToString() {
             String rendered = pipeline(SecurityConfiguration.strict()).toString();

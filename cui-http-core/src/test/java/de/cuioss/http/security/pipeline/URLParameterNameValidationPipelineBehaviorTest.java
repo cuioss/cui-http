@@ -60,6 +60,28 @@ class URLParameterNameValidationPipelineBehaviorTest {
     }
 
     @Test
+    @DisplayName("toString() renders the validation type and the composed stages")
+    void shouldHaveCorrectToString() {
+        String toString = pipeline.toString();
+
+        assertAll("Rendered pipeline carries diagnostic content, not just an identity hash",
+                () -> assertTrue(toString.contains("URLParameterNameValidationPipeline"),
+                        "Rendering must name the concrete pipeline: " + toString),
+                () -> assertTrue(toString.contains(ValidationType.PARAMETER_NAME.name()),
+                        "Rendering must state the validated component: " + toString),
+                () -> assertTrue(toString.contains("LengthValidationStage"),
+                        "Rendering must list the composed stages: " + toString),
+                () -> assertTrue(toString.contains("CharacterValidationStage"),
+                        "Rendering must list the composed stages: " + toString),
+                () -> assertTrue(toString.contains("DecodingStage"),
+                        "Rendering must list the composed stages: " + toString),
+                () -> assertTrue(toString.contains("NormalizationStage"),
+                        "Rendering must list the composed stages: " + toString),
+                () -> assertTrue(toString.contains("PatternMatchingStage"),
+                        "Rendering must list the composed stages: " + toString));
+    }
+
+    @Test
     @DisplayName("rejects a parameter name carrying an encoded CRLF delimiter")
     void rejectsEncodedCrlfInName() {
         long before = eventCounter.getTotalCount();

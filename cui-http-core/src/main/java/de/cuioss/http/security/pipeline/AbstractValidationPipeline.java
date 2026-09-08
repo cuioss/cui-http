@@ -21,6 +21,7 @@ import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.ToString;
 import org.jspecify.annotations.Nullable;
 
 import java.util.List;
@@ -51,20 +52,34 @@ import java.util.Optional;
  * that wishes to accept a non-null value must return {@code Optional.of(value)}; a stage that
  * wishes to reject it must throw {@link UrlSecurityException}.</p>
  *
+ * <h3>Diagnostic Rendering</h3>
+ * <p>{@code toString()} renders the composed {@link #stages} list - by stage type name - and the
+ * concrete pipeline's {@link #getValidationType()}, so a rendered pipeline states which stages it
+ * runs and which component it validates. Every concrete pipeline declares
+ * {@code @ToString(callSuper = true)}, so all of them inherit this content from here; without it
+ * the rendered value would be an identity hash and nothing else.</p>
+ *
+ * <p>{@link #eventCounter} is deliberately excluded: it is mutable shared monitoring state, so
+ * including it would make the rendered value change as events are counted, which is noise rather
+ * than diagnostic content about the pipeline itself.</p>
+ *
  * @since 1.0
  */
 @RequiredArgsConstructor
 @Getter
+@ToString
 public abstract class AbstractValidationPipeline implements HttpSecurityValidator {
 
     /**
      * The ordered list of validation stages to execute.
      */
+    @ToString.Exclude
     protected final List<HttpSecurityValidator> stages;
 
     /**
      * Counter for tracking security events.
      */
+    @ToString.Exclude
     protected final SecurityEventCounter eventCounter;
 
     /**
@@ -72,7 +87,27 @@ public abstract class AbstractValidationPipeline implements HttpSecurityValidato
      *
      * @return The validation type for this pipeline
      */
+    @ToString.Include
     public abstract ValidationType getValidationType();
+
+    /**
+     * Renders the composed stages by type name for {@code toString()}.
+     *
+     * <p>The stages are rendered as their simple type names rather than as the stage instances
+     * themselves. Most stages are records holding the {@link de.cuioss.http.security.config.SecurityConfiguration},
+     * so rendering the instances would emit the whole configuration once per stage - both unreadable
+     * as diagnostics and a re-entry of the configuration that every pipeline deliberately keeps out
+     * of its rendered form. The stage <em>composition</em> is the diagnostic content; the
+     * configuration behind it is not.</p>
+     *
+     * @return The simple type name of each stage, in execution order
+     */
+    @ToString.Include(name = "stages")
+    private List<String> stageTypeNames() {
+        return stages.stream()
+                .map(stage -> stage.getClass().getSimpleName())
+                .toList();
+    }
 
     @Override
     public Optional<String> validate(@Nullable String value) throws UrlSecurityException {

@@ -345,7 +345,22 @@ class URLParameterValidationPipelineTest {
         @Test
         void shouldHaveCorrectToString() {
             String toString = pipeline.toString();
-            assertTrue(toString.contains("URLParameterValidationPipeline"), "toString should contain pipeline class name");
+
+            assertAll("Rendered pipeline carries diagnostic content, not just an identity hash",
+                    () -> assertTrue(toString.contains("URLParameterValidationPipeline"),
+                            "Rendering must name the concrete pipeline: " + toString),
+                    () -> assertTrue(toString.contains(ValidationType.PARAMETER_VALUE.name()),
+                            "Rendering must state the validated component: " + toString),
+                    () -> assertTrue(toString.contains("LengthValidationStage"),
+                            "Rendering must list the composed stages: " + toString),
+                    () -> assertTrue(toString.contains("CharacterValidationStage"),
+                            "Rendering must list the composed stages: " + toString),
+                    () -> assertTrue(toString.contains("DecodingStage"),
+                            "Rendering must list the composed stages: " + toString),
+                    () -> assertTrue(toString.contains("NormalizationStage"),
+                            "Rendering must list the composed stages: " + toString),
+                    () -> assertTrue(toString.contains("PatternMatchingStage"),
+                            "Rendering must list the composed stages: " + toString));
         }
 
         @Test
