@@ -461,6 +461,53 @@ class ForwardedHeaderResolverTest {
             LogAsserts.assertNoLogMessagePresent(TestLogLevel.WARN, ForwardedHeaderResolver.class);
         }
 
+        /**
+         * The mirror of {@link #explicitPortConflictingWithRfcDropped()} for a port token that was
+         * written but cannot be parsed. A {@code host="h:bogus"} directive DID carry a port token,
+         * so it states a port and must contest an explicit port header exactly as a well-formed
+         * conflicting one does — otherwise a single unparseable character in the RFC 7239 token
+         * turns the fail-closed disagreement check off and lets the de-facto port through
+         * unopposed, which is the inverse of the fail-closed intent.
+         */
+        @Test
+        @DisplayName("a malformed port in the RFC 7239 host directive still contests an explicit port header")
+        void malformedRfcHostPortContestsExplicitPort() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com",
+                    "X-Forwarded-Port", "8443",
+                    "Forwarded", "host=\"app.example.com:bogus\"")));
+
+            assertAll("a port token that was present but unparseable is a statement, not silence",
+                    () -> assertEquals("app.example.com", result.host().orElseThrow(),
+                            "the hosts agree, so the port conflict must stay scoped to the port"),
+                    () -> assertTrue(result.port().isEmpty(),
+                            "the Forwarded directive carried a port token, so it contests the "
+                                    + "explicit port header and the field fails closed"));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
+        }
+
+        /**
+         * The matched control for {@link #malformedRfcHostPortContestsExplicitPort()}: a directive
+         * naming a bare host carries no port token at all, so it still says nothing about the port
+         * and the explicit port header stands unopposed. Distinguishing "no port token" from "port
+         * token present but unparseable" is the whole of the rule — without this control the fix
+         * could be satisfied by making every RFC host directive contest the port.
+         */
+        @Test
+        @DisplayName("control: a genuinely absent port token still does not contest an explicit port header")
+        void absentRfcPortDoesNotContestExplicitPort() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com",
+                    "X-Forwarded-Port", "8443",
+                    "Forwarded", "host=app.example.com")));
+
+            assertAll("silence about the port remains a non-statement",
+                    () -> assertEquals("app.example.com", result.host().orElseThrow()),
+                    () -> assertEquals(8443, result.port().orElseThrow(),
+                            "the Forwarded host directive named a bare host, so it contests no port"));
+            LogAsserts.assertNoLogMessagePresent(TestLogLevel.WARN, ForwardedHeaderResolver.class);
+        }
+
         @Test
         @DisplayName("drops an out-of-range or non-numeric port")
         void dropsInvalidPort() {

@@ -139,6 +139,14 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  * over a claim only one side ever made. The host keeps the stricter rule — the mere presence of the
  * header states it, so a present-but-invalid host still contests.</p>
  *
+ * <p><strong>Silence is the absence of a port token, not the absence of a valid one.</strong> A
+ * {@code host[:port]} token that carried a port which fails to parse — {@code Forwarded:
+ * host="h:bogus"} — has <em>stated</em> a port and contests exactly as a well-formed one does: the
+ * field is dropped fail-closed with a warning. Reading "states a port" off the parsed <em>value</em>
+ * instead made one unparseable character indistinguishable from genuine silence, so a conflicting
+ * {@code X-Forwarded-Port} was accepted unopposed and unlogged on precisely the input a well-formed
+ * conflict would have dropped.</p>
+ *
  * <p><strong>Separate fields, but not separately believable when they share one value.</strong>
  * Per-field scoping decides which field a <em>disagreement</em> reaches; it never makes half of a
  * value credible after the other half was proven forged. So when a host disagreement drops the host,
@@ -415,8 +423,37 @@ public final class ForwardedHeaderResolver {
         if (rfc == null) {
             return RfcHost.ABSENT;
         }
-        return new RfcHost(true, parseHostPort(lastToken(rfc)).port().isPresent(),
+        return new RfcHost(true, statesPort(lastToken(rfc)),
                 rfcResolution(forwarded, rfc, this::hostPortOf));
+    }
+
+    /**
+     * Whether a {@code host[:port]} token <em>carried a port token at all</em>, independently of
+     * whether that token parses to a valid port.
+     *
+     * <p>Deriving this from {@link #parseHostPort(String)}'s resolved port instead collapsed two
+     * structurally different inputs into one answer: {@code legit.example}, which stated no port,
+     * and {@code legit.example:bogus}, which stated one that failed digit parsing. Both resolve to
+     * an empty port, so the RFC side reported that it stated no port, {@link #reconcileSources}
+     * short-circuited on a non-present RFC source, and a conflicting {@code X-Forwarded-Port} was
+     * returned <em>unopposed</em> and unlogged — while a well-formed conflicting port was correctly
+     * dropped. One unparseable character therefore switched the fail-closed disagreement check off,
+     * which is the inverse of this class's intent and contradicts {@link RfcHost#statesPort()}'s own
+     * rule that a directive which DID carry a port still contests it once it cannot be believed.</p>
+     *
+     * <p>The predicate is deliberately <em>structural</em> and mirrors {@link #parseHostPort}'s
+     * tokenization exactly, so the two never disagree about where the port token is: after a
+     * bracketed literal only a {@code :} trailer is a port token (so {@code [::1]garbage} states
+     * none), and an unbracketed value states one only when it carries exactly one colon — a
+     * multi-colon unbracketed value is a bare IPv6 literal whose colons are not a port separator.</p>
+     */
+    private static boolean statesPort(String value) {
+        if (value.startsWith("[")) {
+            int close = value.indexOf(']');
+            return close >= 0 && value.startsWith(":", close + 1);
+        }
+        int colon = value.indexOf(':');
+        return colon >= 0 && colon == value.lastIndexOf(':');
     }
 
     /**
@@ -427,7 +464,12 @@ public final class ForwardedHeaderResolver {
      * @param statesPort whether its token carried a port at all. A directive that named a bare host
      *                   says nothing about the port and must not contest one another source states;
      *                   a directive that DID carry a port still contests it after the header turns
-     *                   out to be unresolvable, which is what keeps that case failing closed
+     *                   out to be unresolvable, which is what keeps that case failing closed.
+     *                   "Carried a port" is <em>structural</em> (see {@link #statesPort(String)}): a
+     *                   token whose port token is present but unparseable ({@code host="h:bogus"})
+     *                   carried one just as much as a well-formed one does, and therefore contests
+     *                   just as much — its {@link #value} is simply empty, so the ordinary
+     *                   disagreement path drops the field
      * @param value      its resolution ({@code empty} when absent or unresolvable)
      */
     private record RfcHost(boolean present, boolean statesPort, Optional<HostPort> value) {
@@ -567,7 +609,10 @@ public final class ForwardedHeaderResolver {
      * win over the {@code Forwarded} header — which is exactly the "prefer one source" behaviour the
      * rest of the resolver refuses. The RFC side contests only when its {@code host} directive
      * actually carried a port: a directive naming a bare host said nothing about the port, so an
-     * explicit port header stands unopposed against it.</p>
+     * explicit port header stands unopposed against it. "Carried a port" is decided structurally by
+     * {@link #statesPort(String)}, so a directive whose port token is present but unparseable
+     * ({@code host="h:bogus"}) contests too — its resolution is empty, and the disagreement path
+     * drops the field rather than letting the de-facto port through on a technicality.</p>
      */
     private OptionalInt resolvePort(UnaryOperator<String> lookup, RfcHost rfcHost, boolean explicitPortPresent,
             OptionalInt hostPortFallback) {
