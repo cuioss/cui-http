@@ -60,9 +60,10 @@ import java.util.function.IntPredicate;
  * decoding for exactly this reason. The header pipelines ({@link ValidationType#HEADER_NAME},
  * {@link ValidationType#HEADER_VALUE}) run this stage with no {@code DecodingStage} at all - header
  * input is not percent-decoded, so the wire form is the only form and there is no decoded-form
- * re-check downstream. The content-type pipeline runs neither stage, and no {@link
- * ValidationType#BODY} pipeline exists - {@code PipelineFactory.createPipeline} rejects that
- * type.</p>
+ * re-check downstream. The content-type pipeline runs this stage under
+ * {@link ValidationType#HEADER_VALUE} and likewise pairs it with no {@code DecodingStage}, for the
+ * same reason. No {@link ValidationType#BODY} pipeline exists - {@code PipelineFactory.createPipeline}
+ * rejects that type.</p>
  *
  * <p>Per-{@link ValidationType} character sets. A character set is defined for each type below,
  * independently of whether a pipeline currently wires that type:</p>

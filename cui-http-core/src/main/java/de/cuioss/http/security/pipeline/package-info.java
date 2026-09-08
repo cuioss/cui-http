@@ -28,8 +28,8 @@
  *   <li>{@link de.cuioss.http.security.pipeline.URLParameterNameValidationPipeline} - Query parameter
  *       names (query keys), rejecting decoded delimiters and CR/LF that name-only rules forbid</li>
  *   <li>{@link de.cuioss.http.security.pipeline.HTTPHeaderValidationPipeline} - Header injection and CRLF attacks</li>
- *   <li>{@link de.cuioss.http.security.pipeline.ContentTypeValidationPipeline} - Allow/block-list
- *       enforcement for {@code Content-Type} values (list check only - no length or character validation)</li>
+ *   <li>{@link de.cuioss.http.security.pipeline.ContentTypeValidationPipeline} - Length, character
+ *       and allow/block-list enforcement for {@code Content-Type} values</li>
  *   <li>{@link de.cuioss.http.security.pipeline.PipelineFactory} - Factory for creating and configuring pipelines</li>
  * </ul>
  *
@@ -51,7 +51,8 @@
  *       keys, which applies the stricter name-only rules</li>
  *   <li><strong>Headers</strong> - Use {@code HTTPHeaderValidationPipeline} for HTTP headers</li>
  *   <li><strong>Content types</strong> - Use {@code ContentTypeValidationPipeline} for
- *       {@code Content-Type} allow/block-list enforcement</li>
+ *       {@code Content-Type} values; it applies the header-value length and character checks
+ *       before the allow/block-list enforcement</li>
  * </ul>
  *
  * <h3>Usage Example</h3>

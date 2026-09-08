@@ -112,13 +112,13 @@ This document establishes the authoritative standards for selecting appropriate 
 "Set-Cookie: session=abc\r\n\r\n<html>"
 ----
 
-=== ContentTypeValidationPipeline - Content-Type Allow/Block Lists
+=== ContentTypeValidationPipeline - Content-Type Length, Characters and Allow/Block Lists
 
-**Purpose**: Enforces an allow/block list over the `Content-Type` header. This pipeline is a single `AllowBlockListStage` — it performs no length, character, decoding, normalization, or pattern-matching check.
+**Purpose**: Validates the `Content-Type` header and enforces an allow/block list over it. The pipeline composes `LengthValidationStage` → `CharacterValidationStage` → `AllowBlockListStage`, all under `HEADER_VALUE`, so an unbounded value is cut before the character scan walks it. It performs no decoding, normalization, or pattern-matching check.
 
 **Use When**:
 
-* The decision is "is this media type permitted here?", not "is this string well-formed?"
+* The decision is "is this media type permitted here?"
 * A service accepts only an explicit set of media types, or must reject specific dangerous ones
 
 **Current Implementations**:

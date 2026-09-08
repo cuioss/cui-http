@@ -196,12 +196,13 @@ The following classes implement the validation pipeline system:
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java[URLParameterValidationPipeline] - URL parameter *value* validation
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLParameterNameValidationPipeline.java[URLParameterNameValidationPipeline] - URL parameter *name* validation
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipeline.java[HTTPHeaderValidationPipeline] - HTTP header validation
-* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/ContentTypeValidationPipeline.java[ContentTypeValidationPipeline] - Content-Type allow/block-list validation (a single `AllowBlockListStage`)
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/ContentTypeValidationPipeline.java[ContentTypeValidationPipeline] - Content-Type length, character and allow/block-list validation
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/PipelineFactory.java[PipelineFactory] - Factory for pipeline creation
 
 There are five concrete pipelines (all extending `AbstractValidationPipeline`), each optimized
-for its specific HTTP component. All but `ContentTypeValidationPipeline` run
-`LengthValidationStage` first; `ContentTypeValidationPipeline` is a single `AllowBlockListStage`.
+for its specific HTTP component. Every one of them runs `LengthValidationStage` first.
+`ContentTypeValidationPipeline` composes `LengthValidationStage`, `CharacterValidationStage` and
+`AllowBlockListStage`, all under `HEADER_VALUE`.
 
 `HTTPHeaderValidationPipeline` is composed of `LengthValidationStage` followed by
 `CharacterValidationStage`, plus an `AllowBlockListStage` for `HEADER_NAME` only.

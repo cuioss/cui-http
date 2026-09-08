@@ -40,8 +40,8 @@ Build a custom configuration with `SecurityConfiguration.builder()`.
 == Length limits
 
 Enforced by `LengthValidationStage`, which runs first in each of the five value pipelines to
-prevent DoS. (The exception is `ContentTypeValidationPipeline`, which is a single
-`AllowBlockListStage` and has no length stage.)
+prevent DoS. `ContentTypeValidationPipeline` included: it validates a `Content-Type` as a header
+value, so `maxHeaderValueLength` is the limit it applies.
 
 [cols="3,1,1,1,1", options="header"]
 |===

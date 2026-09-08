@@ -20,6 +20,8 @@ import de.cuioss.http.security.core.HttpSecurityValidator;
 import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.http.security.validation.AllowBlockListStage;
+import de.cuioss.http.security.validation.CharacterValidationStage;
+import de.cuioss.http.security.validation.LengthValidationStage;
 import lombok.AccessLevel;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -29,16 +31,25 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Validation pipeline for HTTP {@code Content-Type} values, enforcing the configured
- * content-type allow/block lists.
+ * Validation pipeline for HTTP {@code Content-Type} values, enforcing the header-value length and
+ * character limits and the configured content-type allow/block lists.
  *
- * <h3>Scope</h3>
- * <p><strong>This pipeline performs allow/block-list enforcement ONLY.</strong> It consists of a
- * single stage: {@link AllowBlockListStage#forContentTypes(SecurityConfiguration)}. It applies
- * <em>no</em> length limit and <em>no</em> character validation. A caller that also needs those
- * checks on a {@code Content-Type} value must apply the header-value pipeline
+ * <h3>Validation Sequence</h3>
+ * <ol>
+ *   <li><strong>Length Validation</strong> - {@link LengthValidationStage} enforces the configured
+ *       header-value length limit</li>
+ *   <li><strong>Character Validation</strong> - {@link CharacterValidationStage} enforces the
+ *       RFC 7230 header-value character restrictions</li>
+ *   <li><strong>Allow/Block List</strong> - {@link AllowBlockListStage#forContentTypes(SecurityConfiguration)}
+ *       enforces the configured {@code allowedContentTypes}/{@code blockedContentTypes} lists</li>
+ * </ol>
+ *
+ * <p>This is the same length-then-character-then-list order the header pipelines use, so an
+ * unbounded value is cut by the length stage before the character scan walks it. A caller does
+ * <em>not</em> need to run the header-value pipeline
  * ({@link PipelineFactory#createHeaderValuePipeline(SecurityConfiguration, SecurityEventCounter)})
- * to that value separately - this pipeline does not do it for them.</p>
+ * over a {@code Content-Type} value in addition to this one - this pipeline already applies those
+ * two checks.</p>
  *
  * <p>The list check itself: a value present in {@code blockedContentTypes} is rejected, and - if
  * {@code allowedContentTypes} is non-empty - any value not in it is rejected (empty allow-list =
@@ -49,9 +60,10 @@ import java.util.Objects;
  * <h3>Why HEADER_VALUE is the reported type</h3>
  * <p>A content type travels as a header value and there is no dedicated {@link ValidationType}
  * constant for it, so {@link ValidationType#HEADER_VALUE} is the type reported in emitted
- * exceptions and on the event counter. <strong>This reporting choice does not imply the
- * header-value pipeline's stage set</strong> - as stated under Scope, this pipeline runs the
- * allow/block-list stage alone.</p>
+ * exceptions and on the event counter. The same constant configures the length and character
+ * stages above, so the limits and the character set applied to a {@code Content-Type} value are
+ * exactly the header-value ones. This pipeline still differs from the header-value pipeline in its
+ * third stage: it enforces the content-type lists, which the header-value pipeline does not.</p>
  *
  * <h3>Value Equality</h3>
  * <p>Two {@code ContentTypeValidationPipeline} instances are equal when their
@@ -95,7 +107,12 @@ public final class ContentTypeValidationPipeline extends AbstractValidationPipel
 
     private static List<HttpSecurityValidator> createStages(SecurityConfiguration config) {
         Objects.requireNonNull(config, "Config must not be null");
-        return List.of(AllowBlockListStage.forContentTypes(config));
+        // Same length-then-character-then-list order the header pipelines use: an unbounded value is
+        // cut by the length stage before the character scan walks it.
+        return List.of(
+                new LengthValidationStage(config, VALIDATION_TYPE),
+                new CharacterValidationStage(config, VALIDATION_TYPE),
+                AllowBlockListStage.forContentTypes(config));
     }
 
     @Override

@@ -21,6 +21,8 @@ import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.http.security.validation.AllowBlockListStage;
+import de.cuioss.http.security.validation.CharacterValidationStage;
+import de.cuioss.http.security.validation.LengthValidationStage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -34,11 +36,13 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Behavior tests for {@link ContentTypeValidationPipeline}.
  *
- * <p>Covers the accept/reject behavior of the wrapped
+ * <p>Covers the pipeline's three-stage composition and the accept/reject behavior of its
  * {@link de.cuioss.http.security.validation.AllowBlockListStage} in content-type mode:
  * block-list rejection and precedence, allow-list restriction (with the empty allow-list =
  * allow-all rule), media-type-only matching that ignores parameters, case-insensitive
- * comparison, and correct exception metadata plus security-event recording.</p>
+ * comparison, and correct exception metadata plus security-event recording. The length and
+ * character stages that now precede the list stage are pinned at the pipeline level by
+ * {@link HeaderAndContentTypeEnforcementRegressionTest}.</p>
  */
 @DisplayName("ContentTypeValidationPipeline behavior")
 class ContentTypeValidationPipelineTest {
@@ -62,15 +66,19 @@ class ContentTypeValidationPipelineTest {
     }
 
     @Test
-    @DisplayName("scope: allow/block-list enforcement only - a single AllowBlockListStage")
-    void pipelineScopeIsListEnforcementOnly() {
+    @DisplayName("scope: length then character then allow/block-list, all under HEADER_VALUE")
+    void pipelineComposesLengthCharacterAndListStages() {
         ContentTypeValidationPipeline pipeline = pipeline(SecurityConfiguration.defaults());
 
-        // Pins the documented class-level contract: no length limit, no character validation.
+        // Pins the documented class-level contract: the same length-then-character-then-list order
+        // the header pipelines use, so an unbounded value is cut before the character scan walks it.
         var stages = pipeline.getStages();
-        assertEquals(1, stages.size(), "Content-type pipeline must consist of exactly one stage");
-        assertInstanceOf(AllowBlockListStage.class, stages.getFirst());
-        assertEquals(ValidationType.HEADER_VALUE, pipeline.getValidationType());
+        assertEquals(3, stages.size(), "Content-type pipeline must consist of exactly three stages");
+        assertAll("stage order",
+                () -> assertInstanceOf(LengthValidationStage.class, stages.get(0)),
+                () -> assertInstanceOf(CharacterValidationStage.class, stages.get(1)),
+                () -> assertInstanceOf(AllowBlockListStage.class, stages.get(2)),
+                () -> assertEquals(ValidationType.HEADER_VALUE, pipeline.getValidationType()));
     }
 
     @Nested

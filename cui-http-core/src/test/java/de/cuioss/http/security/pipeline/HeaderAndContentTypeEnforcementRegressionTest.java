@@ -16,11 +16,13 @@
 package de.cuioss.http.security.pipeline;
 
 import de.cuioss.http.security.config.SecurityConfiguration;
+import de.cuioss.http.security.config.SecurityDefaults;
 import de.cuioss.http.security.core.HttpSecurityValidator;
 import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
+import de.cuioss.http.security.validation.CharacterValidationStage;
 import de.cuioss.http.security.validation.LengthValidationStage;
 import de.cuioss.http.security.validation.NormalizationStage;
 import de.cuioss.http.security.validation.PatternMatchingStage;
@@ -49,8 +51,9 @@ import static org.junit.jupiter.api.Assertions.*;
  *       content-type and the header-name pipeline;</li>
  *   <li>the header-value pipeline still rejects CR/LF injection after the removal of the two
  *       pass-through stages, and its stage list contains neither of them;</li>
- *   <li>the content-type pipeline enforces its lists while applying no length limit, matching
- *       its documented allow/block-list-only scope.</li>
+ *   <li>the content-type pipeline applies the header-value length and character checks ahead of
+ *       its allow/block lists, so an overlong value and a CR/LF-carrying value are both rejected
+ *       even though their media type is allow-listed.</li>
  * </ol>
  */
 @DisplayName("Header and content-type enforcement regressions")
@@ -199,8 +202,8 @@ class HeaderAndContentTypeEnforcementRegressionTest {
     }
 
     @Nested
-    @DisplayName("(4) the content-type pipeline enforces lists but applies no length limit")
-    class ContentTypeScope {
+    @DisplayName("(4) the content-type pipeline applies the header-value length and character checks before its lists")
+    class ContentTypeFullEnforcement {
 
         private static final String ALLOWED_MEDIA_TYPE = "application/json";
 
@@ -211,15 +214,61 @@ class HeaderAndContentTypeEnforcementRegressionTest {
             return PipelineFactory.createContentTypePipeline(config, eventCounter);
         }
 
-        @Test
-        @DisplayName("accepts an allow-listed media type whose parameters exceed the header-value limit")
-        void appliesNoLengthLimit() {
-            int headerValueLimit = SecurityConfiguration.defaults().maxHeaderValueLength();
-            String overlongValue = ALLOWED_MEDIA_TYPE + "; boundary=" + syntheticToken(headerValueLimit + 100);
-            assertTrue(overlongValue.length() > headerValueLimit,
-                    "Test input must exceed the header-value length limit to be meaningful");
+        /**
+         * A pipeline over the same allow-list, carrying the settings the {@code lenient()} preset
+         * relaxes that could plausibly weaken the two checks below - the control-character and
+         * extended-ASCII permissions and the larger header-value limit. Both settings are read off
+         * {@link SecurityConfiguration#lenient()} rather than hard-coded, so this pipeline cannot
+         * drift away from the preset it stands for. Per ADR-0017 the rejections must hold even
+         * here, at the most permissive configuration.
+         */
+        private HttpSecurityValidator lenientPipeline() {
+            SecurityConfiguration lenient = SecurityConfiguration.lenient();
+            SecurityConfiguration config = SecurityConfiguration.builder()
+                    .allowedContentTypes(Set.of(ALLOWED_MEDIA_TYPE))
+                    .allowControlCharacters(lenient.allowControlCharacters())
+                    .allowExtendedAscii(lenient.allowExtendedAscii())
+                    .maxHeaderValueLength(lenient.maxHeaderValueLength())
+                    .build();
+            return PipelineFactory.createContentTypePipeline(config, eventCounter);
+        }
 
-            assertEquals(Optional.of(overlongValue), pipeline().validate(overlongValue));
+        @Test
+        @DisplayName("rejects an allow-listed media type whose parameters exceed the header-value limit")
+        void rejectsValueOverTheHeaderValueLimit() {
+            // Longer than the lenient limit, so the same value is overlong under both presets.
+            String overlongValue = ALLOWED_MEDIA_TYPE + "; boundary="
+                    + syntheticToken(SecurityDefaults.MAX_HEADER_VALUE_LENGTH_LENIENT + 100);
+
+            UrlSecurityException underDefaults = assertThrows(UrlSecurityException.class,
+                    () -> pipeline().validate(overlongValue));
+            UrlSecurityException underLenient = assertThrows(UrlSecurityException.class,
+                    () -> lenientPipeline().validate(overlongValue));
+
+            assertAll("the length stage cuts the value before the list stage sees its media type",
+                    () -> assertEquals(UrlSecurityFailureType.INPUT_TOO_LONG, underDefaults.getFailureType()),
+                    () -> assertEquals(ValidationType.HEADER_VALUE, underDefaults.getValidationType()),
+                    () -> assertEquals(UrlSecurityFailureType.INPUT_TOO_LONG, underLenient.getFailureType()),
+                    () -> assertEquals(ValidationType.HEADER_VALUE, underLenient.getValidationType()));
+        }
+
+        @Test
+        @DisplayName("rejects CR/LF smuggled into the parameters of an allow-listed media type")
+        void rejectsCrlfInParametersOfAnAllowListedMediaType() {
+            // Media-type-only matching strips everything from the first ';', so the allow/block-list
+            // stage alone would have accepted this value: the character stage is what rejects it.
+            String injected = ALLOWED_MEDIA_TYPE + "; x\r\nX: y";
+
+            UrlSecurityException underDefaults = assertThrows(UrlSecurityException.class,
+                    () -> pipeline().validate(injected));
+            UrlSecurityException underLenient = assertThrows(UrlSecurityException.class,
+                    () -> lenientPipeline().validate(injected));
+
+            assertAll("CR/LF is rejected unconditionally for header types (ADR-0017)",
+                    () -> assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, underDefaults.getFailureType()),
+                    () -> assertEquals(injected, underDefaults.getOriginalInput()),
+                    () -> assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, underLenient.getFailureType()),
+                    () -> assertEquals(injected, underLenient.getOriginalInput()));
         }
 
         @Test
@@ -234,12 +283,15 @@ class HeaderAndContentTypeEnforcementRegressionTest {
         }
 
         @Test
-        @DisplayName("stage list carries no LengthValidationStage")
-        void stageListOmitsLengthValidation() {
+        @DisplayName("stage list carries a LengthValidationStage ahead of a CharacterValidationStage")
+        void stageListCarriesLengthAndCharacterStages() {
             List<HttpSecurityValidator> stages = stagesOf(pipeline());
 
-            assertTrue(stages.stream().noneMatch(LengthValidationStage.class::isInstance),
-                    "Content-type pipeline must not contain a LengthValidationStage");
+            assertAll("the two stages the pipeline previously omitted are now wired",
+                    () -> assertInstanceOf(LengthValidationStage.class, stages.get(0),
+                            "Content-type pipeline must run a LengthValidationStage first"),
+                    () -> assertInstanceOf(CharacterValidationStage.class, stages.get(1),
+                            "Content-type pipeline must run a CharacterValidationStage second"));
         }
 
         /**
