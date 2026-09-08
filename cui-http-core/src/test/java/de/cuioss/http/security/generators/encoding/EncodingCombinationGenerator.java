@@ -18,8 +18,6 @@ package de.cuioss.http.security.generators.encoding;
 import de.cuioss.test.generator.Generators;
 import de.cuioss.test.generator.TypedGenerator;
 
-import java.util.regex.Pattern;
-
 /**
  * Generates various encoding combinations for bypass attempts.
  *
@@ -29,10 +27,6 @@ import java.util.regex.Pattern;
  */
 public class EncodingCombinationGenerator implements TypedGenerator<String> {
 
-    // Precompiled patterns for case conversion in hex encoding
-    private static final Pattern LOWERCASE_2E_PATTERN = Pattern.compile("%2e");
-    private static final Pattern LOWERCASE_2F_PATTERN = Pattern.compile("%2f");
-
     // QI-6: Dynamic generation components
     private final TypedGenerator<Integer> basePatternTypeGen = Generators.integers(1, 5);
     private final TypedGenerator<Integer> depthGen = Generators.integers(1, 4);
@@ -40,6 +34,7 @@ public class EncodingCombinationGenerator implements TypedGenerator<String> {
 
     private final TypedGenerator<Integer> encodingLevelGen = Generators.integers(1, 3);
     private final TypedGenerator<Boolean> mixedCaseGen = Generators.booleans();
+    private final TypedGenerator<Boolean> hexDigitUppercaseGen = Generators.booleans();
 
     @Override
     public String next() {
@@ -121,9 +116,32 @@ public class EncodingCombinationGenerator implements TypedGenerator<String> {
     }
 
     private String applyMixedCase(String input) {
-        // Mix uppercase and lowercase in hex encoding
-        String result = LOWERCASE_2E_PATTERN.matcher(input).replaceAll("%2E");
-        return LOWERCASE_2F_PATTERN.matcher(result).replaceAll("%2F");
+        // Randomise the case of each hex digit of EVERY %XX escape. The previous two targeted
+        // replacements uppercased only the literal %2e and %2f escapes, so every other escape the
+        // generator emits - %25 above all, which every encoding level beyond the first produces -
+        // stayed lowercase and the mixed-case dimension was never actually explored. Each case
+        // decision is drawn from the seeded generator source, so a fixed seed still reproduces the
+        // same output.
+        StringBuilder result = new StringBuilder(input.length());
+        int index = 0;
+        while (index < input.length()) {
+            char current = input.charAt(index);
+            result.append(current);
+            if (current == '%' && index + 2 < input.length()) {
+                result.append(randomiseCase(input.charAt(index + 1)))
+                        .append(randomiseCase(input.charAt(index + 2)));
+                index += 3;
+            } else {
+                index++;
+            }
+        }
+        return result.toString();
+    }
+
+    private char randomiseCase(char hexDigit) {
+        return Boolean.TRUE.equals(hexDigitUppercaseGen.next())
+                ? Character.toUpperCase(hexDigit)
+                : Character.toLowerCase(hexDigit);
     }
 
     @Override
