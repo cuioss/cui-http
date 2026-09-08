@@ -17,7 +17,9 @@ package de.cuioss.http.security.pipeline;
 
 import de.cuioss.http.security.config.SecurityConfiguration;
 import de.cuioss.http.security.core.HttpSecurityValidator;
+import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.core.ValidationType;
+import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.http.security.validation.AllowBlockListStage;
 import de.cuioss.http.security.validation.CharacterValidationStage;
@@ -26,9 +28,11 @@ import lombok.AccessLevel;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.ToString;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Validation pipeline for HTTP {@code Content-Type} values, enforcing the header-value length and
@@ -56,6 +60,23 @@ import java.util.Objects;
  * allow-all). Matching is on the media type only, so parameters such as {@code ; charset=UTF-8}
  * cannot defeat the lists. Security violations are recorded on the supplied
  * {@link SecurityEventCounter}, consistent with the other pipelines.</p>
+ *
+ * <h3>An absent Content-Type under a configured allow-list</h3>
+ * <p>{@link AbstractValidationPipeline#validate(String)} short-circuits a {@code null} value to
+ * {@code Optional.empty()} before any stage runs, which is correct for every other component: an
+ * absent path or header carries no attack. It is <em>not</em> correct here. A non-empty
+ * {@code allowedContentTypes} states which media types this endpoint accepts, so a request that
+ * carries no {@code Content-Type} at all must not slip past a list the identical request with a
+ * non-matching type is rejected by.</p>
+ *
+ * <p>This pipeline therefore overrides the short-circuit: when - and only when - a non-empty
+ * allow-list is configured, a {@code null} value is rejected with a
+ * {@link UrlSecurityException} carrying {@link UrlSecurityFailureType#INVALID_INPUT} and
+ * {@link ValidationType#HEADER_VALUE}, and the event is recorded on the
+ * {@link SecurityEventCounter} exactly as a non-null rejection is. The exception's
+ * {@code originalInput} is the empty string, since there is no value to report. With an empty
+ * allow-list (the allow-all default) {@code null} keeps returning {@code Optional.empty()}: an
+ * endpoint that restricts nothing has nothing to require.</p>
  *
  * <h3>Why HEADER_VALUE is the reported type</h3>
  * <p>A content type travels as a header value and there is no dedicated {@link ValidationType}
@@ -113,6 +134,41 @@ public final class ContentTypeValidationPipeline extends AbstractValidationPipel
                 new LengthValidationStage(config, VALIDATION_TYPE),
                 new CharacterValidationStage(config, VALIDATION_TYPE),
                 AllowBlockListStage.forContentTypes(config));
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Overrides the base class's {@code null} short-circuit for the one case where accepting an
+     * absent value would defeat the configured policy - see the class Javadoc section
+     * <em>An absent Content-Type under a configured allow-list</em>. A non-null value takes the
+     * inherited path unchanged.</p>
+     *
+     * @throws UrlSecurityException if {@code value} is {@code null} while a non-empty
+     *         {@code allowedContentTypes} is configured, or if any stage rejects a non-null value
+     */
+    @Override
+    public Optional<String> validate(@Nullable String value) throws UrlSecurityException {
+        if (value == null && !config.allowedContentTypes().isEmpty()) {
+            throw rejectAbsentContentType();
+        }
+        return super.validate(value);
+    }
+
+    /**
+     * Records the security event and builds the rejection for an absent {@code Content-Type},
+     * mirroring what {@link AbstractValidationPipeline#validate(String)} does for a stage rejection.
+     *
+     * @return the exception to throw
+     */
+    private UrlSecurityException rejectAbsentContentType() {
+        eventCounter.increment(UrlSecurityFailureType.INVALID_INPUT);
+        return UrlSecurityException.builder()
+                .failureType(UrlSecurityFailureType.INVALID_INPUT)
+                .validationType(VALIDATION_TYPE)
+                .originalInput("")
+                .detail("A Content-Type is required when an allow-list is configured, but none was present")
+                .build();
     }
 
     @Override

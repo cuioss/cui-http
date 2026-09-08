@@ -203,10 +203,47 @@ class ContentTypeValidationPipelineTest {
     class EdgeCases {
 
         @Test
-        @DisplayName("null input yields an empty Optional without throwing")
-        void nullInput() {
+        @DisplayName("null input yields an empty Optional when the allow-list is empty (allow-all)")
+        void nullInputUnderAllowAll() {
             ContentTypeValidationPipeline pipeline = pipeline(SecurityConfiguration.defaults());
             assertEquals(Optional.empty(), pipeline.validate(null));
+        }
+
+        @Test
+        @DisplayName("null input is rejected when a non-empty allow-list is configured")
+        void nullInputUnderConfiguredAllowList() {
+            ContentTypeValidationPipeline pipeline = pipeline(SecurityConfiguration.builder()
+                    .allowedContentTypes(Set.of("application/json"))
+                    .build());
+            long before = eventCounter.getCount(UrlSecurityFailureType.INVALID_INPUT);
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                    () -> pipeline.validate(null));
+
+            assertAll("an absent Content-Type must not slip past a configured allow-list",
+                    () -> assertEquals(UrlSecurityFailureType.INVALID_INPUT, exception.getFailureType()),
+                    () -> assertEquals(ValidationType.HEADER_VALUE, exception.getValidationType()),
+                    () -> assertEquals(before + 1,
+                            eventCounter.getCount(UrlSecurityFailureType.INVALID_INPUT),
+                            "the rejection is counted exactly as a non-null rejection is"));
+        }
+
+        @Test
+        @DisplayName("null input is rejected under the lenient preset too")
+        void nullInputUnderConfiguredAllowListAtLenientPreset() {
+            SecurityConfiguration lenient = SecurityConfiguration.lenient();
+            ContentTypeValidationPipeline pipeline = pipeline(SecurityConfiguration.builder()
+                    .allowedContentTypes(Set.of("application/json"))
+                    .allowControlCharacters(lenient.allowControlCharacters())
+                    .allowExtendedAscii(lenient.allowExtendedAscii())
+                    .maxHeaderValueLength(lenient.maxHeaderValueLength())
+                    .build());
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                    () -> pipeline.validate(null));
+
+            // ADR-0017: the rule is driven by the allow-list, not by how permissive the preset is.
+            assertEquals(UrlSecurityFailureType.INVALID_INPUT, exception.getFailureType());
         }
 
         @Test
