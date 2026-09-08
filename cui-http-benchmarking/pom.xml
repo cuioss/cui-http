@@ -15,8 +15,6 @@
 
     <properties>
         <maven.jar.plugin.automatic.module.name>de.cuioss.http.benchmarking</maven.jar.plugin.automatic.module.name>
-        <!-- JMH version -->
-        <version.jmh>1.37</version.jmh>
         <!-- Skip benchmarks by default -->
         <skip.benchmark>true</skip.benchmark>
         <!-- Sonar: skip analysis for benchmarking module -->
