@@ -142,6 +142,44 @@ class CharacterValidationStageTest {
     }
 
     /**
+     * RFC 6265 defines {@code cookie-name} as the RFC 7230/2616 {@code token} grammar, which
+     * excludes {@code =} - unlike {@code cookie-octet}, which a cookie <em>value</em> uses and
+     * which admits it as base64 padding. Before this rule both {@code COOKIE_NAME} and
+     * {@code COOKIE_VALUE} shared {@code cookie-octet}, so a cookie-name suffix such as
+     * {@code a=b} passed validation and, once serialized as {@code name=value}, changed which
+     * text is read as the name and which as the value (CWE-20). Pinned under every preset since
+     * the token/cookie-octet split is not itself configuration-dependent.
+     */
+    @Test
+    void shouldRejectEqualsSignInCookieNameUnderEveryPreset() {
+        for (SecurityConfiguration preset : SHARED_GATE_PRESETS) {
+            CharacterValidationStage stage = new CharacterValidationStage(preset, ValidationType.COOKIE_NAME);
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                    stage.validate("a=b"), "'=' in a cookie name must be rejected under " + preset);
+
+            assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
+            assertEquals(ValidationType.COOKIE_NAME, exception.getValidationType());
+        }
+    }
+
+    /**
+     * Negative control for the rule above: {@code =} is ordinary {@code cookie-octet} content in
+     * a cookie <em>value</em> (base64 padding), so the token-grammar tightening of
+     * {@code COOKIE_NAME} must not collaterally narrow {@code COOKIE_VALUE}.
+     */
+    @Test
+    void shouldStillAcceptEqualsSignInCookieValue() throws Exception {
+        for (SecurityConfiguration preset : SHARED_GATE_PRESETS) {
+            CharacterValidationStage stage = new CharacterValidationStage(preset, ValidationType.COOKIE_VALUE);
+
+            var result = stage.validate("a=b");
+            assertTrue(result.isPresent(), "'=' should remain accepted in a cookie value under " + preset);
+            assertEquals("a=b", result.get());
+        }
+    }
+
+    /**
      * The raw counterpart of the decoded rule asserted by
      * {@code DecodingStageTest.shouldRejectDecodedHashInParameterName}: {@code #} terminates the
      * query component, so it is rejected in a parameter <em>name</em> in both its raw spelling

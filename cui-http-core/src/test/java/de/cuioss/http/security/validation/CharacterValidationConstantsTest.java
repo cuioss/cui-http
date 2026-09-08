@@ -276,8 +276,13 @@ class CharacterValidationConstantsTest {
 
         assertSame(CharacterValidationConstants.HTTP_BODY_CHARS,
                 CharacterValidationConstants.getCharacterSet(ValidationType.BODY));
-        assertSame(CharacterValidationConstants.RFC6265_COOKIE_OCTET,
-                CharacterValidationConstants.getCharacterSet(ValidationType.COOKIE_NAME));
+
+        // RFC 6265 defines cookie-name as the RFC 7230/2616 token grammar and cookie-value alone
+        // as cookie-octet - the two are deliberately different sets, not a shared one.
+        assertSame(CharacterValidationConstants.RFC7230_TOKEN_CHARS,
+                CharacterValidationConstants.getCharacterSet(ValidationType.COOKIE_NAME),
+                "cookie-name is the token grammar, not cookie-octet - cookie-octet admits '=', "
+                        + "which would let a name change the serialized name=value boundary");
         assertSame(CharacterValidationConstants.RFC6265_COOKIE_OCTET,
                 CharacterValidationConstants.getCharacterSet(ValidationType.COOKIE_VALUE));
     }

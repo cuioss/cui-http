@@ -153,6 +153,14 @@ ValidationType validationType) implements HttpSecurityValidator {
     private static final Pattern SURVIVING_ENCODING_PATTERN = Pattern.compile("%[0-9a-fA-F]{2}");
 
     /**
+     * Shared detail-message suffix for a decoded-character rejection, naming the escaped code
+     * point and its position. Extracted once (java:S1192) since three separate rejection sites
+     * below - combining character, invisible character, and control character - all report the
+     * same shape.
+     */
+    private static final String AT_POSITION_SUFFIX = ") at position ";
+
+    /**
      * Validates input through HTTP protocol-layer decoding with security checks.
      *
      * <p><strong>Architectural Boundary:</strong> This stage operates strictly at the HTTP protocol layer,
@@ -577,7 +585,7 @@ ValidationType validationType) implements HttpSecurityValidator {
                         .failureType(UrlSecurityFailureType.INVALID_CHARACTER)
                         .validationType(validationType)
                         .originalInput(originalInput)
-                        .detail("Decoded combining character (" + escaped(cp) + ") at position " + i)
+                        .detail("Decoded combining character (" + escaped(cp) + AT_POSITION_SUFFIX + i)
                         .build();
             }
 
@@ -590,7 +598,7 @@ ValidationType validationType) implements HttpSecurityValidator {
                         .failureType(UrlSecurityFailureType.INVALID_CHARACTER)
                         .validationType(validationType)
                         .originalInput(originalInput)
-                        .detail("Decoded invisible character (" + escaped(cp) + ") at position " + i)
+                        .detail("Decoded invisible character (" + escaped(cp) + AT_POSITION_SUFFIX + i)
                         .build();
             }
 
@@ -601,7 +609,7 @@ ValidationType validationType) implements HttpSecurityValidator {
                         .failureType(UrlSecurityFailureType.CONTROL_CHARACTERS)
                         .validationType(validationType)
                         .originalInput(originalInput)
-                        .detail("Decoded control character (" + escaped(cp) + ") at position " + i)
+                        .detail("Decoded control character (" + escaped(cp) + AT_POSITION_SUFFIX + i)
                         .build();
             }
 
@@ -707,10 +715,24 @@ ValidationType validationType) implements HttpSecurityValidator {
      * {@code COOKIE_VALUE} and {@code PARAMETER_NAME}, and {@code allowControlCharacters} does
      * not relax them.</p>
      *
+     * <h3>The C1 range (0x80-0x9F) is unconditional, mirroring the raw-form guarantee</h3>
+     * <p>{@link CharacterValidationStage#isCharacterAllowed} rejects the C1 range regardless of
+     * {@code allowControlCharacters} for every validation type - they are non-printing controls,
+     * not extended-ASCII text, and {@code U+0085} (NEL) is treated as a line terminator by several
+     * parsers. Without a matching unconditional check here, a percent-encoded C1 byte (e.g.
+     * {@code %C2%85}) is invisible to the wire-form character stage - which validates the hex
+     * digits only, never what they decode to - and reached only this decoded-character check,
+     * where {@code URL_PATH} deferred to {@code allowControlCharacters}. That let the encoded
+     * spelling buy a softer verdict than the identical raw byte, exactly the CWE-20
+     * raw-versus-encoded asymmetry class ADR-0017 exists to close.</p>
+     *
      * @param cp the decoded control code point under test
      * @return {@code true} if the code point must be rejected for this validation type
      */
     private boolean decodedControlCharacterForbidden(int cp) {
+        if (cp >= 0x80 && cp <= 0x9F) {
+            return true;
+        }
         return switch (validationType) {
             case HEADER_NAME, HEADER_VALUE, COOKIE_NAME, COOKIE_VALUE, PARAMETER_NAME -> true;
             case URL_PATH -> !config.allowControlCharacters();

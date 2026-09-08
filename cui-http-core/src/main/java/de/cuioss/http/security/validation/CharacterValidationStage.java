@@ -72,9 +72,12 @@ import java.util.function.IntPredicate;
  *   <li><strong>Parameters</strong> - RFC 3986 section 3.4 {@code query} characters - unreserved plus
  *       {@code / : @ ? &amp; =} and the query sub-delims - with percent-encoding support</li>
  *   <li><strong>Headers</strong> - RFC 7230 visible ASCII minus delimiters</li>
- *   <li><strong>Cookies</strong> - RFC 6265 section 4.1.1 {@code cookie-octet}: US-ASCII excluding
- *       CTLs, whitespace, DQUOTE, comma, semicolon and backslash. DQUOTE is rejected wherever it
- *       appears - there is no matched-quote-pair carve-out</li>
+ *   <li><strong>Cookie names</strong> - the RFC 6265 {@code cookie-name} grammar, which is the
+ *       RFC 7230/2616 {@code token} set (same as a header name) - notably excluding {@code =},
+ *       so a name cannot smuggle a second {@code name=value} boundary</li>
+ *   <li><strong>Cookie values</strong> - RFC 6265 section 4.1.1 {@code cookie-octet}: US-ASCII
+ *       excluding CTLs, whitespace, DQUOTE, comma, semicolon and backslash. DQUOTE is rejected
+ *       wherever it appears - there is no matched-quote-pair carve-out</li>
  *   <li><strong>Bodies</strong> - Content-type specific character validation</li>
  * </ul>
  *

@@ -138,14 +138,14 @@ String attributes) {
      * response.setHeader("Set-Cookie", sessionCookie.toCookieString());
      * </pre>
      *
-     * @param suffix The cookie name suffix (will be prefixed with __Host-). The suffix is
-     *               validated against the RFC 6265 section 4.1.1 {@code cookie-octet} set:
-     *               US-ASCII excluding CTLs, whitespace, DQUOTE, comma, semicolon and backslash.
+     * @param suffix The cookie name suffix (will be prefixed with __Host-). The full resulting
+     *               name is validated against the RFC 6265 {@code cookie-name} grammar - the
+     *               RFC 7230/2616 {@code token} character set - since it becomes the cookie name.
      * @param value The cookie value
      * @return A Cookie with __Host- prefix and compliant attributes
      * @throws de.cuioss.http.security.exceptions.UrlSecurityException if the suffix contains any
-     *         character outside the RFC 6265 {@code cookie-octet} set (CTLs, whitespace, DQUOTE,
-     *         comma, semicolon and backslash are all rejected)
+     *         character outside the {@code token} set (notably {@code =}, whitespace, and every
+     *         RFC 2616 {@code separator})
      * @see <a href="https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-rfc6265bis">RFC 6265bis</a>
      * @since 1.0
      */
@@ -186,14 +186,14 @@ String attributes) {
      * response.setHeader("Set-Cookie", tokenCookie.toCookieString());
      * </pre>
      *
-     * @param suffix The cookie name suffix (will be prefixed with __Secure-). The suffix is
-     *               validated against the RFC 6265 section 4.1.1 {@code cookie-octet} set:
-     *               US-ASCII excluding CTLs, whitespace, DQUOTE, comma, semicolon and backslash.
+     * @param suffix The cookie name suffix (will be prefixed with __Secure-). The full resulting
+     *               name is validated against the RFC 6265 {@code cookie-name} grammar - the
+     *               RFC 7230/2616 {@code token} character set - since it becomes the cookie name.
      * @param value The cookie value
      * @return A Cookie with __Secure- prefix and compliant attributes
      * @throws de.cuioss.http.security.exceptions.UrlSecurityException if the suffix contains any
-     *         character outside the RFC 6265 {@code cookie-octet} set (CTLs, whitespace, DQUOTE,
-     *         comma, semicolon and backslash are all rejected)
+     *         character outside the {@code token} set (notably {@code =}, whitespace, and every
+     *         RFC 2616 {@code separator})
      * @see <a href="https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-rfc6265bis">RFC 6265bis</a>
      * @since 1.0
      */

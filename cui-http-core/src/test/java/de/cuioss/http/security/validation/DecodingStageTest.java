@@ -1076,6 +1076,55 @@ class DecodingStageTest {
     }
 
     /**
+     * A decoded C1 control (0x80-0x9F) must be rejected regardless of {@code allowControlCharacters},
+     * mirroring the unconditional raw-form guarantee in
+     * {@link CharacterValidationStage#isCharacterAllowed}. Before this rule, a percent-encoded C1
+     * byte such as {@code %C2%85} (U+0085 NEL) reached {@code URL_PATH} unrejected once
+     * {@code allowControlCharacters(true)} was configured, because the wire-form character stage
+     * never inspects what a percent-encoding decodes to and the decoded-character check deferred
+     * to the flag for {@code URL_PATH}. That let the encoded spelling of a C1 byte outrank its raw
+     * spelling - the raw-versus-encoded asymmetry class ADR-0017 exists to close - so the fix is
+     * pinned under BOTH {@code defaults()} and {@code lenient()}.
+     */
+    @Nested
+    @DisplayName("Decoded C1 controls are rejected unconditionally, under every preset")
+    class DecodedC1ControlsAreUnconditional {
+
+        private final SecurityConfiguration lenient = SecurityConfiguration.lenient();
+
+        @ParameterizedTest
+        @DisplayName("a decoded C1 control in a URL path is rejected under defaults and lenient (allowControlCharacters=true)")
+        @ValueSource(strings = {"%C2%80", "%C2%85", "%C2%9F"})
+        void shouldRejectDecodedC1ControlInPathUnderEveryPreset(String encodedControl) {
+            for (SecurityConfiguration preset : new SecurityConfiguration[]{defaultConfig, lenient}) {
+                DecodingStage decoder = new DecodingStage(preset, ValidationType.URL_PATH);
+
+                UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                        () -> decoder.validate("/a" + encodedControl + "b"),
+                        encodedControl + " must be rejected under " + preset
+                                + " - allowControlCharacters must not relax the C1 range");
+
+                assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType());
+                assertEquals(ValidationType.URL_PATH, exception.getValidationType());
+            }
+        }
+
+        @Test
+        @DisplayName("negative control: a C0 control (ESC/BS) still survives decoding when explicitly allowed")
+        void shouldStillAcceptC0ControlsWhenAllowed() {
+            // The C1 fix must not widen to swallow the pre-existing, deliberately configurable
+            // C0 carve-out this same method grants for URL_PATH under allowControlCharacters(true).
+            DecodingStage decoder = new DecodingStage(lenient, ValidationType.URL_PATH);
+
+            String expected = "/a" + (char) 0x1B + (char) 0x08 + "b";
+
+            assertEquals(expected, decoder.validate("/a%1B%08b").orElseThrow(),
+                    "ESC (0x1B) and BS (0x08) are C0, not C1, and must still be governed by "
+                            + "allowControlCharacters");
+        }
+    }
+
+    /**
      * The decoded structural-delimiter rule is scoped to exactly one character on exactly one
      * validation type: {@code #} in a {@code PARAMETER_NAME}.
      *

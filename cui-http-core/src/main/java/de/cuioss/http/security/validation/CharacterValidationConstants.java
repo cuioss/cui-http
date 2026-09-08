@@ -47,8 +47,8 @@ import java.util.function.IntPredicate;
  *   <li><strong>RFC3986_UNRESERVED</strong> - Basic unreserved characters from RFC 3986</li>
  *   <li><strong>RFC3986_PATH_CHARS</strong> - Characters allowed in URL paths</li>
  *   <li><strong>RFC3986_QUERY_CHARS</strong> - Characters allowed in URL query parameters</li>
- *   <li><strong>RFC6265_COOKIE_OCTET</strong> - Characters allowed in cookie names and values
- *       ({@code cookie-octet})</li>
+ *   <li><strong>RFC6265_COOKIE_OCTET</strong> - Characters allowed in a cookie <em>value</em>
+ *       ({@code cookie-octet}); a cookie <em>name</em> uses {@code RFC7230_TOKEN_CHARS}</li>
  *   <li><strong>RFC7230_TOKEN_CHARS</strong> - Characters allowed in HTTP header names (tchar)</li>
  *   <li><strong>RFC7230_HEADER_CHARS</strong> - Characters allowed in HTTP header field values</li>
  *   <li><strong>HTTP_BODY_CHARS</strong> - Characters allowed in HTTP request/response bodies</li>
@@ -129,7 +129,7 @@ public final class CharacterValidationConstants {
     public static final IntPredicate RFC3986_QUERY_CHARS;
 
     /**
-     * RFC 6265 {@code cookie-octet} characters, the character set of a cookie name and value.
+     * RFC 6265 {@code cookie-octet} characters, the character set of a cookie <em>value</em>.
      * <p>Per RFC 6265 section 4.1.1 the {@code cookie-octet} production is
      * {@code %x21 / %x23-2B / %x2D-3A / %x3C-5B / %x5D-7E} — US-ASCII characters excluding
      * CTLs, whitespace, DQUOTE, comma, semicolon and backslash.</p>
@@ -137,17 +137,32 @@ public final class CharacterValidationConstants {
      * appears. This is a pure per-character membership test: it carries no quote-pair state and
      * no carve-out for a matched surrounding DQUOTE, so the quoted spelling
      * {@code "abc"} is rejected on its first character.</p>
+     * <p><strong>Cookie-value only.</strong> RFC 6265 section 4.1.1 defines {@code cookie-pair}
+     * as {@code cookie-name "=" cookie-value}, where {@code cookie-name} is the RFC 7230/2616
+     * {@code token} grammar and {@code cookie-value} alone is {@code cookie-octet}. A cookie
+     * <em>name</em> therefore validates against {@link #RFC7230_TOKEN_CHARS}, not this set — see
+     * that constant's Javadoc for why admitting {@code cookie-octet} in a name is unsafe (it
+     * permits {@code =}, which changes the serialized {@code name=value} boundary).</p>
      * <p>Immutable membership test; the backing {@link BitSet} is private and cannot be mutated.</p>
      */
     public static final IntPredicate RFC6265_COOKIE_OCTET;
 
     /**
-     * RFC 7230 token characters ({@code tchar}), the character set of an HTTP header <em>name</em>.
+     * RFC 7230 token characters ({@code tchar}), the character set of an HTTP header <em>name</em>
+     * and, per RFC 6265 section 4.1.1, a cookie <em>name</em> as well.
      * <p>Per RFC 7230 section 3.2.6: ALPHA, DIGIT and the punctuation
      * {@code ! # $ % &amp; ' * + - . ^ _ ` | ~}. Notably this set excludes space, colon and every
      * other delimiter, so a header name containing them is rejected.</p>
      * <p>This is deliberately narrower than {@link #RFC7230_HEADER_CHARS}, which is the broader
      * header <em>field-value</em> set.</p>
+     * <p><strong>Also the cookie-name grammar.</strong> RFC 6265 defines {@code cookie-name} as
+     * the RFC 2616 {@code token} production, which is character-for-character this same set
+     * (ALPHA / DIGIT / the tchar punctuation above, excluding every RFC 2616 {@code separator}).
+     * {@link #RFC6265_COOKIE_OCTET} additionally admits {@code =}, so using it for a cookie
+     * <em>name</em> would let a suffix such as {@code a=b} pass validation and then change the
+     * serialized {@code name=value} boundary once the name is written back into a
+     * {@code Set-Cookie} header - an injection vector via a rejected-and-reused character class.
+     * Only {@code cookie-value} uses {@code cookie-octet}; {@code cookie-name} uses this set.</p>
      * <p>Immutable membership test; the backing {@link BitSet} is private and cannot be mutated.</p>
      */
     public static final IntPredicate RFC7230_TOKEN_CHARS;
@@ -277,7 +292,10 @@ public final class CharacterValidationConstants {
      *   <li>{@code HEADER_NAME} → {@link #RFC7230_TOKEN_CHARS}</li>
      *   <li>{@code HEADER_VALUE} → {@link #RFC7230_HEADER_CHARS}</li>
      *   <li>{@code BODY} → {@link #HTTP_BODY_CHARS}</li>
-     *   <li>{@code COOKIE_NAME, COOKIE_VALUE} → {@link #RFC6265_COOKIE_OCTET}</li>
+     *   <li>{@code COOKIE_NAME} → {@link #RFC7230_TOKEN_CHARS} (RFC 6265 {@code cookie-name} is
+     *       the RFC 2616 {@code token} grammar, character-for-character identical to
+     *       {@code tchar})</li>
+     *   <li>{@code COOKIE_VALUE} → {@link #RFC6265_COOKIE_OCTET}</li>
      * </ul>
      *
      * @param type The validation type specifying which HTTP component is being validated
@@ -298,7 +316,8 @@ public final class CharacterValidationConstants {
             case HEADER_NAME -> RFC7230_TOKEN_CHARS;
             case HEADER_VALUE -> RFC7230_HEADER_CHARS;
             case BODY -> HTTP_BODY_CHARS;
-            case COOKIE_NAME, COOKIE_VALUE -> RFC6265_COOKIE_OCTET;
+            case COOKIE_NAME -> RFC7230_TOKEN_CHARS;
+            case COOKIE_VALUE -> RFC6265_COOKIE_OCTET;
         };
     }
 
