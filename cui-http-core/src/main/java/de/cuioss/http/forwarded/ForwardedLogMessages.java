@@ -80,5 +80,18 @@ public final class ForwardedLogMessages {
                 .identifier(126)
                 .template("Ignoring blank trusted-proxy entry in configuration")
                 .build();
+
+        /**
+         * The de-facto families disagreed and the configured precedence broke the tie. Distinct from
+         * {@link #FORWARDED_SOURCES_DISAGREE}, which names the de-facto-versus-RFC-7239 comparison
+         * and reports a <em>dropped</em> field: this one names both de-facto header names explicitly
+         * and reports the family that was honored, so a reader can tell which pair disagreed and
+         * that the field survived.
+         */
+        public static final LogRecord DE_FACTO_FAMILIES_DISAGREE = LogRecordModel.builder()
+                .prefix(PREFIX)
+                .identifier(127)
+                .template("Reconciling forwarded %s: de-facto families disagree: %s resolves to %s but %s resolves to %s; honoring %s per deFactoPrecedence")
+                .build();
     }
 }

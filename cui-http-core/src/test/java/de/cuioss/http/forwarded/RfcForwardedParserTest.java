@@ -136,5 +136,33 @@ class RfcForwardedParserTest {
                     () -> assertTrue(parsed.proto().isEmpty(),
                             "the trailing proto is not accumulated once the header is rejected"));
         }
+
+        /**
+         * The retained directives are what let the resolver scope the drop to the fields a broken
+         * header actually spoke about. Position decides what survives, so the two orders below are
+         * asserted as a matched pair rather than one case in isolation.
+         */
+        @Test
+        @DisplayName("retains the directives read before the offending pair")
+        void retainsDirectivesBeforeTheStop() {
+            RfcForwardedParser.Parsed parsed = RfcForwardedParser.parse("proto=https;broken");
+
+            assertAll("the parse stops at 'broken', but what it already read is kept",
+                    () -> assertTrue(parsed.malformed(),
+                            "'broken' carries no '=', so the header is malformed"),
+                    () -> assertEquals("https", parsed.proto().orElseThrow(),
+                            "proto was read before the stop and records that this header spoke about the scheme"));
+        }
+
+        @Test
+        @DisplayName("retains nothing when the offending pair comes first")
+        void retainsNothingWhenTheStopComesFirst() {
+            RfcForwardedParser.Parsed parsed = RfcForwardedParser.parse("broken;proto=https");
+
+            assertAll("the parse never reached proto",
+                    () -> assertTrue(parsed.malformed()),
+                    () -> assertTrue(parsed.proto().isEmpty(),
+                            "order decides: a directive after the stop was never read, so the header never spoke about it"));
+        }
     }
 }

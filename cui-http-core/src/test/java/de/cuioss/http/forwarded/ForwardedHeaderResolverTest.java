@@ -134,7 +134,7 @@ class ForwardedHeaderResolverTest {
         }
 
         @Test
-        @DisplayName("falls back to X-ProxyScheme then RFC 7239 proto")
+        @DisplayName("honors a lone X-ProxyScheme, and a lone RFC 7239 proto")
         void precedence() {
             assertEquals("http", trustAllResolver()
                     .resolve(headers(Map.of("X-ProxyScheme", "http"))).scheme().orElseThrow());
@@ -241,7 +241,7 @@ class ForwardedHeaderResolverTest {
         }
 
         @Test
-        @DisplayName("falls back to X-ProxyHost and RFC 7239 host")
+        @DisplayName("honors a lone X-ProxyHost, and a lone RFC 7239 host")
         void hostPrecedence() {
             assertEquals("proxy.example.com", trustAllResolver()
                     .resolve(headers(Map.of("X-ProxyHost", "proxy.example.com"))).host().orElseThrow());
@@ -268,6 +268,275 @@ class ForwardedHeaderResolverTest {
 
             assertTrue(result.host().isEmpty(), "a forged source must not win by precedence");
             LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
+        }
+
+        @Test
+        @DisplayName("honors a host both sources name when only one of them also carries the port")
+        void hostSplitAcrossPortHeaderHonored() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com",
+                    "X-Forwarded-Port", "8443",
+                    "Forwarded", "host=\"app.example.com:8443\"")));
+
+            assertAll("the sources are compared host against host and port against port",
+                    () -> assertEquals("app.example.com", result.host().orElseThrow(),
+                            "both sources name the same host; only the port placement differs, and "
+                                    + "comparing the pair as one record used to drop the host over it"),
+                    () -> assertEquals(8443, result.port().orElseThrow(),
+                            "the explicit port header resolves on its own"));
+        }
+
+        @Test
+        @DisplayName("a host disagreement drops the host without taking the port with it")
+        void disagreeingHostKeepsExplicitPort() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com",
+                    "X-Forwarded-Port", "8443",
+                    "Forwarded", "host=\"attacker.example:8443\"")));
+
+            assertAll("the drop is scoped to the field that actually disagreed",
+                    () -> assertTrue(result.host().isEmpty(),
+                            "the two sources name different hosts, so neither may be honored"),
+                    () -> assertEquals(8443, result.port().orElseThrow(),
+                            "the port was never in dispute, so the host conflict must not erase it"));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
+        }
+
+        /**
+         * The sibling of {@link #disagreeingHostKeepsExplicitPort()}, and the case it does
+         * <em>not</em> cover: there the surviving port came from a separate header that both sides
+         * corroborated, here the only source for it is the very {@code host[:port]} value the host
+         * comparison just proved forged.
+         */
+        @Test
+        @DisplayName("a rejected host's own embedded port falls with it unless another source states it")
+        void disagreeingHostWithholdsItsOwnEmbeddedPort() {
+            var uncorroborated = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "attacker.example:6666",
+                    "Forwarded", "host=legit-host.example")));
+            var corroborated = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "attacker.example:6666",
+                    "Forwarded", "host=\"legit-host.example:6666\"")));
+
+            assertAll("host and port come from ONE raw value, so proving that value forged discredits both",
+                    () -> assertTrue(uncorroborated.host().isEmpty(),
+                            "the two sources name different hosts, so neither host may be honored"),
+                    () -> assertTrue(uncorroborated.port().isEmpty(),
+                            "6666 was carried by the value just proven forged and no other source states "
+                                    + "a port, so the RFC side's silence must not let it through unopposed"),
+                    () -> assertTrue(corroborated.host().isEmpty(),
+                            "the hosts still disagree in the control case"),
+                    () -> assertEquals(6666, corroborated.port().orElseThrow(),
+                            "here the RFC 7239 host directive states the same port independently, so the "
+                                    + "port stands on that corroboration rather than on the rejected value"));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
+        }
+
+        /**
+         * The mirror of {@link #disagreeingHostWithholdsItsOwnEmbeddedPort()} with the sides
+         * swapped: here the {@code Forwarded} header is the side carrying the forged
+         * {@code host[:port]} token and the de-facto side names a bare host. The discredit rule
+         * must be symmetric, because which side an attacker can reach is not something the resolver
+         * gets to assume — scoping it to the de-facto side let the same smuggle through in the other
+         * direction, with the trusted side's silence about the port standing in for corroboration.
+         */
+        @Test
+        @DisplayName("a rejected RFC 7239 host's own embedded port falls with it unless another source states it")
+        void disagreeingRfcHostWithholdsItsOwnEmbeddedPort() {
+            var uncorroborated = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "legit-host.example",
+                    "Forwarded", "host=\"attacker.example:6666\"")));
+            var corroborated = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "legit-host.example:6666",
+                    "Forwarded", "host=\"attacker.example:6666\"")));
+
+            assertAll("the RFC 7239 host directive states host and port in ONE value too",
+                    () -> assertTrue(uncorroborated.host().isEmpty(),
+                            "the two sources name different hosts, so neither host may be honored"),
+                    () -> assertTrue(uncorroborated.port().isEmpty(),
+                            "6666 was carried by the Forwarded token just proven forged and no other "
+                                    + "source states a port, so the de-facto side's silence must not let "
+                                    + "it through unopposed"),
+                    () -> assertTrue(corroborated.host().isEmpty(),
+                            "the hosts still disagree in the control case"),
+                    () -> assertEquals(6666, corroborated.port().orElseThrow(),
+                            "here X-Forwarded-Host states the same port independently, so the port "
+                                    + "stands on that corroboration rather than on the rejected value"));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
+        }
+
+        @Test
+        @DisplayName("a port disagreement drops the port without taking the agreed host with it")
+        void disagreeingPortKeepsHost() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com:8443",
+                    "Forwarded", "host=\"app.example.com:9000\"")));
+
+            assertAll("the drop is scoped to the field that actually disagreed",
+                    () -> assertEquals("app.example.com", result.host().orElseThrow(),
+                            "both sources name the same host, so the conflicting port must not erase it"),
+                    () -> assertTrue(result.port().isEmpty(),
+                            "8443 against 9000 is a real conflict, so no port may be honored"));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
+        }
+
+        @Test
+        @DisplayName("an RFC 7239 host naming no port does not contest the port the de-facto host carried")
+        void rfcHostWithoutPortDoesNotContestHostPort() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com:8443",
+                    "Forwarded", "host=app.example.com")));
+
+            assertAll("silence about the port is a non-statement at this stage too",
+                    () -> assertEquals("app.example.com", result.host().orElseThrow()),
+                    () -> assertEquals(8443, result.port().orElseThrow(),
+                            "the Forwarded host directive named a bare host, so it contradicts no port"));
+            LogAsserts.assertNoLogMessagePresent(TestLogLevel.WARN, ForwardedHeaderResolver.class);
+        }
+
+        /**
+         * The mirror of {@link #rfcHostWithoutPortDoesNotContestHostPort()} with the sides swapped.
+         * The RFC side scopes its statement to the directive's own token; the de-facto side must
+         * scope its statement to the header's own token too, rather than to whether the family was
+         * sent at all — a family that was sent but named a bare host made no port claim to contest
+         * with.
+         */
+        @Test
+        @DisplayName("a de-facto host naming no port does not contest the port the RFC 7239 host carried")
+        void deFactoHostWithoutPortDoesNotContestRfcHostPort() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com",
+                    "Forwarded", "host=\"app.example.com:8443\"")));
+
+            assertAll("silence about the port is a non-statement on the de-facto side too",
+                    () -> assertEquals("app.example.com", result.host().orElseThrow(),
+                            "both sources name the same host"),
+                    () -> assertEquals(8443, result.port().orElseThrow(),
+                            "X-Forwarded-Host named a bare host, so it contradicts no port and the "
+                                    + "Forwarded directive's own port stands unopposed"));
+            LogAsserts.assertNoLogMessagePresent(TestLogLevel.WARN, ForwardedHeaderResolver.class);
+        }
+
+        /**
+         * The mirror of {@link #malformedRfcHostPortContestsExplicitPort()} with the sides swapped,
+         * on the {@code host[:port]} fallback the two families share. An
+         * {@code X-Forwarded-Host: h:bogus} DID carry a port token, so it states a port and must
+         * contest the one the RFC 7239 {@code host} directive carried, exactly as a well-formed
+         * conflicting one does. Deriving the de-facto statement from the <em>parsed</em> port value
+         * instead made one unparseable character indistinguishable from genuine silence, so the RFC
+         * port was returned unopposed and unlogged — leaving this class's headline reconciliation
+         * rule applied to only one of its two mirror sides.
+         *
+         * <p>{@link #deFactoHostWithoutPortDoesNotContestRfcHostPort()} is this case's matched
+         * control: the same header pair with a genuinely absent de-facto port token, where the RFC
+         * directive's port still stands unopposed and quietly. Without that control the fix could be
+         * satisfied by making every present de-facto host header contest the port.</p>
+         */
+        @Test
+        @DisplayName("a malformed port in the de-facto host header still contests the RFC 7239 host port")
+        void malformedDeFactoHostPortContestsRfcHostPort() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com:bogus",
+                    "Forwarded", "host=\"app.example.com:9999\"")));
+
+            assertAll("a port token that was present but unparseable is a statement on this side too",
+                    () -> assertEquals("app.example.com", result.host().orElseThrow(),
+                            "the hosts agree, so the port conflict must stay scoped to the port"),
+                    () -> assertTrue(result.port().isEmpty(),
+                            "X-Forwarded-Host carried a port token, so it contests the Forwarded "
+                                    + "directive's port and the field fails closed"));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
+        }
+
+        @Test
+        @DisplayName("an explicit port header agreeing with the RFC 7239 host port is honored")
+        void explicitPortAgreeingWithRfcHonored() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com",
+                    "X-Forwarded-Port", "8443",
+                    "Forwarded", "host=\"app.example.com:8443\"")));
+
+            assertAll("both sources state the same port, so it stands",
+                    () -> assertEquals("app.example.com", result.host().orElseThrow()),
+                    () -> assertEquals(8443, result.port().orElseThrow()));
+            LogAsserts.assertNoLogMessagePresent(TestLogLevel.WARN, ForwardedHeaderResolver.class);
+        }
+
+        @Test
+        @DisplayName("an explicit port header conflicting with the RFC 7239 host port is dropped")
+        void explicitPortConflictingWithRfcDropped() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com",
+                    "X-Forwarded-Port", "8443",
+                    "Forwarded", "host=\"app.example.com:9000\"")));
+
+            assertAll("an explicit port header is reconciled like every other field, not honored unopposed",
+                    () -> assertEquals("app.example.com", result.host().orElseThrow(),
+                            "the hosts agree, so the port conflict must stay scoped to the port"),
+                    () -> assertTrue(result.port().isEmpty(),
+                            "a forged X-Forwarded-Port must not win over the Forwarded header by "
+                                    + "skipping the disagreement check"));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
+        }
+
+        @Test
+        @DisplayName("an explicit port header stands when the Forwarded header states no host at all")
+        void explicitPortStandsWithoutRfcHost() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Port", "8443",
+                    "Forwarded", "proto=https")));
+
+            assertAll("a Forwarded header that never spoke about the host contests no port",
+                    () -> assertEquals("https", result.scheme().orElseThrow()),
+                    () -> assertEquals(8443, result.port().orElseThrow()));
+            LogAsserts.assertNoLogMessagePresent(TestLogLevel.WARN, ForwardedHeaderResolver.class);
+        }
+
+        /**
+         * The mirror of {@link #explicitPortConflictingWithRfcDropped()} for a port token that was
+         * written but cannot be parsed. A {@code host="h:bogus"} directive DID carry a port token,
+         * so it states a port and must contest an explicit port header exactly as a well-formed
+         * conflicting one does — otherwise a single unparseable character in the RFC 7239 token
+         * turns the fail-closed disagreement check off and lets the de-facto port through
+         * unopposed, which is the inverse of the fail-closed intent.
+         */
+        @Test
+        @DisplayName("a malformed port in the RFC 7239 host directive still contests an explicit port header")
+        void malformedRfcHostPortContestsExplicitPort() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com",
+                    "X-Forwarded-Port", "8443",
+                    "Forwarded", "host=\"app.example.com:bogus\"")));
+
+            assertAll("a port token that was present but unparseable is a statement, not silence",
+                    () -> assertEquals("app.example.com", result.host().orElseThrow(),
+                            "the hosts agree, so the port conflict must stay scoped to the port"),
+                    () -> assertTrue(result.port().isEmpty(),
+                            "the Forwarded directive carried a port token, so it contests the "
+                                    + "explicit port header and the field fails closed"));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
+        }
+
+        /**
+         * The matched control for {@link #malformedRfcHostPortContestsExplicitPort()}: a directive
+         * naming a bare host carries no port token at all, so it still says nothing about the port
+         * and the explicit port header stands unopposed. Distinguishing "no port token" from "port
+         * token present but unparseable" is the whole of the rule — without this control the fix
+         * could be satisfied by making every RFC host directive contest the port.
+         */
+        @Test
+        @DisplayName("control: a genuinely absent port token still does not contest an explicit port header")
+        void absentRfcPortDoesNotContestExplicitPort() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com",
+                    "X-Forwarded-Port", "8443",
+                    "Forwarded", "host=app.example.com")));
+
+            assertAll("silence about the port remains a non-statement",
+                    () -> assertEquals("app.example.com", result.host().orElseThrow()),
+                    () -> assertEquals(8443, result.port().orElseThrow(),
+                            "the Forwarded host directive named a bare host, so it contests no port"));
+            LogAsserts.assertNoLogMessagePresent(TestLogLevel.WARN, ForwardedHeaderResolver.class);
         }
 
         @Test
@@ -382,6 +651,259 @@ class ForwardedHeaderResolverTest {
                     .resolve(headers(Map.of("X-Forwarded-Host", "app.example.com:8443")));
             assertTrue(result.host().isEmpty());
             assertTrue(result.port().isEmpty());
+        }
+    }
+
+    /**
+     * The two de-facto families are reconciled against each other BEFORE the RFC 7239 comparison.
+     * A fixed first-present order silently let an attacker-supplied {@code X-Forwarded-*} override
+     * the {@code X-Proxy*} value a deployment's own ingress writes; these cases pin the
+     * reconciliation and the tie-breaker that replaced it.
+     */
+    @Nested
+    @DisplayName("De-facto family reconciliation")
+    class DeFactoFamilyReconciliation {
+
+        private ForwardedHeaderResolver preferring(ForwardedResolverConfig.DeFactoFamily family) {
+            return resolver(ForwardedResolverConfig.builder()
+                    .trustAll(true)
+                    .deFactoPrecedence(family)
+                    .build());
+        }
+
+        @Test
+        @DisplayName("agreeing families resolve their common scheme without a disagreement warning")
+        void agreeingFamiliesResolveQuietly() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "https",
+                    "X-ProxyScheme", "https")));
+
+            assertEquals("https", result.scheme().orElseThrow());
+            LogAsserts.assertNoLogMessagePresent(TestLogLevel.WARN, ForwardedHeaderResolver.class);
+        }
+
+        @Test
+        @DisplayName("disagreeing schemes resolve to X-Forwarded-Proto under the default knob, and warn")
+        void disagreeingSchemesUseDefaultPrecedence() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "https",
+                    "X-ProxyScheme", "http")));
+
+            assertEquals("https", result.scheme().orElseThrow(),
+                    "the default knob reproduces the historical first-present-wins outcome");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "de-facto families disagree");
+        }
+
+        @Test
+        @DisplayName("disagreeing schemes resolve to X-ProxyScheme when that family is configured")
+        void disagreeingSchemesHonorConfiguredFamily() {
+            var result = preferring(ForwardedResolverConfig.DeFactoFamily.X_PROXY)
+                    .resolve(headers(Map.of(
+                            "X-Forwarded-Proto", "https",
+                            "X-ProxyScheme", "http")));
+
+            assertEquals("http", result.scheme().orElseThrow(),
+                    "an ingress that writes X-Proxy* must not be overridden by a client-supplied X-Forwarded-Proto");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "de-facto families disagree");
+        }
+
+        @Test
+        @DisplayName("the host pair is reconciled the same way")
+        void hostPairIsReconciled() {
+            var lookup = headers(Map.of(
+                    "X-Forwarded-Host", "forwarded.example.com",
+                    "X-ProxyHost", "proxy.example.com"));
+
+            assertAll("the tie-breaker selects the whole host, not a merge of the two",
+                    () -> assertEquals("forwarded.example.com",
+                            trustAllResolver().resolve(lookup).host().orElseThrow()),
+                    () -> assertEquals("proxy.example.com",
+                            preferring(ForwardedResolverConfig.DeFactoFamily.X_PROXY)
+                                    .resolve(lookup).host().orElseThrow()));
+        }
+
+        @Test
+        @DisplayName("the port pair is reconciled the same way")
+        void portPairIsReconciled() {
+            var lookup = headers(Map.of(
+                    "X-Forwarded-Port", "8443",
+                    "X-ProxyPort", "9443"));
+
+            assertAll("port carries no host, so the tie-breaker must decide it on its own",
+                    () -> assertEquals(8443, trustAllResolver().resolve(lookup).port().orElseThrow()),
+                    () -> assertEquals(9443, preferring(ForwardedResolverConfig.DeFactoFamily.X_PROXY)
+                            .resolve(lookup).port().orElseThrow()));
+        }
+
+        @Test
+        @DisplayName("the two families' host tokens are reconciled field by field, not as one record")
+        void hostTokenIsReconciledFieldByField() {
+            var lookup = headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com:8443",
+                    "X-ProxyHost", "app.example.com:9443"));
+
+            var result = trustAllResolver().resolve(lookup);
+
+            assertAll("only the port disagrees, so only the port reaches the tie-breaker",
+                    () -> assertEquals("app.example.com", result.host().orElseThrow(),
+                            "both families name the same host, so it is agreed rather than tie-broken"),
+                    () -> assertEquals(8443, result.port().orElseThrow(),
+                            "the default knob honors X-Forwarded-Host for the field that actually disagreed"),
+                    () -> assertEquals(9443, preferring(ForwardedResolverConfig.DeFactoFamily.X_PROXY)
+                                    .resolve(lookup).port().orElseThrow(),
+                            "the configured family decides the disagreeing port"));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "de-facto families disagree");
+        }
+
+        @Test
+        @DisplayName("a port only one family states is honored, whichever family the knob prefers")
+        void omittedPortIsNotADisagreement() {
+            var xProxyCarriesPort = headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com",
+                    "X-ProxyHost", "app.example.com:9443"));
+            var xForwardedCarriesPort = headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com:8443",
+                    "X-ProxyHost", "app.example.com"));
+
+            assertAll("silence about the port is a non-statement, not a conflicting one",
+                    () -> assertEquals(9443, trustAllResolver().resolve(xProxyCarriesPort).port().orElseThrow(),
+                            "the default knob prefers X-Forwarded-Host, which said nothing about the port; "
+                                    + "whole-record equality used to discard the 9443 no source contradicted"),
+                    () -> assertEquals("app.example.com",
+                            trustAllResolver().resolve(xProxyCarriesPort).host().orElseThrow()),
+                    () -> assertEquals(8443, preferring(ForwardedResolverConfig.DeFactoFamily.X_PROXY)
+                                    .resolve(xForwardedCarriesPort).port().orElseThrow(),
+                            "the mirrored case: the preferred family is the silent one, and the stated port stands"));
+            LogAsserts.assertNoLogMessagePresent(TestLogLevel.WARN, ForwardedHeaderResolver.class);
+        }
+
+        @Test
+        @DisplayName("a genuinely different host and port are both decided by the tie-breaker")
+        void bothFieldsDisagreeing() {
+            var lookup = headers(Map.of(
+                    "X-Forwarded-Host", "forwarded.example.com:8443",
+                    "X-ProxyHost", "proxy.example.com:9443"));
+
+            var byDefault = trustAllResolver().resolve(lookup);
+            var byProxy = preferring(ForwardedResolverConfig.DeFactoFamily.X_PROXY).resolve(lookup);
+
+            assertAll("field-by-field reconciliation must not mix the two families' host and port",
+                    () -> assertEquals("forwarded.example.com", byDefault.host().orElseThrow()),
+                    () -> assertEquals(8443, byDefault.port().orElseThrow()),
+                    () -> assertEquals("proxy.example.com", byProxy.host().orElseThrow()),
+                    () -> assertEquals(9443, byProxy.port().orElseThrow()));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "de-facto families disagree");
+        }
+
+        @Test
+        @DisplayName("a lone family is honored without consulting the tie-breaker")
+        void loneFamilyNeedsNoTieBreak() {
+            assertAll("the knob is a tie-breaker of last resort, not a filter",
+                    () -> assertEquals("http", preferring(ForwardedResolverConfig.DeFactoFamily.X_PROXY)
+                                    .resolve(headers(Map.of("X-Forwarded-Proto", "http"))).scheme().orElseThrow(),
+                            "X-Forwarded-Proto still stands when X-ProxyScheme is absent"),
+                    () -> assertEquals("http", trustAllResolver()
+                                    .resolve(headers(Map.of("X-ProxyScheme", "http"))).scheme().orElseThrow(),
+                            "X-ProxyScheme still stands when X-Forwarded-Proto is absent"));
+            LogAsserts.assertNoLogMessagePresent(TestLogLevel.WARN, ForwardedHeaderResolver.class);
+        }
+
+        @Test
+        @DisplayName("the reconciled value, not the losing family, is compared against RFC 7239")
+        void reconciledValueFeedsTheRfcComparison() {
+            var result = preferring(ForwardedResolverConfig.DeFactoFamily.X_PROXY)
+                    .resolve(headers(Map.of(
+                            "X-Forwarded-Proto", "https",
+                            "X-ProxyScheme", "http",
+                            "Forwarded", "proto=http")));
+
+            assertEquals("http", result.scheme().orElseThrow(),
+                    "the winning de-facto family agrees with Forwarded, so the field survives");
+        }
+
+        @Test
+        @DisplayName("a de-facto family present but resolving to nothing valid still counts as a side")
+        void invalidSideIsADisagreement() {
+            var result = trustAllResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "ftp",
+                    "X-ProxyScheme", "https")));
+
+            assertTrue(result.scheme().isEmpty(),
+                    "the default knob honors X-Forwarded-Proto, which resolved to nothing valid");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "de-facto families disagree");
+        }
+    }
+
+    /**
+     * The peer-aware overload enforces in code what the one-argument overload can only require of
+     * the deployment: that the request actually arrived through a trusted proxy. The gate is on the
+     * peer alone, so these cases pin both directions — a trusted peer changes nothing about how the
+     * headers are resolved, and an untrusted one makes them attest nothing.
+     */
+    @Nested
+    @DisplayName("Peer-aware resolve")
+    class PeerAwareResolve {
+
+        private static final String PROXY_IP = "10.0.7.10";
+        private static final String OUTSIDE_IP = "203.0.113.9";
+
+        private final Function<String, List<String>> validHeaders = headers(Map.of(
+                "X-Forwarded-Proto", "https",
+                "X-Forwarded-Host", "app.example.com",
+                "X-Forwarded-For", "198.51.100.4, 10.0.7.10"));
+
+        private ForwardedHeaderResolver proxyAwareResolver() {
+            return resolver(ForwardedResolverConfig.builder()
+                    .trustAll(true)
+                    .trustedProxies(Set.of("10.0.7.0/24"))
+                    .build());
+        }
+
+        @Test
+        @DisplayName("a trusted peer resolves exactly what the one-argument overload does")
+        void trustedPeerMatchesSingleArgOverload() {
+            var viaPeer = proxyAwareResolver().resolve(validHeaders, IpAddresses.parse(PROXY_IP));
+            var viaHeadersOnly = proxyAwareResolver().resolve(validHeaders);
+
+            assertAll("the peer gate admits, it does not re-resolve",
+                    () -> assertEquals("https", viaPeer.scheme().orElseThrow()),
+                    () -> assertEquals("app.example.com", viaPeer.host().orElseThrow()),
+                    () -> assertEquals("198.51.100.4", viaPeer.clientIp().orElseThrow()),
+                    () -> assertEquals(viaHeadersOnly, viaPeer,
+                            "an admitted request must take the unchanged resolution path"));
+        }
+
+        @Test
+        @DisplayName("an untrusted peer resolves nothing, however valid the headers are")
+        void untrustedPeerResolvesEmpty() {
+            var result = proxyAwareResolver().resolve(validHeaders, IpAddresses.parse(OUTSIDE_IP));
+
+            assertEquals(ResolvedForwarding.empty(), result,
+                    "a request that did not arrive through the proxy tier attests nothing");
+        }
+
+        @Test
+        @DisplayName("an empty trustedProxies set admits no peer, so the overload never widens trust")
+        void emptyTrustedProxiesAdmitsNobody() {
+            var resolver = resolver(ForwardedResolverConfig.builder().trustAll(true).build());
+
+            assertAll("the secure default stays closed on both sides of the gate",
+                    () -> assertEquals(ResolvedForwarding.empty(),
+                            resolver.resolve(validHeaders, IpAddresses.parse(PROXY_IP))),
+                    () -> assertEquals(ResolvedForwarding.empty(),
+                            resolver.resolve(validHeaders, IpAddresses.parse(OUTSIDE_IP))));
+        }
+
+        @Test
+        @DisplayName("rejects a null peer rather than degrading to the one-argument behaviour")
+        void rejectsNullPeer() {
+            ForwardedHeaderResolver resolver = proxyAwareResolver();
+
+            assertAll("a missing peer is a broken caller contract, not an absent gate",
+                    () -> assertThrows(NullPointerException.class,
+                            () -> resolver.resolve(validHeaders, null)),
+                    () -> assertThrows(NullPointerException.class,
+                            () -> resolver.resolve(null, IpAddresses.parse(PROXY_IP))));
         }
     }
 
@@ -622,7 +1144,7 @@ class ForwardedHeaderResolverTest {
         }
 
         @Test
-        @DisplayName("a sanitization-rejected Forwarded header drops every de-facto field it covers")
+        @DisplayName("a sanitization-rejected Forwarded header suppresses no de-facto field")
         void rejectedForwardedDropsDeFactoFields() {
             var result = proxyAwareResolver().resolve(headers(Map.of(
                     "X-Forwarded-Proto", "https",
@@ -630,19 +1152,16 @@ class ForwardedHeaderResolverTest {
                     "X-Forwarded-For", "203.0.113.7, 10.0.0.5",
                     "Forwarded", REJECTED)));
 
-            assertAll("a present-but-unresolvable RFC source disagrees with every resolving sibling",
-                    () -> assertTrue(result.scheme().isEmpty(),
-                            "a rejected Forwarded header must not silently fall back to X-Forwarded-Proto"),
-                    () -> assertTrue(result.host().isEmpty(),
-                            "a rejected Forwarded header must not silently fall back to X-Forwarded-Host"),
-                    () -> assertTrue(result.clientIp().isEmpty(),
-                            "a rejected Forwarded header must not silently fall back to X-Forwarded-For"));
+            assertAll("a value that never sanitized yields no directive, so it spoke about no field",
+                    () -> assertEquals("https", result.scheme().orElseThrow()),
+                    () -> assertEquals("app.example.com", result.host().orElseThrow()),
+                    () -> assertEquals("203.0.113.7", result.clientIp().orElseThrow()));
             LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "failed security sanitization");
-            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
+            LogAsserts.assertNoLogMessagePresent(TestLogLevel.WARN, "sources disagree");
         }
 
         @Test
-        @DisplayName("a sanitization-rejected Forwarded header is not mistaken for an absent one")
+        @DisplayName("a sanitization-rejected Forwarded header is still reported, though it suppresses nothing")
         void rejectedForwardedIsNotAbsent() {
             var deFactoOnly = proxyAwareResolver()
                     .resolve(headers(Map.of("X-Forwarded-Host", "app.example.com")));
@@ -650,10 +1169,29 @@ class ForwardedHeaderResolverTest {
                     "X-Forwarded-Host", "app.example.com",
                     "Forwarded", REJECTED)));
 
-            assertAll("the two cases must not resolve identically",
+            assertAll("the header is not silently swallowed merely because it changes no value",
                     () -> assertEquals("app.example.com", deFactoOnly.host().orElseThrow()),
-                    () -> assertTrue(withRejected.host().isEmpty()),
-                    () -> assertNotEquals(deFactoOnly, withRejected));
+                    () -> assertEquals("app.example.com", withRejected.host().orElseThrow(),
+                            "the rejected header carried no host directive, so it drops nothing"),
+                    () -> assertEquals(deFactoOnly, withRejected,
+                            "suppressing nothing means the two now resolve alike"));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "failed security sanitization");
+        }
+
+        @Test
+        @DisplayName("a malformed Forwarded header drops the field it spoke about and only that field")
+        void malformedForwardedDropsOnlyTheFieldItCarried() {
+            var result = proxyAwareResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Proto", "https",
+                    "X-Forwarded-Host", "app.example.com",
+                    "Forwarded", "proto=http;broken")));
+
+            assertAll("the parser retained proto, so scope is per field rather than total",
+                    () -> assertTrue(result.scheme().isEmpty(),
+                            "the header did carry a proto directive, so the scheme fails closed"),
+                    () -> assertEquals("app.example.com", result.host().orElseThrow(),
+                            "it carried no host directive, so X-Forwarded-Host must stand"));
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN, "sources disagree");
         }
 
         @Test
@@ -678,22 +1216,36 @@ class ForwardedHeaderResolverTest {
                     "an unresolvable header contributes no value of its own");
         }
 
+        /**
+         * Port is where the per-field rule is easiest to get wrong, because a {@code Forwarded}
+         * header speaks about the port only indirectly — through a {@code host} directive that
+         * happens to carry one. The two halves below are a matched pair: the same malformed header
+         * drops the port when its {@code host} directive bore one, and leaves it standing when it
+         * did not.
+         */
         @Test
-        @DisplayName("a malformed Forwarded header drops X-Forwarded-Port")
+        @DisplayName("a malformed Forwarded header drops the port only when its host directive bore one")
         void malformedForwardedDropsDeFactoPort() {
             var portOnly = proxyAwareResolver()
                     .resolve(headers(Map.of("X-Forwarded-Port", "8080")));
-            var withMalformed = proxyAwareResolver().resolve(headers(Map.of(
+            var hostWithoutPort = proxyAwareResolver().resolve(headers(Map.of(
                     "X-Forwarded-Port", "8080",
+                    "X-Forwarded-Host", "app.example.com",
                     "Forwarded", "host=trusted.example;broken")));
+            var hostBearingPort = proxyAwareResolver().resolve(headers(Map.of(
+                    "X-Forwarded-Host", "app.example.com:8443",
+                    "Forwarded", "host=trusted.example:9443;broken")));
 
-            assertAll("port obeys the present-but-unresolvable rule like every other field",
+            assertAll("scope follows the directive the header actually carried",
                     () -> assertEquals(8080, portOnly.port().orElseThrow(),
-                            "the same X-Forwarded-Port resolves on its own, so the drop below is the header's doing"),
-                    () -> assertTrue(withMalformed.port().isEmpty(),
-                            "a malformed forwarded-pair must not leave port as the one field that still honors X-Forwarded-Port"),
-                    () -> assertEquals(ResolvedForwarding.empty(), withMalformed,
-                            "no field survives an unresolvable Forwarded header"));
+                            "the same X-Forwarded-Port resolves on its own, so any drop below is the header's doing"),
+                    () -> assertEquals(8080, hostWithoutPort.port().orElseThrow(),
+                            "the malformed header's host directive carried no port, so X-Forwarded-Port stands"),
+                    () -> assertTrue(hostWithoutPort.host().isEmpty(),
+                            "it did carry a host directive, so the host itself still fails closed"),
+                    () -> assertTrue(hostBearingPort.port().isEmpty(),
+                            "here the host directive bore a port, so the port falls with the host"),
+                    () -> assertTrue(hostBearingPort.host().isEmpty()));
         }
     }
 

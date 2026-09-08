@@ -51,6 +51,14 @@ class ForwardedResolverConfigTest {
             assertTrue(config.trustedProxies().isEmpty());
             assertEquals(SecurityConfiguration.defaults(), config.securityConfig());
         }
+
+        @Test
+        @DisplayName("secureDefault breaks a de-facto tie in favour of X-Forwarded-*")
+        void secureDefaultPrefersXForwarded() {
+            assertEquals(ForwardedResolverConfig.DeFactoFamily.X_FORWARDED,
+                    ForwardedResolverConfig.secureDefault().deFactoPrecedence(),
+                    "the default must reproduce the historical first-present-wins order");
+        }
     }
 
     @Nested
@@ -99,6 +107,17 @@ class ForwardedResolverConfigTest {
             assertThrows(NullPointerException.class, () -> builder.allowedContextPaths(null));
             assertThrows(NullPointerException.class, () -> builder.trustedProxies(null));
             assertThrows(NullPointerException.class, () -> builder.securityConfig(null));
+            assertThrows(NullPointerException.class, () -> builder.deFactoPrecedence(null));
+        }
+
+        @Test
+        @DisplayName("stores the configured de-facto precedence")
+        void storesDeFactoPrecedence() {
+            ForwardedResolverConfig config = ForwardedResolverConfig.builder()
+                    .deFactoPrecedence(ForwardedResolverConfig.DeFactoFamily.X_PROXY)
+                    .build();
+
+            assertEquals(ForwardedResolverConfig.DeFactoFamily.X_PROXY, config.deFactoPrecedence());
         }
 
         @ParameterizedTest(name = "rejects malformed trusted proxy \"{0}\"")

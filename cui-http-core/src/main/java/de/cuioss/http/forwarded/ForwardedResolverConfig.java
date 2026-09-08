@@ -36,6 +36,10 @@ import java.util.*;
  *   <li>{@code trustedProxies} — CIDR ranges / IP literals defining trusted proxy hops; required
  *       for {@code X-Forwarded-For} client-IP resolution. An empty set honors no client IP.
  *       <strong>A configured range must contain only proxies</strong> — see below.</li>
+ *   <li>{@code deFactoPrecedence} — the tie-breaker consulted <em>only</em> when the two de-facto
+ *       header families ({@code X-Forwarded-*} and {@code X-Proxy*}) are both present and resolve
+ *       to different values. It never promotes a family over the RFC 7239 {@code Forwarded} header
+ *       and never applies when the families agree or when only one of them is present.</li>
  * </ul>
  *
  * <h3 id="trusted-range-composition">Composition rule — a trusted range must contain only proxies</h3>
@@ -79,11 +83,34 @@ public final class ForwardedResolverConfig {
 
     private static final CuiLogger LOGGER = new CuiLogger(ForwardedResolverConfig.class);
 
+    /**
+     * The two de-facto forwarded-header families the resolver reads, used to name the winner when
+     * they disagree.
+     *
+     * <ul>
+     *   <li>{@link #X_FORWARDED} — the {@code X-Forwarded-Proto} / {@code X-Forwarded-Host} /
+     *       {@code X-Forwarded-Port} family.</li>
+     *   <li>{@link #X_PROXY} — the Apache NiFi-proprietary {@code X-ProxyScheme} /
+     *       {@code X-ProxyHost} / {@code X-ProxyPort} family.</li>
+     * </ul>
+     *
+     * @since 1.0
+     */
+    public enum DeFactoFamily {
+
+        /** The {@code X-Forwarded-*} family. */
+        X_FORWARDED,
+
+        /** The Apache NiFi-proprietary {@code X-Proxy*} family. */
+        X_PROXY
+    }
+
     private final boolean trustAll;
     private final Set<String> allowedContextPaths;
     private final Set<String> trustedProxies;
     private final List<CidrRange> trustedProxyRanges;
     private final SecurityConfiguration securityConfig;
+    private final DeFactoFamily deFactoPrecedence;
 
     private ForwardedResolverConfig(Builder builder) {
         this.trustAll = builder.trustAll;
@@ -91,6 +118,7 @@ public final class ForwardedResolverConfig {
         this.trustedProxies = Collections.unmodifiableSet(new LinkedHashSet<>(builder.trustedProxies));
         this.trustedProxyRanges = List.copyOf(builder.trustedProxyRanges);
         this.securityConfig = builder.securityConfig;
+        this.deFactoPrecedence = builder.deFactoPrecedence;
     }
 
     /**
@@ -121,6 +149,15 @@ public final class ForwardedResolverConfig {
      */
     public SecurityConfiguration securityConfig() {
         return securityConfig;
+    }
+
+    /**
+     * @return the de-facto family that wins when {@code X-Forwarded-*} and {@code X-Proxy*} are both
+     *         present and disagree; never {@code null}, defaults to
+     *         {@link DeFactoFamily#X_FORWARDED}
+     */
+    public DeFactoFamily deFactoPrecedence() {
+        return deFactoPrecedence;
     }
 
     /**
@@ -185,6 +222,7 @@ public final class ForwardedResolverConfig {
         private Set<String> trustedProxies = Set.of();
         private List<CidrRange> trustedProxyRanges = List.of();
         private SecurityConfiguration securityConfig = SecurityConfiguration.defaults();
+        private DeFactoFamily deFactoPrecedence = DeFactoFamily.X_FORWARDED;
 
         private Builder() {
         }
@@ -255,6 +293,33 @@ public final class ForwardedResolverConfig {
             }
             this.trustedProxies = raw;
             this.trustedProxyRanges = ranges;
+            return this;
+        }
+
+        /**
+         * Sets the tie-breaker consulted when the two de-facto header families disagree.
+         *
+         * <p><strong>A tie-breaker of last resort.</strong> It is read <em>only</em> when
+         * {@code X-Forwarded-*} and {@code X-Proxy*} are both present for the same field and resolve
+         * to different values. When the families agree, when only one is present, or when the
+         * de-facto side is compared against the RFC 7239 {@code Forwarded} header, this value is
+         * never consulted — that last comparison still fails closed by dropping the field.</p>
+         *
+         * <p><strong>It presumes the ingress strips the family it does not itself write.</strong>
+         * The knob is safe only under that deployment discipline: if the proxy tier writes
+         * {@code X-Proxy*} it MUST remove any client-supplied {@code X-Forwarded-*} (and vice
+         * versa), so that a surviving disagreement is evidence of forgery rather than of normal
+         * operation. Without that stripping both families reach the resolver from untrusted
+         * sources, and naming a winner promotes attacker-supplied input instead of breaking a tie.
+         * Configure the stripping first; set this knob only to say which family your ingress
+         * actually writes.</p>
+         *
+         * @param deFactoPrecedence the family that wins a de-facto disagreement
+         * @return this builder
+         * @throws NullPointerException if {@code deFactoPrecedence} is {@code null}
+         */
+        public Builder deFactoPrecedence(DeFactoFamily deFactoPrecedence) {
+            this.deFactoPrecedence = Objects.requireNonNull(deFactoPrecedence, "deFactoPrecedence must not be null");
             return this;
         }
 

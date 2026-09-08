@@ -41,11 +41,22 @@ import java.util.*;
  * // The accessor MUST expose every instance of a repeated header, not just the first:
  * ResolvedForwarding forwarding =
  *     resolver.resolve(name -> Collections.list(request.getHeaders(name)));
- * String scheme = forwarding.scheme().orElse("http");
- * int port = forwarding.port().orElse(scheme.equals("https") ? 443 : 80);
+ * // An empty scheme is the fail-closed signal: nothing was honored, so there is no
+ * // proxy-attested scheme to act on. Handle it explicitly rather than defaulting.
+ * String scheme = forwarding.scheme()
+ *         .orElseThrow(() -> new IllegalStateException("no trusted forwarded scheme"));
+ * int port = forwarding.port().orElse("https".equals(scheme) ? 443 : 80);
  * String prefix = forwarding.contextPath(); // "" when none / not honored
  * forwarding.clientIp().ifPresent(ip -> log.info("client %s", ip));
  * }</pre>
+ *
+ * <p><strong>An empty {@link #scheme()} means the trust model honored nothing — treat it as an
+ * error, never as {@code http}.</strong> Defaulting the absent case to cleartext inverts the
+ * fail-closed design: every path that drops a scheme does so because the value could not be
+ * trusted (no {@code trustAll}, a failed guard, or sources that disagreed), and substituting
+ * {@code http} turns each of those refusals into a downgrade an attacker can provoke on demand.
+ * Reject the request, or fall back to a value the deployment itself configured — not to one
+ * fabricated from a missing answer.</p>
  *
  * <p>This record is immutable and thread-safe.</p>
  *

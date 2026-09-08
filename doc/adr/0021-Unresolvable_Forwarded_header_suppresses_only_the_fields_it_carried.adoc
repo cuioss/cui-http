@@ -1,0 +1,175 @@
+= ADR-0021: Unresolvable Forwarded header suppresses only the fields it carried
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: An unresolvable RFC 7239 Forwarded header contributes nothing, so it drops only the fields whose directives the parser actually reached; the two de-facto families are reconciled against each other first, under a configurable tie-breaker that presumes the ingress strips the family it does not write.
+// tags: security, trust-boundary, forwarded-headers, fail-closed
+// affects: cui-http
+// supersedes: 2
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+Supersedes xref:0002-Fail_closed_when_X-Forwarded-For_and_RFC_7239_Forwarded_disagree.adoc[ADR-0002:
+Fail closed when X-Forwarded-For and RFC 7239 Forwarded disagree].
+
+ADR-0002's central rule survives unchanged: for each field the de-facto and RFC 7239
+sources are resolved independently, and when both are present and disagree the field
+resolves empty rather than letting either source win by precedence. What this ADR
+replaces is one mechanism ADR-0002 chose to express that rule with — treating an
+unresolvable `Forwarded` header as *present for every field it could theoretically
+have carried*. Presence is now decided per field, by the directives the header
+actually carried.
+
+== Context
+
+A resolver that derives request-origin facts from proxy-appended headers reads three
+independent families, all equally writable by anyone who can reach it: the de-facto
+`X-Forwarded-*` names, the de-facto `X-Proxy*` names, and the standardized RFC 7239
+`Forwarded` header. Two structural questions follow, and answering only one of them
+leaves a gap the other opens.
+
+The first is what an *unbelievable* header means. A `Forwarded` header can fail in
+two ways that both make its content unusable: its raw value can be rejected by
+sanitization, or its grammar can break on a malformed `forwarded-pair`. Neither
+failure says anything about the other families. The choice point is how far the
+resulting suppression reaches — over every field the header *could* have spoken
+about, or only over the fields it demonstrably *did* speak about.
+
+Reaching over every possible field looks like the conservative answer, and is not.
+It hands any party that can set one header a way to erase everything a legitimate
+proxy attested: appending a single broken directive suppresses the scheme, the host,
+the port and the client IP alike, whatever the ingress wrote. That is a
+client-triggerable denial of service *on the trust model itself* — the resolver
+stops believing facts nobody contradicted. It also inverts the fail-closed intent it
+was reaching for, because the practical effect of erasing an attested `https` is a
+consumer that falls back to cleartext assumptions.
+
+The second question is what to do when the two *de-facto* families disagree with
+each other. They are not equivalent to the de-facto-versus-RFC-7239 pair. A single
+proxy populating both `X-Forwarded-Proto` and `Forwarded` does not contradict
+itself, so a disagreement there means one side is forged. But `X-Forwarded-*` and
+`X-Proxy*` are two naming conventions for the same job, and a given deployment
+legitimately writes one of them — so a disagreement is ordinary, and dropping the
+field on it would break the deployment rather than protect it. Resolving them by a
+fixed name order is the failure mode ADR-0002 already identified one level up: the
+name that heads the list is the name an attacker writes.
+
+== Decision
+
+**An unresolvable `Forwarded` header contributes nothing, and therefore suppresses
+exactly the fields whose directives the parser reached.**
+
+Presence and belief are separate axes, and only their combination is per field. The
+parsed directives answer "did this header speak about this field"; the header's
+resolvability answers "may anything it said be believed". An unresolvable header
+supplies no value to any field, so each field it *did* carry a directive for meets
+an empty resolution and is dropped through the ordinary disagreement path — while
+each field it carried no directive for is untouched, and the de-facto family stands
+alone. `Forwarded: proto=http;broken` therefore drops the scheme and leaves an
+`X-Forwarded-Host` value standing. A raw value that never sanitized yields no
+directives at all, so it spoke about no field and suppresses none.
+
+The fail-closed direction is unchanged where it was load-bearing. A field the header
+*did* speak about still fails closed: an unresolvable header is not a fallback to
+the sibling family, it is a resolution that disagrees with it.
+
+**The two de-facto families are reconciled against each other before the RFC 7239
+comparison, under a configurable tie-breaker.** Both names are resolved
+independently rather than by first-present order. When both are present and resolve
+equal, that value stands. When they disagree the field is *not* dropped — either
+family may legitimately be the one this deployment writes — so the tie is broken by
+an explicit precedence knob and the disagreement is logged. The reconciled value
+travels with the header name it actually came from, so the downstream
+disagreement record names the real source.
+
+That knob is a tie-breaker of last resort, and it carries a deployment obligation:
+**the ingress must strip the family it does not itself write.** An ingress that
+writes `X-Proxy*` and forwards a client-supplied `X-Forwarded-*` unchanged has not
+removed the attack, only moved it behind a configuration setting. The knob decides
+which family wins a disagreement; only stripping decides that a forged family never
+reaches the resolver at all.
+
+**Host and port are reconciled as independent fields.** A source states both in one
+`host[:port]` token, but the token is compared field by field. Comparing the pair as
+one record made its equality demand that both sources agree on host *and* port
+simultaneously, so a legitimate split — `X-Forwarded-Host: h` with
+`X-Forwarded-Port: 8443` alongside `Forwarded: host="h:8443"` — read as a conflict
+and dropped the host both sources named.
+
+== Consequences
+
+=== Positive
+
+* A single broken directive can no longer erase fields the header never spoke about,
+  so the trust model is not client-triggerably disarmed.
+* The suppression scope is decidable from the header's own content, which makes it
+  explainable: an operator can read the header and say which fields it reaches.
+* A deployment that writes `X-Proxy*` is no longer silently overridden by a
+  client-supplied `X-Forwarded-*`.
+* A host and a port split across sources resolve on their own merits, so a
+  correctly-configured proxy chain stops losing the host.
+
+=== Negative
+
+* Suppression scope now depends on *where* a malformed header broke, so two inputs
+  that look equally broken can drop different fields. Moving a broken pair earlier
+  or later in the header changes which directives the parser reached, and therefore
+  which fields fail closed.
+* The precedence knob is new configuration surface, and it is surface that can be
+  set wrongly. Naming the family the ingress does not write reproduces the override
+  it exists to prevent.
+
+=== Risks
+
+* The knob's safety rests on an obligation the resolver cannot verify: that the
+  ingress strips the family it does not write. A deployment that sets the knob and
+  skips the stripping believes it is protected and is not.
+* Per-field suppression is a narrower blast radius than the blanket rule, and a
+  reader who expects the old behaviour may read a surviving field as a regression
+  rather than as the intended scope.
+
+== Alternatives Considered
+
+**Keep the blanket rule and treat any unresolvable `Forwarded` header as present for
+every field.** This is the simplest rule to state and the easiest to reason about:
+one unbelievable header, nothing believed. Rejected because its blast radius is
+attacker-chosen. The cost of the simplicity is paid entirely by the legitimate
+proxy, whose attested values are erased by content it did not write, and the
+resulting empty scheme is not a safe state — it is the state a consumer resolves by
+assuming cleartext.
+
+**Drop the field when the two de-facto families disagree, as with the RFC 7239
+pair.** This would have made one rule cover both stages. Rejected because the two
+stages are not the same situation. A disagreement between a de-facto family and
+`Forwarded` means a source that a single proxy populates contradicted itself; a
+disagreement between `X-Forwarded-*` and `X-Proxy*` is the ordinary shape of a
+deployment that writes one convention and is handed the other. Dropping there
+converts a routine input into a lost field.
+
+**Rank the de-facto families by a fixed built-in order.** This needs no
+configuration and reproduces the historical behaviour exactly. Rejected for the
+reason ADR-0002 gives about fixed precedence generally: a constant order is a
+known-winning header for an attacker to write. Making the order explicit and
+deployment-owned at least puts the choice where the stripping obligation already
+lives.
+
+**Compare the `host[:port]` token as one unit.** Record equality is the least code
+and the most obviously symmetric comparison. Rejected because it conflates two
+independent facts: it demands agreement on a port in order to believe a host, so a
+proxy that states the port through the dedicated header instead of inside the host
+token loses the host as well.
+
+== References
+
+* xref:0002-Fail_closed_when_X-Forwarded-For_and_RFC_7239_Forwarded_disagree.adoc[ADR-0002: Fail closed when X-Forwarded-For and RFC 7239 Forwarded disagree] — superseded by this ADR
+* xref:0001-Nearest-hop_token_selection_is_authoritative_for_forwarded_header_chains.adoc[ADR-0001: Nearest-hop token selection is authoritative for forwarded header chains]
+* xref:0003-Header_accessor_contract_must_expose_every_instance_of_a_repeated_header.adoc[ADR-0003: Header accessor contract must expose every instance of a repeated header]
+* `doc/forwarded-header-resolution.adoc` — header precedence, sanitization, and the resolution walkthrough
+* `de.cuioss.http.forwarded.ForwardedHeaderResolver` — per-field presence, de-facto reconciliation, and the independent host/port comparison
+* `de.cuioss.http.forwarded.ForwardedResolverConfig` — the `deFactoPrecedence` tie-breaker and the ingress-stripping obligation it presumes
+* `de.cuioss.http.forwarded.ForwardedLogMessages` — the sources-disagree and de-facto-families-disagree WARN records
