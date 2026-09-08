@@ -14,7 +14,7 @@
 
 Superseded
 
-Superseded by xref:0019-Unresolvable_Forwarded_header_suppresses_only_the_fields_it_carried.adoc[ADR-0019:
+Superseded by xref:0021-Unresolvable_Forwarded_header_suppresses_only_the_fields_it_carried.adoc[ADR-0021:
 Unresolvable Forwarded header suppresses only the fields it carried].
 
 **What survives.** The disagreement rule itself is retained unchanged: for each field
@@ -31,7 +31,7 @@ client-triggerable denial of service on the trust model: appending one broken
 directive erased everything a legitimate proxy attested. A field the header *did*
 speak about still fails closed, exactly as this ADR requires.
 
-ADR-0019 also settles two questions this ADR did not reach — reconciling the two
+ADR-0021 also settles two questions this ADR did not reach — reconciling the two
 de-facto families (`X-Forwarded-*` against `X-Proxy*`) against each other before the
 RFC 7239 comparison, and comparing host and port as independent fields.
 
@@ -119,7 +119,7 @@ and a constant is exactly what an attacker needs to know.
 
 * xref:0001-Nearest-hop_token_selection_is_authoritative_for_forwarded_header_chains.adoc[ADR-0001: Nearest-hop token selection is authoritative for forwarded header chains]
 * xref:0003-Header_accessor_contract_must_expose_every_instance_of_a_repeated_header.adoc[ADR-0003: Header accessor contract must expose every instance of a repeated header]
-* xref:0019-Unresolvable_Forwarded_header_suppresses_only_the_fields_it_carried.adoc[ADR-0019: Unresolvable Forwarded header suppresses only the fields it carried] — supersedes this ADR
+* xref:0021-Unresolvable_Forwarded_header_suppresses_only_the_fields_it_carried.adoc[ADR-0021: Unresolvable Forwarded header suppresses only the fields it carried] — supersedes this ADR
 * `doc/forwarded-header-resolution.adoc` — header precedence, sanitization
 * `de.cuioss.http.forwarded.ForwardedHeaderResolver` — precedence and present-but-invalid handling
 * `de.cuioss.http.forwarded.ForwardedLogMessages` — the sources-disagree WARN record

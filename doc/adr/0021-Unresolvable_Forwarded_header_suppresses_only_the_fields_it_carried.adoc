@@ -1,4 +1,4 @@
-= ADR-0019: Unresolvable Forwarded header suppresses only the fields it carried
+= ADR-0021: Unresolvable Forwarded header suppresses only the fields it carried
 :toc: left
 :toclevels: 2
 :sectnums:
