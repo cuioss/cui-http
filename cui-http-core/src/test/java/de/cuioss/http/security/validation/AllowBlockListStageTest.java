@@ -36,6 +36,12 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("AllowBlockListStage (F-08)")
 class AllowBlockListStageTest {
 
+    /** LINE SEPARATOR - a line-forging code point outside the ISO-control range. */
+    private static final String LINE_SEPARATOR = Character.toString(0x2028);
+
+    /** PARAGRAPH SEPARATOR - a line-forging code point outside the ISO-control range. */
+    private static final String PARAGRAPH_SEPARATOR = Character.toString(0x2029);
+
     @Test
     @DisplayName("Empty lists allow everything")
     void shouldAllowAllWhenEmpty() {
@@ -182,6 +188,52 @@ class AllowBlockListStageTest {
                 () -> assertTrue(detail.contains("U+000A"), "LF must render as U+000A"),
                 () -> assertFalse(message.contains("\r"), "message must not carry a raw CR"),
                 () -> assertFalse(message.contains("\n"), "message must not carry a raw LF"),
+                () -> assertEquals(forgingValue, exception.getOriginalInput(),
+                        "the original input is unaltered"));
+    }
+
+    @Test
+    @DisplayName("Block-list rejection escapes the Unicode line and paragraph separators")
+    void shouldEscapeUnicodeSeparatorsOnBlockListRejection() {
+        SecurityConfiguration config = SecurityConfiguration.builder()
+                .blockedContentTypes(Set.of("application/octet-stream"))
+                .build();
+        var stage = AllowBlockListStage.forContentTypes(config);
+        String forgingValue = "application/octet-stream; name=evil" + LINE_SEPARATOR
+                + "X-Injected: yes" + PARAGRAPH_SEPARATOR + "X-Also-Injected: yes";
+
+        var exception = assertThrows(UrlSecurityException.class, () -> stage.validate(forgingValue));
+
+        String detail = exception.getDetail().orElseThrow();
+        assertAll("block-listed value rendered without raw Unicode separators",
+                () -> assertTrue(detail.contains("block-listed"), "the rejection wording is unchanged"),
+                () -> assertFalse(detail.contains(LINE_SEPARATOR), "detail must not carry a raw U+2028"),
+                () -> assertFalse(detail.contains(PARAGRAPH_SEPARATOR), "detail must not carry a raw U+2029"),
+                () -> assertTrue(detail.contains("U+2028"), "LINE SEPARATOR must render as U+2028"),
+                () -> assertTrue(detail.contains("U+2029"), "PARAGRAPH SEPARATOR must render as U+2029"),
+                () -> assertEquals(forgingValue, exception.getOriginalInput(),
+                        "the original input is unaltered"));
+    }
+
+    @Test
+    @DisplayName("Allow-list rejection escapes the Unicode line and paragraph separators")
+    void shouldEscapeUnicodeSeparatorsOnAllowListRejection() {
+        SecurityConfiguration config = SecurityConfiguration.builder()
+                .allowedContentTypes(Set.of("application/json"))
+                .build();
+        var stage = AllowBlockListStage.forContentTypes(config);
+        String forgingValue = "text/html; name=evil" + LINE_SEPARATOR
+                + "X-Injected: yes" + PARAGRAPH_SEPARATOR + "X-Also-Injected: yes";
+
+        var exception = assertThrows(UrlSecurityException.class, () -> stage.validate(forgingValue));
+
+        String detail = exception.getDetail().orElseThrow();
+        assertAll("allow-list rejected value rendered without raw Unicode separators",
+                () -> assertTrue(detail.contains("allow-list"), "the rejection wording is unchanged"),
+                () -> assertFalse(detail.contains(LINE_SEPARATOR), "detail must not carry a raw U+2028"),
+                () -> assertFalse(detail.contains(PARAGRAPH_SEPARATOR), "detail must not carry a raw U+2029"),
+                () -> assertTrue(detail.contains("U+2028"), "LINE SEPARATOR must render as U+2028"),
+                () -> assertTrue(detail.contains("U+2029"), "PARAGRAPH SEPARATOR must render as U+2029"),
                 () -> assertEquals(forgingValue, exception.getOriginalInput(),
                         "the original input is unaltered"));
     }

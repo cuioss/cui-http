@@ -25,6 +25,7 @@ import lombok.ToString;
 import org.jspecify.annotations.Nullable;
 
 import java.util.*;
+import java.util.regex.Pattern;
 
 /**
  * Allow/block-list enforcement stage for single-value HTTP components (header names, content types).
@@ -72,6 +73,25 @@ public final class AllowBlockListStage implements HttpSecurityValidator {
      * Duplicated from {@code UrlSecurityException} for the reason given on that constant.
      */
     private static final String TRUNCATION_MARKER = "...";
+
+    /**
+     * Code points {@link #renderForDetail(String)} escapes: the C0 controls (U+0000-U+001F), DEL
+     * (U+007F), the C1 controls (U+0080-U+009F, notably NEL U+0085) and the Unicode line and
+     * paragraph separators U+2028 and U+2029.
+     *
+     * <p>The expression is character-identical to {@code UrlSecurityException}'s
+     * {@code CONTROL_CHARS_PATTERN}, and that class is the source of the convention. It is
+     * duplicated rather than shared for the reason given on {@link #MAX_RENDERED_DETAIL_LENGTH}:
+     * sharing it would mean publishing an internal rendering detail on the exception's public API
+     * - every package here is exported, so there is no package-private route across the
+     * {@code exceptions} / {@code validation} split - for the sake of one collaborator.</p>
+     *
+     * <p>{@code Character.isISOControl} is deliberately <em>not</em> used: it covers only
+     * U+0000-U+001F and U+007F-U+009F, so it leaves U+2028 and U+2029 unescaped and the two
+     * sanitisers would neutralise different code-point sets.</p>
+     */
+    private static final Pattern CONTROL_CHARS_PATTERN =
+            Pattern.compile("[\\x00-\\x1F\\x7F-\\u009F\\u2028\\u2029]");
 
     private final Set<String> allowedLowercase;
     private final Set<String> blockedLowercase;
@@ -176,10 +196,10 @@ public final class AllowBlockListStage implements HttpSecurityValidator {
     }
 
     /**
-     * Renders a rejected value for the exception detail. Control code points are replaced by their
-     * escaped {@code U+XXXX} form - the shape
-     * {@link CharacterValidationStage} already uses - so a value carrying CR/LF cannot forge a log
-     * line through the message callers log.
+     * Renders a rejected value for the exception detail. Every code point
+     * {@link #CONTROL_CHARS_PATTERN} matches is replaced by its escaped {@code U+XXXX} form - the
+     * shape {@link CharacterValidationStage} already uses - so a value carrying CR/LF, NEL or a
+     * Unicode line/paragraph separator cannot forge a log line through the detail callers log.
      *
      * <p>Escaping is expansive - one control code point renders as six characters - so an
      * unbounded value would be amplified sixfold here and then stored verbatim in the exception's
@@ -192,7 +212,7 @@ public final class AllowBlockListStage implements HttpSecurityValidator {
      * taken between rendered code points, so a {@code U+XXXX} sequence is never split.</p>
      *
      * @param value the rejected value
-     * @return the value with every control code point escaped, bounded to
+     * @return the value with every {@link #CONTROL_CHARS_PATTERN} match escaped, bounded to
      *         {@link #MAX_RENDERED_DETAIL_LENGTH} characters plus the truncation marker
      */
     private static String renderForDetail(String value) {
@@ -201,9 +221,10 @@ public final class AllowBlockListStage implements HttpSecurityValidator {
         while (index < value.length()) {
             int codePoint = value.codePointAt(index);
             index += Character.charCount(codePoint);
-            String escaped = Character.isISOControl(codePoint)
+            String literal = new String(Character.toChars(codePoint));
+            String escaped = CONTROL_CHARS_PATTERN.matcher(literal).matches()
                     ? "U+%04X".formatted(codePoint)
-                    : new String(Character.toChars(codePoint));
+                    : literal;
             if (rendered.length() + escaped.length() > MAX_RENDERED_DETAIL_LENGTH) {
                 return rendered.append(TRUNCATION_MARKER).toString();
             }
