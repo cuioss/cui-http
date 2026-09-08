@@ -100,6 +100,16 @@ public class UrlSecurityException extends RuntimeException {
     private final UrlSecurityFailureType failureType;
     @Getter
     private final ValidationType validationType;
+    /**
+     * The rejected input, stored verbatim.
+     *
+     * <p><strong>Raw accessor - attacker-controlled.</strong> The rendering paths
+     * ({@link #getMessage()} and {@link #toString()}) never reproduce this value; the accessor
+     * generated for this field returns it unescaped and unbounded, so a caller that logs the
+     * returned value re-opens the log-injection (CWE-117 / CWE-93) and log-flooding (CWE-400)
+     * exposure the rendering paths close. Reading it is a deliberate opt-in at the caller's own
+     * trust boundary.</p>
+     */
     @Getter
     private final String originalInput;
     @Nullable
@@ -136,6 +146,13 @@ public class UrlSecurityException extends RuntimeException {
     /**
      * Gets the sanitized version of the input, if available.
      *
+     * <p><strong>Raw accessor - attacker-controlled.</strong> The sanitized form derives from the
+     * same rejected value as {@link #getOriginalInput()} and carries the same material; it is
+     * returned unescaped and unbounded. The rendering paths never reproduce it, so a caller that
+     * logs the returned value re-opens the log-injection (CWE-117 / CWE-93) and log-flooding
+     * (CWE-400) exposure they close. Reading it is a deliberate opt-in at the caller's own trust
+     * boundary.</p>
+     *
      * @return The sanitized input wrapped in Optional, or empty if not provided
      */
     public Optional<String> getSanitizedInput() {
@@ -144,6 +161,15 @@ public class UrlSecurityException extends RuntimeException {
 
     /**
      * Gets additional detail about the security failure.
+     *
+     * <p><strong>Raw accessor - may be attacker-controlled.</strong> The stored detail is returned
+     * verbatim: unescaped and unbounded. Both rendering paths defend it - {@link #getMessage()}
+     * escapes and bounds it, {@link #toString()} bounds it - but this accessor does neither, so a
+     * caller that logs the returned value re-opens the log-injection (CWE-117 / CWE-93) and
+     * log-flooding (CWE-400) exposure those paths close. A stage that embeds a rejected value in
+     * the detail escapes it first, but that is the producing stage's contract rather than a
+     * guarantee of this accessor. Reading it is a deliberate opt-in at the caller's own trust
+     * boundary.</p>
      *
      * @return Additional detail wrapped in Optional, or empty if not provided
      */
@@ -189,7 +215,8 @@ public class UrlSecurityException extends RuntimeException {
      * <p>Both the original and the sanitized input are rendered through this helper, because the
      * sanitized form derives from the same rejected header value and therefore carries the same
      * credential material. Callers that genuinely need a value opt in through
-     * {@link #getOriginalInput()} or {@link #getSanitizedInput()} at their own trust boundary.</p>
+     * {@link #getOriginalInput()}, {@link #getSanitizedInput()} or {@link #getDetail()} at their
+     * own trust boundary; each of those accessors carries the same warning.</p>
      *
      * @param input The input that caused the failure
      * @return {@code <redacted, null>} for a null input, otherwise {@code <redacted, length=N>}
