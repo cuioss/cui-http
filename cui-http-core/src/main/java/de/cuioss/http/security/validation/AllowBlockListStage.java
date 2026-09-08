@@ -57,6 +57,22 @@ import java.util.*;
 @ToString
 public final class AllowBlockListStage implements HttpSecurityValidator {
 
+    /**
+     * Maximum number of rendered characters {@link #renderForDetail(String)} emits.
+     *
+     * <p>This is the same limit {@code UrlSecurityException} applies to the detail it renders, and
+     * that class is the source of the convention. The value is duplicated rather than shared
+     * because sharing it would mean publishing an internal rendering limit on the exception's
+     * public API for the sake of one collaborator in another package.</p>
+     */
+    private static final int MAX_RENDERED_DETAIL_LENGTH = 200;
+
+    /**
+     * Marker appended when the rendered value was cut at {@link #MAX_RENDERED_DETAIL_LENGTH}.
+     * Duplicated from {@code UrlSecurityException} for the reason given on that constant.
+     */
+    private static final String TRUNCATION_MARKER = "...";
+
     private final Set<String> allowedLowercase;
     private final Set<String> blockedLowercase;
     private final ValidationType validationType;
@@ -165,18 +181,34 @@ public final class AllowBlockListStage implements HttpSecurityValidator {
      * {@link CharacterValidationStage} already uses - so a value carrying CR/LF cannot forge a log
      * line through the message callers log.
      *
+     * <p>Escaping is expansive - one control code point renders as six characters - so an
+     * unbounded value would be amplified sixfold here and then stored verbatim in the exception's
+     * {@code detail} for the exception's lifetime (CWE-400). Bounding the renderers alone does not
+     * close that: {@code ContentTypeValidationPipeline} documents that it applies neither a length
+     * limit nor character validation and wires this stage as its only stage, so the value reaching
+     * this method can be arbitrarily long. The result is therefore capped at
+     * {@link #MAX_RENDERED_DETAIL_LENGTH} characters plus the {@link #TRUNCATION_MARKER} at the
+     * source, and the loop exits at the cut so the amplified string is never built. The cut is
+     * taken between rendered code points, so a {@code U+XXXX} sequence is never split.</p>
+     *
      * @param value the rejected value
-     * @return the value with every control code point escaped
+     * @return the value with every control code point escaped, bounded to
+     *         {@link #MAX_RENDERED_DETAIL_LENGTH} characters plus the truncation marker
      */
     private static String renderForDetail(String value) {
-        StringBuilder rendered = new StringBuilder(value.length());
-        value.codePoints().forEach(codePoint -> {
-            if (Character.isISOControl(codePoint)) {
-                rendered.append("U+%04X".formatted(codePoint));
-            } else {
-                rendered.appendCodePoint(codePoint);
+        StringBuilder rendered = new StringBuilder();
+        int index = 0;
+        while (index < value.length()) {
+            int codePoint = value.codePointAt(index);
+            index += Character.charCount(codePoint);
+            String escaped = Character.isISOControl(codePoint)
+                    ? "U+%04X".formatted(codePoint)
+                    : new String(Character.toChars(codePoint));
+            if (rendered.length() + escaped.length() > MAX_RENDERED_DETAIL_LENGTH) {
+                return rendered.append(TRUNCATION_MARKER).toString();
             }
-        });
+            rendered.append(escaped);
+        }
         return rendered.toString();
     }
 

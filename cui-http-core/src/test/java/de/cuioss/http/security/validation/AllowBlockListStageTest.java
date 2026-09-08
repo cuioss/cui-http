@@ -187,6 +187,72 @@ class AllowBlockListStageTest {
     }
 
     @Test
+    @DisplayName("An over-long block-listed value is bounded where the detail is built")
+    void shouldBoundRenderedDetailForOverlongBlockListedValue() {
+        SecurityConfiguration config = SecurityConfiguration.builder()
+                .blockedContentTypes(Set.of("application/octet-stream"))
+                .build();
+        var stage = AllowBlockListStage.forContentTypes(config);
+        String overlongValue = "application/octet-stream; name=" + "A".repeat(5000);
+
+        var exception = assertThrows(UrlSecurityException.class, () -> stage.validate(overlongValue));
+
+        String rendered = renderedOperandOf(exception.getDetail().orElseThrow(), "' is block-listed");
+        assertAll("the rejected value is bounded at the source, not only where it is rendered",
+                () -> assertEquals(203, rendered.length(),
+                        "200 rendered characters plus the three-character truncation marker"),
+                () -> assertTrue(rendered.endsWith("..."), "the cut is marked"),
+                () -> assertEquals(203, renderedDetailOfMessage(exception.getMessage()).length(),
+                        "getMessage() bounds the already-bounded detail at the same limit"),
+                () -> assertEquals(overlongValue, exception.getOriginalInput(),
+                        "the original input is unaltered"));
+    }
+
+    @Test
+    @DisplayName("Control-character escaping cannot amplify the detail past the bound")
+    void shouldBoundRenderedDetailForControlCharacterAmplification() {
+        SecurityConfiguration config = SecurityConfiguration.builder()
+                .blockedContentTypes(Set.of("application/octet-stream"))
+                .build();
+        var stage = AllowBlockListStage.forContentTypes(config);
+        String amplifyingValue = "application/octet-stream; name=" + "\r\n".repeat(2000);
+
+        var exception = assertThrows(UrlSecurityException.class, () -> stage.validate(amplifyingValue));
+
+        String rendered = renderedOperandOf(exception.getDetail().orElseThrow(), "' is block-listed");
+        assertAll("each control code point expands sixfold inside the same bound",
+                () -> assertEquals(202, rendered.length(),
+                        "the cut is taken before the bound is exceeded, so no partial U+XXXX survives"),
+                () -> assertTrue(rendered.endsWith("..."), "the cut is marked"),
+                () -> assertTrue(rendered.contains("U+000D"), "CR renders as U+000D"),
+                () -> assertFalse(rendered.contains("\r"), "no raw CR survives"),
+                () -> assertFalse(rendered.contains("\n"), "no raw LF survives"),
+                () -> assertEquals(203, renderedDetailOfMessage(exception.getMessage()).length(),
+                        "getMessage() bounds the same operand at the same limit"));
+    }
+
+    /**
+     * Extracts the rendered value from a rejection detail of the shape
+     * {@code Value '<rendered>'<suffix>}.
+     */
+    private static String renderedOperandOf(String detail, String suffix) {
+        assertTrue(detail.endsWith(suffix), "the rejection wording is unchanged");
+        return detail.substring("Value '".length(), detail.length() - suffix.length());
+    }
+
+    /**
+     * Extracts the rendered detail segment from {@code getMessage()} without depending on the
+     * failure-type description that precedes it.
+     */
+    private static String renderedDetailOfMessage(String message) {
+        int start = message.indexOf(" - Value '");
+        assertTrue(start >= 0, "the message carries the rendered detail");
+        int end = message.lastIndexOf(" (input: ");
+        assertTrue(end > start, "the message carries the redacted-input suffix");
+        return message.substring(start + " - ".length(), end);
+    }
+
+    @Test
     @DisplayName("Null arguments are rejected")
     void shouldRejectNullArguments() {
         assertThrows(NullPointerException.class,
