@@ -88,6 +88,16 @@ final class AttributeParser {
      * common edge cases like missing values, trailing/leading whitespace, and attributes
      * at the end of the string.</p>
      *
+     * <p><strong>Repeated attributes resolve last-wins.</strong> Per RFC 6265 section 5.3 a user
+     * agent processing a repeated attribute keeps the last occurrence, so this method scans every
+     * token and returns the value of the final match rather than stopping at the first. Resolving
+     * first-wins would let a value the user agent itself would have discarded be the one this
+     * library reports - so an attacker able to append a second {@code Domain} or {@code Path} to
+     * the attribute string could make a validator inspect a different value from the one that
+     * actually takes effect. Tokens rejected by the strict-formatting rule above are skipped
+     * rather than retained, so a malformed later occurrence cannot displace a well-formed earlier
+     * one.</p>
+     *
      * <p><strong>Quoted values:</strong> RFC 6265 and RFC 7231 both permit an attribute value
      * to be a {@code quoted-string}. After whitespace trimming, a value that is at least two
      * characters long and both starts and ends with a double quote has that surrounding pair
@@ -116,6 +126,10 @@ final class AttributeParser {
             return Optional.empty();
         }
 
+        // Scan every token and retain the most recent match: RFC 6265 section 5.3 resolves a
+        // repeated attribute to its LAST occurrence, so the scan must not stop at the first one.
+        String lastMatch = null;
+
         // Split by semicolons to process each attribute individually
         for (String trimmedAttr : Splitter.on(';').trimResults().omitEmptyStrings().splitToList(attributeString)) {
             int equalsIndex = trimmedAttr.indexOf('=');
@@ -128,7 +142,9 @@ final class AttributeParser {
                 // Only trim the key if it doesn't have trailing spaces (strict parsing)
                 String trimmedKey = key.trim();
                 if (!key.equals(trimmedKey)) {
-                    // Key has trailing spaces - this violates RFC 6265 strict formatting
+                    // Key has trailing spaces - this violates RFC 6265 strict formatting.
+                    // It is skipped rather than retained, so a malformed later token cannot
+                    // displace a well-formed earlier match.
                     continue;
                 }
 
@@ -137,15 +153,14 @@ final class AttributeParser {
                     // Extract value after '=' and trim whitespace per RFC 6265
                     String value = trimmedAttr.substring(equalsIndex + 1);
                     // RFC 6265 allows trimming whitespace from attribute values
-                    String trimmedValue = value.trim();
-
-                    // Unwrap a well-formed quoted-string (which may be empty for "name=")
-                    return Optional.of(unquote(trimmedValue));
+                    lastMatch = value.trim();
                 }
             }
         }
 
-        return Optional.empty();
+        // Unwrap a well-formed quoted-string (which may be empty for "name="). Applied to the
+        // retained match only, so an earlier occurrence's quoting never affects the result.
+        return Optional.ofNullable(lastMatch).map(AttributeParser::unquote);
     }
 
     /**

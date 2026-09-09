@@ -403,12 +403,12 @@ String attributes) {
      * name trimmed, so {@code "foo =bar"} yields {@code "foo"} rather than the whole token. Callers
      * that treat every returned element as a bare attribute name must account for this.</p>
      *
-     * <p><strong>Duplicates are preserved here, but resolve first-match elsewhere.</strong> This
+     * <p><strong>Duplicates are preserved here, but resolve last-match elsewhere.</strong> This
      * method reports every token in encounter order, so an attribute string that repeats a name
      * yields that name once per occurrence. The value accessors ({@link #getDomain()},
      * {@link #getPath()}, {@link #getSameSite()}, {@link #getMaxAge()}) instead return the value of
-     * the <em>first</em> matching occurrence and ignore the rest, so the size of this list is not a
-     * count of distinct resolvable attributes.</p>
+     * the <em>last</em> matching occurrence, per RFC 6265 section 5.3, so the size of this list is
+     * not a count of distinct resolvable attributes.</p>
      *
      * @return A list of attribute names in encounter order, including duplicates and malformed
      * tokens; empty when this cookie has no attributes

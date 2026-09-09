@@ -569,6 +569,27 @@ class CookieTest {
                 "A suffix within token must produce the __Secure- prefixed cookie");
     }
 
+    @Test
+    void shouldResolveRepeatedAttributesLastWins() {
+        // RFC 6265 section 5.3 resolves a repeated attribute to the last occurrence. Resolving
+        // first-wins let an attacker who can append to the attribute string be overruled by an
+        // earlier value the user agent itself would have discarded.
+        Cookie repeated = new Cookie("session", "abc123",
+                "Domain=first.com; Path=/a; SameSite=Strict; Max-Age=1; "
+                        + "Domain=second.com; Path=/b; SameSite=Lax; Max-Age=2");
+
+        assertAll("every value accessor resolves last-wins",
+                () -> assertEquals("second.com", repeated.getDomain().orElse(null)),
+                () -> assertEquals("/b", repeated.getPath().orElse(null)),
+                () -> assertEquals("Lax", repeated.getSameSite().orElse(null)),
+                () -> assertEquals("2", repeated.getMaxAge().orElse(null)));
+
+        // getAttributeNames still reports every occurrence in encounter order - it enumerates
+        // tokens rather than resolving them, so last-wins does not apply to it.
+        assertEquals(8, repeated.getAttributeNames().size(),
+                "getAttributeNames must keep reporting duplicates");
+    }
+
     // ADR-0017 note on the three factory-guard tests below: they are not run under both
     // SecurityConfiguration presets, because there is no preset to vary. The factories validate
     // through the class's own default-configuration stages and never consult a caller-supplied

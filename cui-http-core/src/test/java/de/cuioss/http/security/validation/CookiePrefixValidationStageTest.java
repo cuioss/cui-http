@@ -119,6 +119,23 @@ class CookiePrefixValidationStageTest {
             assertTrue(exception.getDetail().isPresent());
             assertTrue(exception.getDetail().get().contains("Path=/"));
         }
+
+        @Test
+        @DisplayName("A repeated Path resolves last-wins, so Path=/; Path=/admin is rejected")
+        void shouldRejectHostWithRepeatedPathResolvingNonRoot() {
+            // The user agent applies the LAST Path, so this cookie is scoped to /admin and is not
+            // host-locked. Resolving first-wins let the gate read Path=/ and accept it outright -
+            // the gate must read the value that actually takes effect, not the first one written.
+            assertPrefixViolationUnderBothPresets(HOST_PREFIX + "a", "Secure; Path=/; Path=/admin",
+                    "__Host- prefix requires Path=/ (found: /admin)");
+        }
+
+        @Test
+        @DisplayName("A repeated Domain resolves last-wins, so the effective Domain is reported")
+        void shouldReportTheLastDomainOccurrence() {
+            assertPrefixViolationUnderBothPresets(HOST_PREFIX + "a", "Secure; Path=/; Domain=; Domain=evil.com",
+                    "__Host- prefix must not have Domain attribute (found: evil.com)");
+        }
     }
 
     @Nested

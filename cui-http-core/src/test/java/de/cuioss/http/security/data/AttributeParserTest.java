@@ -185,6 +185,35 @@ class AttributeParserTest {
             assertEquals("abc\\", result.get());
         }
 
+        @ParameterizedTest
+        @CsvSource({
+                "'Domain=first.com; Domain=second.com', 'Domain', 'second.com'",
+                "'Path=/a; Path=/b; Path=/c', 'Path', '/c'",
+                "'charset=UTF-8; boundary=xyz; charset=ISO-8859-1', 'charset', 'ISO-8859-1'",
+                "'Max-Age=1; max-age=2', 'Max-Age', '2'",
+                "'name=first; name=\"quoted\"', 'name', 'quoted'",
+                "'name=\"quoted\"; name=last', 'name', 'last'"
+        })
+        @DisplayName("A repeated attribute resolves to the last occurrence (RFC 6265 section 5.3)")
+        void shouldResolveRepeatedAttributeLastWins(String attributes, String attributeName, String expected) {
+            Optional<String> result = AttributeParser.extractAttributeValue(attributes, attributeName);
+
+            assertTrue(result.isPresent());
+            assertEquals(expected, result.get());
+        }
+
+        @Test
+        @DisplayName("A later malformed token does not displace an earlier valid match")
+        void shouldIgnoreMalformedRepeatOfAnAttribute() {
+            // "Domain =evil.com" carries a trailing space before '=', which RFC 6265 strict
+            // formatting rejects, so it is skipped rather than treated as the last occurrence.
+            Optional<String> result =
+                    AttributeParser.extractAttributeValue("Domain=good.com; Domain =evil.com", "Domain");
+
+            assertTrue(result.isPresent());
+            assertEquals("good.com", result.get());
+        }
+
         @Test
         @DisplayName("Should match a case-differing attribute name under a locale with non-ASCII case folding")
         void shouldMatchCaseDifferingNameUnderTurkishLocale() {
