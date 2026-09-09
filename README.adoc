@@ -125,7 +125,7 @@ The following standard Maven commands are provided for human contributors:
 ----
 ./mvnw clean install          # Build and install
 ./mvnw test                   # Run tests
-./mvnw -Ppre-commit clean verify  # Pre-commit checks (MANDATORY)
+./mvnw -Ppre-commit clean verify  # Auto-fixes headers + formatting (MANDATORY; commit what it changed)
 ./mvnw -Pcoverage clean verify    # Coverage report
 ----
 
