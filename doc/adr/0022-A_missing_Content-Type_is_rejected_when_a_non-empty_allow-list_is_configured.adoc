@@ -82,9 +82,14 @@ general-case behaviour.
 === Risks
 
 * A future stage or pipeline added to the content-type composition without re-reading this rule
-  could reintroduce a bypass by handling `null` before the allow-list check runs. The Javadoc
-  section stating the rule at the pipeline is the guard against that regression; the rule is not
-  otherwise enforced structurally.
+  could reintroduce a bypass by handling `null` before the allow-list check runs. The guard
+  against that regression is executable: `ContentTypeValidationPipelineTest` pins all three
+  arms of the rule -- `nullInputUnderAllowAll` (empty allow-list still returns
+  `Optional.empty()`), `nullInputUnderConfiguredAllowList` (non-empty allow-list rejects and
+  increments the counter), and `nullInputUnderConfiguredAllowListAtLenientPreset` (the same
+  rejection under `lenient()`, so a preset flag cannot relax it). A change that reintroduced the
+  bypass would fail those tests. The pipeline Javadoc states the rule so it is discoverable at
+  the point of use; it documents the decision and does not enforce it.
 
 == Alternatives Considered
 
