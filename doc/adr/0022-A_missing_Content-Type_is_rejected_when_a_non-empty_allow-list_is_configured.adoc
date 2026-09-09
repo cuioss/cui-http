@@ -1,0 +1,122 @@
+= ADR-0022: A missing Content-Type is rejected when a non-empty allow-list is configured
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: ContentTypeValidationPipeline overrides the shared null short-circuit so a missing Content-Type is rejected once a non-empty allow-list is configured, instead of silently bypassing it.
+// tags: security, input-validation, content-type, fail-secure, null-handling
+// affects: cui-http-core
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+`AbstractValidationPipeline.validate` treats a `null` input as "nothing to check" and
+short-circuits to an empty result before any stage runs. That default is correct for a
+component whose absence carries no security meaning on its own. It stops being correct for a
+component that is itself the security control: when a pipeline's only job is to enforce
+membership in a caller-declared allow-list, an absent value and a non-matching value are the
+same failure mode from an attacker's perspective — both let a request through without ever
+being checked against the list.
+
+`ContentTypeValidationPipeline` inherits the shared null short-circuit unchanged. With a
+non-empty allow-list configured, a request that supplies no Content-Type header bypasses the
+allow-list entirely, while an otherwise-identical request supplying a non-matching Content-Type
+is rejected. The two requests present the same risk to a consumer that only accepts declared
+media types, but only one of them is caught. This is the general class of problem: a pipeline
+whose stages assume "presence implies well-formed" has no defined behaviour for "presence is
+itself the thing being enforced", and the parent's null short-circuit silently resolves that
+gap in the direction that favours the attacker.
+
+The same reasoning does not generalise to every pipeline. A path, parameter, or header pipeline
+validates the *shape* of a value that is expected to exist independently of the validator; a
+missing value there really is "nothing to check". The content-type pipeline is the one case in
+this library where the presence check and the allow-list check are the same security boundary.
+
+== Decision
+
+A missing Content-Type is rejected exactly when a non-empty allow-list is configured; it is
+accepted when no allow-list restricts acceptable values.
+
+`ContentTypeValidationPipeline` overrides `validate` rather than changing the shared parent
+behaviour. The override inspects whether the pipeline's configured allow-list is non-empty:
+
+* Non-empty allow-list configured — a `null` value is rejected with `UrlSecurityException`
+  (`INVALID_INPUT`, `ValidationType.HEADER_VALUE`), and the rejection increments the pipeline's
+  security-event counter identically to a non-null rejection, so a missing Content-Type is
+  observable through the same channel as a fabricated one.
+* Empty allow-list (the allow-all default) — a `null` value continues to return
+  `Optional.empty()`, preserving the pipeline's existing rule that an empty allow-list imposes no
+  restriction.
+
+The parent's null short-circuit is left unchanged for every other pipeline; the override is
+local to the one component where presence and allow-list membership are the same enforcement
+boundary. The rule is stated in the pipeline's own Javadoc as a dedicated section, so the
+semantics are discoverable at the point of use rather than inferred from the parent's
+general-case behaviour.
+
+== Consequences
+
+=== Positive
+
+* A consumer that declares an allow-list gets uniform enforcement: every request is checked
+  against the list, whether it supplies a non-matching Content-Type or none at all.
+* The security-event counter reflects every rejection the allow-list is meant to produce,
+  including the previously-invisible missing-header case.
+* The override is scoped to the one pipeline whose allow-list *is* its security boundary,
+  leaving every other pipeline's "absence needs no check" semantics untouched.
+
+=== Negative
+
+* A caller that previously relied on the parent's blanket null short-circuit — sending no
+  Content-Type and expecting it to pass silently — now receives a rejection once it configures a
+  non-empty allow-list. The behaviour is deliberately breaking; a consumer that wants to accept
+  requests with no Content-Type header must configure an empty allow-list rather than relying on
+  the null path being a permissive default.
+
+=== Risks
+
+* A future stage or pipeline added to the content-type composition without re-reading this rule
+  could reintroduce a bypass by handling `null` before the allow-list check runs. The guard
+  against that regression is executable: `ContentTypeValidationPipelineTest` pins all three
+  arms of the rule -- `nullInputUnderAllowAll` (empty allow-list still returns
+  `Optional.empty()`), `nullInputUnderConfiguredAllowList` (non-empty allow-list rejects and
+  increments the counter), and `nullInputUnderConfiguredAllowListAtLenientPreset` (the same
+  rejection under `lenient()`, so a preset flag cannot relax it). A change that reintroduced the
+  bypass would fail those tests. The pipeline Javadoc states the rule so it is discoverable at
+  the point of use; it documents the decision and does not enforce it.
+
+== Alternatives Considered
+
+* **Change the shared parent short-circuit to depend on stage configuration.** Every pipeline
+  would need to expose whether its own composition treats presence as a security boundary, and
+  `AbstractValidationPipeline` would need to consult that per-pipeline signal before deciding
+  whether `null` is significant. This pushes content-type-specific reasoning into a component
+  four other pipelines share, for a distinction that applies to exactly one of them. Rejected:
+  it complicates the general contract to serve a single caller.
+* **Treat a missing Content-Type as an implicit wildcard match.** A `null` value could be defined
+  to always satisfy an allow-list, on the theory that "no declared type" is not itself an attack.
+  Rejected: this is the status quo the request exists to close — it is precisely the silent
+  bypass a consumer configuring an allow-list expects the pipeline to prevent.
+* **Reject `null` unconditionally, regardless of allow-list configuration.** This would make the
+  pipeline's behaviour independent of its configuration, which is simpler to state but wrong for
+  the allow-all case: an allow-all configuration explicitly declares "no restriction", and
+  rejecting an absent Content-Type under that configuration would enforce a restriction the
+  caller never asked for. Rejected: it breaks the "empty allow-list imposes no restriction" rule
+  the stage already documents.
+
+The rule that unifies the rejected alternatives: the null-handling decision must be scoped to
+exactly the boundary it protects — the pipeline whose enforcement is the allow-list, in exactly
+the configuration where that allow-list exists.
+
+== References
+
+* `de.cuioss.http.security.pipeline.AbstractValidationPipeline` — the shared null short-circuit
+  this decision overrides for one subclass.
+* `de.cuioss.http.security.validation.AllowBlockListStage` — the stage whose "empty allow-list
+  imposes no restriction" rule this decision preserves for the allow-all configuration.

@@ -46,6 +46,17 @@ import java.util.regex.Pattern;
  *   <li><strong>The empty value is not exempt</strong> - an empty value is evaluated against both
  *       lists like any other value. A configured non-empty allow-list therefore rejects it, and a
  *       block-list containing the empty string rejects it too.</li>
+ *   <li><strong>Entries are canonicalised the way values are</strong> - in {@code mediaTypeOnly}
+ *       mode the configured entries go through the same media-type isolation at construction that
+ *       an incoming value goes through at comparison, so an entry written as
+ *       {@code " Application/JSON; charset=utf-8 "} still matches {@code application/json}. In
+ *       whole-value mode ({@link #forHeaderNames(SecurityConfiguration)}) entries are lowercased
+ *       only.</li>
+ *   <li><strong>Malformed entries are rejected at construction</strong> - in {@code mediaTypeOnly}
+ *       mode an entry that canonicalises to the empty media type (for example
+ *       {@code "; charset=utf-8"} or {@code "  "}) can never match a value carrying one, so it is
+ *       rejected with an {@link IllegalArgumentException} naming the offending entry rather than
+ *       being silently retained as an unreachable list member.</li>
  * </ul>
  *
  * <p>Use {@link #forHeaderNames(SecurityConfiguration)} for the header-name lists (wired into the
@@ -116,11 +127,14 @@ public final class AllowBlockListStage implements HttpSecurityValidator {
      * @param allowed the allow-list (empty = allow-all); compared case-insensitively
      * @param blocked the block-list (takes precedence); compared case-insensitively
      * @param validationType the validation type used in emitted exceptions
-     * @param mediaTypeOnly when {@code true}, only the media type of the value is matched: any
-     *        parameters (everything from the first {@code ;}) and surrounding whitespace are
-     *        stripped before comparison, so {@code application/json; charset=UTF-8} matches an
-     *        {@code application/json} list entry
+     * @param mediaTypeOnly when {@code true}, only the media type is matched: any parameters
+     *        (everything from the first {@code ;}) and surrounding whitespace are stripped before
+     *        comparison, so {@code application/json; charset=UTF-8} matches an
+     *        {@code application/json} list entry. The configured entries are put through the same
+     *        canonicalisation at construction, so a parameterised or padded entry still matches
      * @throws NullPointerException if any argument is null
+     * @throws IllegalArgumentException in {@code mediaTypeOnly} mode, if a list entry canonicalises
+     *         to the empty media type (for example {@code "; charset=utf-8"} or {@code "  "})
      */
     public AllowBlockListStage(Set<String> allowed, Set<String> blocked, ValidationType validationType,
             boolean mediaTypeOnly) {
@@ -128,16 +142,53 @@ public final class AllowBlockListStage implements HttpSecurityValidator {
         Objects.requireNonNull(blocked, "blocked must not be null");
         this.validationType = Objects.requireNonNull(validationType, "validationType must not be null");
         this.mediaTypeOnly = mediaTypeOnly;
-        this.allowedLowercase = toLowercaseSet(allowed);
-        this.blockedLowercase = toLowercaseSet(blocked);
+        this.allowedLowercase = canonicaliseEntries(allowed, mediaTypeOnly, "allow-list");
+        this.blockedLowercase = canonicaliseEntries(blocked, mediaTypeOnly, "block-list");
     }
 
-    private static Set<String> toLowercaseSet(Set<String> source) {
-        Set<String> lower = HashSet.newHashSet(source.size());
-        for (String value : source) {
-            lower.add(value.toLowerCase(Locale.ROOT));
+    /**
+     * Canonicalises the configured entries exactly the way an incoming value is canonicalised, so
+     * the two spellings cannot drift apart.
+     *
+     * @param source the configured entries
+     * @param mediaTypeOnly whether media-type isolation applies
+     * @param listName the list's name, used verbatim in the rejection message
+     * @return the canonicalised entries
+     * @throws IllegalArgumentException in {@code mediaTypeOnly} mode, if an entry canonicalises to
+     *         the empty media type - such an entry can never match a value that carries one
+     */
+    private static Set<String> canonicaliseEntries(Set<String> source, boolean mediaTypeOnly, String listName) {
+        Set<String> canonical = HashSet.newHashSet(source.size());
+        for (String entry : source) {
+            String key = canonicalise(entry, mediaTypeOnly);
+            if (mediaTypeOnly && key.isEmpty()) {
+                throw new IllegalArgumentException("Content-type " + listName + " entry '" + entry
+                        + "' canonicalises to the empty media type");
+            }
+            canonical.add(key);
         }
-        return Set.copyOf(lower);
+        return Set.copyOf(canonical);
+    }
+
+    /**
+     * The single canonicalisation used for both the configured entries and the incoming value: in
+     * {@code mediaTypeOnly} mode the media type is isolated by dropping any parameters (from the
+     * first {@code ;}) and trimming surrounding whitespace; the result is then lowercased.
+     *
+     * @param value the entry or incoming value to canonicalise
+     * @param mediaTypeOnly whether media-type isolation applies
+     * @return the canonical comparison key
+     */
+    private static String canonicalise(String value, boolean mediaTypeOnly) {
+        String candidate = value;
+        if (mediaTypeOnly) {
+            int semicolon = candidate.indexOf(';');
+            if (semicolon >= 0) {
+                candidate = candidate.substring(0, semicolon);
+            }
+            candidate = candidate.trim();
+        }
+        return candidate.toLowerCase(Locale.ROOT);
     }
 
     /**
@@ -203,10 +254,11 @@ public final class AllowBlockListStage implements HttpSecurityValidator {
      *
      * <p>Escaping is expansive - one control code point renders as six characters - so an
      * unbounded value would be amplified sixfold here and then stored verbatim in the exception's
-     * {@code detail} for the exception's lifetime (CWE-400). Bounding the renderers alone does not
-     * close that: {@code ContentTypeValidationPipeline} documents that it applies neither a length
-     * limit nor character validation and wires this stage as its only stage, so the value reaching
-     * this method can be arbitrarily long. The result is therefore capped at
+     * {@code detail} for the exception's lifetime (CWE-400). The pipelines that wire this stage do
+     * run a {@code LengthValidationStage} ahead of it, but this stage is public and composable, so
+     * its own bound must not rest on a caller's pipeline composition: constructed standalone or
+     * chained without a preceding length stage, the value reaching this method can be arbitrarily
+     * long. The result is therefore capped at
      * {@link #MAX_RENDERED_DETAIL_LENGTH} characters plus the {@link #TRUNCATION_MARKER} at the
      * source, and the loop exits at the cut so the amplified string is never built. The cut is
      * taken between rendered code points, so a {@code U+XXXX} sequence is never split.</p>
@@ -234,19 +286,10 @@ public final class AllowBlockListStage implements HttpSecurityValidator {
     }
 
     /**
-     * Computes the lowercase key used for allow/block-list membership. In {@code mediaTypeOnly}
-     * mode the media type is isolated by dropping any parameters (from the first {@code ;}) and
-     * trimming surrounding whitespace.
+     * Computes the key used for allow/block-list membership, through the same
+     * {@link #canonicalise(String, boolean)} the configured entries went through at construction.
      */
     private String comparisonKey(String value) {
-        String candidate = value;
-        if (mediaTypeOnly) {
-            int semicolon = candidate.indexOf(';');
-            if (semicolon >= 0) {
-                candidate = candidate.substring(0, semicolon);
-            }
-            candidate = candidate.trim();
-        }
-        return candidate.toLowerCase(Locale.ROOT);
+        return canonicalise(value, mediaTypeOnly);
     }
 }

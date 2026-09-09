@@ -128,7 +128,8 @@ Pattern matching runs xref:specification/specification.adoc#_two_pass_pattern_ma
 `DecodingStage`, `NormalizationStage`, and `PatternMatchingStage` are deliberately absent: headers are not percent-decoded, dot-segment resolution applies to path components only, and the attack-pattern databases cover `URL_PATH`, `PARAMETER_NAME`, and `PARAMETER_VALUE` only.
 
 `ContentTypeValidationPipeline`::
-A single `AllowBlockListStage`.
+`LengthValidationStage` → `CharacterValidationStage` → `AllowBlockListStage`, all under `HEADER_VALUE`.
+`DecodingStage`, `NormalizationStage`, and `PatternMatchingStage` are deliberately absent, for the same reasons as on `HTTPHeaderValidationPipeline`.
 
 Across all pipelines the stages handle HTTP protocol-layer encoding only — URL encoding, UTF-8,
 and Unicode normalization (NFKC for paths, NFC for parameter values).

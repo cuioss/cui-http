@@ -177,11 +177,17 @@ class HTTPBodyTest {
     void shouldDetectPlainTextContent() {
         HTTPBody textBody1 = new HTTPBody(TEXT_CONTENT, "text/plain", "");
         HTTPBody textBody2 = new HTTPBody(TEXT_CONTENT, "TEXT/PLAIN", ""); // Case insensitive
+        HTTPBody parameterisedTextBody = new HTTPBody(TEXT_CONTENT, "text/plain; charset=utf-8", "");
         HTTPBody nonTextBody = new HTTPBody(JSON_CONTENT, "application/json", "");
+        HTTPBody rearrangedTokenBody = new HTTPBody(TEXT_CONTENT, "application/plain-text", "");
 
         assertTrue(textBody1.isPlainText());
         assertTrue(textBody2.isPlainText());
+        assertTrue(parameterisedTextBody.isPlainText(),
+                "A parameterised text/plain media type is the ordinary wire spelling and must report plain text");
         assertFalse(nonTextBody.isPlainText());
+        assertFalse(rearrangedTokenBody.isPlainText(),
+                "The substring rule is anchored on text/plain and must not match a type that merely carries plain and text in another arrangement");
     }
 
     @Test

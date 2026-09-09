@@ -21,6 +21,8 @@ import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.http.security.validation.AllowBlockListStage;
+import de.cuioss.http.security.validation.CharacterValidationStage;
+import de.cuioss.http.security.validation.LengthValidationStage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -34,11 +36,13 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Behavior tests for {@link ContentTypeValidationPipeline}.
  *
- * <p>Covers the accept/reject behavior of the wrapped
+ * <p>Covers the pipeline's three-stage composition and the accept/reject behavior of its
  * {@link de.cuioss.http.security.validation.AllowBlockListStage} in content-type mode:
  * block-list rejection and precedence, allow-list restriction (with the empty allow-list =
  * allow-all rule), media-type-only matching that ignores parameters, case-insensitive
- * comparison, and correct exception metadata plus security-event recording.</p>
+ * comparison, and correct exception metadata plus security-event recording. The length and
+ * character stages that now precede the list stage are pinned at the pipeline level by
+ * {@link HeaderAndContentTypeEnforcementRegressionTest}.</p>
  */
 @DisplayName("ContentTypeValidationPipeline behavior")
 class ContentTypeValidationPipelineTest {
@@ -62,15 +66,19 @@ class ContentTypeValidationPipelineTest {
     }
 
     @Test
-    @DisplayName("scope: allow/block-list enforcement only - a single AllowBlockListStage")
-    void pipelineScopeIsListEnforcementOnly() {
+    @DisplayName("scope: length then character then allow/block-list, all under HEADER_VALUE")
+    void pipelineComposesLengthCharacterAndListStages() {
         ContentTypeValidationPipeline pipeline = pipeline(SecurityConfiguration.defaults());
 
-        // Pins the documented class-level contract: no length limit, no character validation.
+        // Pins the documented class-level contract: the same length-then-character-then-list order
+        // the header pipelines use, so an unbounded value is cut before the character scan walks it.
         var stages = pipeline.getStages();
-        assertEquals(1, stages.size(), "Content-type pipeline must consist of exactly one stage");
-        assertInstanceOf(AllowBlockListStage.class, stages.getFirst());
-        assertEquals(ValidationType.HEADER_VALUE, pipeline.getValidationType());
+        assertEquals(3, stages.size(), "Content-type pipeline must consist of exactly three stages");
+        assertAll("stage order",
+                () -> assertInstanceOf(LengthValidationStage.class, stages.getFirst()),
+                () -> assertInstanceOf(CharacterValidationStage.class, stages.get(1)),
+                () -> assertInstanceOf(AllowBlockListStage.class, stages.get(2)),
+                () -> assertEquals(ValidationType.HEADER_VALUE, pipeline.getValidationType()));
     }
 
     @Nested
@@ -195,10 +203,47 @@ class ContentTypeValidationPipelineTest {
     class EdgeCases {
 
         @Test
-        @DisplayName("null input yields an empty Optional without throwing")
-        void nullInput() {
+        @DisplayName("null input yields an empty Optional when the allow-list is empty (allow-all)")
+        void nullInputUnderAllowAll() {
             ContentTypeValidationPipeline pipeline = pipeline(SecurityConfiguration.defaults());
             assertEquals(Optional.empty(), pipeline.validate(null));
+        }
+
+        @Test
+        @DisplayName("null input is rejected when a non-empty allow-list is configured")
+        void nullInputUnderConfiguredAllowList() {
+            ContentTypeValidationPipeline pipeline = pipeline(SecurityConfiguration.builder()
+                    .allowedContentTypes(Set.of("application/json"))
+                    .build());
+            long before = eventCounter.getCount(UrlSecurityFailureType.INVALID_INPUT);
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                    () -> pipeline.validate(null));
+
+            assertAll("an absent Content-Type must not slip past a configured allow-list",
+                    () -> assertEquals(UrlSecurityFailureType.INVALID_INPUT, exception.getFailureType()),
+                    () -> assertEquals(ValidationType.HEADER_VALUE, exception.getValidationType()),
+                    () -> assertEquals(before + 1,
+                            eventCounter.getCount(UrlSecurityFailureType.INVALID_INPUT),
+                            "the rejection is counted exactly as a non-null rejection is"));
+        }
+
+        @Test
+        @DisplayName("null input is rejected under the lenient preset too")
+        void nullInputUnderConfiguredAllowListAtLenientPreset() {
+            SecurityConfiguration lenient = SecurityConfiguration.lenient();
+            ContentTypeValidationPipeline pipeline = pipeline(SecurityConfiguration.builder()
+                    .allowedContentTypes(Set.of("application/json"))
+                    .allowControlCharacters(lenient.allowControlCharacters())
+                    .allowExtendedAscii(lenient.allowExtendedAscii())
+                    .maxHeaderValueLength(lenient.maxHeaderValueLength())
+                    .build());
+
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                    () -> pipeline.validate(null));
+
+            // ADR-0017: the rule is driven by the allow-list, not by how permissive the preset is.
+            assertEquals(UrlSecurityFailureType.INVALID_INPUT, exception.getFailureType());
         }
 
         @Test
@@ -256,6 +301,24 @@ class ContentTypeValidationPipelineTest {
             assertThrows(NoSuchMethodException.class,
                     () -> ContentTypeValidationPipeline.class.getMethod("getConfig"),
                     "The retained config must not become part of the exported public API");
+        }
+
+        @Test
+        @DisplayName("toString() renders the validation type and the composed stages")
+        void shouldHaveCorrectToString() {
+            String toString = pipeline(SecurityConfiguration.defaults()).toString();
+
+            assertAll("Rendered pipeline carries diagnostic content, not just an identity hash",
+                    () -> assertTrue(toString.contains("ContentTypeValidationPipeline"),
+                            "Rendering must name the concrete pipeline: " + toString),
+                    () -> assertTrue(toString.contains(ValidationType.HEADER_VALUE.name()),
+                            "A content type travels as a header value, so that is the type rendered: " + toString),
+                    () -> assertTrue(toString.contains("LengthValidationStage"),
+                            "Rendering must list the composed stages: " + toString),
+                    () -> assertTrue(toString.contains("CharacterValidationStage"),
+                            "Rendering must list the composed stages: " + toString),
+                    () -> assertTrue(toString.contains("AllowBlockListStage"),
+                            "Rendering must list the composed stages: " + toString));
         }
 
         @Test

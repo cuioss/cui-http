@@ -143,6 +143,57 @@ class AllowBlockListStageTest {
     }
 
     @Test
+    @DisplayName("A parameterised block-list entry blocks the bare media type")
+    void shouldBlockBareMediaTypeForParameterisedBlockListEntry() {
+        SecurityConfiguration config = SecurityConfiguration.builder()
+                .blockedContentTypes(Set.of("text/html; charset=utf-8"))
+                .build();
+        var stage = AllowBlockListStage.forContentTypes(config);
+
+        var exception = assertThrows(UrlSecurityException.class, () -> stage.validate("text/html"));
+
+        assertAll("the entry is canonicalised to its media type at construction",
+                () -> assertEquals(UrlSecurityFailureType.INVALID_INPUT, exception.getFailureType()),
+                () -> assertTrue(exception.getDetail().orElse("").contains("block-listed")),
+                () -> assertEquals("text/html", exception.getOriginalInput()));
+    }
+
+    @Test
+    @DisplayName("A parameterised allow-list entry admits the bare media type")
+    void shouldAdmitBareMediaTypeForParameterisedAllowListEntry() {
+        SecurityConfiguration config = SecurityConfiguration.builder()
+                .allowedContentTypes(Set.of("application/json; charset=utf-8"))
+                .build();
+        var stage = AllowBlockListStage.forContentTypes(config);
+
+        assertEquals(Optional.of("application/json"), stage.validate("application/json"));
+    }
+
+    @Test
+    @DisplayName("A content-type entry that canonicalises to the empty media type is rejected at construction")
+    void shouldRejectContentTypeEntryWithoutAMediaType() {
+        SecurityConfiguration config = SecurityConfiguration.builder()
+                .blockedContentTypes(Set.of("; charset=utf-8"))
+                .build();
+
+        var exception = assertThrows(IllegalArgumentException.class,
+                () -> AllowBlockListStage.forContentTypes(config));
+
+        assertTrue(exception.getMessage().contains("; charset=utf-8"),
+                "the rejection names the offending entry: " + exception.getMessage());
+    }
+
+    @Test
+    @DisplayName("Header-name entries are matched whole - a semicolon is not stripped")
+    void shouldNotStripParametersFromHeaderNameEntries() {
+        var stage = new AllowBlockListStage(Set.of(), Set.of("X-Debug; foo"), ValidationType.HEADER_NAME);
+
+        assertAll("media-type isolation is scoped to content types only",
+                () -> assertEquals(Optional.of("X-Debug"), stage.validate("X-Debug")),
+                () -> assertThrows(UrlSecurityException.class, () -> stage.validate("x-debug; foo")));
+    }
+
+    @Test
     @DisplayName("Block-list rejection escapes a CR/LF payload in the rendered value")
     void shouldEscapeControlCharactersOnBlockListRejection() {
         SecurityConfiguration config = SecurityConfiguration.builder()

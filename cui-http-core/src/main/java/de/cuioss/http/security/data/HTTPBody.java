@@ -99,7 +99,10 @@ import java.util.Optional;
  * <ul>
  *   <li>Validate the declared content type with
  *       {@code PipelineFactory.createContentTypePipeline(config, counter)}, which applies the
- *       configured {@code blockedContentTypes} / {@code allowedContentTypes} lists.</li>
+ *       configured {@code blockedContentTypes} / {@code allowedContentTypes} lists. A
+ *       {@code null} {@link #contentType()} is rejected by that pipeline when a non-empty
+ *       {@code allowedContentTypes} is configured, so a body declaring no content type cannot
+ *       slip past a list that a non-matching type would be rejected by.</li>
  *   <li>Enforce {@code SecurityConfiguration.maxBodySize()} against the raw byte count before
  *       the body is buffered or parsed.</li>
  *   <li>Parse and validate the decoded payload with a format-aware validator owned by the
@@ -254,10 +257,11 @@ String encoding) {
     /**
      * Checks if the content type indicates plain text.
      *
-     * @return true if the content type is "text/plain"
+     * @return true if the content type contains "text/plain"
      */
+    @SuppressWarnings("ConstantConditions")
     public boolean isPlainText() {
-        return hasContentType() && "text/plain".equalsIgnoreCase(contentType);
+        return hasContentType() && contentType.toLowerCase().contains("text/plain");
     }
 
     /**
