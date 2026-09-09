@@ -82,6 +82,28 @@ class DoubleEncodingPresetParityTest {
     /** The pattern {@code DecodingStage} applies to detect a percent-encoding layer that survived. */
     private static final Pattern SURVIVING_ENCODING = Pattern.compile("%[0-9a-fA-F]{2}");
 
+    /**
+     * Why the doubly encoded traversal inputs below are pinned to
+     * {@link UrlSecurityFailureType#PATH_TRAVERSAL_DETECTED} rather than to
+     * {@link UrlSecurityFailureType#DOUBLE_ENCODING}.
+     *
+     * <p>{@code URLPathValidationPipeline} runs {@code PatternMatchingStage} <em>before</em>
+     * {@code DecodingStage}, precisely so a raw traversal spelling is caught without first being
+     * decoded. Those inputs therefore trip the pre-decode traversal check and never reach the
+     * double-encoding gate that {@code DecodingStage} owns, so {@code DOUBLE_ENCODING} is not a
+     * reachable verdict for them. {@link #gateReadsCanonicalFormNotTheReturnedValue} is the test
+     * that pins the double-encoding gate itself, using an input that survives the pre-decode
+     * stage.</p>
+     *
+     * <p>Pinning the concrete type - rather than only comparing the two presets to each other -
+     * is what makes a both-presets drift visible: if the rejection reason changed under BOTH
+     * presets at once, a bare cross-preset equality assertion would still pass.</p>
+     */
+    private static final String EXPECTED_TRAVERSAL_REASON =
+            "PATH_TRAVERSAL_DETECTED: the pre-decode PatternMatchingStage runs ahead of "
+                    + "DecodingStage, so the raw traversal spelling is caught before the "
+                    + "double-encoding gate is reached";
+
     private SecurityEventCounter eventCounter;
 
     @BeforeEach
@@ -106,18 +128,25 @@ class DoubleEncodingPresetParityTest {
             "%252e%252e/"
     })
     void bothPresetsRejectDoublyEncodedTraversalAlike(String path) {
+        HttpSecurityValidator underDefaultsPipeline = pipeline(SecurityConfiguration.defaults());
         UrlSecurityException underDefaults = assertThrows(UrlSecurityException.class,
-                () -> pipeline(SecurityConfiguration.defaults()).validate(path),
+                () -> underDefaultsPipeline.validate(path),
                 "'" + path + "' carries a second encoding layer and must be rejected under defaults()");
 
+        HttpSecurityValidator underLenientPipeline = pipeline(SecurityConfiguration.lenient());
         UrlSecurityException underLenient = assertThrows(UrlSecurityException.class,
-                () -> pipeline(SecurityConfiguration.lenient()).validate(path),
+                () -> underLenientPipeline.validate(path),
                 "'" + path + "' must be rejected under lenient() too - allowDoubleEncoding=true no "
                         + "longer relaxes the double-encoding gate");
 
-        assertEquals(underDefaults.getFailureType(), underLenient.getFailureType(),
-                "the two presets must agree on WHY '" + path + "' is rejected, not merely that it is; "
-                        + "a divergence here is the raw-versus-encoded asymmetry ADR-0017 closed");
+        assertAll("both presets must reject '" + path + "' for the same pinned reason",
+                () -> assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, underDefaults.getFailureType(),
+                        "defaults() must reject '" + path + "' as " + EXPECTED_TRAVERSAL_REASON),
+                () -> assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, underLenient.getFailureType(),
+                        "lenient() must reject '" + path + "' as " + EXPECTED_TRAVERSAL_REASON),
+                () -> assertEquals(underDefaults.getFailureType(), underLenient.getFailureType(),
+                        "the two presets must agree on WHY '" + path + "' is rejected, not merely that it is; "
+                                + "a divergence here is the raw-versus-encoded asymmetry ADR-0017 closed"));
     }
 
     /**
@@ -147,11 +176,13 @@ class DoubleEncodingPresetParityTest {
     @Test
     @DisplayName("the surviving-encoding gate reads the canonical form, not the value being returned")
     void gateReadsCanonicalFormNotTheReturnedValue() {
+        HttpSecurityValidator underDefaultsPipeline = pipeline(SecurityConfiguration.defaults());
         UrlSecurityException underDefaults = assertThrows(UrlSecurityException.class,
-                () -> pipeline(SecurityConfiguration.defaults()).validate(FOLD_ASSEMBLED_ESCAPE));
+                () -> underDefaultsPipeline.validate(FOLD_ASSEMBLED_ESCAPE));
 
+        HttpSecurityValidator underLenientPipeline = pipeline(SecurityConfiguration.lenient());
         UrlSecurityException underLenient = assertThrows(UrlSecurityException.class,
-                () -> pipeline(SecurityConfiguration.lenient()).validate(FOLD_ASSEMBLED_ESCAPE),
+                () -> underLenientPipeline.validate(FOLD_ASSEMBLED_ESCAPE),
                 "lenient() returns the un-normalised form, so this input is rejected ONLY if the gate "
                         + "inspects the canonical fold instead of the returned value");
 
