@@ -127,7 +127,9 @@ Validators are thread-safe, composable, and fail-secure (throw `UrlSecurityExcep
 1. **Run the pre-commit auto-fix** (MANDATORY): run the quality-gate command from the "Build Commands"
    section of `CLAUDE.md` (the canonical `verify -Ppre-commit` build-executor invocation; never
    hard-code `./mvnw`/`mvn`).
-   - This REWRITES your files in place (license headers, formatting). Review what it changed
+   - This REWRITES your files in place: `license:format` updates license headers and
+     `rewrite:run` applies every configured OpenRewrite recipe -- modernization, not only
+     formatting, so a recipe can make semantic source changes. Review every resulting diff
      and commit it - a run that repaired the tree and a run that changed nothing both exit 0.
    - Fix ALL errors and warnings
    - Address code quality, formatting, and linting issues
