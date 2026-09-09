@@ -20,6 +20,7 @@ import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
+import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Array;
 import java.util.Collection;
@@ -182,7 +183,19 @@ public final class RequestCollectionValidator {
         return (int) total;
     }
 
-    private static int valueInstanceCount(Object value) {
+    /**
+     * Counts the value instances a single request-map value stands for.
+     *
+     * <p>The parameter is explicitly {@link Nullable} because a request map reaching this
+     * validator is externally supplied and may legitimately carry a {@code null} value, which
+     * contributes one to the count. The null guard below is therefore a real trust-boundary
+     * check, not dead code, and the annotation is what makes that contract visible under the
+     * package's {@code @NullMarked} default.</p>
+     *
+     * @param value a single value from the request map, possibly {@code null}
+     * @return the number of value instances this value represents
+     */
+    private static int valueInstanceCount(@Nullable Object value) {
         if (value != null && value.getClass().isArray()) {
             return Array.getLength(value);
         }

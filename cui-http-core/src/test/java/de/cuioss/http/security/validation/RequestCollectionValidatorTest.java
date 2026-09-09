@@ -16,6 +16,7 @@
 package de.cuioss.http.security.validation;
 
 import de.cuioss.http.security.config.SecurityConfiguration;
+import de.cuioss.http.security.config.SecurityConfigurationBuilder;
 import de.cuioss.http.security.config.SecurityDefaults;
 import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
@@ -166,25 +167,28 @@ class RequestCollectionValidatorTest {
     @DisplayName("Single-valued header map is bounded by maxHeaderCount")
     void shouldBoundSingleValuedHeaderMap() {
         assertDoesNotThrow(() -> validator.validateHeaders(mapOfSize(SecurityDefaults.MAX_HEADER_COUNT_DEFAULT)));
+        Map<String, String> overLimit = mapOfSize(SecurityDefaults.MAX_HEADER_COUNT_DEFAULT + 1);
         assertThrows(UrlSecurityException.class,
-                () -> validator.validateHeaders(mapOfSize(SecurityDefaults.MAX_HEADER_COUNT_DEFAULT + 1)));
+                () -> validator.validateHeaders(overLimit));
     }
 
     @Test
     @DisplayName("A negative configured count limit is rejected")
     void shouldRejectNegativeConfiguredLimits() {
+        // The builder setter itself rejects the negative limit, so .build() and the validator
+        // constructor are never reached. One builder is reused across all three branches: a
+        // rejected setter throws before assigning, leaving the builder in its default state.
+        SecurityConfigurationBuilder builder = SecurityConfiguration.builder();
+
         assertAll("negative count limits",
                 () -> assertThrows(IllegalArgumentException.class,
-                        () -> new RequestCollectionValidator(
-                                SecurityConfiguration.builder().maxParameterCount(-1).build(), eventCounter),
+                        () -> builder.maxParameterCount(-1),
                         "Negative maxParameterCount should be rejected"),
                 () -> assertThrows(IllegalArgumentException.class,
-                        () -> new RequestCollectionValidator(
-                                SecurityConfiguration.builder().maxHeaderCount(-1).build(), eventCounter),
+                        () -> builder.maxHeaderCount(-1),
                         "Negative maxHeaderCount should be rejected"),
                 () -> assertThrows(IllegalArgumentException.class,
-                        () -> new RequestCollectionValidator(
-                                SecurityConfiguration.builder().maxCookieCount(-1).build(), eventCounter),
+                        () -> builder.maxCookieCount(-1),
                         "Negative maxCookieCount should be rejected"));
     }
 
@@ -193,8 +197,9 @@ class RequestCollectionValidatorTest {
     void shouldCountCookiesByCollectionSize() {
         assertDoesNotThrow(() -> validator.validateCookies(
                 IntStream.range(0, SecurityDefaults.MAX_COOKIE_COUNT_DEFAULT).boxed().toList()));
-        assertThrows(UrlSecurityException.class, () -> validator.validateCookies(
-                IntStream.range(0, SecurityDefaults.MAX_COOKIE_COUNT_DEFAULT + 1).boxed().toList()));
+        List<Integer> overLimit =
+                IntStream.range(0, SecurityDefaults.MAX_COOKIE_COUNT_DEFAULT + 1).boxed().toList();
+        assertThrows(UrlSecurityException.class, () -> validator.validateCookies(overLimit));
     }
 
     @Test
