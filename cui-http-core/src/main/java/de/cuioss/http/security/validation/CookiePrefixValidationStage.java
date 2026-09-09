@@ -25,6 +25,7 @@ import org.jspecify.annotations.Nullable;
 
 import java.util.Objects;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 /**
  * Cookie prefix validation stage for RFC 6265bis cookie security prefixes.
@@ -280,7 +281,15 @@ public record CookiePrefixValidationStage(SecurityConfiguration config) implemen
     /**
      * Validates a complete cookie against prefix requirements.
      *
-     * <p>This method performs comprehensive validation of cookie prefix requirements:</p>
+     * <p>Both components are character-validated first, against the RFC 6265 {@code cookie-name}
+     * grammar and the {@code cookie-octet} set respectively, through
+     * {@link CharacterValidationStage} under this stage's own {@link SecurityConfiguration}. That
+     * check is what rejects a name carrying NBSP, ZWSP or IDEOGRAPHIC SPACE, none of which the
+     * {@link #validate(String)} whitespace check can see, and a value carrying a semicolon, comma,
+     * DQUOTE, backslash or any control character. CR/LF and every C0 control are rejected in both
+     * components regardless of configuration.</p>
+     *
+     * <p>The prefix rules are then applied:</p>
      * <ul>
      *   <li>For {@code __Host-} prefix: validates Secure, no Domain, and Path=/</li>
      *   <li>For {@code __Secure-} prefix: validates Secure attribute</li>
@@ -313,6 +322,19 @@ public record CookiePrefixValidationStage(SecurityConfiguration config) implemen
 
         // Validate name format (no leading/trailing whitespace)
         validate(cookieName);
+
+        // Character validation for both components. The whitespace check above rests on
+        // String.trim, which strips only code points <= U+0020 and therefore sees neither NBSP
+        // (U+00A0) nor ZWSP (U+200B) nor IDEOGRAPHIC SPACE (U+3000); the character stage is what
+        // catches those, along with every character outside the RFC 6265 cookie-name / cookie-octet
+        // grammars. Both stages reject CR/LF and every C0 control unconditionally, so no separate
+        // CR/LF branch is needed here.
+        //
+        // The stages are constructed per call rather than held as fields: this stage is a record,
+        // and a record cannot declare an instance field derived from its component. Construction
+        // reads three configuration booleans and a shared immutable character set, so it is cheap.
+        new CharacterValidationStage(config, ValidationType.COOKIE_NAME).validate(cookieName);
+        new CharacterValidationStage(config, ValidationType.COOKIE_VALUE).validate(cookie.value());
 
         // Opt-in attribute requirements (default off). Meaningful for attribute-bearing
         // Set-Cookie cookies; a request Cookie-header name=value pair carries no attributes
@@ -363,16 +385,72 @@ public record CookiePrefixValidationStage(SecurityConfiguration config) implemen
         Optional<String> domain = cookie.getDomain();
         if (prefix.forbidsDomain && domain.isPresent()) {
             throw prefixViolation(prefix, cookieName,
-                    "must not have Domain attribute (found: " + domain.get() + ")");
+                    "must not have Domain attribute (found: " + renderForDetail(domain.get()) + ")");
         }
 
         if (prefix.requiresRootPath) {
             Optional<String> path = cookie.getPath();
             if (path.isEmpty() || !"/".equals(path.get())) {
                 throw prefixViolation(prefix, cookieName,
-                        "requires Path=/ (found: " + path.orElse("none") + ")");
+                        "requires Path=/ (found: " + path.map(CookiePrefixValidationStage::renderForDetail)
+                                .orElse("none") + ")");
             }
         }
+    }
+
+    /**
+     * Maximum number of rendered characters {@link #renderForDetail(String)} emits.
+     *
+     * <p>Same limit and same reason as {@code AllowBlockListStage.MAX_RENDERED_DETAIL_LENGTH}, which
+     * takes it in turn from {@code UrlSecurityException}; the value is duplicated rather than shared
+     * because sharing would mean publishing an internal rendering limit on that exception's public
+     * API for the sake of one collaborator in another package.</p>
+     */
+    private static final int MAX_RENDERED_DETAIL_LENGTH = 200;
+
+    /** Marker appended when the rendered value was cut at {@link #MAX_RENDERED_DETAIL_LENGTH}. */
+    private static final String TRUNCATION_MARKER = "...";
+
+    /**
+     * Code points {@link #renderForDetail(String)} escapes: the C0 controls (U+0000-U+001F), DEL
+     * (U+007F), the C1 controls (U+0080-U+009F, notably NEL U+0085) and the Unicode line and
+     * paragraph separators U+2028 and U+2029. Character-identical to the expression
+     * {@code AllowBlockListStage} and {@code UrlSecurityException} use, and duplicated for the same
+     * reason given on {@link #MAX_RENDERED_DETAIL_LENGTH}.
+     */
+    private static final Pattern CONTROL_CHARS_PATTERN =
+            Pattern.compile("[\\x00-\\x1F\\x7F-\\u009F\\u2028\\u2029]");
+
+    /**
+     * Renders an attacker-controlled attribute value for inclusion in an exception detail.
+     *
+     * <p>The Domain and Path values reported above come straight off the request, and the detail is
+     * included in {@code UrlSecurityException.getMessage()}, which callers log - so a raw CR or LF
+     * spliced in would be log forging. Every control code point is therefore escaped to its
+     * {@code U+XXXX} form. Escaping is expansive, so the result is additionally capped at
+     * {@link #MAX_RENDERED_DETAIL_LENGTH} characters plus the {@link #TRUNCATION_MARKER}, and the
+     * loop exits at the cut so the amplified string is never built. The cut is taken between
+     * rendered code points, so a {@code U+XXXX} sequence is never split.</p>
+     *
+     * @param value the value to render
+     * @return the value with every control code point escaped, bounded in length
+     */
+    private static String renderForDetail(String value) {
+        StringBuilder rendered = new StringBuilder();
+        int index = 0;
+        while (index < value.length()) {
+            int codePoint = value.codePointAt(index);
+            index += Character.charCount(codePoint);
+            String literal = new String(Character.toChars(codePoint));
+            String escaped = CONTROL_CHARS_PATTERN.matcher(literal).matches()
+                    ? "U+%04X".formatted(codePoint)
+                    : literal;
+            if (rendered.length() + escaped.length() > MAX_RENDERED_DETAIL_LENGTH) {
+                return rendered.append(TRUNCATION_MARKER).toString();
+            }
+            rendered.append(escaped);
+        }
+        return rendered.toString();
     }
 
     /**

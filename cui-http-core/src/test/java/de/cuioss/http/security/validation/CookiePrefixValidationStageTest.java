@@ -17,6 +17,7 @@ package de.cuioss.http.security.validation;
 
 import de.cuioss.http.security.config.SecurityConfiguration;
 import de.cuioss.http.security.core.UrlSecurityFailureType;
+import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.data.Cookie;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.generators.cookie.CookieNameAsciiWhitespaceGenerator;
@@ -27,7 +28,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -267,9 +272,16 @@ class CookiePrefixValidationStageTest {
         @ValueSource(strings = {"__ſecure-token", "__hoſt-session"})
         @DisplayName("Non-ASCII case folding must not be read as a prefix")
         void shouldNotFoldNonAsciiIntoPrefix(String name) {
+            // LATIN SMALL LETTER LONG S uppercases to 'S' under Unicode case folding, so a
+            // Unicode-aware startsWith would read these as prefixed although no user agent does.
             assertFalse(CookiePrefixValidationStage.hasSecurityPrefix(name));
-            Cookie regular = new Cookie(name, "value", "");
-            assertDoesNotThrow(() -> validator.validateCookie(regular));
+
+            // The cookie is still rejected, but as a non-ASCII cookie name rather than as a prefix
+            // violation - the name grammar, not the prefix rules, is what stops it.
+            Cookie cookie = new Cookie(name, "value", "");
+            var exception = assertThrows(UrlSecurityException.class, () -> validator.validateCookie(cookie));
+            assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
+            assertEquals(ValidationType.COOKIE_NAME, exception.getValidationType());
         }
     }
 
@@ -295,6 +307,87 @@ class CookiePrefixValidationStageTest {
         assertEquals(UrlSecurityFailureType.COOKIE_PREFIX_VIOLATION, exception.getFailureType());
         assertTrue(exception.getDetail().orElse("").contains(expectedDetail),
                 "Expected detail to contain '" + expectedDetail + "' but was: " + exception.getDetail().orElse("none"));
+    }
+
+    @Nested
+    @DisplayName("Cookie name and value character validation")
+    class ComponentCharacterValidation {
+
+        /**
+         * Values outside the RFC 6265 {@code cookie-octet} set, each labelled by what it smuggles.
+         * The non-printing code points are written as {@code (char)} literals rather than pasted in,
+         * so the test data stays visible to a reader of this source.
+         */
+        static Stream<Arguments> valuesOutsideCookieOctet() {
+            return Stream.of(
+                    Arguments.of("semicolon", "bad;value"),
+                    Arguments.of("comma", "bad,value"),
+                    Arguments.of("space", "bad value"),
+                    Arguments.of("double quote", "bad\"value"),
+                    Arguments.of("backslash", "bad\\value"),
+                    Arguments.of("carriage return", "bad\rvalue"),
+                    Arguments.of("line feed", "bad\nvalue"),
+                    Arguments.of("NBSP U+00A0", "bad" + (char) 0x00A0 + "value"),
+                    Arguments.of("DEL U+007F", "bad" + (char) 0x007F + "value"));
+        }
+
+        @ParameterizedTest(name = "[{index}] {0}")
+        @MethodSource("valuesOutsideCookieOctet")
+        @DisplayName("A value outside cookie-octet is rejected under both presets")
+        void shouldRejectValueOutsideCookieOctet(String smuggled, String value) {
+            assertAll("both presets reject a value carrying a " + smuggled,
+                    () -> assertComponentRejected(SecurityConfiguration.defaults(), "session", value),
+                    () -> assertComponentRejected(SecurityConfiguration.lenient(), "session", value));
+        }
+
+        /** Whitespace-like code points above U+0020, which {@link String#trim()} does not strip. */
+        static Stream<Arguments> namesWithNonAsciiWhitespace() {
+            return Stream.of(
+                    Arguments.of("NBSP U+00A0", "sess" + (char) 0x00A0 + "ion"),
+                    Arguments.of("ZWSP U+200B", "sess" + (char) 0x200B + "ion"),
+                    Arguments.of("IDEOGRAPHIC SPACE U+3000", "sess" + (char) 0x3000 + "ion"),
+                    Arguments.of("NEL U+0085", "sess" + (char) 0x0085 + "ion"));
+        }
+
+        @ParameterizedTest(name = "[{index}] {0}")
+        @MethodSource("namesWithNonAsciiWhitespace")
+        @DisplayName("Non-ASCII whitespace in the name is rejected although String.trim leaves it")
+        void shouldRejectNonAsciiWhitespaceInName(String codePointName, String name) {
+            // String.trim only strips code points <= U+0020, so the pre-existing trim check cannot
+            // see any of these - the character stage is what catches them.
+            assertEquals(name, name.trim(), "Precondition: String.trim must leave " + codePointName + " in place");
+            assertAll("both presets reject a name carrying " + codePointName,
+                    () -> assertComponentRejected(SecurityConfiguration.defaults(), name, "value"),
+                    () -> assertComponentRejected(SecurityConfiguration.lenient(), name, "value"));
+        }
+
+        @Test
+        @DisplayName("An empty value stays legal - a bare name= pair is valid HTTP")
+        void shouldAcceptEmptyValue() {
+            assertDoesNotThrow(() -> validator.validateCookie(new Cookie("session", "", "")));
+        }
+
+        @Test
+        @DisplayName("A rejected Domain value is escaped, never spliced raw into the detail")
+        void shouldEscapeControlCharactersInReportedDomain() {
+            String domainCarryingNul = "ex" + (char) 0x0000 + "ample.com";
+            Cookie invalid = new Cookie(HOST_PREFIX + "session", "abc123",
+                    "Secure; Path=/; Domain=" + domainCarryingNul);
+
+            var exception = assertThrows(UrlSecurityException.class,
+                    () -> validator.validateCookie(invalid));
+
+            assertEquals(UrlSecurityFailureType.COOKIE_PREFIX_VIOLATION, exception.getFailureType());
+            String detail = exception.getDetail().orElse("");
+            assertTrue(detail.contains("U+0000"), "Detail should escape the control character: " + detail);
+            assertTrue(detail.indexOf(0x0000) < 0, "Detail must not carry the raw control character");
+        }
+
+        private void assertComponentRejected(SecurityConfiguration config, String name, String value) {
+            var stage = new CookiePrefixValidationStage(config);
+            Cookie cookie = new Cookie(name, value, "");
+            assertThrows(UrlSecurityException.class, () -> stage.validateCookie(cookie));
+        }
     }
 
     @Nested

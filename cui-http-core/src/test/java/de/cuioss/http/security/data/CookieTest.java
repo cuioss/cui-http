@@ -15,6 +15,8 @@
  */
 package de.cuioss.http.security.data;
 
+import de.cuioss.http.security.core.UrlSecurityFailureType;
+import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.generators.cookie.ValidCookieGenerator;
 import de.cuioss.http.security.validation.CookiePrefixValidationStage;
@@ -565,6 +567,64 @@ class CookieTest {
         Cookie accepted = Cookie.securePrefix("a-b.c_d~e1%f", "value");
         assertEquals("__Secure-a-b.c_d~e1%f", accepted.name(),
                 "A suffix within token must produce the __Secure- prefixed cookie");
+    }
+
+    // ADR-0017 note on the three factory-guard tests below: they are not run under both
+    // SecurityConfiguration presets, because there is no preset to vary. The factories validate
+    // through the class's own default-configuration stages and never consult a caller-supplied
+    // configuration, so defaults() and lenient() are not operands of these gates at all. The
+    // configurable surface - CookiePrefixValidationStage.validateCookie - IS pinned under both
+    // presets, in CookiePrefixValidationStageTest.
+    @Test
+    void shouldRejectNullSuffixInsteadOfConcatenatingIt() {
+        // A null suffix used to be concatenated, producing the name "__Host-null" / "__Secure-null"
+        // - a silently wrong cookie rather than a reported error.
+        var hostFailure = assertThrows(UrlSecurityException.class, () -> Cookie.hostPrefix(null, "value"),
+                "hostPrefix must reject a null suffix rather than concatenating it");
+        assertEquals(UrlSecurityFailureType.INVALID_INPUT, hostFailure.getFailureType());
+        assertEquals(ValidationType.COOKIE_NAME, hostFailure.getValidationType());
+
+        var secureFailure = assertThrows(UrlSecurityException.class, () -> Cookie.securePrefix(null, "value"),
+                "securePrefix must reject a null suffix rather than concatenating it");
+        assertEquals(UrlSecurityFailureType.INVALID_INPUT, secureFailure.getFailureType());
+        assertEquals(ValidationType.COOKIE_NAME, secureFailure.getValidationType());
+    }
+
+    @Test
+    void shouldRejectNullValueInFactories() {
+        var hostFailure = assertThrows(UrlSecurityException.class, () -> Cookie.hostPrefix("session", null),
+                "hostPrefix must reject a null value");
+        assertEquals(UrlSecurityFailureType.INVALID_INPUT, hostFailure.getFailureType());
+        assertEquals(ValidationType.COOKIE_VALUE, hostFailure.getValidationType());
+
+        var secureFailure = assertThrows(UrlSecurityException.class, () -> Cookie.securePrefix("token", null),
+                "securePrefix must reject a null value");
+        assertEquals(UrlSecurityFailureType.INVALID_INPUT, secureFailure.getFailureType());
+        assertEquals(ValidationType.COOKIE_VALUE, secureFailure.getValidationType());
+    }
+
+    @Test
+    void shouldRejectFactoryValueOutsideCookieOctet() {
+        // The value becomes the cookie VALUE, so it validates against RFC 6265 cookie-octet:
+        // semicolon, comma, space, DQUOTE and backslash are all outside it, and a semicolon in
+        // particular would let the value smuggle a further attribute into the serialized cookie.
+        assertThrows(UrlSecurityException.class, () -> Cookie.hostPrefix("session", "a;b"),
+                "hostPrefix must reject a value containing a semicolon");
+        assertThrows(UrlSecurityException.class, () -> Cookie.hostPrefix("session", "a b"),
+                "hostPrefix must reject a value containing a space");
+        assertThrows(UrlSecurityException.class, () -> Cookie.hostPrefix("session", "a\"b"),
+                "hostPrefix must reject a value containing a double quote");
+        assertThrows(UrlSecurityException.class, () -> Cookie.securePrefix("token", "a,b"),
+                "securePrefix must reject a value containing a comma");
+        assertThrows(UrlSecurityException.class, () -> Cookie.securePrefix("token", "a\\b"),
+                "securePrefix must reject a value containing a backslash");
+        assertThrows(UrlSecurityException.class, () -> Cookie.securePrefix("token", "a\rb"),
+                "securePrefix must reject a value containing a carriage return");
+
+        // Positive control: a value drawn only from cookie-octet is accepted, so the rejections
+        // above cannot be passing vacuously. An empty value is legal too - a bare name= pair.
+        assertEquals("abc123-XYZ_%2F", Cookie.hostPrefix("session", "abc123-XYZ_%2F").value());
+        assertEquals("", Cookie.securePrefix("token", "").value());
     }
 
     @Test
