@@ -35,19 +35,24 @@ import java.util.Set;
  * <h3>Constant Categories</h3>
  * <ul>
  *   <li><strong>Length Limits</strong> - Maximum sizes for various HTTP components</li>
- *   <li><strong>Count Limits</strong> - Maximum quantities for collections (advisory, see below)</li>
+ *   <li><strong>Count Limits</strong> - Maximum quantities for collections</li>
  *   <li><strong>Security Patterns</strong> - Common attack patterns to detect</li>
- *   <li><strong>Content Types</strong> - Standard MIME types and their security implications</li>
- *   <li><strong>Character Sets</strong> - Character validation patterns</li>
  *   <li><strong>Configuration Presets</strong> - Pre-built configurations for common scenarios</li>
  * </ul>
  *
- * <h3>Count and Classification Constants</h3>
- * <p>The count limits (parameter/header/cookie counts) are the preset defaults enforced by
- * {@code RequestCollectionValidator} (parameters 100, headers 50, cookies 20; strict 20/20/10,
- * lenient 500/100/50). The header/content-type classification sets
- * ({@code DANGEROUS_HEADER_NAMES}, {@code DANGEROUS_CONTENT_TYPES}, etc.) remain reference
- * values you may feed into the configurable allow/block lists.</p>
+ * <h3>Count Constants</h3>
+ * <p>The parameter, header and cookie count limits are the preset defaults enforced by
+ * {@code RequestCollectionValidator}. Each component has one constant per preset; the constants
+ * themselves are the source of truth for the actual limits, so they are linked rather than
+ * restated here:</p>
+ * <ul>
+ *   <li><strong>Parameters</strong> - {@link #MAX_PARAMETER_COUNT_STRICT},
+ *       {@link #MAX_PARAMETER_COUNT_DEFAULT}, {@link #MAX_PARAMETER_COUNT_LENIENT}</li>
+ *   <li><strong>Headers</strong> - {@link #MAX_HEADER_COUNT_STRICT},
+ *       {@link #MAX_HEADER_COUNT_DEFAULT}, {@link #MAX_HEADER_COUNT_LENIENT}</li>
+ *   <li><strong>Cookies</strong> - {@link #MAX_COOKIE_COUNT_STRICT},
+ *       {@link #MAX_COOKIE_COUNT_DEFAULT}, {@link #MAX_COOKIE_COUNT_LENIENT}</li>
+ * </ul>
  *
  * <h3>Usage Examples</h3>
  * <pre>
@@ -57,10 +62,10 @@ import java.util.Set;
  *     .maxParameterValueLength(SecurityDefaults.MAX_PARAMETER_VALUE_LENGTH_DEFAULT)
  *     .build();
  *
- * // Use advisory constants for application-layer enforcement
- * if (request.getParameterMap().size() > SecurityDefaults.MAX_PARAMETER_COUNT_DEFAULT) {
- *     // reject request
- * }
+ * // Enforce the count limits. The validator counts value instances rather than keys, so a
+ * // single parameter name carrying many values cannot evade maxParameterCount.
+ * RequestCollectionValidator validator = new RequestCollectionValidator(config, counter);
+ * validator.validateParameters(request.getParameterMap());
  *
  * // Check against limits (UrlSecurityException is builder-constructed; its constructor is private)
  * if (path.length() > SecurityDefaults.MAX_PATH_LENGTH_STRICT) {
@@ -232,19 +237,6 @@ public final class SecurityDefaults {
     /** Maximum header value length for lenient configurations */
     public static final int MAX_HEADER_VALUE_LENGTH_LENIENT = 8192;
 
-    /** Headers that should typically be blocked for security */
-    public static final Set<String> DANGEROUS_HEADER_NAMES = Set.of(
-            "X-Debug", "X-Test", "X-Development", "X-Admin",
-            "X-Execute", "X-Command", "X-Shell", "X-Eval",
-            "Proxy-Authorization", "Proxy-Connection"
-    );
-
-    /** Headers commonly used for debugging that may expose sensitive information */
-    public static final Set<String> DEBUG_HEADER_NAMES = Set.of(
-            "X-Debug", "X-Trace", "X-Profile", "X-Test-Mode",
-            "X-Development", "X-Internal", "X-System-Info"
-    );
-
     // ========== COOKIE SECURITY CONSTANTS ==========
 
     /** Maximum cookie count for strict security configurations */
@@ -274,12 +266,6 @@ public final class SecurityDefaults {
     /** Maximum cookie value length for lenient configurations */
     public static final int MAX_COOKIE_VALUE_LENGTH_LENIENT = 8192;
 
-    /** Cookie names that may indicate security issues */
-    public static final Set<String> SUSPICIOUS_COOKIE_NAMES = Set.of(
-            "debug", "test", "admin", "root", "system", "internal",
-            "password", "secret", "token", "key", "auth", "session"
-    );
-
     // ========== BODY SECURITY CONSTANTS ==========
 
     /** Maximum body size for strict security configurations (1MB) */
@@ -290,62 +276,6 @@ public final class SecurityDefaults {
 
     /** Maximum body size for lenient security configurations (10MB) */
     public static final long MAX_BODY_SIZE_LENIENT = 10L * 1024 * 1024;
-
-    /** Content types that are generally safe for most applications */
-    public static final Set<String> SAFE_CONTENT_TYPES = Set.of(
-            "application/json", "application/xml", "text/plain", "text/html",
-            "application/x-www-form-urlencoded", "multipart/form-data",
-            "text/css", "text/javascript", "application/javascript"
-    );
-
-    /** Content types that may pose security risks */
-    public static final Set<String> DANGEROUS_CONTENT_TYPES = Set.of(
-            "application/octet-stream", "application/x-executable",
-            "application/x-msdownload", "application/x-msdos-program",
-            "application/x-java-archive", "application/java-archive",
-            "text/x-script", "text/x-shellscript", "application/x-sh"
-    );
-
-    /** Content types used for file uploads */
-    public static final Set<String> UPLOAD_CONTENT_TYPES = Set.of(
-            "multipart/form-data", "application/octet-stream",
-            "image/jpeg", "image/png", "image/gif", "image/webp",
-            "application/pdf", "text/csv", "application/zip"
-    );
-
-    // ========== CHARACTER SECURITY CONSTANTS ==========
-
-    /** Null byte character */
-    public static final char NULL_BYTE = '\0';
-
-    /** Common control characters that may be problematic */
-    public static final Set<Character> PROBLEMATIC_CONTROL_CHARS = Set.of(
-            '\0', '\1', '\2', '\3', '\4', '\5', '\6', '\7',
-            '\b', '\f', '\016', '\017', '\020', '\021', '\022',
-            '\023', '\024', '\025', '\026', '\027', '\030', '\031'
-    );
-
-    /** Characters commonly used in injection attacks */
-    public static final Set<Character> INJECTION_CHARACTERS = Set.of(
-            '<', '>', '\'', '"', '&', ';', '|', '`', '$', '(', ')', '{', '}'
-    );
-
-
-    // XSS patterns removed - application layer responsibility.
-    // Application layers have proper context for HTML escaping and validation.
-
-    // ========== ENCODING CONSTANTS ==========
-
-    /** Common double-encoding patterns */
-    public static final Set<String> DOUBLE_ENCODING_PATTERNS = Set.of(
-            "%25", "%2525", "%252e", "%252f", "%255c",
-            "%2e%2e", "%2f%2e%2e", "%5c%2e%2e"
-    );
-
-    /** Unicode normalization forms that should be checked */
-    public static final Set<String> UNICODE_NORMALIZATION_FORMS = Set.of(
-            "NFC", "NFD", "NFKC", "NFKD"
-    );
 
     // ========== SIZE LIMITS FOR DIFFERENT SECURITY LEVELS ==========
 
@@ -397,22 +327,32 @@ public final class SecurityDefaults {
      * Even this preset never permits null bytes; path traversal is always
      * blocked by the validation stages regardless of configuration.</p>
      *
-     * <p><strong>Security callout - this preset disables two independent detection
-     * gates.</strong> A single {@link SecurityConfiguration#lenient()} selection turns
-     * both of the following off together, so a caller choosing this preset gives up
-     * both detections at once:</p>
+     * <p><strong>Security callout - this preset gives up no encoding or normalization
+     * detection.</strong> Two of its settings once disabled a detection gate outright and no
+     * longer do; both gates are now unconditional (ADR-0017), because letting a relaxed
+     * configuration soften them made the encoded spelling of a value outrank its raw
+     * spelling:</p>
      * <ul>
-     *   <li>{@code allowDoubleEncoding = true} disables the double-encoding gate, so an
-     *       input that hides an attack behind a second layer of percent-encoding (for
-     *       example {@code %252e%252e%252f}) is no longer rejected on that basis.</li>
-     *   <li>{@code normalizeUnicode = false} disables Unicode normalization, and with it
-     *       the homoglyph/confusable detection that depends on normalization - so
-     *       visually-identical characters from different scripts are no longer folded
-     *       together before the input is compared against the pattern sets.</li>
+     *   <li>{@code allowDoubleEncoding = true} no longer disables the double-encoding gate.
+     *       {@code DecodingStage} rejects both the wire-form {@code %25XX} pattern and a
+     *       percent-encoding layer that survives decoding, whatever this flag is set to, so an
+     *       input such as {@code %252e%252e%252f} <em>is</em> rejected under this preset. The
+     *       flag's only remaining observable effect is on what
+     *       {@link SecurityConfiguration#isStrict()} and
+     *       {@link SecurityConfiguration#isLenient()} report.</li>
+     *   <li>{@code normalizeUnicode = false} no longer disables the homoglyph/confusable
+     *       detection. The canonical fold is always computed and always inspected, and a fold
+     *       that introduces a structural separator (fullwidth solidus {@code U+FF0F} &rarr;
+     *       {@code /}) is always rejected. What the flag narrows is which form is
+     *       <em>returned</em>: under this preset the caller receives the un-normalised decoded
+     *       form, so any downstream comparison the caller performs itself sees the unfolded
+     *       text.</li>
      * </ul>
      *
-     * <p>Choose this preset only where maximum compatibility genuinely outweighs both
-     * of those detections; prefer {@link #DEFAULT_CONFIGURATION} when it does not.</p>
+     * <p>What this preset does relax is its length and count limits and its character rules -
+     * it permits control characters and extended ASCII. Choose it only where that added
+     * compatibility is genuinely required; prefer {@link #DEFAULT_CONFIGURATION} when it is
+     * not.</p>
      */
     public static final SecurityConfiguration LENIENT_CONFIGURATION = new SecurityConfiguration(
             MAX_PATH_LENGTH_LENIENT, true,

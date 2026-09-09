@@ -55,13 +55,21 @@ import java.util.Set;
  *
  * <h3>Default Values</h3>
  * <p>The builder is initialized with balanced default values that provide reasonable
- * security without being overly restrictive:</p>
+ * security without being overly restrictive. Every length, size and count default is read from
+ * the matching {@code *_DEFAULT} constant in {@link SecurityDefaults}, which is the single source
+ * of truth for those values - consult it rather than this list for the current numerals:</p>
  * <ul>
- *   <li>Path length: 4096 characters</li>
- *   <li>Parameter name/value length: 128 / 2048 characters</li>
- *   <li>Header name/value length: 128 / 2048 characters</li>
- *   <li>Cookie name/value length: 128 / 2048 characters</li>
- *   <li>Body size: 5MB</li>
+ *   <li>Path length: {@link SecurityDefaults#MAX_PATH_LENGTH_DEFAULT}</li>
+ *   <li>Parameter name/value length: {@link SecurityDefaults#MAX_PARAMETER_NAME_LENGTH_DEFAULT} /
+ *       {@link SecurityDefaults#MAX_PARAMETER_VALUE_LENGTH_DEFAULT}</li>
+ *   <li>Header name/value length: {@link SecurityDefaults#MAX_HEADER_NAME_LENGTH_DEFAULT} /
+ *       {@link SecurityDefaults#MAX_HEADER_VALUE_LENGTH_DEFAULT}</li>
+ *   <li>Cookie name/value length: {@link SecurityDefaults#MAX_COOKIE_NAME_LENGTH_DEFAULT} /
+ *       {@link SecurityDefaults#MAX_COOKIE_VALUE_LENGTH_DEFAULT}</li>
+ *   <li>Body size: {@link SecurityDefaults#MAX_BODY_SIZE_DEFAULT}</li>
+ *   <li>Parameter/header/cookie count: {@link SecurityDefaults#MAX_PARAMETER_COUNT_DEFAULT} /
+ *       {@link SecurityDefaults#MAX_HEADER_COUNT_DEFAULT} /
+ *       {@link SecurityDefaults#MAX_COOKIE_COUNT_DEFAULT}</li>
  *   <li>Null bytes and control characters: blocked</li>
  *   <li>Extended ASCII: {@code false} - blocked. Note this flag also gates <em>all</em> Unicode
  *       above 255 for {@code HEADER_VALUE} and {@code BODY}, so those two types are ASCII-only
@@ -77,25 +85,28 @@ import java.util.Set;
 public class SecurityConfigurationBuilder {
 
     // Path Security defaults
-    private int maxPathLength = 4096;
+    private int maxPathLength = SecurityDefaults.MAX_PATH_LENGTH_DEFAULT;
     private boolean allowDoubleEncoding = false;
 
     // Parameter Security defaults
-    private int maxParameterNameLength = 128;
-    private int maxParameterValueLength = 2048;
+    private int maxParameterNameLength = SecurityDefaults.MAX_PARAMETER_NAME_LENGTH_DEFAULT;
+    private int maxParameterValueLength = SecurityDefaults.MAX_PARAMETER_VALUE_LENGTH_DEFAULT;
 
     // Header Security defaults
-    private int maxHeaderNameLength = 128;
-    private int maxHeaderValueLength = 2048;
+    private int maxHeaderNameLength = SecurityDefaults.MAX_HEADER_NAME_LENGTH_DEFAULT;
+    private int maxHeaderValueLength = SecurityDefaults.MAX_HEADER_VALUE_LENGTH_DEFAULT;
 
     // Cookie Security defaults
-    private int maxCookieNameLength = 128;
-    private int maxCookieValueLength = 2048;
+    private int maxCookieNameLength = SecurityDefaults.MAX_COOKIE_NAME_LENGTH_DEFAULT;
+    private int maxCookieValueLength = SecurityDefaults.MAX_COOKIE_VALUE_LENGTH_DEFAULT;
 
     // Body Security defaults
-    private long maxBodySize = 5L * 1024 * 1024; // 5MB
+    private long maxBodySize = SecurityDefaults.MAX_BODY_SIZE_DEFAULT;
 
-    // Encoding Security defaults
+    // Encoding Security defaults. allowExtendedAscii stays a plain literal on purpose:
+    // SecurityDefaults declares no ALLOW_EXTENDED_ASCII_DEFAULT counterpart, its false default is
+    // the settled outcome of PLAN-02 and ADR-0020, and minting a new public constant for it would
+    // add published surface rather than remove duplication.
     private boolean allowNullBytes = false;
     private boolean allowControlCharacters = false;
     private boolean allowExtendedAscii = false;
@@ -149,9 +160,16 @@ public class SecurityConfigurationBuilder {
     }
 
     /**
-     * Sets whether double URL encoding is allowed.
+     * Sets the retained {@code allowDoubleEncoding} property, which <strong>no longer gates any
+     * validation path</strong>.
      *
-     * @param allow true to allow double encoding, false to block it
+     * <p>PLAN-01 made both of {@code DecodingStage}'s double-encoding gates unconditional
+     * (ADR-0017), so a double-encoded input such as {@code %252e} is rejected whatever this flag is
+     * set to. Setting it {@code true} does not permit double-encoded input; the only observable
+     * effect is on what {@link SecurityConfiguration#isStrict()} and
+     * {@link SecurityConfiguration#isLenient()} report.</p>
+     *
+     * @param allow the value to record; it does not enable or disable any validation
      * @return This builder for method chaining
      */
     public SecurityConfigurationBuilder allowDoubleEncoding(boolean allow) {
