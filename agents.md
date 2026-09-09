@@ -9,7 +9,7 @@ CUI-HTTP is a security-focused HTTP utilities library providing secure validatio
 - **Language**: Java 21 with JPMS module system (`module de.cuioss.http`)
 - **Build System**: Maven — invoked via the canonical build-executor commands documented in `CLAUDE.md` (Build Commands). Never hard-code `./mvnw` or `mvn`.
 - **Testing**: JUnit 5 (no Mockito, PowerMock, or Hamcrest)
-- **Code Quality**: SonarCloud integration with mandatory pre-commit checks
+- **Code Quality**: SonarCloud integration with a mandatory pre-commit run (auto-fixes: it rewrites files in place)
 
 ## Dev Environment Tips
 
@@ -124,9 +124,13 @@ Validators are thread-safe, composable, and fail-secure (throw `UrlSecurityExcep
 
 ### Before Committing
 
-1. **Run pre-commit checks** (MANDATORY): run the quality-gate command from the "Build Commands"
+1. **Run the pre-commit auto-fix** (MANDATORY): run the quality-gate command from the "Build Commands"
    section of `CLAUDE.md` (the canonical `verify -Ppre-commit` build-executor invocation; never
    hard-code `./mvnw`/`mvn`).
+   - This REWRITES your files in place: `license:format` updates license headers and
+     `rewrite:run` applies every configured OpenRewrite recipe -- modernization, not only
+     formatting, so a recipe can make semantic source changes. Review every resulting diff
+     and commit it - a run that repaired the tree and a run that changed nothing both exit 0.
    - Fix ALL errors and warnings
    - Address code quality, formatting, and linting issues
    - Some recipes may add markers - fix them or suppress with justification
