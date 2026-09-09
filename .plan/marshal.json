@@ -1,6 +1,7 @@
 {
   "extension_defaults": {
-    "build.maven.profiles.map.canonical": "smoke:benchmark"
+    "build.maven.profiles.map.canonical": "smoke:benchmark",
+    "build.maven.profiles.mutating": "pre-commit"
   },
   "plan": {
     "effort": "level-3",
@@ -229,14 +230,14 @@
       "skill_name": "plan-marshall:workflow-integration-github",
       "category": "ci",
       "verify_command": "gh auth status",
-      "description": "GitHub CI provider via gh CLI — PRs, issues, CI status, reviews",
+      "description": "GitHub CI provider via gh CLI \u2014 PRs, issues, CI status, reviews",
       "url": "https://api.github.com"
     },
     {
       "skill_name": "plan-marshall:workflow-integration-git",
       "category": "version-control",
       "verify_command": "git config user.name",
-      "description": "Git version control via git CLI — commit, push, branch operations",
+      "description": "Git version control via git CLI \u2014 commit, push, branch operations",
       "url": "https://github.com/cuioss/cui-http.git"
     }
   ],
