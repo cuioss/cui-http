@@ -23,7 +23,7 @@ cui-http/                         (root, packaging=pom, artifactId=cui-http-pare
 Never hard-code build tool commands (`./mvnw`, `mvn`) — invoke builds via the canonical executor commands below:
 
 - Compile: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "compile"`
-- Quality gate: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -Ppre-commit"`
+- Quality gate (auto-fixes license headers and formatting - review what it changed and commit it): `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -Ppre-commit"`
 - Full verify: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify"`
 - Coverage: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -Pcoverage"`
 - Tests (cui-http): `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "test -pl cui-http-core -am"` — only on cui-http
