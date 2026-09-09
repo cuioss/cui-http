@@ -202,16 +202,35 @@ class AttributeParserTest {
             assertEquals(expected, result.get());
         }
 
-        @Test
-        @DisplayName("A later malformed token does not displace an earlier valid match")
-        void shouldIgnoreMalformedRepeatOfAnAttribute() {
-            // "Domain =evil.com" carries a trailing space before '=', which RFC 6265 strict
-            // formatting rejects, so it is skipped rather than treated as the last occurrence.
-            Optional<String> result =
-                    AttributeParser.extractAttributeValue("Domain=good.com; Domain =evil.com", "Domain");
+        @ParameterizedTest
+        @CsvSource({
+                "'Domain =evil.com', 'Domain', 'evil.com'",
+                "'Domain= evil.com', 'Domain', 'evil.com'",
+                "'Domain = evil.com', 'Domain', 'evil.com'",
+                "'Domain=good.com; Domain =evil.com', 'Domain', 'evil.com'"
+        })
+        @DisplayName("Whitespace around the key is trimmed per RFC 6265 section 5.2")
+        void shouldTrimWhitespaceAroundTheKey(String attributes, String attributeName, String expected) {
+            // A user agent trims the attribute name before comparing it, so a key written with a
+            // space before '=' names the same attribute. Skipping such a token instead - the old
+            // "strict RFC compliance" rule - resolved the attribute to empty and let a padded
+            // Domain slip past a gate that reads getDomain().
+            Optional<String> result = AttributeParser.extractAttributeValue(attributes, attributeName);
 
             assertTrue(result.isPresent());
-            assertEquals("good.com", result.get());
+            assertEquals(expected, result.get());
+        }
+
+        @Test
+        @DisplayName("The key rule matches the one getAttributeNames applies")
+        void shouldApplyTheSameKeyRuleAsAttributeNameEnumeration() {
+            String attributes = "Secure; Path=/; Domain =evil.com";
+
+            assertTrue(new Cookie("n", "v", attributes).getAttributeNames().contains("Domain"),
+                    "Precondition: the name enumeration trims the key and reports Domain");
+            assertEquals("evil.com",
+                    AttributeParser.extractAttributeValue(attributes, "Domain").orElse(null),
+                    "The value lookup must use the same key rule as the name enumeration");
         }
 
         @Test

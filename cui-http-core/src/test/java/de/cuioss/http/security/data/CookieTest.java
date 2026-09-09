@@ -352,10 +352,14 @@ class CookieTest {
     void shouldHandleAttributesWithSpaces() {
         Cookie cookie = new Cookie(COOKIE_NAME, COOKIE_VALUE, "Domain = example.com ; Path = / ");
 
-        // The current implementation requires exact "attribute=" pattern without spaces around =
-        // This is actually correct per RFC 6265, where spaces around = are not standard
-        assertTrue(cookie.getDomain().isEmpty(), "Domain extraction should require exact 'Domain=' pattern without spaces");
-        assertTrue(cookie.getPath().isEmpty(), "Path extraction should require exact 'Path=' pattern without spaces");
+        // RFC 6265 section 5.2 has a user agent trim the attribute name and value before using
+        // them, so a padded key names the same attribute. This test previously pinned the opposite
+        // - that a padded key resolves to nothing - which read as strictness but was fail-open:
+        // a validator reading getDomain() saw no Domain on a cookie the browser scopes to one.
+        assertEquals("example.com", cookie.getDomain().orElse(null),
+                "A Domain key padded with spaces names the same attribute");
+        assertEquals("/", cookie.getPath().orElse(null),
+                "A Path key padded with spaces names the same attribute");
     }
 
     @Test
@@ -567,6 +571,20 @@ class CookieTest {
         Cookie accepted = Cookie.securePrefix("a-b.c_d~e1%f", "value");
         assertEquals("__Secure-a-b.c_d~e1%f", accepted.name(),
                 "A suffix within token must produce the __Secure- prefixed cookie");
+    }
+
+    @Test
+    void shouldApplyOneKeyRuleToNameEnumerationAndValueAccessors() {
+        // getAttributeNames trims the key; the value accessors must not apply a different rule.
+        // While they disagreed, "Domain =evil.com" was enumerated as a Domain and resolved as
+        // absent - and a __Host- cookie carrying it passed prefix validation.
+        Cookie padded = new Cookie("__Host-x", "1", "Secure; Path=/; Domain =evil.com; SameSite = Lax");
+
+        assertAll("the enumeration and the accessors agree on the key rule",
+                () -> assertTrue(padded.getAttributeNames().contains("Domain")),
+                () -> assertEquals("evil.com", padded.getDomain().orElse(null)),
+                () -> assertTrue(padded.getAttributeNames().contains("SameSite")),
+                () -> assertEquals("Lax", padded.getSameSite().orElse(null)));
     }
 
     @Test

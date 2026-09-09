@@ -131,6 +131,17 @@ class CookiePrefixValidationStageTest {
         }
 
         @Test
+        @DisplayName("A Domain key padded with whitespace is still a Domain (RFC 6265 section 5.2)")
+        void shouldRejectHostWithWhitespacePaddedDomainKey() {
+            // A user agent trims the attribute name, so "Domain =evil.com" sets a Domain and the
+            // cookie is not host-locked. Treating the padded key as unparseable made the gate read
+            // "no Domain" and accept it - a fail-open disagreement with the name enumeration, which
+            // trimmed the same key and reported Domain.
+            assertPrefixViolationUnderBothPresets(HOST_PREFIX + "x", "Secure; Path=/; Domain =evil.com",
+                    "__Host- prefix must not have Domain attribute (found: evil.com)");
+        }
+
+        @Test
         @DisplayName("A repeated Domain resolves last-wins, so the effective Domain is reported")
         void shouldReportTheLastDomainOccurrence() {
             assertPrefixViolationUnderBothPresets(HOST_PREFIX + "a", "Secure; Path=/; Domain=; Domain=evil.com",

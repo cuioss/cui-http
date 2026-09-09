@@ -20,10 +20,8 @@ import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.validation.CharacterValidationStage;
-import de.cuioss.tools.string.Splitter;
 import org.jspecify.annotations.Nullable;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -331,8 +329,7 @@ String attributes) {
      * @return true if the flag is present as a standalone token
      */
     private boolean hasAttributeFlag(String flag) {
-        if (!hasAttributes()) return false;
-        for (String token : Splitter.on(';').trimResults().omitEmptyStrings().splitToList(attributes)) {
+        for (String token : AttributeParser.splitAttributes(attributes)) {
             if (flag.equalsIgnoreCase(token)) {
                 return true;
             }
@@ -392,37 +389,34 @@ String attributes) {
     /**
      * Returns all attribute names present in this cookie.
      *
-     * <p>The attribute string is split on {@code ';'}, each token is trimmed and empty tokens are
-     * dropped. For a well-formed {@code name=value} token the name is the trimmed text before the
-     * first {@code '='}; a valueless flag such as {@code Secure} is returned as-is. Names are
-     * reported with their original case - no case folding is applied.</p>
+     * <p>Splitting and key extraction are not implemented here: this method delegates to
+     * {@code AttributeParser}, which is the package's single implementation of both, so the names
+     * reported here and the names {@link #getDomain()}, {@link #getPath()},
+     * {@link #getSameSite()} and {@link #getMaxAge()} look up can never diverge. The attribute
+     * string is split on {@code ';'}, each token is trimmed and empty tokens are dropped; the name
+     * of a token is the <strong>trimmed</strong> text before its first {@code '='}, so
+     * {@code "Domain =x"} yields {@code "Domain"}. Names are reported with their original case - no
+     * case folding is applied.</p>
      *
      * <p><strong>A token whose first {@code '='} is at position 0 is returned whole.</strong> Such
      * a token carries no name, so it is not split: {@code "=value"} is added to the result verbatim,
-     * including its leading {@code '='}. Every other token is split at its first {@code '='} and the
-     * name trimmed, so {@code "foo =bar"} yields {@code "foo"} rather than the whole token. Callers
-     * that treat every returned element as a bare attribute name must account for this.</p>
+     * including its leading {@code '='}. A valueless flag such as {@code Secure} is likewise
+     * returned as-is. Callers that treat every returned element as a bare attribute name must
+     * account for both cases.</p>
      *
      * <p><strong>Duplicates are preserved here, but resolve last-match elsewhere.</strong> This
      * method reports every token in encounter order, so an attribute string that repeats a name
-     * yields that name once per occurrence. The value accessors ({@link #getDomain()},
-     * {@link #getPath()}, {@link #getSameSite()}, {@link #getMaxAge()}) instead return the value of
-     * the <em>last</em> matching occurrence, per RFC 6265 section 5.3, so the size of this list is
-     * not a count of distinct resolvable attributes.</p>
+     * yields that name once per occurrence. The value accessors instead return the value of the
+     * <em>last</em> matching occurrence, per RFC 6265 section 5.3, so the size of this list is not
+     * a count of distinct resolvable attributes.</p>
      *
      * @return A list of attribute names in encounter order, including duplicates and malformed
      * tokens; empty when this cookie has no attributes
      */
     public List<String> getAttributeNames() {
-        if (!hasAttributes()) {
-            return List.of();
-        }
-        var result = new ArrayList<String>();
-        for (String attr : Splitter.on(';').trimResults().omitEmptyStrings().splitToList(attributes)) {
-            int equalIndex = attr.indexOf('=');
-            result.add(equalIndex > 0 ? attr.substring(0, equalIndex).trim() : attr);
-        }
-        return List.copyOf(result);
+        return AttributeParser.splitAttributes(attributes).stream()
+                .map(AttributeParser::attributeKey)
+                .toList();
     }
 
     /**
