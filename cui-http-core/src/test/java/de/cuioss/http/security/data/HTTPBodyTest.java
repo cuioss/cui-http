@@ -475,4 +475,16 @@ class HTTPBodyTest {
         assertTrue(charset.isPresent());
         assertEquals("utf-8", charset.get());
     }
+
+    @Test
+    void shouldResolveRepeatedCharsetToTheLastOccurrence() {
+        // getCharset inherits AttributeParser's resolution, so a repeated charset resolves
+        // last-wins exactly as a repeated cookie attribute does (RFC 6265 section 5.3).
+        HTTPBody body = new HTTPBody("content", "text/html; charset=utf-8; boundary=x; charset=iso-8859-1", "");
+
+        Optional<String> charset = body.getCharset();
+
+        assertTrue(charset.isPresent());
+        assertEquals("iso-8859-1", charset.get());
+    }
 }

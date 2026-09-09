@@ -16,12 +16,12 @@
 package de.cuioss.http.security.data;
 
 import de.cuioss.http.security.config.SecurityConfiguration;
+import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.core.ValidationType;
+import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.validation.CharacterValidationStage;
-import de.cuioss.tools.string.Splitter;
 import org.jspecify.annotations.Nullable;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -71,8 +71,16 @@ import java.util.Optional;
  * an empty string if no attributes are present.</p>
  *
  * <h3>Security Considerations</h3>
- * <p>This record is a simple data container. Security validation should be applied
- * to the name, value, and attributes components separately using appropriate validators.</p>
+ * <p>This record is a simple data container, and <strong>the canonical constructor performs no
+ * validation</strong>: {@code new Cookie(name, value, attributes)} and the {@code with*} copy
+ * methods accept any string, including one carrying a semicolon or a CR/LF that would change the
+ * header {@link #toCookieString()} is spliced into. Security validation must be applied to the
+ * name, value and attributes components using the appropriate validators - notably
+ * {@code CookiePrefixValidationStage.validateCookie}, which character-validates name and value and
+ * enforces the RFC 6265bis prefix rules.</p>
+ *
+ * <p>The {@link #hostPrefix(String, String)} and {@link #securePrefix(String, String)} factories are
+ * the exception: they validate the constructed name and the value before returning.</p>
  *
  * Implements: Task B3 from HTTP verification specification
  *
@@ -97,6 +105,57 @@ String attributes) {
             new CharacterValidationStage(
                     SecurityConfiguration.builder().build(),
                     ValidationType.COOKIE_NAME);
+
+    /**
+     * Shared validator for cookie values using default security configuration.
+     * Validates against the RFC 6265 {@code cookie-octet} set in the factory methods.
+     */
+    private static final CharacterValidationStage COOKIE_VALUE_VALIDATOR =
+            new CharacterValidationStage(
+                    SecurityConfiguration.builder().build(),
+                    ValidationType.COOKIE_VALUE);
+
+    /**
+     * Applies the four factory guards shared by {@link #hostPrefix(String, String)} and
+     * {@link #securePrefix(String, String)}, then builds the cookie.
+     *
+     * <p>Both factories route through this one method so the guards cannot drift apart: a guard
+     * added to one prefix factory and forgotten on the other is exactly the divergence this
+     * indirection removes. The guards are, in order: reject a null suffix rather than concatenating
+     * it into the name (which used to yield {@code __Host-null}); reject a null value; validate the
+     * <em>constructed</em> name - prefix included, since that whole string becomes the cookie name -
+     * against the {@code cookie-name} grammar; and validate the value against {@code cookie-octet}.</p>
+     *
+     * @param prefix     the security prefix to prepend, supplied by the calling factory
+     * @param suffix     the caller's name suffix; {@code null} is rejected
+     * @param value      the caller's cookie value; {@code null} is rejected
+     * @param attributes the attribute string the calling factory pins
+     * @return the constructed cookie
+     * @throws UrlSecurityException if any guard rejects the input
+     */
+    private static Cookie prefixed(String prefix, @Nullable String suffix, @Nullable String value,
+            String attributes) {
+        if (suffix == null) {
+            throw UrlSecurityException.builder()
+                    .failureType(UrlSecurityFailureType.INVALID_INPUT)
+                    .validationType(ValidationType.COOKIE_NAME)
+                    .originalInput(prefix)
+                    .detail("Cookie name suffix must not be null")
+                    .build();
+        }
+        if (value == null) {
+            throw UrlSecurityException.builder()
+                    .failureType(UrlSecurityFailureType.INVALID_INPUT)
+                    .validationType(ValidationType.COOKIE_VALUE)
+                    .originalInput(prefix + suffix)
+                    .detail("Cookie value must not be null")
+                    .build();
+        }
+        String name = prefix + suffix;
+        COOKIE_NAME_VALIDATOR.validate(name);
+        COOKIE_VALUE_VALIDATOR.validate(value);
+        return new Cookie(name, value, attributes);
+    }
 
     /**
      * Creates a simple cookie with no attributes.
@@ -141,18 +200,22 @@ String attributes) {
      * @param suffix The cookie name suffix (will be prefixed with __Host-). The full resulting
      *               name is validated against the RFC 6265 {@code cookie-name} grammar - the
      *               RFC 7230/2616 {@code token} character set - since it becomes the cookie name.
-     * @param value The cookie value
+     *               {@code null} is rejected rather than concatenated into the name.
+     * @param value The cookie value, validated against the RFC 6265 {@code cookie-octet} set.
+     *              {@code null} is rejected; an empty value is accepted, since a bare
+     *              {@code name=} pair is legal HTTP.
      * @return A Cookie with __Host- prefix and compliant attributes
-     * @throws de.cuioss.http.security.exceptions.UrlSecurityException if the suffix contains any
-     *         character outside the {@code token} set (notably {@code =}, whitespace, and every
-     *         RFC 2616 {@code separator})
+     * @throws de.cuioss.http.security.exceptions.UrlSecurityException if the suffix or the value is
+     *         {@code null}, if the constructed name contains any character outside the
+     *         {@code token} set (notably {@code =}, whitespace, and every RFC 2616
+     *         {@code separator}), or if the value contains any character outside
+     *         {@code cookie-octet} (notably {@code ;}, {@code ,}, whitespace, DQUOTE, backslash
+     *         and every control character)
      * @see <a href="https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-rfc6265bis">RFC 6265bis</a>
      * @since 1.0
      */
-    public static Cookie hostPrefix(String suffix, String value) {
-        // Validate suffix to prevent injection of invalid characters
-        COOKIE_NAME_VALIDATOR.validate(suffix);
-        return new Cookie("__Host-" + suffix, value, "Secure; Path=/; HttpOnly; SameSite=Strict");
+    public static Cookie hostPrefix(@Nullable String suffix, @Nullable String value) {
+        return prefixed("__Host-", suffix, value, "Secure; Path=/; HttpOnly; SameSite=Strict");
     }
 
     /**
@@ -189,18 +252,22 @@ String attributes) {
      * @param suffix The cookie name suffix (will be prefixed with __Secure-). The full resulting
      *               name is validated against the RFC 6265 {@code cookie-name} grammar - the
      *               RFC 7230/2616 {@code token} character set - since it becomes the cookie name.
-     * @param value The cookie value
+     *               {@code null} is rejected rather than concatenated into the name.
+     * @param value The cookie value, validated against the RFC 6265 {@code cookie-octet} set.
+     *              {@code null} is rejected; an empty value is accepted, since a bare
+     *              {@code name=} pair is legal HTTP.
      * @return A Cookie with __Secure- prefix and compliant attributes
-     * @throws de.cuioss.http.security.exceptions.UrlSecurityException if the suffix contains any
-     *         character outside the {@code token} set (notably {@code =}, whitespace, and every
-     *         RFC 2616 {@code separator})
+     * @throws de.cuioss.http.security.exceptions.UrlSecurityException if the suffix or the value is
+     *         {@code null}, if the constructed name contains any character outside the
+     *         {@code token} set (notably {@code =}, whitespace, and every RFC 2616
+     *         {@code separator}), or if the value contains any character outside
+     *         {@code cookie-octet} (notably {@code ;}, {@code ,}, whitespace, DQUOTE, backslash
+     *         and every control character)
      * @see <a href="https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-rfc6265bis">RFC 6265bis</a>
      * @since 1.0
      */
-    public static Cookie securePrefix(String suffix, String value) {
-        // Validate suffix to prevent injection of invalid characters
-        COOKIE_NAME_VALIDATOR.validate(suffix);
-        return new Cookie("__Secure-" + suffix, value, "Secure; HttpOnly; SameSite=Lax");
+    public static Cookie securePrefix(@Nullable String suffix, @Nullable String value) {
+        return prefixed("__Secure-", suffix, value, "Secure; HttpOnly; SameSite=Lax");
     }
 
     /**
@@ -262,8 +329,7 @@ String attributes) {
      * @return true if the flag is present as a standalone token
      */
     private boolean hasAttributeFlag(String flag) {
-        if (!hasAttributes()) return false;
-        for (String token : Splitter.on(';').trimResults().omitEmptyStrings().splitToList(attributes)) {
+        for (String token : AttributeParser.splitAttributes(attributes)) {
             if (flag.equalsIgnoreCase(token)) {
                 return true;
             }
@@ -323,37 +389,34 @@ String attributes) {
     /**
      * Returns all attribute names present in this cookie.
      *
-     * <p>The attribute string is split on {@code ';'}, each token is trimmed and empty tokens are
-     * dropped. For a well-formed {@code name=value} token the name is the trimmed text before the
-     * first {@code '='}; a valueless flag such as {@code Secure} is returned as-is. Names are
-     * reported with their original case - no case folding is applied.</p>
+     * <p>Splitting and key extraction are not implemented here: this method delegates to
+     * {@code AttributeParser}, which is the package's single implementation of both, so the names
+     * reported here and the names {@link #getDomain()}, {@link #getPath()},
+     * {@link #getSameSite()} and {@link #getMaxAge()} look up can never diverge. The attribute
+     * string is split on {@code ';'}, each token is trimmed and empty tokens are dropped; the name
+     * of a token is the <strong>trimmed</strong> text before its first {@code '='}, so
+     * {@code "Domain =x"} yields {@code "Domain"}. Names are reported with their original case - no
+     * case folding is applied.</p>
      *
      * <p><strong>A token whose first {@code '='} is at position 0 is returned whole.</strong> Such
      * a token carries no name, so it is not split: {@code "=value"} is added to the result verbatim,
-     * including its leading {@code '='}. Every other token is split at its first {@code '='} and the
-     * name trimmed, so {@code "foo =bar"} yields {@code "foo"} rather than the whole token. Callers
-     * that treat every returned element as a bare attribute name must account for this.</p>
+     * including its leading {@code '='}. A valueless flag such as {@code Secure} is likewise
+     * returned as-is. Callers that treat every returned element as a bare attribute name must
+     * account for both cases.</p>
      *
-     * <p><strong>Duplicates are preserved here, but resolve first-match elsewhere.</strong> This
+     * <p><strong>Duplicates are preserved here, but resolve last-match elsewhere.</strong> This
      * method reports every token in encounter order, so an attribute string that repeats a name
-     * yields that name once per occurrence. The value accessors ({@link #getDomain()},
-     * {@link #getPath()}, {@link #getSameSite()}, {@link #getMaxAge()}) instead return the value of
-     * the <em>first</em> matching occurrence and ignore the rest, so the size of this list is not a
-     * count of distinct resolvable attributes.</p>
+     * yields that name once per occurrence. The value accessors instead return the value of the
+     * <em>last</em> matching occurrence, per RFC 6265 section 5.3, so the size of this list is not
+     * a count of distinct resolvable attributes.</p>
      *
      * @return A list of attribute names in encounter order, including duplicates and malformed
      * tokens; empty when this cookie has no attributes
      */
     public List<String> getAttributeNames() {
-        if (!hasAttributes()) {
-            return List.of();
-        }
-        var result = new ArrayList<String>();
-        for (String attr : Splitter.on(';').trimResults().omitEmptyStrings().splitToList(attributes)) {
-            int equalIndex = attr.indexOf('=');
-            result.add(equalIndex > 0 ? attr.substring(0, equalIndex).trim() : attr);
-        }
-        return List.copyOf(result);
+        return AttributeParser.splitAttributes(attributes).stream()
+                .map(AttributeParser::attributeKey)
+                .toList();
     }
 
     /**
@@ -390,8 +453,18 @@ String attributes) {
 
     /**
      * Returns a string representation suitable for HTTP Set-Cookie headers.
-     * Note: This does not perform proper HTTP encoding - use appropriate
-     * encoding utilities for actual HTTP header generation.
+     *
+     * <p><strong>This performs no validation and no HTTP encoding.</strong> The canonical record
+     * constructor validates nothing either, so a {@code Cookie} assembled with
+     * {@code new Cookie(...)}, {@link #withName(String)}, {@link #withValue(String)} or
+     * {@link #withAttributes(String)} may carry a name, value or attribute string that is not
+     * RFC 6265 conformant - including a semicolon or a CR/LF that would change the header the
+     * result is spliced into. Only the {@link #hostPrefix(String, String)} and
+     * {@link #securePrefix(String, String)} factories validate their inputs.</p>
+     *
+     * <p>Validate the cookie before serializing it - {@code CookiePrefixValidationStage.validateCookie}
+     * checks name and value - and use appropriate encoding utilities for actual HTTP header
+     * generation.</p>
      *
      * @return A string in the format "name=value; attributes"
      */

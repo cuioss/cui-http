@@ -166,13 +166,21 @@ class PipelineFactoryTest {
 
         @Test
         void shouldRejectUnsupportedValidationTypes() {
+            // The cookie types are refused as a settled design decision, not as an unshipped
+            // promise: the message must state the decision and name the supported route.
             IllegalArgumentException cookieNameException = assertThrows(IllegalArgumentException.class,
                     () -> PipelineFactory.createPipeline(ValidationType.COOKIE_NAME, config, eventCounter));
-            assertTrue(cookieNameException.getMessage().contains("Cookie validation pipelines are not yet implemented"));
+            assertTrue(cookieNameException.getMessage()
+                    .contains("Cookie validation is deliberately not offered as a pipeline"));
+            assertTrue(cookieNameException.getMessage()
+                    .contains("CookiePrefixValidationStage.validateCookie(Cookie)"));
 
             IllegalArgumentException cookieValueException = assertThrows(IllegalArgumentException.class,
                     () -> PipelineFactory.createPipeline(ValidationType.COOKIE_VALUE, config, eventCounter));
-            assertTrue(cookieValueException.getMessage().contains("Cookie validation pipelines are not yet implemented"));
+            assertTrue(cookieValueException.getMessage()
+                    .contains("Cookie validation is deliberately not offered as a pipeline"));
+            assertTrue(cookieValueException.getMessage()
+                    .contains("CookiePrefixValidationStage.validateCookie(Cookie)"));
 
             IllegalArgumentException bodyException = assertThrows(IllegalArgumentException.class,
                     () -> PipelineFactory.createPipeline(ValidationType.BODY, config, eventCounter));

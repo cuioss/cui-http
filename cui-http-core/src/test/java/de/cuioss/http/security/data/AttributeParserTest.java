@@ -185,6 +185,56 @@ class AttributeParserTest {
             assertEquals("abc\\", result.get());
         }
 
+        @ParameterizedTest
+        @CsvSource({
+                "'Domain=first.com; Domain=second.com', 'Domain', 'second.com'",
+                "'Path=/a; Path=/b; Path=/c', 'Path', '/c'",
+                "'charset=UTF-8; boundary=xyz; charset=ISO-8859-1', 'charset', 'ISO-8859-1'",
+                "'Max-Age=1; max-age=2', 'Max-Age', '2'",
+                "'name=first; name=\"quoted\"', 'name', 'quoted'",
+                "'name=\"quoted\"; name=last', 'name', 'last'"
+        })
+        @DisplayName("A repeated attribute resolves to the last occurrence (RFC 6265 section 5.3)")
+        @SuppressWarnings("java:S4144") // pins the RFC 6265 5.3 last-wins regression distinctly from shouldExtractAttributeValues
+        void shouldResolveRepeatedAttributeLastWins(String attributes, String attributeName, String expected) {
+            Optional<String> result = AttributeParser.extractAttributeValue(attributes, attributeName);
+
+            assertTrue(result.isPresent());
+            assertEquals(expected, result.get());
+        }
+
+        @ParameterizedTest
+        @CsvSource({
+                "'Domain =evil.com', 'Domain', 'evil.com'",
+                "'Domain= evil.com', 'Domain', 'evil.com'",
+                "'Domain = evil.com', 'Domain', 'evil.com'",
+                "'Domain=good.com; Domain =evil.com', 'Domain', 'evil.com'"
+        })
+        @DisplayName("Whitespace around the key is trimmed per RFC 6265 section 5.2")
+        @SuppressWarnings("java:S4144") // pins the RFC 6265 5.2 key-trim regression distinctly from shouldExtractAttributeValues
+        void shouldTrimWhitespaceAroundTheKey(String attributes, String attributeName, String expected) {
+            // A user agent trims the attribute name before comparing it, so a key written with a
+            // space before '=' names the same attribute. Skipping such a token instead - the old
+            // "strict RFC compliance" rule - resolved the attribute to empty and let a padded
+            // Domain slip past a gate that reads getDomain().
+            Optional<String> result = AttributeParser.extractAttributeValue(attributes, attributeName);
+
+            assertTrue(result.isPresent());
+            assertEquals(expected, result.get());
+        }
+
+        @Test
+        @DisplayName("The key rule matches the one getAttributeNames applies")
+        void shouldApplyTheSameKeyRuleAsAttributeNameEnumeration() {
+            String attributes = "Secure; Path=/; Domain =evil.com";
+
+            assertTrue(new Cookie("n", "v", attributes).getAttributeNames().contains("Domain"),
+                    "Precondition: the name enumeration trims the key and reports Domain");
+            assertEquals("evil.com",
+                    AttributeParser.extractAttributeValue(attributes, "Domain").orElse(null),
+                    "The value lookup must use the same key rule as the name enumeration");
+        }
+
         @Test
         @DisplayName("Should match a case-differing attribute name under a locale with non-ASCII case folding")
         void shouldMatchCaseDifferingNameUnderTurkishLocale() {

@@ -49,6 +49,20 @@ import java.util.Objects;
  *       {@code Content-Type} values</li>
  * </ul>
  *
+ * <h3>Deliberately Not Offered</h3>
+ * <p>This factory offers <em>no</em> cookie validation pipeline. That is a settled design
+ * decision rather than an unshipped feature: a cookie's name, value and attributes have to be
+ * judged together against the RFC 6265bis prefix rules, which a single-string pipeline cannot
+ * express. Cookies are validated instead by calling
+ * {@link de.cuioss.http.security.validation.CookiePrefixValidationStage#validateCookie(de.cuioss.http.security.data.Cookie)}
+ * on a {@link de.cuioss.http.security.data.Cookie}. Passing
+ * {@link ValidationType#COOKIE_NAME} or {@link ValidationType#COOKIE_VALUE} to
+ * {@link #createPipeline(ValidationType, SecurityConfiguration, SecurityEventCounter)} therefore
+ * throws {@link IllegalArgumentException} and always will.</p>
+ *
+ * <p>Likewise, {@link ValidationType#BODY} has no pipeline: HTTP body content validation belongs
+ * to the application layer and was removed from this library.</p>
+ *
  * <h3>Usage Examples</h3>
  * <pre>
  * SecurityConfiguration config = SecurityConfiguration.defaults();
@@ -232,6 +246,20 @@ public final class PipelineFactory {
      *   <li><strong>HEADER_VALUE</strong> - Creates HTTPHeaderValidationPipeline for values</li>
      * </ul>
      *
+     * <h3>Rejected Validation Types</h3>
+     * <p>The remaining {@link ValidationType} constants have no pipeline and are rejected with
+     * {@link IllegalArgumentException}. They are listed here because a silent omission would read
+     * as an oversight; both refusals are deliberate and permanent:</p>
+     * <ul>
+     *   <li><strong>COOKIE_NAME, COOKIE_VALUE</strong> - cookie validation is deliberately not
+     *       offered as a pipeline. Name, value and attributes have to be judged together against
+     *       the RFC 6265bis prefix rules, so cookies are validated by calling
+     *       {@link de.cuioss.http.security.validation.CookiePrefixValidationStage#validateCookie(de.cuioss.http.security.data.Cookie)}
+     *       on a {@link de.cuioss.http.security.data.Cookie} instead</li>
+     *   <li><strong>BODY</strong> - HTTP body content validation was removed from this library and
+     *       belongs to the application layer</li>
+     * </ul>
+     *
      * @param validationType The type of validation pipeline to create
      * @param config The security configuration to use
      * @param eventCounter The event counter for tracking security violations
@@ -256,7 +284,9 @@ public final class PipelineFactory {
                     "BODY validation pipeline has been removed. HTTP body content validation should be handled at application layer.");
             case COOKIE_NAME, COOKIE_VALUE -> throw new IllegalArgumentException(
                     """
-                            Cookie validation pipelines are not yet implemented. \
+                            Cookie validation is deliberately not offered as a pipeline. \
+                            Cookie name and value are validated together with the RFC 6265bis prefix rules by \
+                            CookiePrefixValidationStage.validateCookie(Cookie), which is the supported route. \
                             Supported types: URL_PATH, PARAMETER_NAME, PARAMETER_VALUE, HEADER_NAME, HEADER_VALUE""");
         };
     }

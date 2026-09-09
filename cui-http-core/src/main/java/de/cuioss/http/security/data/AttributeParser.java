@@ -18,6 +18,7 @@ package de.cuioss.http.security.data;
 import de.cuioss.tools.string.Splitter;
 import org.jspecify.annotations.Nullable;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -84,9 +85,23 @@ final class AttributeParser {
     /**
      * Extracts the value of a named attribute from a string containing semicolon-separated attributes.
      *
-     * <p>This method performs case-insensitive matching for the attribute name and handles
-     * common edge cases like missing values, trailing/leading whitespace, and attributes
-     * at the end of the string.</p>
+     * <p>Attribute names are matched case-insensitively, under the single key rule documented on
+     * {@link #attributeKey(String)}: the name is the text before the token's first {@code '='},
+     * trimmed, so {@code Domain =x} names {@code Domain} exactly as {@code Domain=x} does. The
+     * value is the text after that {@code '='}, likewise trimmed, per RFC 6265 section 5.2.</p>
+     *
+     * <p><strong>Repeated attributes resolve last-wins.</strong> This method serves two consumers
+     * under two different RFC families - {@link Cookie} attribute parsing (RFC 6265) and
+     * Content-Type/charset parameter parsing (RFC 7231) - and applies the same last-wins scan to
+     * both rather than special-casing either. For cookies, RFC 6265 section 5.3 has a user agent
+     * processing a repeated attribute keep the last occurrence; for a repeated Content-Type
+     * parameter such as a duplicated {@code charset}, RFC 7231 defines no canonical resolution
+     * order, so this method's uniform last-wins scan is this library's own consistent choice rather
+     * than a second RFC-mandated behaviour. Either way, this method scans every token and returns
+     * the value of the final match rather than stopping at the first. Resolving first-wins would let
+     * a value the RFC 6265 user agent itself would have discarded be the one this library reports -
+     * so an attacker able to append a second {@code Domain} or {@code Path} to the attribute string
+     * could make a validator inspect a different value from the one that actually takes effect.</p>
      *
      * <p><strong>Quoted values:</strong> RFC 6265 and RFC 7231 both permit an attribute value
      * to be a {@code quoted-string}. After whitespace trimming, a value that is at least two
@@ -116,36 +131,67 @@ final class AttributeParser {
             return Optional.empty();
         }
 
-        // Split by semicolons to process each attribute individually
-        for (String trimmedAttr : Splitter.on(';').trimResults().omitEmptyStrings().splitToList(attributeString)) {
-            int equalsIndex = trimmedAttr.indexOf('=');
+        // Scan every token and retain the most recent match: RFC 6265 section 5.3 resolves a
+        // repeated attribute to its LAST occurrence, so the scan must not stop at the first one.
+        String lastMatch = null;
 
-            if (equalsIndex > 0) {
-                // Extract the key part before '=' (without trimming for strict RFC compliance)
-                String key = trimmedAttr.substring(0, equalsIndex);
+        for (String token : splitAttributes(attributeString)) {
+            int equalsIndex = token.indexOf('=');
 
-                // RFC 6265 requires strict formatting - no spaces around '='
-                // Only trim the key if it doesn't have trailing spaces (strict parsing)
-                String trimmedKey = key.trim();
-                if (!key.equals(trimmedKey)) {
-                    // Key has trailing spaces - this violates RFC 6265 strict formatting
-                    continue;
-                }
-
-                // Check for exact match (case-insensitive)
-                if (trimmedKey.equalsIgnoreCase(attributeName)) {
-                    // Extract value after '=' and trim whitespace per RFC 6265
-                    String value = trimmedAttr.substring(equalsIndex + 1);
-                    // RFC 6265 allows trimming whitespace from attribute values
-                    String trimmedValue = value.trim();
-
-                    // Unwrap a well-formed quoted-string (which may be empty for "name=")
-                    return Optional.of(unquote(trimmedValue));
-                }
+            // A token with no '=', or one whose '=' is at position 0, carries no attribute name
+            // and so can never be the sought attribute.
+            if (equalsIndex > 0 && attributeKey(token).equalsIgnoreCase(attributeName)) {
+                // Extract value after '=' and trim whitespace per RFC 6265 section 5.2
+                lastMatch = token.substring(equalsIndex + 1).trim();
             }
         }
 
-        return Optional.empty();
+        // Unwrap a well-formed quoted-string (which may be empty for "name="). Applied to the
+        // retained match only, so an earlier occurrence's quoting never affects the result.
+        return Optional.ofNullable(lastMatch).map(AttributeParser::unquote);
+    }
+
+    /**
+     * Splits an attribute string into its semicolon-delimited tokens, trimmed and with empty
+     * tokens dropped.
+     *
+     * <p>This is the single splitting implementation for the package. {@link Cookie} delegates its
+     * attribute enumeration and flag lookups here rather than repeating the split, so a change to
+     * how tokens are recognised cannot land on one caller and miss the other.</p>
+     *
+     * @param attributeString The attribute string to split, may be null
+     * @return The tokens in encounter order; empty when there is nothing to split
+     */
+    static List<String> splitAttributes(@Nullable String attributeString) {
+        if (attributeString == null || attributeString.isEmpty()) {
+            return List.of();
+        }
+        return Splitter.on(';').trimResults().omitEmptyStrings().splitToList(attributeString);
+    }
+
+    /**
+     * Returns the attribute name a token carries, under the package's single key rule.
+     *
+     * <p>The name is the text before the token's first {@code '='}, <strong>trimmed</strong>. RFC
+     * 6265 section 5.2 has a user agent trim the name before comparing it, so {@code "Domain =x"}
+     * names {@code Domain} exactly as {@code "Domain=x"} does. A token whose first {@code '='} is
+     * at position 0 carries no name and is returned whole, including its leading {@code '='}; a
+     * token with no {@code '='} at all is a valueless flag such as {@code Secure} and is likewise
+     * returned as-is.</p>
+     *
+     * <p>Both this method and {@link #extractAttributeValue(String, String)} apply this one rule.
+     * They previously disagreed - the enumeration trimmed the key while the value lookup skipped
+     * any key carrying trailing whitespace as "strict RFC compliance" - and the disagreement was
+     * fail-open: {@code Domain =evil.com} was enumerated as a {@code Domain} and resolved as
+     * absent, so a {@code __Host-} cookie carrying it passed the no-Domain check that exists to
+     * keep it host-locked, while the user agent applied the Domain.</p>
+     *
+     * @param token A single trimmed attribute token, never null
+     * @return The trimmed attribute name, or the whole token when it carries none
+     */
+    static String attributeKey(String token) {
+        int equalsIndex = token.indexOf('=');
+        return equalsIndex > 0 ? token.substring(0, equalsIndex).trim() : token;
     }
 
     /**

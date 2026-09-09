@@ -15,6 +15,8 @@
  */
 package de.cuioss.http.security.data;
 
+import de.cuioss.http.security.core.UrlSecurityFailureType;
+import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.generators.cookie.ValidCookieGenerator;
 import de.cuioss.http.security.validation.CookiePrefixValidationStage;
@@ -350,10 +352,14 @@ class CookieTest {
     void shouldHandleAttributesWithSpaces() {
         Cookie cookie = new Cookie(COOKIE_NAME, COOKIE_VALUE, "Domain = example.com ; Path = / ");
 
-        // The current implementation requires exact "attribute=" pattern without spaces around =
-        // This is actually correct per RFC 6265, where spaces around = are not standard
-        assertTrue(cookie.getDomain().isEmpty(), "Domain extraction should require exact 'Domain=' pattern without spaces");
-        assertTrue(cookie.getPath().isEmpty(), "Path extraction should require exact 'Path=' pattern without spaces");
+        // RFC 6265 section 5.2 has a user agent trim the attribute name and value before using
+        // them, so a padded key names the same attribute. This test previously pinned the opposite
+        // - that a padded key resolves to nothing - which read as strictness but was fail-open:
+        // a validator reading getDomain() saw no Domain on a cookie the browser scopes to one.
+        assertEquals("example.com", cookie.getDomain().orElse(null),
+                "A Domain key padded with spaces names the same attribute");
+        assertEquals("/", cookie.getPath().orElse(null),
+                "A Path key padded with spaces names the same attribute");
     }
 
     @Test
@@ -565,6 +571,99 @@ class CookieTest {
         Cookie accepted = Cookie.securePrefix("a-b.c_d~e1%f", "value");
         assertEquals("__Secure-a-b.c_d~e1%f", accepted.name(),
                 "A suffix within token must produce the __Secure- prefixed cookie");
+    }
+
+    @Test
+    void shouldApplyOneKeyRuleToNameEnumerationAndValueAccessors() {
+        // getAttributeNames trims the key; the value accessors must not apply a different rule.
+        // While they disagreed, "Domain =evil.com" was enumerated as a Domain and resolved as
+        // absent - and a __Host- cookie carrying it passed prefix validation.
+        Cookie padded = new Cookie("__Host-x", "1", "Secure; Path=/; Domain =evil.com; SameSite = Lax");
+
+        assertAll("the enumeration and the accessors agree on the key rule",
+                () -> assertTrue(padded.getAttributeNames().contains("Domain")),
+                () -> assertEquals("evil.com", padded.getDomain().orElse(null)),
+                () -> assertTrue(padded.getAttributeNames().contains("SameSite")),
+                () -> assertEquals("Lax", padded.getSameSite().orElse(null)));
+    }
+
+    @Test
+    void shouldResolveRepeatedAttributesLastWins() {
+        // RFC 6265 section 5.3 resolves a repeated attribute to the last occurrence. Resolving
+        // first-wins let an attacker who can append to the attribute string be overruled by an
+        // earlier value the user agent itself would have discarded.
+        Cookie repeated = new Cookie("session", "abc123",
+                "Domain=first.com; Path=/a; SameSite=Strict; Max-Age=1; "
+                        + "Domain=second.com; Path=/b; SameSite=Lax; Max-Age=2");
+
+        assertAll("every value accessor resolves last-wins",
+                () -> assertEquals("second.com", repeated.getDomain().orElse(null)),
+                () -> assertEquals("/b", repeated.getPath().orElse(null)),
+                () -> assertEquals("Lax", repeated.getSameSite().orElse(null)),
+                () -> assertEquals("2", repeated.getMaxAge().orElse(null)));
+
+        // getAttributeNames still reports every occurrence in encounter order - it enumerates
+        // tokens rather than resolving them, so last-wins does not apply to it.
+        assertEquals(8, repeated.getAttributeNames().size(),
+                "getAttributeNames must keep reporting duplicates");
+    }
+
+    // ADR-0017 note on the three factory-guard tests below: they are not run under both
+    // SecurityConfiguration presets, because there is no preset to vary. The factories validate
+    // through the class's own default-configuration stages and never consult a caller-supplied
+    // configuration, so defaults() and lenient() are not operands of these gates at all. The
+    // configurable surface - CookiePrefixValidationStage.validateCookie - IS pinned under both
+    // presets, in CookiePrefixValidationStageTest.
+    @Test
+    void shouldRejectNullSuffixInsteadOfConcatenatingIt() {
+        // A null suffix used to be concatenated, producing the name "__Host-null" / "__Secure-null"
+        // - a silently wrong cookie rather than a reported error.
+        var hostFailure = assertThrows(UrlSecurityException.class, () -> Cookie.hostPrefix(null, "value"),
+                "hostPrefix must reject a null suffix rather than concatenating it");
+        assertEquals(UrlSecurityFailureType.INVALID_INPUT, hostFailure.getFailureType());
+        assertEquals(ValidationType.COOKIE_NAME, hostFailure.getValidationType());
+
+        var secureFailure = assertThrows(UrlSecurityException.class, () -> Cookie.securePrefix(null, "value"),
+                "securePrefix must reject a null suffix rather than concatenating it");
+        assertEquals(UrlSecurityFailureType.INVALID_INPUT, secureFailure.getFailureType());
+        assertEquals(ValidationType.COOKIE_NAME, secureFailure.getValidationType());
+    }
+
+    @Test
+    void shouldRejectNullValueInFactories() {
+        var hostFailure = assertThrows(UrlSecurityException.class, () -> Cookie.hostPrefix("session", null),
+                "hostPrefix must reject a null value");
+        assertEquals(UrlSecurityFailureType.INVALID_INPUT, hostFailure.getFailureType());
+        assertEquals(ValidationType.COOKIE_VALUE, hostFailure.getValidationType());
+
+        var secureFailure = assertThrows(UrlSecurityException.class, () -> Cookie.securePrefix("token", null),
+                "securePrefix must reject a null value");
+        assertEquals(UrlSecurityFailureType.INVALID_INPUT, secureFailure.getFailureType());
+        assertEquals(ValidationType.COOKIE_VALUE, secureFailure.getValidationType());
+    }
+
+    @Test
+    void shouldRejectFactoryValueOutsideCookieOctet() {
+        // The value becomes the cookie VALUE, so it validates against RFC 6265 cookie-octet:
+        // semicolon, comma, space, DQUOTE and backslash are all outside it, and a semicolon in
+        // particular would let the value smuggle a further attribute into the serialized cookie.
+        assertThrows(UrlSecurityException.class, () -> Cookie.hostPrefix("session", "a;b"),
+                "hostPrefix must reject a value containing a semicolon");
+        assertThrows(UrlSecurityException.class, () -> Cookie.hostPrefix("session", "a b"),
+                "hostPrefix must reject a value containing a space");
+        assertThrows(UrlSecurityException.class, () -> Cookie.hostPrefix("session", "a\"b"),
+                "hostPrefix must reject a value containing a double quote");
+        assertThrows(UrlSecurityException.class, () -> Cookie.securePrefix("token", "a,b"),
+                "securePrefix must reject a value containing a comma");
+        assertThrows(UrlSecurityException.class, () -> Cookie.securePrefix("token", "a\\b"),
+                "securePrefix must reject a value containing a backslash");
+        assertThrows(UrlSecurityException.class, () -> Cookie.securePrefix("token", "a\rb"),
+                "securePrefix must reject a value containing a carriage return");
+
+        // Positive control: a value drawn only from cookie-octet is accepted, so the rejections
+        // above cannot be passing vacuously. An empty value is legal too - a bare name= pair.
+        assertEquals("abc123-XYZ_%2F", Cookie.hostPrefix("session", "abc123-XYZ_%2F").value());
+        assertEquals("", Cookie.securePrefix("token", "").value());
     }
 
     @Test

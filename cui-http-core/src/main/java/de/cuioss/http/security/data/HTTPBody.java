@@ -302,6 +302,12 @@ String encoding) {
     /**
      * Extracts the charset from the content type if specified.
      *
+     * <p>A content type that repeats {@code charset} resolves to the <strong>last</strong>
+     * occurrence - {@code text/html; charset=utf-8; charset=iso-8859-1} yields
+     * {@code iso-8859-1}. The resolution is not implemented here; it is inherited from the shared
+     * {@code AttributeParser}, which follows RFC 6265 section 5.3 for every attribute string it
+     * parses.</p>
+     *
      * @return The charset name wrapped in Optional, or empty if not specified
      */
     public Optional<String> getCharset() {
