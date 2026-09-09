@@ -41,9 +41,18 @@ import java.util.Set;
  * </ul>
  *
  * <h3>Count Constants</h3>
- * <p>The count limits (parameter/header/cookie counts) are the preset defaults enforced by
- * {@code RequestCollectionValidator} (parameters 100, headers 50, cookies 20; strict 20/20/10,
- * lenient 500/100/50).</p>
+ * <p>The parameter, header and cookie count limits are the preset defaults enforced by
+ * {@code RequestCollectionValidator}. Each component has one constant per preset; the constants
+ * themselves are the source of truth for the actual limits, so they are linked rather than
+ * restated here:</p>
+ * <ul>
+ *   <li><strong>Parameters</strong> - {@link #MAX_PARAMETER_COUNT_STRICT},
+ *       {@link #MAX_PARAMETER_COUNT_DEFAULT}, {@link #MAX_PARAMETER_COUNT_LENIENT}</li>
+ *   <li><strong>Headers</strong> - {@link #MAX_HEADER_COUNT_STRICT},
+ *       {@link #MAX_HEADER_COUNT_DEFAULT}, {@link #MAX_HEADER_COUNT_LENIENT}</li>
+ *   <li><strong>Cookies</strong> - {@link #MAX_COOKIE_COUNT_STRICT},
+ *       {@link #MAX_COOKIE_COUNT_DEFAULT}, {@link #MAX_COOKIE_COUNT_LENIENT}</li>
+ * </ul>
  *
  * <h3>Usage Examples</h3>
  * <pre>
