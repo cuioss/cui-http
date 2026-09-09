@@ -29,9 +29,10 @@ import java.util.Optional;
 /**
  * Cookie prefix validation stage for RFC 6265bis cookie security prefixes.
  *
- * <p>This stage validates that cookies with security prefixes ({@code __Host-} and {@code __Secure-})
- * meet the requirements specified in RFC 6265bis. These prefixes provide additional security
- * guarantees to prevent subdomain attacks and ensure HTTPS-only transmission.</p>
+ * <p>This stage validates that cookies with security prefixes ({@code __Host-}, {@code __Secure-},
+ * {@code __Http-} and {@code __HostHttp-}) meet the requirements specified in RFC 6265bis. These
+ * prefixes provide additional security guarantees to prevent subdomain attacks, ensure HTTPS-only
+ * transmission and keep the cookie out of reach of scripts.</p>
  *
  * <p>In addition, {@link #validateCookie(Cookie)} enforces the opt-in configuration flags
  * {@code requireSecureCookies} and {@code requireHttpOnlyCookies} (both default {@code false}):
@@ -46,6 +47,8 @@ import java.util.Optional;
  * {@link #validate(String)} method only performs whitespace checks on the raw cookie name.</p>
  *
  * <h3>Validation Rules</h3>
+ * <p>The prefix token is matched ASCII case-insensitively (see the design principle below); the
+ * four tokens do not overlap as string prefixes, so at most one of them ever applies.</p>
  * <ol>
  *   <li><strong>__Host- Prefix</strong> - Requires:
  *     <ul>
@@ -59,13 +62,28 @@ import java.util.Optional;
  *       <li>Must have {@code Secure} attribute</li>
  *     </ul>
  *   </li>
+ *   <li><strong>__Http- Prefix</strong> - Requires:
+ *     <ul>
+ *       <li>Must have {@code Secure} attribute</li>
+ *       <li>Must have {@code HttpOnly} attribute</li>
+ *     </ul>
+ *   </li>
+ *   <li><strong>__HostHttp- Prefix</strong> - Requires:
+ *     <ul>
+ *       <li>Must have {@code Secure} attribute</li>
+ *       <li>Must have {@code HttpOnly} attribute</li>
+ *       <li>Must NOT have {@code Domain} attribute</li>
+ *       <li>Must have {@code Path=/}</li>
+ *     </ul>
+ *   </li>
  * </ol>
  *
  * <h3>Security Value</h3>
  * <ul>
- *   <li><strong>Subdomain Protection</strong> - {@code __Host-} prevents cookie setting by subdomains</li>
- *   <li><strong>HTTPS Enforcement</strong> - Both prefixes ensure HTTPS-only transmission</li>
- *   <li><strong>Scope Control</strong> - {@code __Host-} restricts cookie scope to exact host and root path</li>
+ *   <li><strong>Subdomain Protection</strong> - {@code __Host-} and {@code __HostHttp-} prevent cookie setting by subdomains</li>
+ *   <li><strong>HTTPS Enforcement</strong> - All four prefixes ensure HTTPS-only transmission</li>
+ *   <li><strong>Script Isolation</strong> - {@code __Http-} and {@code __HostHttp-} keep the cookie out of {@code document.cookie}</li>
+ *   <li><strong>Scope Control</strong> - {@code __Host-} and {@code __HostHttp-} restrict cookie scope to exact host and root path</li>
  *   <li><strong>Defense in Depth</strong> - Protects against cookie chaos attacks</li>
  * </ul>
  *
@@ -103,7 +121,9 @@ import java.util.Optional;
  * <ul>
  *   <li><strong>RFC Compliance</strong> - Implements RFC 6265bis prefix requirements</li>
  *   <li><strong>Fail-Secure</strong> - Throws exception on validation failure</li>
- *   <li><strong>Case-Sensitive</strong> - Cookie name prefixes are case-sensitive per RFC</li>
+ *   <li><strong>Case-Insensitive</strong> - Cookie name prefixes are matched ASCII case-insensitively,
+ *       as RFC 6265bis specifies; {@code __host-} and {@code __HOST-} carry the same requirements as
+ *       {@code __Host-}, so a case variation cannot be used to slip past the prefix rules</li>
  *   <li><strong>Immutable</strong> - Thread-safe stateless validator</li>
  * </ul>
  *
@@ -115,6 +135,7 @@ import java.util.Optional;
  *   <li>Domain attribute injection for {@code __Host-} cookies</li>
  *   <li>Missing Secure attribute on prefix cookies</li>
  *   <li>Incorrect Path attribute on {@code __Host-} cookies</li>
+ *   <li>Case-variation of the prefix token (for example {@code __hOsT-}) to evade the prefix rules</li>
  * </ul>
  *
  * @see Cookie
@@ -143,11 +164,87 @@ public record CookiePrefixValidationStage(SecurityConfiguration config) implemen
         this(SecurityConfiguration.defaults());
     }
 
-    /** Prefix for host-locked cookies */
-    private static final String HOST_PREFIX = "__Host-";
+    /**
+     * The RFC 6265bis cookie name prefixes and the attribute requirements each one carries.
+     *
+     * <p>Every prefix requires {@code Secure}, so that requirement is not modelled as a flag.
+     * The four tokens do not overlap as string prefixes - {@code __HostHttp-} is not an extension
+     * of {@code __Host-}, because the character following {@code __Host} differs - so at most one
+     * constant ever matches a given name and the declaration order is not load-bearing.</p>
+     */
+    private enum SecurityPrefix {
 
-    /** Prefix for secure-only cookies */
-    private static final String SECURE_PREFIX = "__Secure-";
+        /** Host-locked cookie: Secure, no Domain, Path=/. */
+        HOST("__Host-", false, true, true),
+
+        /** Secure-only cookie: Secure. */
+        SECURE("__Secure-", false, false, false),
+
+        /** Script-inaccessible cookie: Secure and HttpOnly. */
+        HTTP("__Http-", true, false, false),
+
+        /** Host-locked, script-inaccessible cookie: Secure, HttpOnly, no Domain, Path=/. */
+        HOST_HTTP("__HostHttp-", true, true, true);
+
+        private final String token;
+        private final boolean requiresHttpOnly;
+        private final boolean forbidsDomain;
+        private final boolean requiresRootPath;
+
+        SecurityPrefix(String token, boolean requiresHttpOnly, boolean forbidsDomain, boolean requiresRootPath) {
+            this.token = token;
+            this.requiresHttpOnly = requiresHttpOnly;
+            this.forbidsDomain = forbidsDomain;
+            this.requiresRootPath = requiresRootPath;
+        }
+
+        /**
+         * Finds the prefix a cookie name carries, matching the token ASCII case-insensitively.
+         *
+         * @param cookieName the cookie name to inspect; may be null
+         * @return the matching prefix, or empty when the name carries none
+         */
+        static Optional<SecurityPrefix> match(@Nullable String cookieName) {
+            if (cookieName == null) {
+                return Optional.empty();
+            }
+            for (SecurityPrefix prefix : values()) {
+                if (startsWithAsciiIgnoreCase(cookieName, prefix.token)) {
+                    return Optional.of(prefix);
+                }
+            }
+            return Optional.empty();
+        }
+
+        /**
+         * ASCII-only case-insensitive prefix test.
+         *
+         * <p>Deliberately not {@link String#regionMatches(boolean, int, String, int, int)}: that
+         * method folds case over the whole of Unicode, so a name such as {@code __ſecure-}
+         * (LATIN SMALL LETTER LONG S) would be reported as prefixed although no user agent treats
+         * it as such. RFC 6265bis specifies an ASCII case-insensitive comparison, and matching
+         * exactly that keeps this stage's view of a name aligned with the user agent's.</p>
+         *
+         * @param value  the cookie name
+         * @param prefix the prefix token, which contains ASCII characters only
+         * @return true if {@code value} starts with {@code prefix}, ignoring ASCII case
+         */
+        private static boolean startsWithAsciiIgnoreCase(String value, String prefix) {
+            if (value.length() < prefix.length()) {
+                return false;
+            }
+            for (int i = 0; i < prefix.length(); i++) {
+                if (toAsciiLower(value.charAt(i)) != toAsciiLower(prefix.charAt(i))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static char toAsciiLower(char character) {
+            return character >= 'A' && character <= 'Z' ? (char) (character + ('a' - 'A')) : character;
+        }
+    }
 
     /**
      * Validates a cookie name against prefix requirements (string-based validation).
@@ -187,8 +284,13 @@ public record CookiePrefixValidationStage(SecurityConfiguration config) implemen
      * <ul>
      *   <li>For {@code __Host-} prefix: validates Secure, no Domain, and Path=/</li>
      *   <li>For {@code __Secure-} prefix: validates Secure attribute</li>
+     *   <li>For {@code __Http-} prefix: validates Secure and HttpOnly attributes</li>
+     *   <li>For {@code __HostHttp-} prefix: validates Secure, HttpOnly, no Domain, and Path=/</li>
      *   <li>For other cookies: validates name format (no leading/trailing whitespace)</li>
      * </ul>
+     *
+     * <p>The prefix token is matched ASCII case-insensitively, so {@code __host-} carries the same
+     * requirements as {@code __Host-}.</p>
      *
      * @param cookie The cookie to validate
      * @throws UrlSecurityException if the cookie violates prefix requirements
@@ -232,114 +334,94 @@ public record CookiePrefixValidationStage(SecurityConfiguration config) implemen
                     .build();
         }
 
-        // Check for __Host- prefix requirements
-        if (cookieName.startsWith(HOST_PREFIX)) {
-            validateHostPrefix(cookie);
-            return;
-        }
-
-        // Check for __Secure- prefix requirements
-        if (cookieName.startsWith(SECURE_PREFIX)) {
-            validateSecurePrefix(cookie);
-        }
-
-        // Other cookies don't need prefix validation
+        // Cookies without a security prefix need no further validation.
+        SecurityPrefix.match(cookieName).ifPresent(prefix -> validatePrefix(prefix, cookie, cookieName));
     }
 
     /**
-     * Validates __Host- prefix requirements.
+     * Validates the attribute requirements the matched prefix carries.
      *
-     * @param cookie The cookie with __Host- prefix
+     * <p>The reported detail names the canonical prefix token rather than the casing the request
+     * used, so a case variation cannot change the message a caller logs or matches on.</p>
+     *
+     * @param prefix     The prefix the cookie name carries
+     * @param cookie     The cookie to validate
+     * @param cookieName The cookie name, already established to be non-null by the caller
      * @throws UrlSecurityException if requirements are not met
      */
-    @SuppressWarnings({"java:S4449", "DataFlowIssue", "java:S3655"}) // Non-null: called after hasName() check in validateCookie
-    private void validateHostPrefix(Cookie cookie) throws UrlSecurityException {
+    private void validatePrefix(SecurityPrefix prefix, Cookie cookie, String cookieName) throws UrlSecurityException {
 
-        String cookieName = cookie.name();
-
-        // Requirement 1: Must have Secure attribute
+        // Every prefix requires the Secure attribute.
         if (!cookie.isSecure()) {
-            throw UrlSecurityException.builder()
-                    .failureType(UrlSecurityFailureType.COOKIE_PREFIX_VIOLATION)
-                    .validationType(ValidationType.COOKIE_NAME)
-                    .originalInput(cookieName)
-                    .detail("__Host- prefix requires Secure attribute")
-                    .build();
+            throw prefixViolation(prefix, cookieName, "requires Secure attribute");
         }
 
-        // Requirement 2: Must NOT have Domain attribute
-        if (cookie.getDomain().isPresent()) {
-            throw UrlSecurityException.builder()
-                    .failureType(UrlSecurityFailureType.COOKIE_PREFIX_VIOLATION)
-                    .validationType(ValidationType.COOKIE_NAME)
-                    .originalInput(cookieName)
-                    .detail("__Host- prefix must not have Domain attribute (found: " +
-                            cookie.getDomain().get() + ")")
-                    .build();
+        if (prefix.requiresHttpOnly && !cookie.isHttpOnly()) {
+            throw prefixViolation(prefix, cookieName, "requires HttpOnly attribute");
         }
 
-        // Requirement 3: Must have Path=/
-        Optional<String> path = cookie.getPath();
-        if (path.isEmpty() || !"/".equals(path.get())) {
-            throw UrlSecurityException.builder()
-                    .failureType(UrlSecurityFailureType.COOKIE_PREFIX_VIOLATION)
-                    .validationType(ValidationType.COOKIE_NAME)
-                    .originalInput(cookieName)
-                    .detail("__Host- prefix requires Path=/ (found: " +
-                            path.orElse("none") + ")")
-                    .build();
+        Optional<String> domain = cookie.getDomain();
+        if (prefix.forbidsDomain && domain.isPresent()) {
+            throw prefixViolation(prefix, cookieName,
+                    "must not have Domain attribute (found: " + domain.get() + ")");
+        }
+
+        if (prefix.requiresRootPath) {
+            Optional<String> path = cookie.getPath();
+            if (path.isEmpty() || !"/".equals(path.get())) {
+                throw prefixViolation(prefix, cookieName,
+                        "requires Path=/ (found: " + path.orElse("none") + ")");
+            }
         }
     }
 
     /**
-     * Validates __Secure- prefix requirements.
+     * Builds the prefix-violation exception, prefixing the detail with the canonical prefix token.
      *
-     * @param cookie The cookie with __Secure- prefix
-     * @throws UrlSecurityException if requirements are not met
+     * @param prefix     The prefix whose rule was violated
+     * @param cookieName The offending cookie name
+     * @param violation  The violated requirement, phrased to follow "{@code <token> prefix }"
+     * @return the exception to throw
      */
-    @SuppressWarnings({"java:S4449", "DataFlowIssue"}) // Non-null: called after hasName() check in validateCookie
-    private void validateSecurePrefix(Cookie cookie) throws UrlSecurityException {
-        String cookieName = cookie.name();
-
-        // Requirement: Must have Secure attribute
-        if (!cookie.isSecure()) {
-            throw UrlSecurityException.builder()
-                    .failureType(UrlSecurityFailureType.COOKIE_PREFIX_VIOLATION)
-                    .validationType(ValidationType.COOKIE_NAME)
-                    .originalInput(cookieName)
-                    .detail("__Secure- prefix requires Secure attribute")
-                    .build();
-        }
+    private static UrlSecurityException prefixViolation(SecurityPrefix prefix, String cookieName, String violation) {
+        return UrlSecurityException.builder()
+                .failureType(UrlSecurityFailureType.COOKIE_PREFIX_VIOLATION)
+                .validationType(ValidationType.COOKIE_NAME)
+                .originalInput(cookieName)
+                .detail(prefix.token + " prefix " + violation)
+                .build();
     }
 
     /**
-     * Checks if a cookie name has a security prefix.
+     * Checks if a cookie name has one of the RFC 6265bis security prefixes.
+     *
+     * <p>All four prefixes are covered - {@code __Host-}, {@code __Secure-}, {@code __Http-} and
+     * {@code __HostHttp-} - and the token is matched ASCII case-insensitively.</p>
      *
      * @param cookieName The cookie name to check
-     * @return true if the name starts with __Host- or __Secure-
+     * @return true if the name carries any security prefix
      */
     public static boolean hasSecurityPrefix(@Nullable String cookieName) {
-        return cookieName != null &&
-                (cookieName.startsWith(HOST_PREFIX) || cookieName.startsWith(SECURE_PREFIX));
+        return SecurityPrefix.match(cookieName).isPresent();
     }
 
     /**
-     * Checks if a cookie name has the __Host- prefix.
+     * Checks if a cookie name has the {@code __Host-} prefix, matched ASCII case-insensitively.
      *
      * @param cookieName The cookie name to check
-     * @return true if the name starts with __Host-
+     * @return true if the name carries the {@code __Host-} prefix
      */
     public static boolean hasHostPrefix(@Nullable String cookieName) {
-        return cookieName != null && cookieName.startsWith(HOST_PREFIX);
+        return SecurityPrefix.match(cookieName).filter(SecurityPrefix.HOST::equals).isPresent();
     }
 
     /**
-     * Checks if a cookie name has the __Secure- prefix.
+     * Checks if a cookie name has the {@code __Secure-} prefix, matched ASCII case-insensitively.
      *
      * @param cookieName The cookie name to check
-     * @return true if the name starts with __Secure-
+     * @return true if the name carries the {@code __Secure-} prefix
      */
     public static boolean hasSecurePrefix(@Nullable String cookieName) {
-        return cookieName != null && cookieName.startsWith(SECURE_PREFIX);
+        return SecurityPrefix.match(cookieName).filter(SecurityPrefix.SECURE::equals).isPresent();
     }
 }

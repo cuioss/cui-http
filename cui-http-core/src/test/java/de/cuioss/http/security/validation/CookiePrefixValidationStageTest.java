@@ -53,6 +53,8 @@ class CookiePrefixValidationStageTest {
     // Test data constants
     private static final String HOST_PREFIX = "__Host-";
     private static final String SECURE_PREFIX = "__Secure-";
+    private static final String HTTP_PREFIX = "__Http-";
+    private static final String HOST_HTTP_PREFIX = "__HostHttp-";
     private static final String VALID_HOST_ATTRS = "Secure; Path=/";
 
     @Nested
@@ -143,6 +145,156 @@ class CookiePrefixValidationStageTest {
             assertTrue(exception.getDetail().isPresent());
             assertTrue(exception.getDetail().get().contains("__Secure- prefix requires Secure attribute"));
         }
+    }
+
+    @Nested
+    @DisplayName("__Http- and __HostHttp- Prefix Validation")
+    class LaterDraftPrefixValidation {
+
+        @ParameterizedTest
+        @ValueSource(strings = {"Secure; HttpOnly", "Secure; HttpOnly; Domain=example.com; Path=/api"})
+        @DisplayName("Valid __Http- cookies should pass")
+        void shouldAcceptValidHttpCookies(String attributes) {
+            Cookie valid = new Cookie(HTTP_PREFIX + "token", "xyz789", attributes);
+            assertDoesNotThrow(() -> validator.validateCookie(valid));
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"Secure; HttpOnly; Path=/", "Secure; HttpOnly; Path=/; SameSite=Strict"})
+        @DisplayName("Valid __HostHttp- cookies should pass")
+        void shouldAcceptValidHostHttpCookies(String attributes) {
+            Cookie valid = new Cookie(HOST_HTTP_PREFIX + "session", "abc123", attributes);
+            assertDoesNotThrow(() -> validator.validateCookie(valid));
+        }
+
+        @Test
+        @DisplayName("__Http- without HttpOnly should fail under both presets")
+        void shouldRejectHttpWithoutHttpOnly() {
+            assertPrefixViolationUnderBothPresets(HTTP_PREFIX + "token", "Secure",
+                    "__Http- prefix requires HttpOnly attribute");
+        }
+
+        @Test
+        @DisplayName("__Http- without Secure should fail under both presets")
+        void shouldRejectHttpWithoutSecure() {
+            assertPrefixViolationUnderBothPresets(HTTP_PREFIX + "token", "HttpOnly",
+                    "__Http- prefix requires Secure attribute");
+        }
+
+        @Test
+        @DisplayName("__HostHttp- without HttpOnly should fail under both presets")
+        void shouldRejectHostHttpWithoutHttpOnly() {
+            assertPrefixViolationUnderBothPresets(HOST_HTTP_PREFIX + "session", "Secure; Path=/",
+                    "__HostHttp- prefix requires HttpOnly attribute");
+        }
+
+        @Test
+        @DisplayName("__HostHttp- with Domain should fail under both presets")
+        void shouldRejectHostHttpWithDomain() {
+            assertPrefixViolationUnderBothPresets(HOST_HTTP_PREFIX + "session",
+                    "Secure; HttpOnly; Domain=example.com; Path=/",
+                    "__HostHttp- prefix must not have Domain attribute");
+        }
+
+        @Test
+        @DisplayName("__HostHttp- without Path=/ should fail under both presets")
+        void shouldRejectHostHttpWithoutRootPath() {
+            assertPrefixViolationUnderBothPresets(HOST_HTTP_PREFIX + "session", "Secure; HttpOnly",
+                    "__HostHttp- prefix requires Path=/");
+        }
+    }
+
+    @Nested
+    @DisplayName("Case-insensitive prefix matching (RFC 6265bis)")
+    class CaseInsensitivePrefixMatching {
+
+        @ParameterizedTest
+        @ValueSource(strings = {"__host-session", "__HOST-session", "__HoSt-session"})
+        @DisplayName("A case-varied __Host- name is subject to the full __Host- rules")
+        void shouldApplyHostRulesRegardlessOfCase(String name) {
+            assertAll("full __Host- rule set applies to " + name,
+                    () -> assertPrefixViolationUnderBothPresets(name, "Path=/",
+                            "__Host- prefix requires Secure attribute"),
+                    () -> assertPrefixViolationUnderBothPresets(name, "Secure; Domain=example.com; Path=/",
+                            "__Host- prefix must not have Domain attribute"),
+                    () -> assertPrefixViolationUnderBothPresets(name, "Secure",
+                            "__Host- prefix requires Path=/"));
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"__secure-token", "__SECURE-token", "__SeCuRe-token"})
+        @DisplayName("A case-varied __Secure- name is subject to the __Secure- rule")
+        void shouldApplySecureRuleRegardlessOfCase(String name) {
+            assertPrefixViolationUnderBothPresets(name, "Domain=example.com",
+                    "__Secure- prefix requires Secure attribute");
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"__http-token", "__HTTP-token", "__HtTp-token"})
+        @DisplayName("A case-varied __Http- name is subject to the __Http- rules")
+        void shouldApplyHttpRulesRegardlessOfCase(String name) {
+            assertAll("full __Http- rule set applies to " + name,
+                    () -> assertPrefixViolationUnderBothPresets(name, "HttpOnly",
+                            "__Http- prefix requires Secure attribute"),
+                    () -> assertPrefixViolationUnderBothPresets(name, "Secure",
+                            "__Http- prefix requires HttpOnly attribute"));
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"__hosthttp-session", "__HOSTHTTP-session", "__HostHTTP-session"})
+        @DisplayName("A case-varied __HostHttp- name is subject to the full __HostHttp- rules")
+        void shouldApplyHostHttpRulesRegardlessOfCase(String name) {
+            assertAll("full __HostHttp- rule set applies to " + name,
+                    () -> assertPrefixViolationUnderBothPresets(name, "HttpOnly; Path=/",
+                            "__HostHttp- prefix requires Secure attribute"),
+                    () -> assertPrefixViolationUnderBothPresets(name, "Secure; Path=/",
+                            "__HostHttp- prefix requires HttpOnly attribute"),
+                    () -> assertPrefixViolationUnderBothPresets(name, "Secure; HttpOnly; Domain=example.com; Path=/",
+                            "__HostHttp- prefix must not have Domain attribute"),
+                    () -> assertPrefixViolationUnderBothPresets(name, "Secure; HttpOnly",
+                            "__HostHttp- prefix requires Path=/"));
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"__hOsT-session", "__sEcUrE-token", "__hTtP-token", "__hOsThTtP-session"})
+        @DisplayName("A case-varied prefix that satisfies its rules passes")
+        void shouldAcceptCompliantCaseVariedPrefixCookies(String name) {
+            Cookie valid = new Cookie(name, "value", "Secure; HttpOnly; Path=/");
+            assertDoesNotThrow(() -> validator.validateCookie(valid));
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"__ſecure-token", "__hoſt-session"})
+        @DisplayName("Non-ASCII case folding must not be read as a prefix")
+        void shouldNotFoldNonAsciiIntoPrefix(String name) {
+            assertFalse(CookiePrefixValidationStage.hasSecurityPrefix(name));
+            Cookie regular = new Cookie(name, "value", "");
+            assertDoesNotThrow(() -> validator.validateCookie(regular));
+        }
+    }
+
+    /**
+     * Pins a gate under both presets ADR-0017 requires: the same input must produce the same
+     * failure type and the same canonical detail under {@code defaults()} and {@code lenient()}.
+     * The asserted detail names the canonical prefix token, so it also proves the gate read the
+     * canonical prefix rather than the casing the request happened to use.
+     */
+    private static void assertPrefixViolationUnderBothPresets(String name, String attributes, String expectedDetail) {
+        assertAll("both presets reject '" + name + "' with attributes '" + attributes + "'",
+                () -> assertPrefixViolation(SecurityConfiguration.defaults(), name, attributes, expectedDetail),
+                () -> assertPrefixViolation(SecurityConfiguration.lenient(), name, attributes, expectedDetail));
+    }
+
+    private static void assertPrefixViolation(SecurityConfiguration config, String name, String attributes,
+            String expectedDetail) {
+        var stage = new CookiePrefixValidationStage(config);
+        Cookie cookie = new Cookie(name, "value", attributes);
+
+        var exception = assertThrows(UrlSecurityException.class, () -> stage.validateCookie(cookie));
+
+        assertEquals(UrlSecurityFailureType.COOKIE_PREFIX_VIOLATION, exception.getFailureType());
+        assertTrue(exception.getDetail().orElse("").contains(expectedDetail),
+                "Expected detail to contain '" + expectedDetail + "' but was: " + exception.getDetail().orElse("none"));
     }
 
     @Nested
@@ -267,10 +419,15 @@ class CookiePrefixValidationStageTest {
         }
 
         @ParameterizedTest
-        @ValueSource(strings = {"__host-session", "__HOST-session", "__secure-token", "__SECURE-token"})
-        @DisplayName("Should be case-sensitive")
-        void shouldBeCaseSensitive(String wrongCase) {
-            assertFalse(CookiePrefixValidationStage.hasSecurityPrefix(wrongCase));
+        @ValueSource(strings = {
+                "__host-session", "__HOST-session", "__HoSt-session",
+                "__secure-token", "__SECURE-token", "__SeCuRe-token",
+                "__http-token", "__HTTP-token", "__HtTp-token",
+                "__hosthttp-token", "__HOSTHTTP-token", "__HostHTTP-token"
+        })
+        @DisplayName("Should match security prefixes ASCII case-insensitively (RFC 6265bis)")
+        void shouldMatchPrefixCaseInsensitively(String mixedCase) {
+            assertTrue(CookiePrefixValidationStage.hasSecurityPrefix(mixedCase));
         }
     }
 
