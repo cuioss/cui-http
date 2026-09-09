@@ -73,15 +73,10 @@ public final class RequestCollectionValidator {
      * @param config the security configuration providing the count limits
      * @param eventCounter the counter for recording security violations
      * @throws NullPointerException if either argument is null
-     * @throws IllegalArgumentException if {@code maxParameterCount}, {@code maxHeaderCount}, or
-     *         {@code maxCookieCount} is negative
      */
     public RequestCollectionValidator(SecurityConfiguration config, SecurityEventCounter eventCounter) {
         this.config = Objects.requireNonNull(config, "config must not be null");
         this.eventCounter = Objects.requireNonNull(eventCounter, "eventCounter must not be null");
-        requireNonNegativeLimit(config.maxParameterCount(), CountKind.PARAMETER);
-        requireNonNegativeLimit(config.maxHeaderCount(), CountKind.HEADER);
-        requireNonNegativeLimit(config.maxCookieCount(), CountKind.COOKIE);
     }
 
     /**
@@ -140,7 +135,6 @@ public final class RequestCollectionValidator {
      *
      * @param count the number of parameter value instances (non-negative)
      * @throws UrlSecurityException if the count exceeds the configured maximum
-     * @throws IllegalArgumentException if the configured {@code maxParameterCount} is negative
      */
     public void validateParameterCount(int count) {
         enforce(count, config.maxParameterCount(), CountKind.PARAMETER);
@@ -151,7 +145,6 @@ public final class RequestCollectionValidator {
      *
      * @param count the number of header value instances (non-negative)
      * @throws UrlSecurityException if the count exceeds the configured maximum
-     * @throws IllegalArgumentException if the configured {@code maxHeaderCount} is negative
      */
     public void validateHeaderCount(int count) {
         enforce(count, config.maxHeaderCount(), CountKind.HEADER);
@@ -162,7 +155,6 @@ public final class RequestCollectionValidator {
      *
      * @param count the number of cookies (non-negative)
      * @throws UrlSecurityException if the count exceeds the configured maximum
-     * @throws IllegalArgumentException if the configured {@code maxCookieCount} is negative
      */
     public void validateCookieCount(int count) {
         enforce(count, config.maxCookieCount(), CountKind.COOKIE);
@@ -200,15 +192,7 @@ public final class RequestCollectionValidator {
         return 1;
     }
 
-    private static void requireNonNegativeLimit(int limit, CountKind countKind) {
-        if (limit < 0) {
-            throw new IllegalArgumentException(
-                    countKind.limitName() + " must not be negative: " + limit);
-        }
-    }
-
     private void enforce(int actual, int max, CountKind countKind) {
-        requireNonNegativeLimit(max, countKind);
         if (actual > max) {
             eventCounter.increment(UrlSecurityFailureType.TOO_MANY_ELEMENTS);
             throw UrlSecurityException.builder()
@@ -222,23 +206,21 @@ public final class RequestCollectionValidator {
     }
 
     /**
-     * Binds each countable request element to its {@link ValidationType}, its human-readable noun,
-     * and the name of the configuration limit that bounds it.
+     * Binds each countable request element to its {@link ValidationType} and its human-readable
+     * noun.
      */
     private enum CountKind {
 
-        PARAMETER(ValidationType.PARAMETER_NAME, "parameter", "maxParameterCount"),
-        HEADER(ValidationType.HEADER_NAME, "header", "maxHeaderCount"),
-        COOKIE(ValidationType.COOKIE_NAME, "cookie", "maxCookieCount");
+        PARAMETER(ValidationType.PARAMETER_NAME, "parameter"),
+        HEADER(ValidationType.HEADER_NAME, "header"),
+        COOKIE(ValidationType.COOKIE_NAME, "cookie");
 
         private final ValidationType validationType;
         private final String kind;
-        private final String limitName;
 
-        CountKind(ValidationType validationType, String kind, String limitName) {
+        CountKind(ValidationType validationType, String kind) {
             this.validationType = validationType;
             this.kind = kind;
-            this.limitName = limitName;
         }
 
         ValidationType validationType() {
@@ -247,10 +229,6 @@ public final class RequestCollectionValidator {
 
         String kind() {
             return kind;
-        }
-
-        String limitName() {
-            return limitName;
         }
     }
 }
