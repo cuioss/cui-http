@@ -42,10 +42,27 @@ import java.util.regex.Pattern;
  * not request {@code Cookie}-header {@code name=value} pairs.</p>
  *
  * <p><strong>Standalone stage:</strong> unlike the URL/parameter/header stages, this stage is
- * <em>not</em> part of any pipeline built by {@code PipelineFactory} (which does not support
- * cookie validation types). It is invoked manually via {@link #validateCookie(de.cuioss.http.security.data.Cookie)}
- * on a {@link de.cuioss.http.security.data.Cookie} instance. The inherited
- * {@link #validate(String)} method only performs whitespace checks on the raw cookie name.</p>
+ * <em>not</em> part of any pipeline built by {@code PipelineFactory}. That factory deliberately
+ * offers no cookie pipeline - a cookie's name, value and attributes have to be judged together,
+ * which a single-string pipeline cannot express - so {@code PipelineFactory.createPipeline} throws
+ * for {@link de.cuioss.http.security.core.ValidationType#COOKIE_NAME} and
+ * {@link de.cuioss.http.security.core.ValidationType#COOKIE_VALUE} and this stage is invoked
+ * directly instead.</p>
+ *
+ * <p><strong>What {@link #validateCookie(de.cuioss.http.security.data.Cookie)} covers:</strong> it
+ * requires the cookie to carry a name; character-validates that name against the RFC 6265
+ * {@code cookie-name} grammar and the value against the {@code cookie-octet} set; enforces the
+ * opt-in {@code requireSecureCookies} / {@code requireHttpOnlyCookies} flags; and then applies the
+ * four prefix rule sets ({@code __Host-}, {@code __Secure-}, {@code __Http-}, {@code __HostHttp-})
+ * to a name that carries one of those tokens.</p>
+ *
+ * <p><strong>What it is not:</strong> it is not a general cookie-content pipeline. It judges the
+ * name and value as RFC 6265 tokens and checks the prefix contract; it does not decode, normalize
+ * or attack-scan the cookie value the way the URL and parameter pipelines scan their input, and it
+ * does not interpret the value's application-level meaning. The inherited
+ * {@link #validate(String)} method is narrower still - it performs only the leading/trailing
+ * whitespace check on a raw cookie name, and is not a substitute for
+ * {@link #validateCookie(de.cuioss.http.security.data.Cookie)}.</p>
  *
  * <h3>Validation Rules</h3>
  * <p>The prefix token is matched ASCII case-insensitively (see the design principle below); the
