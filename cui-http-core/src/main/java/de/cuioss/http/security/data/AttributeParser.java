@@ -90,13 +90,18 @@ final class AttributeParser {
      * trimmed, so {@code Domain =x} names {@code Domain} exactly as {@code Domain=x} does. The
      * value is the text after that {@code '='}, likewise trimmed, per RFC 6265 section 5.2.</p>
      *
-     * <p><strong>Repeated attributes resolve last-wins.</strong> Per RFC 6265 section 5.3 a user
-     * agent processing a repeated attribute keeps the last occurrence, so this method scans every
-     * token and returns the value of the final match rather than stopping at the first. Resolving
-     * first-wins would let a value the user agent itself would have discarded be the one this
-     * library reports - so an attacker able to append a second {@code Domain} or {@code Path} to
-     * the attribute string could make a validator inspect a different value from the one that
-     * actually takes effect.</p>
+     * <p><strong>Repeated attributes resolve last-wins.</strong> This method serves two consumers
+     * under two different RFC families - {@link Cookie} attribute parsing (RFC 6265) and
+     * Content-Type/charset parameter parsing (RFC 7231) - and applies the same last-wins scan to
+     * both rather than special-casing either. For cookies, RFC 6265 section 5.3 has a user agent
+     * processing a repeated attribute keep the last occurrence; for a repeated Content-Type
+     * parameter such as a duplicated {@code charset}, RFC 7231 defines no canonical resolution
+     * order, so this method's uniform last-wins scan is this library's own consistent choice rather
+     * than a second RFC-mandated behaviour. Either way, this method scans every token and returns
+     * the value of the final match rather than stopping at the first. Resolving first-wins would let
+     * a value the RFC 6265 user agent itself would have discarded be the one this library reports -
+     * so an attacker able to append a second {@code Domain} or {@code Path} to the attribute string
+     * could make a validator inspect a different value from the one that actually takes effect.</p>
      *
      * <p><strong>Quoted values:</strong> RFC 6265 and RFC 7231 both permit an attribute value
      * to be a {@code quoted-string}. After whitespace trimming, a value that is at least two

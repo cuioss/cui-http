@@ -346,26 +346,35 @@ class CookiePrefixValidationStageTest {
          * The non-printing code points are written as {@code (char)} literals rather than pasted in,
          * so the test data stays visible to a reader of this source.
          */
+        // Every value below is rejected as UrlSecurityFailureType.INVALID_CHARACTER, except CR and
+        // LF: CookiePrefixValidationStage.validateCookie routes the value through
+        // CharacterValidationStage(config, COOKIE_VALUE), whose getFailureTypeForCharacter reports
+        // CONTROL_CHARACTERS for a C0 control (1-31) that the type's own base character set does not
+        // admit - COOKIE_VALUE's cookie-octet set excludes both, unlike CR/LF's exception carve-outs
+        // in some other validation types.
         static Stream<Arguments> valuesOutsideCookieOctet() {
             return Stream.of(
-                    Arguments.of("semicolon", "bad;value"),
-                    Arguments.of("comma", "bad,value"),
-                    Arguments.of("space", "bad value"),
-                    Arguments.of("double quote", "bad\"value"),
-                    Arguments.of("backslash", "bad\\value"),
-                    Arguments.of("carriage return", "bad\rvalue"),
-                    Arguments.of("line feed", "bad\nvalue"),
-                    Arguments.of("NBSP U+00A0", "bad" + (char) 0x00A0 + "value"),
-                    Arguments.of("DEL U+007F", "bad" + (char) 0x007F + "value"));
+                    Arguments.of("semicolon", "bad;value", UrlSecurityFailureType.INVALID_CHARACTER),
+                    Arguments.of("comma", "bad,value", UrlSecurityFailureType.INVALID_CHARACTER),
+                    Arguments.of("space", "bad value", UrlSecurityFailureType.INVALID_CHARACTER),
+                    Arguments.of("double quote", "bad\"value", UrlSecurityFailureType.INVALID_CHARACTER),
+                    Arguments.of("backslash", "bad\\value", UrlSecurityFailureType.INVALID_CHARACTER),
+                    Arguments.of("carriage return", "bad\rvalue", UrlSecurityFailureType.CONTROL_CHARACTERS),
+                    Arguments.of("line feed", "bad\nvalue", UrlSecurityFailureType.CONTROL_CHARACTERS),
+                    Arguments.of("NBSP U+00A0", "bad" + (char) 0x00A0 + "value", UrlSecurityFailureType.INVALID_CHARACTER),
+                    Arguments.of("DEL U+007F", "bad" + (char) 0x007F + "value", UrlSecurityFailureType.INVALID_CHARACTER));
         }
 
         @ParameterizedTest(name = "[{index}] {0}")
         @MethodSource("valuesOutsideCookieOctet")
         @DisplayName("A value outside cookie-octet is rejected under both presets")
-        void shouldRejectValueOutsideCookieOctet(String smuggled, String value) {
+        void shouldRejectValueOutsideCookieOctet(String smuggled, String value,
+                UrlSecurityFailureType expectedFailureType) {
             assertAll("both presets reject a value carrying a " + smuggled,
-                    () -> assertComponentRejected(SecurityConfiguration.defaults(), "session", value),
-                    () -> assertComponentRejected(SecurityConfiguration.lenient(), "session", value));
+                    () -> assertComponentRejected(SecurityConfiguration.defaults(), "session", value,
+                            expectedFailureType, ValidationType.COOKIE_VALUE),
+                    () -> assertComponentRejected(SecurityConfiguration.lenient(), "session", value,
+                            expectedFailureType, ValidationType.COOKIE_VALUE));
         }
 
         /** Whitespace-like code points above U+0020, which {@link String#trim()} does not strip. */
@@ -385,8 +394,10 @@ class CookiePrefixValidationStageTest {
             // see any of these - the character stage is what catches them.
             assertEquals(name, name.trim(), "Precondition: String.trim must leave " + codePointName + " in place");
             assertAll("both presets reject a name carrying " + codePointName,
-                    () -> assertComponentRejected(SecurityConfiguration.defaults(), name, "value"),
-                    () -> assertComponentRejected(SecurityConfiguration.lenient(), name, "value"));
+                    () -> assertComponentRejected(SecurityConfiguration.defaults(), name, "value",
+                            UrlSecurityFailureType.INVALID_CHARACTER, ValidationType.COOKIE_NAME),
+                    () -> assertComponentRejected(SecurityConfiguration.lenient(), name, "value",
+                            UrlSecurityFailureType.INVALID_CHARACTER, ValidationType.COOKIE_NAME));
         }
 
         @Test
@@ -411,10 +422,15 @@ class CookiePrefixValidationStageTest {
             assertTrue(detail.indexOf(0x0000) < 0, "Detail must not carry the raw control character");
         }
 
-        private void assertComponentRejected(SecurityConfiguration config, String name, String value) {
+        private void assertComponentRejected(SecurityConfiguration config, String name, String value,
+                UrlSecurityFailureType expectedFailureType, ValidationType expectedValidationType) {
             var stage = new CookiePrefixValidationStage(config);
             Cookie cookie = new Cookie(name, value, "");
-            assertThrows(UrlSecurityException.class, () -> stage.validateCookie(cookie));
+
+            var exception = assertThrows(UrlSecurityException.class, () -> stage.validateCookie(cookie));
+
+            assertEquals(expectedFailureType, exception.getFailureType());
+            assertEquals(expectedValidationType, exception.getValidationType());
         }
     }
 
