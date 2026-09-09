@@ -195,6 +195,7 @@ class AttributeParserTest {
                 "'name=\"quoted\"; name=last', 'name', 'last'"
         })
         @DisplayName("A repeated attribute resolves to the last occurrence (RFC 6265 section 5.3)")
+        @SuppressWarnings("java:S4144") // pins the RFC 6265 5.3 last-wins regression distinctly from shouldExtractAttributeValues
         void shouldResolveRepeatedAttributeLastWins(String attributes, String attributeName, String expected) {
             Optional<String> result = AttributeParser.extractAttributeValue(attributes, attributeName);
 
@@ -210,6 +211,7 @@ class AttributeParserTest {
                 "'Domain=good.com; Domain =evil.com', 'Domain', 'evil.com'"
         })
         @DisplayName("Whitespace around the key is trimmed per RFC 6265 section 5.2")
+        @SuppressWarnings("java:S4144") // pins the RFC 6265 5.2 key-trim regression distinctly from shouldExtractAttributeValues
         void shouldTrimWhitespaceAroundTheKey(String attributes, String attributeName, String expected) {
             // A user agent trims the attribute name before comparing it, so a key written with a
             // space before '=' names the same attribute. Skipping such a token instead - the old
