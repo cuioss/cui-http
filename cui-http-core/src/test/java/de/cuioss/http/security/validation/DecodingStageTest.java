@@ -1357,4 +1357,218 @@ class DecodingStageTest {
 
     // Architectural decision: Application-layer encodings (HTML entities, JS escapes, Base64)
     // are handled by higher application layers where they have proper context.
+
+    /**
+     * The regression and raw-versus-encoded symmetry matrix for
+     * {@code allowLineBreaksInParameterValues}.
+     *
+     * <p>The matrix is deliberately built from paired positive and negative controls: every
+     * rejection below is matched by an admission that proves the rejection came from this flag and
+     * not from an unrelated gate, and every scope claim is asserted outright rather than inferred
+     * from the absence of a regression.</p>
+     */
+    @Nested
+    @DisplayName("allowLineBreaksInParameterValues regression and symmetry matrix")
+    class LineBreakOptOutMatrix {
+
+        /**
+         * The five encoded line-break spellings the flag governs: CR alone, LF alone, the CRLF
+         * pair, the pair surrounded by form-decoded spaces, and a pair embedded between ordinary
+         * characters so a leading- or trailing-position-only bug cannot pass.
+         */
+        private static final String[] ENCODED_LINE_BREAKS = {"%0D", "%0A", "%0D%0A", "+%0D%0A+", "a%0Db"};
+
+        private SecurityConfiguration strictBasedWithFlag(boolean allowLineBreaks) {
+            return strictEquivalentBuilder()
+                    .allowLineBreaksInParameterValues(allowLineBreaks)
+                    .build();
+        }
+
+        private SecurityConfiguration lenientBasedWithFlag(boolean allowLineBreaks) {
+            return SecurityConfiguration.builder()
+                    .allowDoubleEncoding(true)
+                    .encoding(false, true, true, false)
+                    .failOnSuspiciousPatterns(false)
+                    .allowLineBreaksInParameterValues(allowLineBreaks)
+                    .build();
+        }
+
+        // (1) Both-preset rule (ADR-0017): the verdict must not depend on which base preset the
+        // opt-in is layered onto, so running both bases is the point of this test.
+        @Test
+        @DisplayName("every encoded line break is rejected under a strict-based AND a lenient-based opt-out")
+        void encodedLineBreaksAreRejectedUnderBothBasePresets() {
+            for (SecurityConfiguration config : new SecurityConfiguration[]{
+                    strictBasedWithFlag(false), lenientBasedWithFlag(false)}) {
+                DecodingStage decoder = new DecodingStage(config, ValidationType.PARAMETER_VALUE);
+
+                for (String input : ENCODED_LINE_BREAKS) {
+                    UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                            () -> decoder.validate(input),
+                            "decoded line break must be rejected for '" + input + "' under " + config);
+                    assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
+                            "failure type must be CONTROL_CHARACTERS for '" + input + "'");
+                }
+            }
+        }
+
+        // (2) Default-preserving positive control: without it, the rejections above could come
+        // from any unrelated gate rather than from this flag.
+        @Test
+        @DisplayName("the same inputs are admitted when the flag is left at its true default")
+        void encodedLineBreaksAreAdmittedWhenTheFlagIsTrue() {
+            for (SecurityConfiguration config : new SecurityConfiguration[]{
+                    strictBasedWithFlag(true), lenientBasedWithFlag(true)}) {
+                DecodingStage decoder = new DecodingStage(config, ValidationType.PARAMETER_VALUE);
+
+                for (String input : ENCODED_LINE_BREAKS) {
+                    assertTrue(decoder.validate(input).isPresent(),
+                            "'" + input + "' must stay admitted while the flag is true under " + config);
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("every shipped preset admits the same inputs unmodified")
+        void everyShippedPresetStillAdmitsEncodedLineBreaks() {
+            for (SecurityConfiguration preset : new SecurityConfiguration[]{
+                    SecurityConfiguration.defaults(), SecurityConfiguration.strict(),
+                    SecurityConfiguration.lenient(), SecurityConfiguration.paranoid()}) {
+                DecodingStage decoder = new DecodingStage(preset, ValidationType.PARAMETER_VALUE);
+
+                for (String input : ENCODED_LINE_BREAKS) {
+                    assertTrue(decoder.validate(input).isPresent(),
+                            "no shipped preset may opt in: '" + input + "' under " + preset);
+                }
+            }
+        }
+
+        // (3) Raw-versus-encoded symmetry - the asymmetry this plan exists to close. The raw arm
+        // is asserted through CharacterValidationStage and the encoded arm through DecodingStage,
+        // so the test states the two-stage symmetry rather than asserting one stage twice.
+        @Test
+        @DisplayName("a raw CR/LF and its encoded spelling reach the same verdict once the flag is false")
+        void rawAndEncodedLineBreaksAgreeUnderTheOptOut() {
+            SecurityConfiguration config = strictBasedWithFlag(false);
+            CharacterValidationStage rawStage =
+                    new CharacterValidationStage(config, ValidationType.PARAMETER_VALUE);
+            DecodingStage encodedStage = new DecodingStage(config, ValidationType.PARAMETER_VALUE);
+
+            assertAll("raw and encoded line breaks agree",
+                    () -> assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS,
+                            assertThrows(UrlSecurityException.class, () -> rawStage.validate("a\rb"))
+                                    .getFailureType(),
+                            "raw CR is rejected on the wire form"),
+                    () -> assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS,
+                            assertThrows(UrlSecurityException.class, () -> encodedStage.validate("a%0Db"))
+                                    .getFailureType(),
+                            "the %0D spelling must not buy a softer verdict than the raw byte"),
+                    () -> assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS,
+                            assertThrows(UrlSecurityException.class, () -> rawStage.validate("a\nb"))
+                                    .getFailureType(),
+                            "raw LF is rejected on the wire form"),
+                    () -> assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS,
+                            assertThrows(UrlSecurityException.class, () -> encodedStage.validate("a%0Ab"))
+                                    .getFailureType(),
+                            "the %0A spelling must not buy a softer verdict than the raw byte"));
+        }
+
+        // (4) TAB negative control: TAB terminates nothing and splits no header, so it must stay
+        // admitted in both flag positions. Without this the flag could pass by rejecting all form
+        // whitespace indiscriminately.
+        @Test
+        @DisplayName("TAB stays admitted in a parameter value in both flag positions")
+        void tabIsNeverGatedByTheFlag() {
+            for (boolean allowLineBreaks : new boolean[]{true, false}) {
+                DecodingStage decoder = new DecodingStage(
+                        strictBasedWithFlag(allowLineBreaks), ValidationType.PARAMETER_VALUE);
+
+                assertEquals("a\tb", decoder.validate("a%09b").orElseThrow(),
+                        "TAB must survive with allowLineBreaksInParameterValues=" + allowLineBreaks);
+            }
+        }
+
+        // (5) Scope non-leakage, asserted explicitly rather than inferred from the absence of a
+        // regression elsewhere.
+        @Test
+        @DisplayName("BODY keeps the unconditional carve-out - the flag has no lever there")
+        void bodyStillAdmitsEncodedLineBreaksWithTheFlagOff() {
+            DecodingStage bodyDecoder =
+                    new DecodingStage(strictBasedWithFlag(false), ValidationType.BODY);
+
+            assertEquals("a\r\nb", bodyDecoder.validate("a%0D%0Ab").orElseThrow(),
+                    "a form-encoded body carries line breaks by construction and has no opt-out");
+        }
+
+        @Test
+        @DisplayName("no other validation type's verdict moves with the flag")
+        void otherValidationTypesAreUnaffectedByTheFlag() {
+            for (ValidationType type : new ValidationType[]{
+                    ValidationType.PARAMETER_NAME, ValidationType.HEADER_NAME, ValidationType.HEADER_VALUE,
+                    ValidationType.COOKIE_NAME, ValidationType.COOKIE_VALUE}) {
+                DecodingStage withFlagOn =
+                        new DecodingStage(strictBasedWithFlag(true), type);
+                DecodingStage withFlagOff =
+                        new DecodingStage(strictBasedWithFlag(false), type);
+
+                assertEquals(verdictOf(withFlagOn, "a%0D%0Ab"), verdictOf(withFlagOff, "a%0D%0Ab"),
+                        "the flag must not move the CRLF verdict for " + type);
+                assertEquals(verdictOf(withFlagOn, "a%0Db"), verdictOf(withFlagOff, "a%0Db"),
+                        "the flag must not move the CR verdict for " + type);
+            }
+        }
+
+        /**
+         * Reduces a stage's outcome for one input to a comparable token: either the failure type it
+         * rejected with, or the value it admitted.
+         */
+        private String verdictOf(DecodingStage stage, String input) {
+            try {
+                return "admitted:" + stage.validate(input).orElse("<empty>");
+            } catch (UrlSecurityException e) {
+                return "rejected:" + e.getFailureType();
+            }
+        }
+
+        // (6) The accepted counter-asymmetry, pinned here so it is not rediscovered later as a
+        // bug report: with control characters allowed but line breaks opted out of, the encoded
+        // spelling is STRICTER than the raw one. That combination is a deliberate instruction
+        // ("permit control characters, but never a line break in a parameter value"), not a defect.
+        @Test
+        @DisplayName("allowControlCharacters(true) with the opt-out makes the encoded form stricter than the raw form")
+        void documentedCounterAsymmetryIsAccepted() {
+            SecurityConfiguration config = SecurityConfiguration.builder()
+                    .allowControlCharacters(true)
+                    .normalizeUnicode(false)
+                    .allowLineBreaksInParameterValues(false)
+                    .build();
+
+            UrlSecurityException thrown = assertThrows(UrlSecurityException.class,
+                    () -> new DecodingStage(config, ValidationType.PARAMETER_VALUE).validate("a%0Db"));
+            assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, thrown.getFailureType());
+
+            assertEquals("a\rb",
+                    new CharacterValidationStage(config, ValidationType.PARAMETER_VALUE)
+                            .validate("a\rb").orElseThrow(),
+                    "the raw CR is admitted by allowControlCharacters - the resulting "
+                            + "encoded-stricter-than-raw combination is accepted, not a defect");
+        }
+
+        // (7) Normalization re-check, honestly scoped. No input NORMALIZES INTO a CR or LF - a
+        // test claiming to exercise that path would be vacuous - so what is asserted here is the
+        // reachable case: a value that both changes under NFC and carries a decoded CR.
+        @Test
+        @DisplayName("a value that both folds under NFC and carries a decoded CR is still rejected")
+        void normalizingValueCarryingADecodedCarriageReturnIsRejected() {
+            DecodingStage decoder = new DecodingStage(
+                    strictBasedWithFlag(false), ValidationType.PARAMETER_VALUE);
+
+            // U+212B ANGSTROM SIGN folds to U+00C5 under NFC, so the decoded form does change.
+            UrlSecurityException thrown = assertThrows(UrlSecurityException.class,
+                    () -> decoder.validate("%E2%84%AB%0D"));
+
+            assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, thrown.getFailureType(),
+                    "the control-character rule must not be bypassed by a normalizing value");
+        }
+    }
 }
