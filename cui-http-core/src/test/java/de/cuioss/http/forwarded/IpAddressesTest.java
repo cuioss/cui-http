@@ -81,6 +81,33 @@ class IpAddressesTest {
             assertNotNull(IpAddresses.parseChainEntry(entry));
         }
 
+        /**
+         * The bracketed branch has always refused a port suffix that is not a digit run; the
+         * unbracketed one used to read the address out of such a token and discard the remainder,
+         * which honors a hop nobody wrote. {@link #parsesUsableForms()} carries the matched
+         * positive control that {@code 192.0.2.7:443} still parses.
+         */
+        @ParameterizedTest(name = "\"{0}\" carries a port suffix that is not a digit run")
+        @ValueSource(strings = {"192.0.2.7:", "192.0.2.7:notaport", "192.0.2.7:44 3"})
+        @DisplayName("rejects an unbracketed entry whose port suffix is not a digit run")
+        void rejectsMalformedUnbracketedPortSuffix(String entry) {
+            assertNull(IpAddresses.parseChainEntry(entry),
+                    "an entry is malformed as a whole, whichever spelling it arrived in");
+        }
+
+        @Test
+        @DisplayName("holds an IPv4-mapped IPv6 literal to the IPv4 octet rules")
+        void appliesIpv4RulesToMappedSuffix() {
+            assertAll("the mapped spelling must not be the way around the dotted-quad guards",
+                    () -> assertNull(IpAddresses.parse("::ffff:010.0.0.5"),
+                            "a leading-zero octet is an allow-list bypass in the mapped form too"),
+                    () -> assertNull(IpAddresses.parse("::ffff:999.1.1.1"),
+                            "an out-of-range octet must not reach getByName from the mapped form either"),
+                    () -> assertNotNull(IpAddresses.parse("::ffff:10.0.0.5"),
+                            "positive control: a well-formed mapped literal still resolves, so the "
+                                    + "guard rejects the octets rather than the mapped form"));
+        }
+
         @Test
         @DisplayName("canonicalizes to the host address form")
         void canonicalizes() {

@@ -526,6 +526,22 @@ public final class ForwardedHeaderResolver {
      * composed back into a URL authority, where an unbracketed IPv6 literal produces a malformed or
      * attacker-steerable authority. Supply it as {@code [2001:db8::1]} to have it honored.</p>
      *
+     * <p><strong>An unbracketed {@code host:port} token's suffix is rejected the same way.</strong>
+     * When the value carries exactly one colon, the substring after it must be a non-empty run of
+     * ASCII digits ({@link IpAddresses#isPortSuffix(String)}); {@code app.example.com:} and
+     * {@code app.example.com:bogus} yield {@link HostPort#EMPTY} rather than resolving to the host
+     * with an empty port. This is the symmetry the bracketed branch already had: a token whose port
+     * is written but unreadable is malformed as a token, and keeping the host out of it honors half
+     * of a value the other half says cannot be trusted. A digit run whose <em>value</em> is out of
+     * range ({@code 1.2.3.4:70000}) is a different case and stays with {@link #parsePort} — the
+     * token is well-formed, so the host stands and only the port is dropped.</p>
+     *
+     * <p>The port <em>field</em>'s own reconciliation rules are unchanged by this and are stated
+     * elsewhere: a token that carried a port token states a port even when it cannot be parsed, and
+     * therefore still contests one another source named (see {@link #statesPort(String)}). That is
+     * about which field a disagreement reaches; this paragraph is about whether the token yields a
+     * host at all.</p>
+     *
      * <p><strong>Trailing content after {@code ]} is rejected.</strong> The only thing permitted
      * after the closing bracket is a colon followed by one or more ASCII digits, so
      * {@code [::1]garbage} and {@code [::1]x:8443} yield {@link HostPort#EMPTY} instead of resolving
@@ -579,8 +595,12 @@ public final class ForwardedHeaderResolver {
             return new HostPort(Optional.of(host), port);
         }
         if (value.indexOf(':') == value.lastIndexOf(':') && value.indexOf(':') >= 0) {
+            String suffix = value.substring(value.indexOf(':') + 1);
+            if (!IpAddresses.isPortSuffix(suffix)) {
+                return HostPort.EMPTY;
+            }
             host = value.substring(0, value.indexOf(':'));
-            port = parsePort(value.substring(value.indexOf(':') + 1));
+            port = parsePort(suffix);
         } else if (value.indexOf(':') >= 0) {
             // Neither bracketed nor host:port, yet colon-bearing: a bare IPv6 literal.
             return HostPort.EMPTY;

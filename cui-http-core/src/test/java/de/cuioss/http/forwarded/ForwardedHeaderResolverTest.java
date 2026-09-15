@@ -443,8 +443,13 @@ class ForwardedHeaderResolverTest {
                     "Forwarded", "host=\"app.example.com:9999\"")));
 
             assertAll("a port token that was present but unparseable is a statement on this side too",
-                    () -> assertEquals("app.example.com", result.host().orElseThrow(),
-                            "the hosts agree, so the port conflict must stay scoped to the port"),
+                    () -> assertTrue(result.host().isEmpty(),
+                            "the unreadable port suffix makes the whole X-Forwarded-Host token "
+                                    + "malformed, so that side resolves to no host at all, disagrees "
+                                    + "with the host the Forwarded directive names, and the field is "
+                                    + "dropped fail-closed — a stronger outcome than the earlier one, "
+                                    + "which honored the host half of a token whose other half could "
+                                    + "not be read"),
                     () -> assertTrue(result.port().isEmpty(),
                             "X-Forwarded-Host carried a port token, so it contests the Forwarded "
                                     + "directive's port and the field fails closed"));
@@ -512,8 +517,12 @@ class ForwardedHeaderResolverTest {
                     "Forwarded", "host=\"app.example.com:bogus\"")));
 
             assertAll("a port token that was present but unparseable is a statement, not silence",
-                    () -> assertEquals("app.example.com", result.host().orElseThrow(),
-                            "the hosts agree, so the port conflict must stay scoped to the port"),
+                    () -> assertTrue(result.host().isEmpty(),
+                            "the unreadable port suffix makes the whole Forwarded host directive "
+                                    + "malformed, so the RFC side resolves to no host at all, disagrees "
+                                    + "with the host X-Forwarded-Host names, and the field is dropped "
+                                    + "fail-closed — the mirror of the de-facto case, and a stronger "
+                                    + "outcome than honoring the readable half of the token"),
                     () -> assertTrue(result.port().isEmpty(),
                             "the Forwarded directive carried a port token, so it contests the "
                                     + "explicit port header and the field fails closed"));
@@ -581,6 +590,29 @@ class ForwardedHeaderResolverTest {
                     () -> assertTrue(trustAllResolver()
                             .resolve(headers(Map.of("X-Forwarded-Host", "evil.com?attacker.example")))
                             .host().isEmpty()));
+        }
+
+        /**
+         * The bracketed branch already refused a trailer that is not {@code :digits}; the
+         * unbracketed one used to keep the host and merely drop the port, so half of a token whose
+         * other half is unreadable was still honored. {@link #splitsHostPort()} is the matched
+         * positive control that a well-formed {@code host:port} still resolves, and
+         * {@link #dropsInvalidPort()} keeps the different case — a digit run whose value is out of
+         * range — visible as one that drops only the port.
+         */
+        @Test
+        @DisplayName("rejects the whole token when an unbracketed port suffix is not a digit run")
+        void rejectsMalformedUnbracketedPortSuffix() {
+            assertAll("a token whose port is written but unreadable yields no host either",
+                    () -> assertTrue(trustAllResolver()
+                                    .resolve(headers(Map.of("X-Forwarded-Host", "app.example.com:bogus")))
+                                    .host().isEmpty(),
+                            "the suffix is not a digit run, so the token is malformed as a token"),
+                    () -> assertEquals("app.example.com", trustAllResolver()
+                                    .resolve(headers(Map.of("X-Forwarded-Host", "app.example.com:70000")))
+                                    .host().orElseThrow(),
+                            "an out-of-range but well-formed digit run is a different case: the token "
+                                    + "is readable, so the host stands and only the port is dropped"));
         }
 
         @Test
