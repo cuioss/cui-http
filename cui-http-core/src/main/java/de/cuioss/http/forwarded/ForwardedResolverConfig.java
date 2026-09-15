@@ -190,8 +190,16 @@ public final class ForwardedResolverConfig {
 
     /**
      * Parses a comma-separated allowlist of proxy context paths into a normalized,
-     * deterministically-ordered, unmodifiable set (blank / slash-only / injection-rejected
-     * entries dropped). Mirrors the prior-art {@code ProxyContextPathResolver.parseAllowlist}.
+     * deterministically-ordered, unmodifiable set. Mirrors the prior-art
+     * {@code ProxyContextPathResolver.parseAllowlist}.
+     *
+     * <p>An entry is <strong>silently dropped</strong> when normalization rejects it: a blank or
+     * slash-only entry, one carrying a control character, a protocol-relative prefix or a
+     * backslash, a comma or whitespace, or one carrying {@code ?}, {@code #}, {@code ;},
+     * {@code %} or a dot-segment ({@code .} / {@code ..} between slashes). Naming the rejection
+     * set matters here because a dropped entry does not fail the call: an allowlist written as
+     * {@code /app/../admin} yields an allowlist that simply does not contain it, and the context
+     * paths the operator expected to honor are then quietly not honored.</p>
      *
      * @param commaSeparated the raw comma-separated allowlist (may be {@code null})
      * @return an unmodifiable set of normalized context paths in input order
@@ -237,9 +245,17 @@ public final class ForwardedResolverConfig {
         }
 
         /**
-         * @param allowedContextPaths context paths to honor even when {@code trustAll=false}; each
-         *                            entry is normalized (leading slash added, trailing slash
-         *                            stripped) and empties are dropped
+         * Sets the context paths honored even when {@code trustAll=false}.
+         *
+         * <p>Each entry is normalized (leading slash added, trailing slash stripped) and is
+         * <strong>silently dropped</strong> when normalization rejects it: a blank or slash-only
+         * entry, one carrying a control character, a protocol-relative prefix or a backslash, a
+         * comma or whitespace, or one carrying {@code ?}, {@code #}, {@code ;}, {@code %} or a
+         * dot-segment ({@code .} / {@code ..} between slashes). A rejected entry does not fail the
+         * call — it is simply absent from the resulting allowlist, so a path the operator meant to
+         * honor is then quietly not honored.</p>
+         *
+         * @param allowedContextPaths context paths to honor even when {@code trustAll=false}
          * @return this builder
          * @throws NullPointerException if {@code allowedContextPaths} is {@code null}
          */

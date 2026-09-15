@@ -71,7 +71,8 @@ import java.util.*;
  *   <li>{@code port}, when present, is in {@code 1..65535}</li>
  *   <li>{@code host} / {@code clientIp}, when present, are non-blank and control-character free</li>
  *   <li>{@code contextPath} is either empty or starts with exactly one {@code /}, does not end with
- *       {@code /}, and is control-character free</li>
+ *       {@code /}, is control-character free, and carries none of {@code ?}, {@code #}, {@code ;},
+ *       {@code %} or a dot-segment ({@code .} / {@code ..} between slashes)</li>
  * </ul>
  *
  * @param scheme      the resolved request scheme ({@code "http"} or {@code "https"}), empty when
@@ -138,6 +139,14 @@ Optional<String> clientIp
     /**
      * Rejects a non-empty {@code contextPath} that is not already in the normalized shape
      * {@link ContextPaths#normalize(String)} produces.
+     *
+     * <p>The construct guard moves in lockstep with {@link ContextPaths#containsUnsafePathConstruct}
+     * rather than restating its rule, because this record is {@code public} and
+     * {@link #toXForwardedHeaders()} emits {@code contextPath} straight back out as an
+     * {@code X-Forwarded-Prefix} header. A record that accepted {@code /app/../admin} while the
+     * resolver rejected it would leave exactly the round-trip hole the invariants exist to close:
+     * the value the resolver refused to honor would re-enter the header family through a
+     * hand-constructed record.</p>
      */
     private static void requireUsableContextPath(String contextPath) {
         if (contextPath.isEmpty()) {
@@ -151,6 +160,10 @@ Optional<String> clientIp
         }
         if (contextPath.endsWith("/")) {
             throw new IllegalArgumentException("contextPath must not end with '/'");
+        }
+        if (ContextPaths.containsUnsafePathConstruct(contextPath)) {
+            throw new IllegalArgumentException(
+                    "contextPath must not contain '?', '#', ';', '%' or a dot-segment");
         }
     }
 

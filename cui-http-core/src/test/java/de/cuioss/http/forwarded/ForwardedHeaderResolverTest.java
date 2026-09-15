@@ -18,10 +18,14 @@ package de.cuioss.http.forwarded;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.test.juli.LogAsserts;
 import de.cuioss.test.juli.TestLogLevel;
+import de.cuioss.test.juli.TestLoggerFactory;
 import de.cuioss.test.juli.junit5.EnableTestLogger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.*;
 import java.util.function.Function;
@@ -440,8 +444,13 @@ class ForwardedHeaderResolverTest {
                     "Forwarded", "host=\"app.example.com:9999\"")));
 
             assertAll("a port token that was present but unparseable is a statement on this side too",
-                    () -> assertEquals("app.example.com", result.host().orElseThrow(),
-                            "the hosts agree, so the port conflict must stay scoped to the port"),
+                    () -> assertTrue(result.host().isEmpty(),
+                            "the unreadable port suffix makes the whole X-Forwarded-Host token "
+                                    + "malformed, so that side resolves to no host at all, disagrees "
+                                    + "with the host the Forwarded directive names, and the field is "
+                                    + "dropped fail-closed — a stronger outcome than the earlier one, "
+                                    + "which honored the host half of a token whose other half could "
+                                    + "not be read"),
                     () -> assertTrue(result.port().isEmpty(),
                             "X-Forwarded-Host carried a port token, so it contests the Forwarded "
                                     + "directive's port and the field fails closed"));
@@ -509,8 +518,12 @@ class ForwardedHeaderResolverTest {
                     "Forwarded", "host=\"app.example.com:bogus\"")));
 
             assertAll("a port token that was present but unparseable is a statement, not silence",
-                    () -> assertEquals("app.example.com", result.host().orElseThrow(),
-                            "the hosts agree, so the port conflict must stay scoped to the port"),
+                    () -> assertTrue(result.host().isEmpty(),
+                            "the unreadable port suffix makes the whole Forwarded host directive "
+                                    + "malformed, so the RFC side resolves to no host at all, disagrees "
+                                    + "with the host X-Forwarded-Host names, and the field is dropped "
+                                    + "fail-closed — the mirror of the de-facto case, and a stronger "
+                                    + "outcome than honoring the readable half of the token"),
                     () -> assertTrue(result.port().isEmpty(),
                             "the Forwarded directive carried a port token, so it contests the "
                                     + "explicit port header and the field fails closed"));
@@ -580,6 +593,29 @@ class ForwardedHeaderResolverTest {
                             .host().isEmpty()));
         }
 
+        /**
+         * The bracketed branch already refused a trailer that is not {@code :digits}; the
+         * unbracketed one used to keep the host and merely drop the port, so half of a token whose
+         * other half is unreadable was still honored. {@link #splitsHostPort()} is the matched
+         * positive control that a well-formed {@code host:port} still resolves, and
+         * {@link #dropsInvalidPort()} keeps the different case — a digit run whose value is out of
+         * range — visible as one that drops only the port.
+         */
+        @Test
+        @DisplayName("rejects the whole token when an unbracketed port suffix is not a digit run")
+        void rejectsMalformedUnbracketedPortSuffix() {
+            assertAll("a token whose port is written but unreadable yields no host either",
+                    () -> assertTrue(trustAllResolver()
+                                    .resolve(headers(Map.of("X-Forwarded-Host", "app.example.com:bogus")))
+                                    .host().isEmpty(),
+                            "the suffix is not a digit run, so the token is malformed as a token"),
+                    () -> assertEquals("app.example.com", trustAllResolver()
+                                    .resolve(headers(Map.of("X-Forwarded-Host", "app.example.com:70000")))
+                                    .host().orElseThrow(),
+                            "an out-of-range but well-formed digit run is a different case: the token "
+                                    + "is readable, so the host stands and only the port is dropped"));
+        }
+
         @Test
         @DisplayName("rejects an unbracketed multi-colon (IPv6) host")
         void rejectsUnbracketedIpv6Host() {
@@ -632,6 +668,57 @@ class ForwardedHeaderResolverTest {
                             .resolve(headers(Map.of("X-Forwarded-Port", "-1"))).port().isEmpty()));
         }
 
+        /**
+         * The host guard is an <em>allow-list</em> grammar, so a delimiter nobody enumerated is
+         * rejected because it was never admitted. Each entry of the hostile population carries a
+         * character the previous deny-list never named — a quote, angle brackets, a semicolon, a
+         * percent-encoded path separator, a stray closing bracket, and a Cyrillic homoglyph — and
+         * every one of them must yield no host at all.
+         *
+         * <p>The population lives in {@link ForwardedHostGenerator} rather than inline here, so the
+         * adversarial input set has one home; {@link #stillHonorsValidForms()} is the matched
+         * positive control that keeps these empty results attributable to the characters rather
+         * than to a blanket rejection.</p>
+         */
+        @ParameterizedTest
+        @MethodSource("de.cuioss.http.forwarded.ForwardedHostGenerator#hostileHosts")
+        @DisplayName("rejects a host carrying a character the reg-name grammar does not admit")
+        void rejectsHostOutsideRegNameGrammar(String hostileHost) {
+            assertTrue(trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Host", hostileHost))).host().isEmpty(),
+                    () -> "the grammar admits only ASCII letters, digits, '-' and '_' per label, so "
+                            + hostileHost + " must not reach a consumer");
+        }
+
+        /**
+         * A trailing root dot is a legal FQDN spelling in DNS, but the grammar's dot-split turns it
+         * into an empty final label and rejects it. Pinned as its own named case because it is an
+         * operator decision rather than a consequence of the character set — a future relaxation
+         * must change this assertion deliberately rather than silently.
+         */
+        @Test
+        @DisplayName("rejects a host with a trailing root dot")
+        void rejectsTrailingRootDot() {
+            assertTrue(trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Host", "app.example.com."))).host().isEmpty(),
+                    "the dot-split produces an empty final label, which no label may be");
+        }
+
+        /**
+         * Underscore is admitted <em>inside</em> a label but not at its edges, so a leading-underscore
+         * label stays rejected — matching {@code IpAddresses.parseChainEntry}'s unusable-entry
+         * fixture. {@link #stillHonorsValidForms()} carries the matched positive control
+         * ({@code my_service.internal}) that makes this rejection about the position of the
+         * underscore rather than about the character.
+         */
+        @Test
+        @DisplayName("rejects a leading-underscore label")
+        void rejectsLeadingUnderscoreLabel() {
+            assertTrue(trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Host", "_hidden"))).host().isEmpty(),
+                    "a label may carry an underscore but may not start with one");
+        }
+
         @Test
         @DisplayName("still honors the valid host and port forms the guards must not affect")
         void stillHonorsValidForms() {
@@ -640,6 +727,14 @@ class ForwardedHeaderResolverTest {
                             .resolve(headers(Map.of("X-Forwarded-Host", "[2001:db8::1]:8443"))).host().orElseThrow()),
                     () -> assertEquals("app.example.com", trustAllResolver()
                             .resolve(headers(Map.of("X-Forwarded-Host", "app.example.com:8443"))).host().orElseThrow()),
+                    () -> assertEquals("my-app.example.com", trustAllResolver()
+                                    .resolve(headers(Map.of("X-Forwarded-Host", "my-app.example.com"))).host().orElseThrow(),
+                            "a hyphen inside a label is admitted, so the grammar is an allow-list and "
+                                    + "not a blanket rejection of anything unusual"),
+                    () -> assertEquals("my_service.internal", trustAllResolver()
+                                    .resolve(headers(Map.of("X-Forwarded-Host", "my_service.internal"))).host().orElseThrow(),
+                            "an underscore inside a label is admitted too, so a service name that "
+                                    + "carries one still resolves"),
                     () -> assertEquals(8443, trustAllResolver()
                             .resolve(headers(Map.of("X-Forwarded-Port", "8443"))).port().orElseThrow()));
         }
@@ -952,6 +1047,54 @@ class ForwardedHeaderResolverTest {
         void rejectsBackslash() {
             assertEquals("", trustAllResolver()
                     .resolve(headers(Map.of("X-ProxyContextPath", "/\\attacker.com"))).contextPath());
+        }
+
+        /**
+         * Each value spells one prefix and means another once a consumer reads it: {@code ?} and
+         * {@code #} end the path and start a query or fragment, {@code ;} starts a path parameter,
+         * a dot-segment re-points the prefix elsewhere, and {@code %2f} hides a separator behind an
+         * encoding the resolver is not permitted to decode. {@link #honorsAndNormalizes()} and
+         * {@link #prefixFallback()} are the matched positive controls that keep these empty results
+         * attributable to the constructs rather than to the guard rejecting everything.
+         */
+        @ParameterizedTest
+        @ValueSource(strings = {
+                "/app?x=1",
+                "/app#f",
+                "/app;jsessionid=1",
+                "/app/../admin",
+                "/app/./x",
+                "/app%2f..%2fadmin"})
+        @DisplayName("rejects a prefix carrying a construct that changes where it points")
+        void rejectsUnsafePathConstruct(String prefix) {
+            assertEquals("", trustAllResolver()
+                            .resolve(headers(Map.of("X-ProxyContextPath", prefix))).contextPath(),
+                    () -> prefix + " states more than a prefix, so it must not be honored");
+        }
+
+        /**
+         * The resolver runs its own control-character guard on the raw token <em>before</em> the
+         * header-value pipeline sees it, and that guard has its own diagnostic (HTTP-120). Asserting
+         * only that the value was dropped cannot tell that guard apart from the pipeline rejecting
+         * the same value one step later, so the WARN is what makes the guard's own path falsifiable.
+         *
+         * <p>Both names of the precedence pair are covered, because the guard runs after source
+         * selection: a fix applied at one name only would leave the other unguarded, and a test
+         * pinned to one name would not notice. {@link #honorsAndNormalizes()} and
+         * {@link #prefixFallback()} are the matched positive controls for the two names.</p>
+         */
+        @ParameterizedTest(name = "{0} carrying a raw control character")
+        @ValueSource(strings = {"X-ProxyContextPath", "X-Forwarded-Prefix"})
+        @DisplayName("rejects a prefix carrying a raw control character and warns on its own path")
+        void rejectsControlCharacterWithOwnDiagnostic(String headerName) {
+            String hostile = "/app" + Character.toString(0x07) + "admin";
+
+            var result = trustAllResolver().resolve(headers(Map.of(headerName, hostile)));
+
+            assertEquals("", result.contextPath(),
+                    () -> headerName + " carried a control character, so nothing may be honored");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN,
+                    "Rejecting proxy context path with control characters");
         }
 
         @Test
@@ -1405,6 +1548,102 @@ class ForwardedHeaderResolverTest {
             assertTrue(result.scheme().isEmpty(), "an over-long value stays dropped");
             LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN,
                     "Rejecting forwarded header Forwarded:");
+        }
+    }
+
+    /**
+     * A log line is an attacker-reachable sink: the rejection diagnostics interpolate the
+     * <em>raw</em> header value, so a value able to end or reorder the rendered line can forge an
+     * entry an operator then reads as the server's own. {@code Character.isISOControl} covers CR and
+     * LF, but {@code U+2028} and {@code U+2029} break a line just as effectively in a log viewer,
+     * and {@code U+202E} reverses everything rendered after it.
+     *
+     * <p>Nothing upstream neutralises them: the character stage rejects the value for carrying a
+     * non-ASCII codepoint and the resolver then logs the very value it rejected, un-decoded and
+     * un-rewritten. The sanitiser is therefore the only thing between those codepoints and the log,
+     * which is what these cases pin.</p>
+     */
+    @Nested
+    @DisplayName("Log-forging sanitization")
+    class LogForgingSanitization {
+
+        private static final String REJECTION_FRAGMENT = "failed security sanitization";
+
+        /**
+         * Reads the emitted message itself rather than merely asserting that some record matched —
+         * the negative half below ("the raw codepoint is absent") cannot be expressed as a
+         * present-containing assertion at all.
+         *
+         * @return the single sanitization-rejection WARN message the resolver emitted
+         */
+        private static String singleRejectionMessage() {
+            var records = TestLoggerFactory.getTestHandler()
+                    .resolveLogMessagesContaining(TestLogLevel.WARN, REJECTION_FRAGMENT);
+            assertEquals(1, records.size(),
+                    () -> "expected exactly one sanitization-rejection WARN, got " + records.size());
+            return records.getFirst().getMessage();
+        }
+
+        @ParameterizedTest
+        @ValueSource(ints = {0x2028, 0x2029, 0x202E})
+        @DisplayName("replaces a line-forging codepoint with ? instead of writing it to the log")
+        void neutralisesLineForgingCodepoint(int codePoint) {
+            String hostile = "app.example.com" + Character.toString(codePoint) + "Injected: 1";
+
+            var result = trustAllResolver().resolve(headers(Map.of("X-Forwarded-Host", hostile)));
+            String logged = singleRejectionMessage();
+
+            assertAll("the rejected raw value is what reaches the log, so it must be neutralised first",
+                    () -> assertTrue(result.host().isEmpty(), "the hostile value stays dropped"),
+                    () -> assertTrue(logged.contains("app.example.com?Injected: 1"),
+                            () -> "the codepoint must be replaced by the ? substitution, but the "
+                                    + "message rendered as: " + logged),
+                    () -> assertTrue(logged.indexOf(codePoint) < 0,
+                            () -> "U+%04X must not reach the log verbatim".formatted(codePoint)));
+        }
+
+        /**
+         * The matched control for {@link #neutralisesLineForgingCodepoint(int)}: the same shape, the
+         * same rejection path, and a non-ASCII character that is <em>not</em> line-forging. Without
+         * it the requirement could be satisfied by replacing every unusual character — which would
+         * make the diagnostic useless for reading what the proxy actually sent, and would make the
+         * assertions above pass for the wrong reason.
+         */
+        @Test
+        @DisplayName("control: a printable character the pipeline also rejects is interpolated verbatim")
+        void printableCharacterIsInterpolatedVerbatim() {
+            String hostile = "app.example.com" + Character.toString(0x00E9) + "Injected: 1";
+
+            var result = trustAllResolver().resolve(headers(Map.of("X-Forwarded-Host", hostile)));
+            String logged = singleRejectionMessage();
+
+            assertAll("only the characters that forge a line are substituted",
+                    () -> assertTrue(result.host().isEmpty(),
+                            "the non-ASCII value is rejected here too, so both cases take one path"),
+                    () -> assertTrue(logged.contains(hostile),
+                            () -> "a printable character neither ends nor reorders the line, so it "
+                                    + "must survive verbatim, but the message rendered as: " + logged));
+        }
+
+        /**
+         * The three codepoints are neutralised wherever an untrusted value is interpolated, not only
+         * on the host header, so the guard cannot be satisfied by one call site. A context path is
+         * the second such sink and reaches the sanitiser through the same rejection diagnostic.
+         */
+        @Test
+        @DisplayName("neutralises the separator on the context-path diagnostic too")
+        void neutralisesOnContextPathDiagnostic() {
+            String hostile = "/app" + Character.toString(0x2028) + "Injected: 1";
+
+            var result = trustAllResolver().resolve(headers(Map.of("X-ProxyContextPath", hostile)));
+            String logged = singleRejectionMessage();
+
+            assertAll("the sanitiser sits at the diagnostic, not at one field's resolver",
+                    () -> assertEquals("", result.contextPath(), "the hostile value stays dropped"),
+                    () -> assertTrue(logged.contains("/app?Injected: 1"),
+                            () -> "expected the ? substitution, but the message rendered as: " + logged),
+                    () -> assertTrue(logged.indexOf(0x2028) < 0,
+                            () -> "U+2028 must not reach the log verbatim either: " + logged));
         }
     }
 }

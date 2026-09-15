@@ -211,6 +211,13 @@ public final class ForwardedHeaderResolver {
 
     private static final CuiLogger LOGGER = new CuiLogger(ForwardedHeaderResolver.class);
     private static final int MAX_PORT = 65535;
+    private static final int MAX_HOST_LENGTH = 253;
+    private static final int MAX_LABEL_LENGTH = 63;
+    // Spelled as code points, not as character literals: the literal characters are invisible in an
+    // editor, and a literal U+202E would reverse the rendering of the very line that declares it.
+    private static final char LINE_SEPARATOR = 0x2028;
+    private static final char PARAGRAPH_SEPARATOR = 0x2029;
+    private static final char RIGHT_TO_LEFT_OVERRIDE = 0x202E;
 
     private final ForwardedResolverConfig config;
     private final HttpSecurityValidator headerValueValidator;
@@ -515,14 +522,75 @@ public final class ForwardedHeaderResolver {
     }
 
     /**
-     * Splits a {@code host[:port]} token (bracketed IPv6 aware) and validates the host contains no
-     * path/backslash/whitespace/URL-authority-delimiter characters. Returns {@link HostPort#EMPTY}
-     * for a malformed host.
+     * Splits a {@code host[:port]} token (bracketed IPv6 aware) and validates an unbracketed host
+     * against the positive reg-name grammar in {@link #isValidRegName(String)}. Returns
+     * {@link HostPort#EMPTY} for a malformed host.
      *
      * <p><strong>An IPv6 host must be bracketed.</strong> An unbracketed value carrying more than
      * one colon (a bare IPv6 literal such as {@code 2001:db8::1}) is rejected: the host is later
      * composed back into a URL authority, where an unbracketed IPv6 literal produces a malformed or
      * attacker-steerable authority. Supply it as {@code [2001:db8::1]} to have it honored.</p>
+     *
+     * <p><strong>An unbracketed {@code host:port} token's suffix is rejected the same way.</strong>
+     * When the value carries exactly one colon, the substring after it must be a non-empty run of
+     * ASCII digits ({@link IpAddresses#isPortSuffix(String)}); {@code app.example.com:} and
+     * {@code app.example.com:bogus} yield {@link HostPort#EMPTY} rather than resolving to the host
+     * with an empty port. This is the symmetry the bracketed branch already had: a token whose port
+     * is written but unreadable is malformed as a token, and keeping the host out of it honors half
+     * of a value the other half says cannot be trusted. A digit run whose <em>value</em> is out of
+     * range ({@code 1.2.3.4:70000}) is a different case and stays with {@link #parsePort} — the
+     * token is well-formed, so the host stands and only the port is dropped.</p>
+     *
+     * <p>The port <em>field</em>'s own reconciliation rules are unchanged by this and are stated
+     * elsewhere: a token that carried a port token states a port even when it cannot be parsed, and
+     * therefore still contests one another source named (see {@link #statesPort(String)}). That is
+     * about which field a disagreement reaches; this paragraph is about whether the token yields a
+     * host at all.</p>
+     *
+     * <p>The bracketed form is parsed by {@link #parseBracketedHostPort(String)}, whose Javadoc
+     * carries the rules for the trailing content after {@code ]} and for the bracket contents
+     * themselves.</p>
+     *
+     * <p>The {@code host:port} split here intentionally diverges from
+     * {@link IpAddresses#parseChainEntry(String)}: this method reconstructs the <em>host string</em>
+     * and therefore <em>retains</em> the IPv6 brackets (a host is later composed back into a URL),
+     * whereas {@code parseChainEntry} strips them to obtain a bare literal for {@code InetAddress}
+     * matching. Only the bracket <em>retention</em> differs: the trailing-content rule has a single
+     * implementation shared by both call sites, so the two bracket policies cannot drift apart.</p>
+     */
+    private static HostPort parseHostPort(String value) {
+        if (value.startsWith("[")) {
+            // The bracketed form returns HERE rather than falling through to the reg-name guard
+            // below. Its host has already been validated as an IP literal by IpAddresses.parse, and
+            // a bracketed literal is not a reg-name at all — isValidRegName would reject the very
+            // "[2001:db8::1]" form that branch just accepted, on the brackets and colons alone.
+            return parseBracketedHostPort(value);
+        }
+        String host;
+        OptionalInt port = OptionalInt.empty();
+        if (value.indexOf(':') == value.lastIndexOf(':') && value.indexOf(':') >= 0) {
+            String suffix = value.substring(value.indexOf(':') + 1);
+            if (!IpAddresses.isPortSuffix(suffix)) {
+                return HostPort.EMPTY;
+            }
+            host = value.substring(0, value.indexOf(':'));
+            port = parsePort(suffix);
+        } else if (value.indexOf(':') >= 0) {
+            // Neither bracketed nor host:port, yet colon-bearing: a bare IPv6 literal.
+            return HostPort.EMPTY;
+        } else {
+            host = value;
+        }
+        if (host.isEmpty() || !isValidRegName(host)) {
+            return HostPort.EMPTY;
+        }
+        return new HostPort(Optional.of(host), port);
+    }
+
+    /**
+     * Splits a bracketed {@code [ip-literal][:port]} token, retaining the brackets in the returned
+     * host. Returns {@link HostPort#EMPTY} for a malformed token. Extracted from
+     * {@link #parseHostPort(String)} so the outer method carries only the unbracketed grammar.
      *
      * <p><strong>Trailing content after {@code ]} is rejected.</strong> The only thing permitted
      * after the closing bracket is a colon followed by one or more ASCII digits, so
@@ -539,69 +607,95 @@ public final class ForwardedHeaderResolver {
      * {@link IpAddresses#parseChainEntry(String)}, which has always accepted the same shape, and
      * a syntactically valid literal is still required either way. Tighten both together or
      * neither — a one-sided change reintroduces the host-vs-chain asymmetry.</p>
-     *
-     * <p>The {@code host:port} split here intentionally diverges from
-     * {@link IpAddresses#parseChainEntry(String)}: this method reconstructs the <em>host string</em>
-     * and therefore <em>retains</em> the IPv6 brackets (a host is later composed back into a URL),
-     * whereas {@code parseChainEntry} strips them to obtain a bare literal for {@code InetAddress}
-     * matching. Only the bracket <em>retention</em> differs: the trailing-content rule has a single
-     * implementation shared by both call sites, so the two bracket policies cannot drift apart.</p>
      */
-    private static HostPort parseHostPort(String value) {
-        String host;
+    private static HostPort parseBracketedHostPort(String value) {
+        int close = value.indexOf(']');
+        if (close < 0) {
+            return HostPort.EMPTY;
+        }
+        String rest = value.substring(close + 1);
+        if (!IpAddresses.hasValidBracketTrailer(rest)) {
+            return HostPort.EMPTY;
+        }
+        // The brackets promise an IP literal, so validate what is INSIDE them too — checking
+        // only the trailer would let "[]" and "[not-an-ip]" through as a host and hand a
+        // downstream consumer an invalid URL authority. This mirrors
+        // IpAddresses.parseChainEntry, which parses its bracketed literal for the same reason.
+        if (IpAddresses.parse(value.substring(1, close)) == null) {
+            return HostPort.EMPTY;
+        }
         OptionalInt port = OptionalInt.empty();
-        if (value.startsWith("[")) {
-            int close = value.indexOf(']');
-            if (close < 0) {
-                return HostPort.EMPTY;
-            }
-            String rest = value.substring(close + 1);
-            if (!IpAddresses.hasValidBracketTrailer(rest)) {
-                return HostPort.EMPTY;
-            }
-            // The brackets promise an IP literal, so validate what is INSIDE them too — checking
-            // only the trailer would let "[]" and "[not-an-ip]" through as a host and hand a
-            // downstream consumer an invalid URL authority. This mirrors
-            // IpAddresses.parseChainEntry, which parses its bracketed literal for the same reason.
-            if (IpAddresses.parse(value.substring(1, close)) == null) {
-                return HostPort.EMPTY;
-            }
-            if (!rest.isEmpty()) {
-                port = parsePort(rest.substring(1));
-            }
-            host = value.substring(0, close + 1);
-        } else if (value.indexOf(':') == value.lastIndexOf(':') && value.indexOf(':') >= 0) {
-            host = value.substring(0, value.indexOf(':'));
-            port = parsePort(value.substring(value.indexOf(':') + 1));
-        } else if (value.indexOf(':') >= 0) {
-            // Neither bracketed nor host:port, yet colon-bearing: a bare IPv6 literal.
-            return HostPort.EMPTY;
-        } else {
-            host = value;
+        if (!rest.isEmpty()) {
+            port = parsePort(rest.substring(1));
         }
-        if (host.isEmpty() || containsHostSeparator(host)) {
-            return HostPort.EMPTY;
-        }
-        return new HostPort(Optional.of(host), port);
+        return new HostPort(Optional.of(value.substring(0, close + 1)), port);
     }
 
     /**
-     * Rejects a path separator, backslash, whitespace, or any of the URL-authority delimiter
-     * characters ({@code @ # ?}). The consumer composes {@link ResolvedForwarding#host()} back
-     * into an absolute URL (see the package's serialization/usage examples); an embedded
-     * {@code @} would let a forged host smuggle a userinfo component
-     * ({@code https://real-host@attacker.example/}), which most URL parsers resolve to the
-     * <em>attacker's</em> host rather than the trusted one — the same host-confusion class the
-     * path/backslash checks already guard against, just via a different delimiter.
+     * Whether an unbracketed host is a valid reg-name under this resolver's <em>allow-list</em>
+     * grammar: non-empty, at most 253 characters in total, and made of dot-separated labels where
+     * each label is non-empty, at most 63 characters, built only from ASCII {@code A-Za-z0-9},
+     * {@code -} and {@code _}, and starts and ends with neither {@code -} nor {@code _}.
+     *
+     * <p>Stating what a host <em>may</em> contain, rather than enumerating what it may not, is what
+     * makes the guard closed by construction: a delimiter nobody thought to list is rejected because
+     * it was never admitted, instead of slipping through an incomplete deny-list.</p>
+     *
+     * <p>The userinfo delimiter is the worked example of what the grammar excludes. The consumer
+     * composes {@link ResolvedForwarding#host()} back into an absolute URL (see the package's
+     * serialization/usage examples); an embedded {@code @} would let a forged host smuggle a
+     * userinfo component ({@code https://real-host@attacker.example/}), which most URL parsers
+     * resolve to the <em>attacker's</em> host rather than the trusted one. {@code @} is not in the
+     * admitted character set, so that host-confusion class is excluded — as are the path separator,
+     * the backslash, whitespace, and the remaining URL-authority delimiters {@code #} and
+     * {@code ?}, each for the same reason and without needing its own rule.</p>
+     *
+     * <p>Underscore is admitted <em>inside</em> a label, so a service name such as
+     * {@code my_service.internal} resolves. A leading-underscore label ({@code _hidden}) stays
+     * rejected, matching {@link IpAddresses#parseChainEntry(String)}'s unusable-entry fixture, and a
+     * trailing root dot ({@code app.example.com.}) is rejected because the dot-split produces an
+     * empty final label.</p>
      */
-    private static boolean containsHostSeparator(String host) {
-        for (int i = 0; i < host.length(); i++) {
+    private static boolean isValidRegName(String host) {
+        if (host.isEmpty() || host.length() > MAX_HOST_LENGTH) {
+            return false;
+        }
+        int labelStart = 0;
+        int dot = host.indexOf('.');
+        while (dot >= 0) {
+            if (!isValidRegNameLabel(host, labelStart, dot)) {
+                return false;
+            }
+            labelStart = dot + 1;
+            dot = host.indexOf('.', labelStart);
+        }
+        return isValidRegNameLabel(host, labelStart, host.length());
+    }
+
+    /**
+     * Whether {@code host[start, end)} is a valid reg-name label — see {@link #isValidRegName}.
+     */
+    private static boolean isValidRegNameLabel(String host, int start, int end) {
+        int length = end - start;
+        if (length == 0 || length > MAX_LABEL_LENGTH) {
+            return false;
+        }
+        for (int i = start; i < end; i++) {
             char c = host.charAt(i);
-            if (c == '/' || c == '\\' || c == '@' || c == '#' || c == '?' || Character.isWhitespace(c)) {
-                return true;
+            boolean admitted = c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+                    || c == '-' || c == '_';
+            if (!admitted) {
+                return false;
             }
         }
-        return false;
+        return !isLabelEdgeCharacter(host.charAt(start)) && !isLabelEdgeCharacter(host.charAt(end - 1));
+    }
+
+    /**
+     * @return {@code true} for the two admitted characters a label may not start or end with
+     */
+    private static boolean isLabelEdgeCharacter(char c) {
+        return c == '-' || c == '_';
     }
 
     // --- port --------------------------------------------------------------------------------
@@ -712,11 +806,7 @@ public final class ForwardedHeaderResolver {
             }
             return "";
         }
-        // Apply the injection guards to the RAW value first: the header-value pipeline collapses a
-        // protocol-relative "//host" prefix to "/host", masking the attack, so the guard must run
-        // before sanitization can rewrite it.
-        //
-        // Token selection must in turn precede the guards, because a guard applied to the whole raw
+        // Token selection must precede the guards, because a guard applied to the whole raw
         // string inspects only its leading characters and so misses an attack carried in a later
         // token: "/app, //attacker.com" does not itself start with "//", so isProtocolRelativeOrBackslash
         // would pass the whole string through, and the nearest-hop token "//attacker.com" would then
@@ -1187,16 +1277,43 @@ public final class ForwardedHeaderResolver {
     }
 
     /**
-     * Strips control characters and truncates before interpolating an untrusted value into a log
-     * message, so a malicious header cannot forge or inject log lines.
+     * Replaces line-forging characters with {@code ?} and truncates before interpolating an
+     * untrusted value into a log message, so a malicious header cannot forge or inject log lines.
+     *
+     * <p>{@link Character#isISOControl} covers CR, LF and the rest of the C0/C1 ranges, but three
+     * codepoints outside it end or rewrite a rendered line just as effectively, and the default
+     * {@code HEADER_VALUE} character stage admits all three — so they reach this method intact and
+     * would otherwise be written to the log unchanged:</p>
+     * <ul>
+     *   <li>{@code U+2028} LINE SEPARATOR and {@code U+2029} PARAGRAPH SEPARATOR — Unicode line
+     *       breaks that many log viewers, terminals and JSON consumers render as a new line, which
+     *       is the whole of the forged-entry attack without using CR or LF at all.</li>
+     *   <li>{@code U+202E} RIGHT-TO-LEFT OVERRIDE — it introduces no line break, but it belongs in
+     *       the same set because it attacks the same thing: it reverses the rendering of everything
+     *       after it, so an operator reads a line that says something other than what was logged.
+     *       Neutralising a value's ability to break the line while leaving its ability to reorder
+     *       the line intact would guard the mechanism and not the outcome.</li>
+     * </ul>
+     *
+     * <p>The {@code ?} substitution and the 200-character truncation are unchanged.</p>
      */
     private static String sanitizeForLog(String value) {
         StringBuilder builder = new StringBuilder(Math.min(value.length(), 200));
         for (int i = 0; i < value.length() && i < 200; i++) {
             char c = value.charAt(i);
-            builder.append(Character.isISOControl(c) ? '?' : c);
+            builder.append(isLineForging(c) ? '?' : c);
         }
         return builder.toString();
+    }
+
+    /**
+     * @return {@code true} for a character that can end or reorder a rendered log line — see
+     *         {@link #sanitizeForLog(String)} for why the three named codepoints join the ISO
+     *         control ranges
+     */
+    private static boolean isLineForging(char c) {
+        return Character.isISOControl(c)
+                || c == LINE_SEPARATOR || c == PARAGRAPH_SEPARATOR || c == RIGHT_TO_LEFT_OVERRIDE;
     }
 
     /**

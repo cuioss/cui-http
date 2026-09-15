@@ -40,10 +40,23 @@ final class IpAddresses {
      */
     private static final String IPV4_OCTET = "(0|25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]\\d?)";
     private static final Pattern IPV4_LITERAL = Pattern.compile(IPV4_OCTET + "(\\." + IPV4_OCTET + "){3}");
+    /**
+     * A shape guard only — it admits the character set an IPv6 literal is written from, and says
+     * nothing about the dotted-quad an IPv4-mapped form ({@code ::ffff:10.0.0.5}) carries after its
+     * last colon. That tail is checked separately against {@link #IPV4_LITERAL} by
+     * {@link #hasValidMappedIpv4Suffix(String)}, so a mapped literal cannot carry an octet the
+     * plain IPv4 form would have refused.
+     */
     private static final Pattern IPV6_LITERAL = Pattern.compile("[0-9A-Fa-f:.]+");
 
+    /** A non-empty run of ASCII digits — the only thing a port suffix may be. */
+    private static final String PORT_DIGIT_RUN = "\\d+";
+
     /** The only content permitted after a closing {@code ]}: a colon plus an all-ASCII-digit port. */
-    private static final Pattern BRACKET_PORT_SUFFIX = Pattern.compile(":\\d+");
+    private static final Pattern BRACKET_PORT_SUFFIX = Pattern.compile(":" + PORT_DIGIT_RUN);
+
+    /** The colon-less sibling of {@link #BRACKET_PORT_SUFFIX}, for an already-split suffix. */
+    private static final Pattern PORT_SUFFIX = Pattern.compile(PORT_DIGIT_RUN);
 
     private IpAddresses() {
     }
@@ -65,12 +78,21 @@ final class IpAddresses {
      * {@link ForwardedLogMessages.WARN#CLIENT_IP_ENTRY_UNPARSEABLE} warning, and the resolver
      * drops the client IP fail-closed rather than honoring an unverifiable chain.</p>
      *
+     * <p><strong>An IPv4-mapped literal is held to the IPv4 rules.</strong> A value such as
+     * {@code ::ffff:010.0.0.5} or {@code ::ffff:999.1.1.1} carries a dotted-quad after its last
+     * colon, and the IPv6 shape guard alone would admit it — leaving the mapped spelling as a way
+     * around the leading-zero and octet-range rejections {@link #IPV4_LITERAL} enforces on the
+     * plain form, which are exactly the SSRF / allow-list-bypass guards documented there. The tail
+     * after the last colon is therefore matched against {@link #IPV4_LITERAL} whenever the literal
+     * carries a dot, and a tail that fails yields {@code null}.</p>
+     *
      * @param literal the candidate literal (already trimmed)
      * @return the parsed address, or {@code null} when {@code literal} is not a valid IP literal
      */
     static @Nullable InetAddress parse(String literal) {
         boolean looksV4 = IPV4_LITERAL.matcher(literal).matches();
-        boolean looksV6 = literal.indexOf(':') >= 0 && IPV6_LITERAL.matcher(literal).matches();
+        boolean looksV6 = literal.indexOf(':') >= 0 && IPV6_LITERAL.matcher(literal).matches()
+                && hasValidMappedIpv4Suffix(literal);
         if (!looksV4 && !looksV6) {
             return null;
         }
@@ -80,6 +102,22 @@ final class IpAddresses {
         } catch (UnknownHostException e) {
             return null;
         }
+    }
+
+    /**
+     * Whether the dotted-quad an IPv4-mapped IPv6 literal carries after its last colon satisfies
+     * the plain IPv4 rules.
+     *
+     * <p>A literal with no dot states no IPv4 tail, so there is nothing to hold to those rules and
+     * the answer is {@code true}. Otherwise everything after the last colon is the mapped address,
+     * and it is matched against {@link #IPV4_LITERAL} — the same pattern the plain form is held to,
+     * so the mapped spelling cannot be the way an octal-looking or out-of-range octet gets in.</p>
+     */
+    private static boolean hasValidMappedIpv4Suffix(String literal) {
+        if (literal.indexOf('.') < 0) {
+            return true;
+        }
+        return IPV4_LITERAL.matcher(literal.substring(literal.lastIndexOf(':') + 1)).matches();
     }
 
     /**
@@ -94,6 +132,13 @@ final class IpAddresses {
      * after the closing bracket is a colon followed by one or more ASCII digits. Anything else —
      * {@code [::1]garbage}, {@code [::1]:notaport}, a bare trailing {@code [::1]:} — yields
      * {@code null} rather than silently resolving to the bracketed literal.</p>
+     *
+     * <p><strong>An unbracketed {@code address:port} entry is held to the same rule.</strong> When
+     * the token carries exactly one colon, the suffix after it must be a non-empty run of ASCII
+     * digits ({@link #isPortSuffix(String)}); {@code 192.0.2.7:notaport} and a bare trailing
+     * {@code 192.0.2.7:} yield {@code null} rather than resolving to the address with the
+     * unparseable remainder quietly discarded. The bracketed branch has always worked this way, and
+     * an entry is malformed as a whole regardless of which spelling it arrived in.</p>
      *
      * <p>The {@code host:port} split here intentionally diverges from
      * {@code ForwardedHeaderResolver.parseHostPort}: this method <em>strips</em> the IPv6 brackets
@@ -128,7 +173,13 @@ final class IpAddresses {
             }
             ipPart = token.substring(1, close);
         } else if (token.indexOf(':') == token.lastIndexOf(':') && token.indexOf(':') >= 0) {
-            // exactly one colon -> IPv4:port
+            // exactly one colon -> IPv4:port. The suffix is held to the same digit-run rule the
+            // bracketed branch applies through hasValidBracketTrailer: a chain entry whose port is
+            // present but not a digit run is malformed as a whole, and reading the address out of
+            // it while discarding the unparseable remainder would honor a hop nobody wrote.
+            if (!isPortSuffix(token.substring(token.indexOf(':') + 1))) {
+                return null;
+            }
             ipPart = token.substring(0, token.indexOf(':'));
         } else {
             // no colon (IPv4) or multiple colons (bare IPv6)
@@ -153,6 +204,23 @@ final class IpAddresses {
      */
     static boolean hasValidBracketTrailer(String rest) {
         return rest.isEmpty() || BRACKET_PORT_SUFFIX.matcher(rest).matches();
+    }
+
+    /**
+     * The colon-less counterpart of {@link #hasValidBracketTrailer(String)}, for a suffix the
+     * caller has already split off at the colon.
+     *
+     * <p>Both answer the same question — "is this a port?" — from the one
+     * {@link #PORT_DIGIT_RUN} definition, so the bracketed and unbracketed branches cannot come to
+     * differ about what a port suffix is. It is shared by {@link #parseChainEntry(String)} and
+     * {@code ForwardedHeaderResolver.parseHostPort}, whose unbracketed branches face the same
+     * malformed-suffix input.</p>
+     *
+     * @param suffix the substring following the colon
+     * @return {@code true} when {@code suffix} is a non-empty run of ASCII digits
+     */
+    static boolean isPortSuffix(String suffix) {
+        return PORT_SUFFIX.matcher(suffix).matches();
     }
 
     /**

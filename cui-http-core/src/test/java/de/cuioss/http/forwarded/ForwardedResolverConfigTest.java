@@ -75,6 +75,23 @@ class ForwardedResolverConfigTest {
             assertEquals(Set.of("/app", "/gw"), config.allowedContextPaths());
         }
 
+        /**
+         * The builder is the second entry point into the allowlist, and it drops a rejected entry
+         * without failing the call — so an entry carrying a path parameter is silently absent from
+         * the configured set rather than reported. {@code /app} is the matched positive control
+         * that keeps this about the construct and not about the builder discarding everything.
+         */
+        @Test
+        @DisplayName("drops an allowed context path carrying an unsafe construct")
+        void dropsUnsafeAllowedContextPath() {
+            ForwardedResolverConfig config = ForwardedResolverConfig.builder()
+                    .allowedContextPaths(new LinkedHashSet<>(List.of("/app", "/app;v=1")))
+                    .build();
+
+            assertEquals(Set.of("/app"), config.allowedContextPaths(),
+                    "a path-parameter entry is not a context path, so it never enters the allowlist");
+        }
+
         @Test
         @DisplayName("returns unmodifiable views")
         void returnsUnmodifiableViews() {
@@ -208,6 +225,21 @@ class ForwardedResolverConfigTest {
             Set<String> allowed = ForwardedResolverConfig.parseAllowlist("nifi-proxy, /gw/, , /, //attacker.com");
 
             assertEquals(List.of("/nifi-proxy", "/gw"), new ArrayList<>(allowed));
+        }
+
+        /**
+         * The comma-separated entry point drops every entry normalization rejects, so a list that
+         * names six paths can yield one. {@code /app} leads the input as the matched positive
+         * control: the assertion is that exactly it survives, not that the parse returned nothing.
+         */
+        @Test
+        @DisplayName("drops every entry carrying an unsafe construct, keeping the well-formed one")
+        void dropsUnsafeEntries() {
+            Set<String> allowed = ForwardedResolverConfig
+                    .parseAllowlist("/app,/app;v=1,/app?x=1,/app#f,/app/../admin,/app%2fadmin");
+
+            assertEquals(Set.of("/app"), allowed,
+                    "each rejected entry is silently absent rather than failing the parse");
         }
 
         @Test
