@@ -18,6 +18,7 @@ package de.cuioss.http.forwarded;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.test.juli.LogAsserts;
 import de.cuioss.test.juli.TestLogLevel;
+import de.cuioss.test.juli.TestLoggerFactory;
 import de.cuioss.test.juli.junit5.EnableTestLogger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -1071,6 +1072,31 @@ class ForwardedHeaderResolverTest {
                     () -> prefix + " states more than a prefix, so it must not be honored");
         }
 
+        /**
+         * The resolver runs its own control-character guard on the raw token <em>before</em> the
+         * header-value pipeline sees it, and that guard has its own diagnostic (HTTP-120). Asserting
+         * only that the value was dropped cannot tell that guard apart from the pipeline rejecting
+         * the same value one step later, so the WARN is what makes the guard's own path falsifiable.
+         *
+         * <p>Both names of the precedence pair are covered, because the guard runs after source
+         * selection: a fix applied at one name only would leave the other unguarded, and a test
+         * pinned to one name would not notice. {@link #honorsAndNormalizes()} and
+         * {@link #prefixFallback()} are the matched positive controls for the two names.</p>
+         */
+        @ParameterizedTest(name = "{0} carrying a raw control character")
+        @ValueSource(strings = {"X-ProxyContextPath", "X-Forwarded-Prefix"})
+        @DisplayName("rejects a prefix carrying a raw control character and warns on its own path")
+        void rejectsControlCharacterWithOwnDiagnostic(String headerName) {
+            String hostile = "/app" + Character.toString(0x07) + "admin";
+
+            var result = trustAllResolver().resolve(headers(Map.of(headerName, hostile)));
+
+            assertEquals("", result.contextPath(),
+                    () -> headerName + " carried a control character, so nothing may be honored");
+            LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN,
+                    "Rejecting proxy context path with control characters");
+        }
+
         @Test
         @DisplayName("a bare Forwarded header yields no context path")
         void forwardedHasNoPrefix() {
@@ -1522,6 +1548,102 @@ class ForwardedHeaderResolverTest {
             assertTrue(result.scheme().isEmpty(), "an over-long value stays dropped");
             LogAsserts.assertLogMessagePresentContaining(TestLogLevel.WARN,
                     "Rejecting forwarded header Forwarded:");
+        }
+    }
+
+    /**
+     * A log line is an attacker-reachable sink: the rejection diagnostics interpolate the
+     * <em>raw</em> header value, so a value able to end or reorder the rendered line can forge an
+     * entry an operator then reads as the server's own. {@code Character.isISOControl} covers CR and
+     * LF, but {@code U+2028} and {@code U+2029} break a line just as effectively in a log viewer,
+     * and {@code U+202E} reverses everything rendered after it.
+     *
+     * <p>Nothing upstream neutralises them: the character stage rejects the value for carrying a
+     * non-ASCII codepoint and the resolver then logs the very value it rejected, un-decoded and
+     * un-rewritten. The sanitiser is therefore the only thing between those codepoints and the log,
+     * which is what these cases pin.</p>
+     */
+    @Nested
+    @DisplayName("Log-forging sanitization")
+    class LogForgingSanitization {
+
+        private static final String REJECTION_FRAGMENT = "failed security sanitization";
+
+        /**
+         * Reads the emitted message itself rather than merely asserting that some record matched —
+         * the negative half below ("the raw codepoint is absent") cannot be expressed as a
+         * present-containing assertion at all.
+         *
+         * @return the single sanitization-rejection WARN message the resolver emitted
+         */
+        private static String singleRejectionMessage() {
+            var records = TestLoggerFactory.getTestHandler()
+                    .resolveLogMessagesContaining(TestLogLevel.WARN, REJECTION_FRAGMENT);
+            assertEquals(1, records.size(),
+                    () -> "expected exactly one sanitization-rejection WARN, got " + records.size());
+            return records.getFirst().getMessage();
+        }
+
+        @ParameterizedTest
+        @ValueSource(ints = {0x2028, 0x2029, 0x202E})
+        @DisplayName("replaces a line-forging codepoint with ? instead of writing it to the log")
+        void neutralisesLineForgingCodepoint(int codePoint) {
+            String hostile = "app.example.com" + Character.toString(codePoint) + "Injected: 1";
+
+            var result = trustAllResolver().resolve(headers(Map.of("X-Forwarded-Host", hostile)));
+            String logged = singleRejectionMessage();
+
+            assertAll("the rejected raw value is what reaches the log, so it must be neutralised first",
+                    () -> assertTrue(result.host().isEmpty(), "the hostile value stays dropped"),
+                    () -> assertTrue(logged.contains("app.example.com?Injected: 1"),
+                            () -> "the codepoint must be replaced by the ? substitution, but the "
+                                    + "message rendered as: " + logged),
+                    () -> assertTrue(logged.indexOf(codePoint) < 0,
+                            () -> "U+%04X must not reach the log verbatim".formatted(codePoint)));
+        }
+
+        /**
+         * The matched control for {@link #neutralisesLineForgingCodepoint(int)}: the same shape, the
+         * same rejection path, and a non-ASCII character that is <em>not</em> line-forging. Without
+         * it the requirement could be satisfied by replacing every unusual character — which would
+         * make the diagnostic useless for reading what the proxy actually sent, and would make the
+         * assertions above pass for the wrong reason.
+         */
+        @Test
+        @DisplayName("control: a printable character the pipeline also rejects is interpolated verbatim")
+        void printableCharacterIsInterpolatedVerbatim() {
+            String hostile = "app.example.com" + Character.toString(0x00E9) + "Injected: 1";
+
+            var result = trustAllResolver().resolve(headers(Map.of("X-Forwarded-Host", hostile)));
+            String logged = singleRejectionMessage();
+
+            assertAll("only the characters that forge a line are substituted",
+                    () -> assertTrue(result.host().isEmpty(),
+                            "the non-ASCII value is rejected here too, so both cases take one path"),
+                    () -> assertTrue(logged.contains(hostile),
+                            () -> "a printable character neither ends nor reorders the line, so it "
+                                    + "must survive verbatim, but the message rendered as: " + logged));
+        }
+
+        /**
+         * The three codepoints are neutralised wherever an untrusted value is interpolated, not only
+         * on the host header, so the guard cannot be satisfied by one call site. A context path is
+         * the second such sink and reaches the sanitiser through the same rejection diagnostic.
+         */
+        @Test
+        @DisplayName("neutralises the separator on the context-path diagnostic too")
+        void neutralisesOnContextPathDiagnostic() {
+            String hostile = "/app" + Character.toString(0x2028) + "Injected: 1";
+
+            var result = trustAllResolver().resolve(headers(Map.of("X-ProxyContextPath", hostile)));
+            String logged = singleRejectionMessage();
+
+            assertAll("the sanitiser sits at the diagnostic, not at one field's resolver",
+                    () -> assertEquals("", result.contextPath(), "the hostile value stays dropped"),
+                    () -> assertTrue(logged.contains("/app?Injected: 1"),
+                            () -> "expected the ? substitution, but the message rendered as: " + logged),
+                    () -> assertTrue(logged.indexOf(0x2028) < 0,
+                            () -> "U+2028 must not reach the log verbatim either: " + logged));
         }
     }
 }

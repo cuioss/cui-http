@@ -213,6 +213,11 @@ public final class ForwardedHeaderResolver {
     private static final int MAX_PORT = 65535;
     private static final int MAX_HOST_LENGTH = 253;
     private static final int MAX_LABEL_LENGTH = 63;
+    // Spelled as code points, not as character literals: the literal characters are invisible in an
+    // editor, and a literal U+202E would reverse the rendering of the very line that declares it.
+    private static final char LINE_SEPARATOR = 0x2028;
+    private static final char PARAGRAPH_SEPARATOR = 0x2029;
+    private static final char RIGHT_TO_LEFT_OVERRIDE = 0x202E;
 
     private final ForwardedResolverConfig config;
     private final HttpSecurityValidator headerValueValidator;
@@ -788,11 +793,7 @@ public final class ForwardedHeaderResolver {
             }
             return "";
         }
-        // Apply the injection guards to the RAW value first: the header-value pipeline collapses a
-        // protocol-relative "//host" prefix to "/host", masking the attack, so the guard must run
-        // before sanitization can rewrite it.
-        //
-        // Token selection must in turn precede the guards, because a guard applied to the whole raw
+        // Token selection must precede the guards, because a guard applied to the whole raw
         // string inspects only its leading characters and so misses an attack carried in a later
         // token: "/app, //attacker.com" does not itself start with "//", so isProtocolRelativeOrBackslash
         // would pass the whole string through, and the nearest-hop token "//attacker.com" would then
@@ -1263,16 +1264,43 @@ public final class ForwardedHeaderResolver {
     }
 
     /**
-     * Strips control characters and truncates before interpolating an untrusted value into a log
-     * message, so a malicious header cannot forge or inject log lines.
+     * Replaces line-forging characters with {@code ?} and truncates before interpolating an
+     * untrusted value into a log message, so a malicious header cannot forge or inject log lines.
+     *
+     * <p>{@link Character#isISOControl} covers CR, LF and the rest of the C0/C1 ranges, but three
+     * codepoints outside it end or rewrite a rendered line just as effectively, and the default
+     * {@code HEADER_VALUE} character stage admits all three — so they reach this method intact and
+     * would otherwise be written to the log unchanged:</p>
+     * <ul>
+     *   <li>{@code U+2028} LINE SEPARATOR and {@code U+2029} PARAGRAPH SEPARATOR — Unicode line
+     *       breaks that many log viewers, terminals and JSON consumers render as a new line, which
+     *       is the whole of the forged-entry attack without using CR or LF at all.</li>
+     *   <li>{@code U+202E} RIGHT-TO-LEFT OVERRIDE — it introduces no line break, but it belongs in
+     *       the same set because it attacks the same thing: it reverses the rendering of everything
+     *       after it, so an operator reads a line that says something other than what was logged.
+     *       Neutralising a value's ability to break the line while leaving its ability to reorder
+     *       the line intact would guard the mechanism and not the outcome.</li>
+     * </ul>
+     *
+     * <p>The {@code ?} substitution and the 200-character truncation are unchanged.</p>
      */
     private static String sanitizeForLog(String value) {
         StringBuilder builder = new StringBuilder(Math.min(value.length(), 200));
         for (int i = 0; i < value.length() && i < 200; i++) {
             char c = value.charAt(i);
-            builder.append(Character.isISOControl(c) ? '?' : c);
+            builder.append(isLineForging(c) ? '?' : c);
         }
         return builder.toString();
+    }
+
+    /**
+     * @return {@code true} for a character that can end or reorder a rendered log line — see
+     *         {@link #sanitizeForLog(String)} for why the three named codepoints join the ISO
+     *         control ranges
+     */
+    private static boolean isLineForging(char c) {
+        return Character.isISOControl(c)
+                || c == LINE_SEPARATOR || c == PARAGRAPH_SEPARATOR || c == RIGHT_TO_LEFT_OVERRIDE;
     }
 
     /**
