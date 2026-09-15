@@ -18,6 +18,8 @@ package de.cuioss.http.forwarded;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.Map;
 import java.util.Optional;
@@ -74,6 +76,27 @@ class ResolvedForwardingTest {
                     () -> assertThrows(IllegalArgumentException.class, () -> withContextPath("/ui/"),
                             "a trailing slash is not the normalized shape"),
                     () -> assertThrows(IllegalArgumentException.class, () -> withContextPath("/")));
+        }
+
+        /**
+         * The record is {@code public} and {@link ResolvedForwarding#toXForwardedHeaders()} emits
+         * {@code contextPath} straight back out as {@code X-Forwarded-Prefix}, so a construct the
+         * resolver refuses to honor must also be unconstructible here — otherwise it re-enters the
+         * header family through a hand-built record. {@link #acceptsValidShapes()} carries the
+         * matched positive control that {@code /ui} still constructs.
+         */
+        @ParameterizedTest
+        @ValueSource(strings = {
+                "/app?x=1",
+                "/app#f",
+                "/app;jsessionid=1",
+                "/app%2fadmin",
+                "/app/../admin",
+                "/app/./x"})
+        @DisplayName("rejects a context path carrying a construct that changes where it points")
+        void rejectsUnsafeContextPathConstruct(String contextPath) {
+            assertThrows(IllegalArgumentException.class, () -> withContextPath(contextPath),
+                    () -> contextPath + " must not survive construction and round-trip back out");
         }
 
         @Test

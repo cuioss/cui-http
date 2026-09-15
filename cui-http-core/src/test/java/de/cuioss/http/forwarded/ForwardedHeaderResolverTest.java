@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.*;
 import java.util.function.Function;
@@ -1013,6 +1014,29 @@ class ForwardedHeaderResolverTest {
         void rejectsBackslash() {
             assertEquals("", trustAllResolver()
                     .resolve(headers(Map.of("X-ProxyContextPath", "/\\attacker.com"))).contextPath());
+        }
+
+        /**
+         * Each value spells one prefix and means another once a consumer reads it: {@code ?} and
+         * {@code #} end the path and start a query or fragment, {@code ;} starts a path parameter,
+         * a dot-segment re-points the prefix elsewhere, and {@code %2f} hides a separator behind an
+         * encoding the resolver is not permitted to decode. {@link #honorsAndNormalizes()} and
+         * {@link #prefixFallback()} are the matched positive controls that keep these empty results
+         * attributable to the constructs rather than to the guard rejecting everything.
+         */
+        @ParameterizedTest
+        @ValueSource(strings = {
+                "/app?x=1",
+                "/app#f",
+                "/app;jsessionid=1",
+                "/app/../admin",
+                "/app/./x",
+                "/app%2f..%2fadmin"})
+        @DisplayName("rejects a prefix carrying a construct that changes where it points")
+        void rejectsUnsafePathConstruct(String prefix) {
+            assertEquals("", trustAllResolver()
+                            .resolve(headers(Map.of("X-ProxyContextPath", prefix))).contextPath(),
+                    () -> prefix + " states more than a prefix, so it must not be honored");
         }
 
         @Test
