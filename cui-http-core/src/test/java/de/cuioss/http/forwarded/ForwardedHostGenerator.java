@@ -15,9 +15,6 @@
  */
 package de.cuioss.http.forwarded;
 
-import de.cuioss.test.generator.Generators;
-import de.cuioss.test.generator.TypedGenerator;
-
 import java.util.List;
 
 /**
@@ -25,14 +22,11 @@ import java.util.List;
  *
  * <p>The population is owned here rather than inlined at each assertion site, so the host grammar's
  * adversarial input set has one home: a case added here reaches every consumer at once, instead of
- * being added to one test and silently missing from the next.</p>
- *
- * <p>Two consumption shapes are offered deliberately. {@link #hostileHosts()} exposes the population
- * as a list for an exhaustive parameterized run — every named case is then covered on every
- * execution, which a random draw cannot promise. {@link #next()} draws from the same list for
- * generator-driven use, so the two shapes cannot drift apart about what counts as hostile.</p>
+ * being added to one test and silently missing from the next. Exposed as a list — via
+ * {@link #hostileHosts()} — for an exhaustive parameterized run, so every named case is covered on
+ * every execution.</p>
  */
-public class ForwardedHostGenerator implements TypedGenerator<String> {
+final class ForwardedHostGenerator {
 
     /**
      * Each entry states a distinct way a host value can carry meaning the composed URL authority
@@ -49,22 +43,13 @@ public class ForwardedHostGenerator implements TypedGenerator<String> {
             "app.example]",
             "аpp.example.com");
 
-    private final TypedGenerator<Integer> indexSelector = Generators.integers(0, HOSTILE_HOSTS.size() - 1);
+    private ForwardedHostGenerator() {
+    }
 
     /**
      * @return the full hostile population, for an exhaustive parameterized run (never empty)
      */
-    public static List<String> hostileHosts() {
+    static List<String> hostileHosts() {
         return HOSTILE_HOSTS;
-    }
-
-    @Override
-    public String next() {
-        return HOSTILE_HOSTS.get(indexSelector.next());
-    }
-
-    @Override
-    public Class<String> getType() {
-        return String.class;
     }
 }
