@@ -112,10 +112,10 @@ final class ContextPaths {
      *
      * <p>{@code ?}, {@code #} and {@code ;} each terminate the path and open something the consumer
      * reads as a different component, so a prefix carrying one states more than a prefix. A percent
-     * sign is rejected wholesale rather than decoded: this class is not permitted to decode — the
-     * resolver applies its guards before sanitization precisely so nothing rewrites the value
-     * underneath them — and rejecting the sign covers {@code %2f}, {@code %5c} and every other
-     * encoded separator in one rule instead of chasing each encoding.</p>
+     * sign is rejected wholesale rather than decoded: this class is never permitted to decode at
+     * all, so there is no decoded form to inspect, and rejecting the sign covers {@code %2f},
+     * {@code %5c} and every other encoded separator in one rule instead of chasing each
+     * encoding.</p>
      *
      * <p>A dot-segment is rejected for the same reason in structural form: {@code /app/../admin}
      * spells one prefix and resolves to another, so a consumer that resolves it and an allow-list
