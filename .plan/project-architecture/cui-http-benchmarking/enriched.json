@@ -1,5 +1,9 @@
 {
   "best_practices": [],
+  "generation": {
+    "by": "architecture",
+    "tree_sha": null
+  },
   "insights": [],
   "internal_dependencies": [
     "cui-http"
@@ -9,10 +13,10 @@
   ],
   "key_dependencies_reasoning": "JMH is the benchmark harness; benchmarks exercise the cui-http validation pipelines and forwarded resolver",
   "key_packages": {
-    "de.cuioss.http.forwarded.benchmark": {
+    "cui-http-benchmarking/src/main/java/de/cuioss/http/forwarded/benchmark": {
       "description": "JMH benchmarks for the forwarded-header resolver."
     },
-    "de.cuioss.http.security.benchmark": {
+    "cui-http-benchmarking/src/main/java/de/cuioss/http/security/benchmark": {
       "description": "JMH benchmarks for pipeline latency/throughput and per-stage validation cost."
     }
   },
