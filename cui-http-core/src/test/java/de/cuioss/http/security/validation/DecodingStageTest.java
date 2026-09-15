@@ -16,6 +16,7 @@
 package de.cuioss.http.security.validation;
 
 import de.cuioss.http.security.config.SecurityConfiguration;
+import de.cuioss.http.security.config.SecurityConfigurationBuilder;
 import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
@@ -461,6 +462,31 @@ class DecodingStageTest {
         UrlSecurityException exception = assertThrows(UrlSecurityException.class,
                 () -> decoder.validate("value%1Bescape"));
         assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType());
+    }
+
+    @Test
+    @DisplayName("Should reject a decoded CR in a parameter value when line breaks are opted out of")
+    void shouldRejectDecodedCarriageReturnInParameterValueWhenLineBreaksDisallowed() {
+        SecurityConfiguration config = strictEquivalentBuilder()
+                .allowLineBreaksInParameterValues(false)
+                .build();
+        DecodingStage decoder = new DecodingStage(config, ValidationType.PARAMETER_VALUE);
+
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> decoder.validate("%0D"));
+
+        assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType());
+    }
+
+    /**
+     * A builder pre-set to {@code strict()}'s encoding and policy settings, so a test may flip one
+     * further flag that {@code SecurityConfiguration.strict()} - an immutable preset - cannot be
+     * asked for directly.
+     */
+    private static SecurityConfigurationBuilder strictEquivalentBuilder() {
+        return SecurityConfiguration.builder()
+                .encoding(false, false, false, true)
+                .failOnSuspiciousPatterns(true);
     }
 
     @Test

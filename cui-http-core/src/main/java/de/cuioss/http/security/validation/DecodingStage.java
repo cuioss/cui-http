@@ -699,21 +699,42 @@ ValidationType validationType) implements HttpSecurityValidator {
      * character is rejected there unless {@code allowControlCharacters} is set.</p>
      *
      * <h3>Threat model: the CR/LF carve-out for PARAMETER_VALUE and BODY</h3>
-     * <p><strong>Decoded CR and LF are deliberately allowed for
+     * <p><strong>Decoded CR and LF are allowed by default for
      * {@link ValidationType#PARAMETER_VALUE} and {@link ValidationType#BODY}</strong> - this is
      * the carve-out expressed by the {@code isFormDataWhitespace} branch above, not an
      * oversight. Form data legitimately carries line breaks (a multi-line {@code textarea}
-     * submission is the ordinary case), so rejecting them would break correct applications.</p>
+     * submission is the ordinary case), so rejecting them unconditionally would break correct
+     * applications.</p>
      *
-     * <p>The consequence is a residual risk this stage does <em>not</em> close:
-     * <strong>response-splitting safety for these two types depends on the application not
+     * <p>For {@code PARAMETER_VALUE} that carve-out is now <strong>closable</strong>: setting
+     * {@code allowLineBreaksInParameterValues(false)} rejects a decoded CR or LF in a parameter
+     * value with {@code CONTROL_CHARACTERS}. The flag defaults to {@code true} in every preset, so
+     * the stage behaves exactly as before unless a deployment opts in. {@code BODY} retains the
+     * unconditional carve-out and has <strong>no lever</strong> - a form-encoded body is line-break
+     * carrying content by construction. TAB ({@code U+0009}) is never gated by the flag for either
+     * type: it terminates nothing and splits no header.</p>
+     *
+     * <p>Under the default, and for {@code BODY} always, the residual risk this stage does
+     * <em>not</em> close remains: <strong>response-splitting safety depends on the application not
      * reflecting parameter values or body content into response headers.</strong> A value that
      * passes this stage may contain CR/LF; writing it unescaped into a {@code Set-Cookie},
      * {@code Location} or any other response header is a response-splitting vulnerability that
      * no configuration here prevents. The header types are unaffected - CR/LF is rejected
      * unconditionally for {@code HEADER_NAME}, {@code HEADER_VALUE}, {@code COOKIE_NAME},
-     * {@code COOKIE_VALUE} and {@code PARAMETER_NAME}, and {@code allowControlCharacters} does
-     * not relax them.</p>
+     * {@code COOKIE_VALUE} and {@code PARAMETER_NAME}, and neither {@code allowControlCharacters}
+     * nor {@code allowLineBreaksInParameterValues} relaxes them.</p>
+     *
+     * <h3>Why the new flag does not re-open the ADR-0017 asymmetry it sits next to</h3>
+     * <p>ADR-0017 removed the flags whose effect was to let an <em>encoded spelling</em> buy a
+     * softer verdict than the identical raw byte. {@code allowLineBreaksInParameterValues} is not
+     * of that class. Its subject is a <em>policy</em> - which characters this deployment permits
+     * inside a parameter value - which is the same question {@code allowControlCharacters} answers,
+     * not a question about how a character was spelled on the wire. It can also only ever move the
+     * verdict in the safe direction: at its {@code true} default the stage behaves exactly as it
+     * did before the flag existed, and setting it {@code false} <em>removes</em> the pre-existing
+     * encoded-softer-than-raw gap (a raw CR is already rejected by
+     * {@link CharacterValidationStage} under the strict character set while its {@code %0D}
+     * spelling was admitted here) rather than creating one.</p>
      *
      * <h3>The C1 range (0x80-0x9F) is unconditional, mirroring the raw-form guarantee</h3>
      * <p>{@link CharacterValidationStage#isCharacterAllowed} rejects the C1 range regardless of
@@ -736,13 +757,30 @@ ValidationType validationType) implements HttpSecurityValidator {
         return switch (validationType) {
             case HEADER_NAME, HEADER_VALUE, COOKIE_NAME, COOKIE_VALUE, PARAMETER_NAME -> true;
             case URL_PATH -> !config.allowControlCharacters();
-            case PARAMETER_VALUE, BODY -> !isFormDataWhitespace(cp) && !config.allowControlCharacters();
+            case BODY -> !isFormDataWhitespace(cp) && !config.allowControlCharacters();
+            case PARAMETER_VALUE -> isLineBreak(cp)
+                    ? !config.allowLineBreaksInParameterValues()
+                    : !isFormDataWhitespace(cp) && !config.allowControlCharacters();
         };
+    }
+
+    /**
+     * CR and LF - the two form-data whitespace characters that are response-splitting vectors when
+     * a parameter value is reflected into a response header. TAB is deliberately not a member: it
+     * terminates nothing and splits no header.
+     */
+    private static boolean isLineBreak(int cp) {
+        return cp == '\r' || cp == '\n';
     }
 
     /**
      * CR, LF and TAB are legitimate content inside form-encoded parameter values and bodies -
      * a multi-line textarea submission carries them by design.
+     *
+     * <p>This predicate is deliberately pure and configuration-free: it classifies a character,
+     * it does not decide a policy. Whether a {@code PARAMETER_VALUE} may actually carry the CR/LF
+     * members is decided at the call site in {@link #decodedControlCharacterForbidden(int)}, from
+     * {@code allowLineBreaksInParameterValues}.</p>
      */
     private static boolean isFormDataWhitespace(int cp) {
         return cp == '\r' || cp == '\n' || cp == '\t';
