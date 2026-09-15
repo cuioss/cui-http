@@ -211,6 +211,8 @@ public final class ForwardedHeaderResolver {
 
     private static final CuiLogger LOGGER = new CuiLogger(ForwardedHeaderResolver.class);
     private static final int MAX_PORT = 65535;
+    private static final int MAX_HOST_LENGTH = 253;
+    private static final int MAX_LABEL_LENGTH = 63;
 
     private final ForwardedResolverConfig config;
     private final HttpSecurityValidator headerValueValidator;
@@ -515,9 +517,9 @@ public final class ForwardedHeaderResolver {
     }
 
     /**
-     * Splits a {@code host[:port]} token (bracketed IPv6 aware) and validates the host contains no
-     * path/backslash/whitespace/URL-authority-delimiter characters. Returns {@link HostPort#EMPTY}
-     * for a malformed host.
+     * Splits a {@code host[:port]} token (bracketed IPv6 aware) and validates an unbracketed host
+     * against the positive reg-name grammar in {@link #isValidRegName(String)}. Returns
+     * {@link HostPort#EMPTY} for a malformed host.
      *
      * <p><strong>An IPv6 host must be bracketed.</strong> An unbracketed value carrying more than
      * one colon (a bare IPv6 literal such as {@code 2001:db8::1}) is rejected: the host is later
@@ -570,7 +572,13 @@ public final class ForwardedHeaderResolver {
                 port = parsePort(rest.substring(1));
             }
             host = value.substring(0, close + 1);
-        } else if (value.indexOf(':') == value.lastIndexOf(':') && value.indexOf(':') >= 0) {
+            // The bracketed branch returns HERE rather than falling through to the reg-name guard
+            // below. Its host has already been validated as an IP literal by IpAddresses.parse, and
+            // a bracketed literal is not a reg-name at all — isValidRegName would reject the very
+            // "[2001:db8::1]" form this branch just accepted, on the brackets and colons alone.
+            return new HostPort(Optional.of(host), port);
+        }
+        if (value.indexOf(':') == value.lastIndexOf(':') && value.indexOf(':') >= 0) {
             host = value.substring(0, value.indexOf(':'));
             port = parsePort(value.substring(value.indexOf(':') + 1));
         } else if (value.indexOf(':') >= 0) {
@@ -579,29 +587,77 @@ public final class ForwardedHeaderResolver {
         } else {
             host = value;
         }
-        if (host.isEmpty() || containsHostSeparator(host)) {
+        if (host.isEmpty() || !isValidRegName(host)) {
             return HostPort.EMPTY;
         }
         return new HostPort(Optional.of(host), port);
     }
 
     /**
-     * Rejects a path separator, backslash, whitespace, or any of the URL-authority delimiter
-     * characters ({@code @ # ?}). The consumer composes {@link ResolvedForwarding#host()} back
-     * into an absolute URL (see the package's serialization/usage examples); an embedded
-     * {@code @} would let a forged host smuggle a userinfo component
-     * ({@code https://real-host@attacker.example/}), which most URL parsers resolve to the
-     * <em>attacker's</em> host rather than the trusted one — the same host-confusion class the
-     * path/backslash checks already guard against, just via a different delimiter.
+     * Whether an unbracketed host is a valid reg-name under this resolver's <em>allow-list</em>
+     * grammar: non-empty, at most 253 characters in total, and made of dot-separated labels where
+     * each label is non-empty, at most 63 characters, built only from ASCII {@code A-Za-z0-9},
+     * {@code -} and {@code _}, and starts and ends with neither {@code -} nor {@code _}.
+     *
+     * <p>Stating what a host <em>may</em> contain, rather than enumerating what it may not, is what
+     * makes the guard closed by construction: a delimiter nobody thought to list is rejected because
+     * it was never admitted, instead of slipping through an incomplete deny-list.</p>
+     *
+     * <p>The userinfo delimiter is the worked example of what the grammar excludes. The consumer
+     * composes {@link ResolvedForwarding#host()} back into an absolute URL (see the package's
+     * serialization/usage examples); an embedded {@code @} would let a forged host smuggle a
+     * userinfo component ({@code https://real-host@attacker.example/}), which most URL parsers
+     * resolve to the <em>attacker's</em> host rather than the trusted one. {@code @} is not in the
+     * admitted character set, so that host-confusion class is excluded — as are the path separator,
+     * the backslash, whitespace, and the remaining URL-authority delimiters {@code #} and
+     * {@code ?}, each for the same reason and without needing its own rule.</p>
+     *
+     * <p>Underscore is admitted <em>inside</em> a label, so a service name such as
+     * {@code my_service.internal} resolves. A leading-underscore label ({@code _hidden}) stays
+     * rejected, matching {@link IpAddresses#parseChainEntry(String)}'s unusable-entry fixture, and a
+     * trailing root dot ({@code app.example.com.}) is rejected because the dot-split produces an
+     * empty final label.</p>
      */
-    private static boolean containsHostSeparator(String host) {
-        for (int i = 0; i < host.length(); i++) {
+    private static boolean isValidRegName(String host) {
+        if (host.isEmpty() || host.length() > MAX_HOST_LENGTH) {
+            return false;
+        }
+        int labelStart = 0;
+        int dot = host.indexOf('.');
+        while (dot >= 0) {
+            if (!isValidRegNameLabel(host, labelStart, dot)) {
+                return false;
+            }
+            labelStart = dot + 1;
+            dot = host.indexOf('.', labelStart);
+        }
+        return isValidRegNameLabel(host, labelStart, host.length());
+    }
+
+    /**
+     * Whether {@code host[start, end)} is a valid reg-name label — see {@link #isValidRegName}.
+     */
+    private static boolean isValidRegNameLabel(String host, int start, int end) {
+        int length = end - start;
+        if (length == 0 || length > MAX_LABEL_LENGTH) {
+            return false;
+        }
+        for (int i = start; i < end; i++) {
             char c = host.charAt(i);
-            if (c == '/' || c == '\\' || c == '@' || c == '#' || c == '?' || Character.isWhitespace(c)) {
-                return true;
+            boolean admitted = c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+                    || c == '-' || c == '_';
+            if (!admitted) {
+                return false;
             }
         }
-        return false;
+        return !isLabelEdgeCharacter(host.charAt(start)) && !isLabelEdgeCharacter(host.charAt(end - 1));
+    }
+
+    /**
+     * @return {@code true} for the two admitted characters a label may not start or end with
+     */
+    private static boolean isLabelEdgeCharacter(char c) {
+        return c == '-' || c == '_';
     }
 
     // --- port --------------------------------------------------------------------------------

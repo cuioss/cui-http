@@ -22,6 +22,8 @@ import de.cuioss.test.juli.junit5.EnableTestLogger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.*;
 import java.util.function.Function;
@@ -632,6 +634,57 @@ class ForwardedHeaderResolverTest {
                             .resolve(headers(Map.of("X-Forwarded-Port", "-1"))).port().isEmpty()));
         }
 
+        /**
+         * The host guard is an <em>allow-list</em> grammar, so a delimiter nobody enumerated is
+         * rejected because it was never admitted. Each entry of the hostile population carries a
+         * character the previous deny-list never named — a quote, angle brackets, a semicolon, a
+         * percent-encoded path separator, a stray closing bracket, and a Cyrillic homoglyph — and
+         * every one of them must yield no host at all.
+         *
+         * <p>The population lives in {@link ForwardedHostGenerator} rather than inline here, so the
+         * adversarial input set has one home; {@link #stillHonorsValidForms()} is the matched
+         * positive control that keeps these empty results attributable to the characters rather
+         * than to a blanket rejection.</p>
+         */
+        @ParameterizedTest
+        @MethodSource("de.cuioss.http.forwarded.ForwardedHostGenerator#hostileHosts")
+        @DisplayName("rejects a host carrying a character the reg-name grammar does not admit")
+        void rejectsHostOutsideRegNameGrammar(String hostileHost) {
+            assertTrue(trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Host", hostileHost))).host().isEmpty(),
+                    () -> "the grammar admits only ASCII letters, digits, '-' and '_' per label, so "
+                            + hostileHost + " must not reach a consumer");
+        }
+
+        /**
+         * A trailing root dot is a legal FQDN spelling in DNS, but the grammar's dot-split turns it
+         * into an empty final label and rejects it. Pinned as its own named case because it is an
+         * operator decision rather than a consequence of the character set — a future relaxation
+         * must change this assertion deliberately rather than silently.
+         */
+        @Test
+        @DisplayName("rejects a host with a trailing root dot")
+        void rejectsTrailingRootDot() {
+            assertTrue(trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Host", "app.example.com."))).host().isEmpty(),
+                    "the dot-split produces an empty final label, which no label may be");
+        }
+
+        /**
+         * Underscore is admitted <em>inside</em> a label but not at its edges, so a leading-underscore
+         * label stays rejected — matching {@code IpAddresses.parseChainEntry}'s unusable-entry
+         * fixture. {@link #stillHonorsValidForms()} carries the matched positive control
+         * ({@code my_service.internal}) that makes this rejection about the position of the
+         * underscore rather than about the character.
+         */
+        @Test
+        @DisplayName("rejects a leading-underscore label")
+        void rejectsLeadingUnderscoreLabel() {
+            assertTrue(trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Host", "_hidden"))).host().isEmpty(),
+                    "a label may carry an underscore but may not start with one");
+        }
+
         @Test
         @DisplayName("still honors the valid host and port forms the guards must not affect")
         void stillHonorsValidForms() {
@@ -640,6 +693,14 @@ class ForwardedHeaderResolverTest {
                             .resolve(headers(Map.of("X-Forwarded-Host", "[2001:db8::1]:8443"))).host().orElseThrow()),
                     () -> assertEquals("app.example.com", trustAllResolver()
                             .resolve(headers(Map.of("X-Forwarded-Host", "app.example.com:8443"))).host().orElseThrow()),
+                    () -> assertEquals("my-app.example.com", trustAllResolver()
+                                    .resolve(headers(Map.of("X-Forwarded-Host", "my-app.example.com"))).host().orElseThrow(),
+                            "a hyphen inside a label is admitted, so the grammar is an allow-list and "
+                                    + "not a blanket rejection of anything unusual"),
+                    () -> assertEquals("my_service.internal", trustAllResolver()
+                                    .resolve(headers(Map.of("X-Forwarded-Host", "my_service.internal"))).host().orElseThrow(),
+                            "an underscore inside a label is admitted too, so a service name that "
+                                    + "carries one still resolves"),
                     () -> assertEquals(8443, trustAllResolver()
                             .resolve(headers(Map.of("X-Forwarded-Port", "8443"))).port().orElseThrow()));
         }
