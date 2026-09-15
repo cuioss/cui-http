@@ -547,21 +547,9 @@ public final class ForwardedHeaderResolver {
      * about which field a disagreement reaches; this paragraph is about whether the token yields a
      * host at all.</p>
      *
-     * <p><strong>Trailing content after {@code ]} is rejected.</strong> The only thing permitted
-     * after the closing bracket is a colon followed by one or more ASCII digits, so
-     * {@code [::1]garbage} and {@code [::1]x:8443} yield {@link HostPort#EMPTY} instead of resolving
-     * to host {@code [::1]}. That rule is not restated here: it is applied through the shared
-     * {@link IpAddresses#hasValidBracketTrailer(String)} helper.</p>
-     *
-     * <p><strong>The bracket contents must themselves be an IP literal.</strong> {@code []} and
-     * {@code [not-an-ip]} yield {@link HostPort#EMPTY} rather than becoming a host, because the
-     * brackets promise a literal and an invalid one would be composed into an invalid authority.
-     * The check accepts an IPv4 literal as well, so {@code [10.0.0.5]} is honored even though
-     * RFC 3986 reserves the bracketed form for IPv6. That laxity is deliberate and documented
-     * rather than intended: it keeps this path identical to
-     * {@link IpAddresses#parseChainEntry(String)}, which has always accepted the same shape, and
-     * a syntactically valid literal is still required either way. Tighten both together or
-     * neither — a one-sided change reintroduces the host-vs-chain asymmetry.</p>
+     * <p>The bracketed form is parsed by {@link #parseBracketedHostPort(String)}, whose Javadoc
+     * carries the rules for the trailing content after {@code ]} and for the bracket contents
+     * themselves.</p>
      *
      * <p>The {@code host:port} split here intentionally diverges from
      * {@link IpAddresses#parseChainEntry(String)}: this method reconstructs the <em>host string</em>
@@ -571,34 +559,15 @@ public final class ForwardedHeaderResolver {
      * implementation shared by both call sites, so the two bracket policies cannot drift apart.</p>
      */
     private static HostPort parseHostPort(String value) {
-        String host;
-        OptionalInt port = OptionalInt.empty();
         if (value.startsWith("[")) {
-            int close = value.indexOf(']');
-            if (close < 0) {
-                return HostPort.EMPTY;
-            }
-            String rest = value.substring(close + 1);
-            if (!IpAddresses.hasValidBracketTrailer(rest)) {
-                return HostPort.EMPTY;
-            }
-            // The brackets promise an IP literal, so validate what is INSIDE them too — checking
-            // only the trailer would let "[]" and "[not-an-ip]" through as a host and hand a
-            // downstream consumer an invalid URL authority. This mirrors
-            // IpAddresses.parseChainEntry, which parses its bracketed literal for the same reason.
-            if (IpAddresses.parse(value.substring(1, close)) == null) {
-                return HostPort.EMPTY;
-            }
-            if (!rest.isEmpty()) {
-                port = parsePort(rest.substring(1));
-            }
-            host = value.substring(0, close + 1);
-            // The bracketed branch returns HERE rather than falling through to the reg-name guard
+            // The bracketed form returns HERE rather than falling through to the reg-name guard
             // below. Its host has already been validated as an IP literal by IpAddresses.parse, and
             // a bracketed literal is not a reg-name at all — isValidRegName would reject the very
-            // "[2001:db8::1]" form this branch just accepted, on the brackets and colons alone.
-            return new HostPort(Optional.of(host), port);
+            // "[2001:db8::1]" form that branch just accepted, on the brackets and colons alone.
+            return parseBracketedHostPort(value);
         }
+        String host;
+        OptionalInt port = OptionalInt.empty();
         if (value.indexOf(':') == value.lastIndexOf(':') && value.indexOf(':') >= 0) {
             String suffix = value.substring(value.indexOf(':') + 1);
             if (!IpAddresses.isPortSuffix(suffix)) {
@@ -616,6 +585,50 @@ public final class ForwardedHeaderResolver {
             return HostPort.EMPTY;
         }
         return new HostPort(Optional.of(host), port);
+    }
+
+    /**
+     * Splits a bracketed {@code [ip-literal][:port]} token, retaining the brackets in the returned
+     * host. Returns {@link HostPort#EMPTY} for a malformed token. Extracted from
+     * {@link #parseHostPort(String)} so the outer method carries only the unbracketed grammar.
+     *
+     * <p><strong>Trailing content after {@code ]} is rejected.</strong> The only thing permitted
+     * after the closing bracket is a colon followed by one or more ASCII digits, so
+     * {@code [::1]garbage} and {@code [::1]x:8443} yield {@link HostPort#EMPTY} instead of resolving
+     * to host {@code [::1]}. That rule is not restated here: it is applied through the shared
+     * {@link IpAddresses#hasValidBracketTrailer(String)} helper.</p>
+     *
+     * <p><strong>The bracket contents must themselves be an IP literal.</strong> {@code []} and
+     * {@code [not-an-ip]} yield {@link HostPort#EMPTY} rather than becoming a host, because the
+     * brackets promise a literal and an invalid one would be composed into an invalid authority.
+     * The check accepts an IPv4 literal as well, so {@code [10.0.0.5]} is honored even though
+     * RFC 3986 reserves the bracketed form for IPv6. That laxity is deliberate and documented
+     * rather than intended: it keeps this path identical to
+     * {@link IpAddresses#parseChainEntry(String)}, which has always accepted the same shape, and
+     * a syntactically valid literal is still required either way. Tighten both together or
+     * neither — a one-sided change reintroduces the host-vs-chain asymmetry.</p>
+     */
+    private static HostPort parseBracketedHostPort(String value) {
+        int close = value.indexOf(']');
+        if (close < 0) {
+            return HostPort.EMPTY;
+        }
+        String rest = value.substring(close + 1);
+        if (!IpAddresses.hasValidBracketTrailer(rest)) {
+            return HostPort.EMPTY;
+        }
+        // The brackets promise an IP literal, so validate what is INSIDE them too — checking
+        // only the trailer would let "[]" and "[not-an-ip]" through as a host and hand a
+        // downstream consumer an invalid URL authority. This mirrors
+        // IpAddresses.parseChainEntry, which parses its bracketed literal for the same reason.
+        if (IpAddresses.parse(value.substring(1, close)) == null) {
+            return HostPort.EMPTY;
+        }
+        OptionalInt port = OptionalInt.empty();
+        if (!rest.isEmpty()) {
+            port = parsePort(rest.substring(1));
+        }
+        return new HostPort(Optional.of(value.substring(0, close + 1)), port);
     }
 
     /**
