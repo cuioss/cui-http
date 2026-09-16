@@ -1065,6 +1065,41 @@ class ETagAwareHttpAdapterTest {
     }
 
     /**
+     * The principal-binding term is derived by joining multiple credential headers with {@code &}
+     * and {@code =} before digesting, exactly the delimiter shape {@code generateCacheKey}'s own
+     * header section escapes for. A credential header value that itself contains {@code &name=value}
+     * can therefore forge a second header: a caller sending only {@code Authorization: token&cookie=x}
+     * must not bind to the same principal as one sending {@code Authorization: token} and
+     * {@code Cookie: x} as two separate headers - two different credential presentations, and the
+     * whole point of principal binding is that they must not share a cache entry.
+     */
+    @Test
+    void principalBindingShouldNotCollideAcrossForgedDelimiters() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .cacheKeyHeaderFilter(CacheKeyHeaderFilter.excluding("Authorization", "Cookie"))
+                .build();
+
+        var uri = URI.create("https://api.example.com/test");
+        var filter = CacheKeyHeaderFilter.excluding("Authorization", "Cookie");
+
+        var forgedHeaders = new LinkedHashMap<String, String>();
+        forgedHeaders.put("Authorization", "token&cookie=x");
+        String forgedKey = adapter.generateCacheKey(uri, forgedHeaders, filter);
+
+        var separateHeaders = new LinkedHashMap<String, String>();
+        separateHeaders.put("Authorization", "token");
+        separateHeaders.put("Cookie", "x");
+        String separateKey = adapter.generateCacheKey(uri, separateHeaders, filter);
+
+        assertNotEquals(forgedKey, separateKey,
+                "A single Authorization header carrying '&cookie=x' must not bind to the same "
+                        + "principal as separate Authorization/Cookie headers, but both keyed as: "
+                        + forgedKey);
+    }
+
+    /**
      * The TTL bounds how long an entry may answer for, which the size-triggered eviction alone
      * cannot do. Both halves are asserted here: an expired entry is neither served nor offered as a
      * validator, and an entry inside its TTL still is — the control that keeps the rule from

@@ -834,14 +834,19 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      * another.</p>
      *
      * <p>Every header in {@link #CREDENTIAL_HEADERS} is matched case-insensitively and contributes
-     * its value in a fixed order, so two requests bind identically exactly when they present the
-     * same credential material. A request carrying none of them binds to the stable
+     * its own digest in a fixed order, so two requests bind identically exactly when they present
+     * the same credential material. A request carrying none of them binds to the stable
      * {@link #ANONYMOUS_PRINCIPAL} term rather than to the empty string, which keeps anonymous
      * entries in a namespace of their own instead of colliding with credentialed ones.</p>
      *
      * <p>The credential material itself is never part of the returned term — only its SHA-256
      * digest is. The digest separates principals exactly as the raw values would, while keeping the
-     * credential out of a key that is retained in the cache map for as long as the entry lives.</p>
+     * credential out of a key that is retained in the cache map for as long as the entry lives. Each
+     * header is digested <strong>individually</strong>, before the per-header digests are joined with
+     * {@code &}: a digest is a fixed-length lower-case hex string, so it can never itself contain
+     * {@code &} or {@code =}, and a caller cannot forge a second header by embedding those
+     * delimiters in a credential value — the exact collision a raw name=value&name=value
+     * concatenation would have permitted.</p>
      *
      * @param headers the caller-supplied headers for this request
      * @return the principal term, never empty
@@ -854,7 +859,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
                     if (!binding.isEmpty()) {
                         binding.append('&');
                     }
-                    binding.append(credentialHeader).append('=').append(entry.getValue());
+                    binding.append(credentialHeader).append('=').append(digest(entry.getValue()));
                 }
             }
         }
