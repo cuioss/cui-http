@@ -1543,8 +1543,10 @@ class DecodingStageTest {
                     .allowLineBreaksInParameterValues(false)
                     .build();
 
+            DecodingStage decoder = new DecodingStage(config, ValidationType.PARAMETER_VALUE);
+
             UrlSecurityException thrown = assertThrows(UrlSecurityException.class,
-                    () -> new DecodingStage(config, ValidationType.PARAMETER_VALUE).validate("a%0Db"));
+                    () -> decoder.validate("a%0Db"));
             assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, thrown.getFailureType());
 
             assertEquals("a\rb",
