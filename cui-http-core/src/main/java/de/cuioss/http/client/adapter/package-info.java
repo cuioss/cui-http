@@ -112,24 +112,22 @@
  * }
  * }</pre>
  *
- * <h3>Example 5: Token Refresh Without Cache Bloat</h3>
+ * <h3>Example 5: Keeping the Credential Out of the Cache Key Text</h3>
  * <pre>{@code
- * // Mobile app with frequent token refresh
- * // Problem: Default ALL filter creates new cache entry for each token
- * // Solution: Exclude Authorization header from cache key
- *
+ * // Exclude the Authorization header from the verbatim header section of the key
  * HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
  *     .httpHandler(handler)
  *     .responseConverter(userConverter)
  *     .cacheKeyHeaderFilter(CacheKeyHeaderFilter.excluding("Authorization"))
  *     .build();
  *
- * // Token changes don't affect cache key - reuses existing cached entry
  * Map<String, String> headers1 = Map.of("Authorization", "Bearer old-token");
  * HttpResult<User> result1 = adapter.get(headers1).join();
  *
+ * // A different credential is a different principal and resolves to its own entry:
+ * // the filter governs the key text, never the isolation between principals
  * Map<String, String> headers2 = Map.of("Authorization", "Bearer new-token");
- * HttpResult<User> result2 = adapter.get(headers2).join();  // 304 Not Modified!
+ * HttpResult<User> result2 = adapter.get(headers2).join();  // 200, not a cache hit
  * }</pre>
  *
  * <h2>ETag Caching Behavior</h2>
@@ -148,13 +146,21 @@
  *   <li>Non-200 status codes</li>
  * </ul>
  *
- * <p><b>Cache key composition:</b> By default, cache key = URI + sorted headers.
- * Use {@link de.cuioss.http.client.adapter.CacheKeyHeaderFilter CacheKeyHeaderFilter} to customize:
+ * <p><b>Cache key composition:</b> By default, cache key = URI + sorted headers + an unconditional
+ * principal binding derived from the request's credential-bearing headers. The binding is applied
+ * whatever filter is configured, so entries are always scoped to the credential that produced them;
+ * only the digest of a credential ever reaches the key, never the credential itself. Use
+ * {@link de.cuioss.http.client.adapter.CacheKeyHeaderFilter CacheKeyHeaderFilter} to customize the
+ * header section:
  * <ul>
- *   <li>{@code CacheKeyHeaderFilter.ALL} - Include all headers (default, safest)</li>
- *   <li>{@code CacheKeyHeaderFilter.NONE} - URI only (single-user clients)</li>
- *   <li>{@code CacheKeyHeaderFilter.excluding("Authorization")} - Exclude specific headers (solves token refresh cache bloat)</li>
+ *   <li>{@code CacheKeyHeaderFilter.ALL} - Include all headers (default)</li>
+ *   <li>{@code CacheKeyHeaderFilter.NONE} - URI only; headers that vary the representation collapse onto one entry</li>
+ *   <li>{@code CacheKeyHeaderFilter.excluding("Authorization")} - Keep named headers out of the key text</li>
  * </ul>
+ *
+ * <p><b>Cache entry lifetime:</b> entries expire on a configurable TTL (default five minutes, see
+ * {@code ETagAwareHttpAdapter.Builder#cacheEntryTtl}) in addition to the size-triggered eviction. An
+ * expired entry is treated as absent — neither served nor offered as a validator.
  *
  * <h2>Retry Behavior</h2>
  *

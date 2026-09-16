@@ -23,6 +23,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Unit tests for {@link CacheKeyHeaderFilter}.
  *
+ * <p>Every case here asserts the filter's own contract: given a header <em>name</em>, is that name
+ * reproduced verbatim in the cache key? Whether two requests share a cache entry is deliberately not
+ * asserted — {@link ETagAwareHttpAdapter} binds every entry to the presenting credential regardless
+ * of this filter, so a filter verdict carries no cache-sharing consequence to test.
+ *
  * @author Generated
  */
 class CacheKeyHeaderFilterTest {
@@ -337,16 +342,21 @@ class CacheKeyHeaderFilterTest {
 
     // ========== REAL-WORLD SCENARIOS ==========
 
+    /**
+     * The filter's contract is a verdict about a header <em>name</em>, and nothing more. It decides
+     * which names are reproduced verbatim in the key text; it does not decide which requests share a
+     * cache entry, because {@link ETagAwareHttpAdapter} binds every entry to the presenting
+     * credential whatever this filter returns. The assertions below are therefore about the header
+     * names alone — no cache-sharing consequence is implied by excluding a credential header.
+     */
     @Test
-    void realWorldScenarioTokenRefreshCacheBloatSolution() {
-        // Exclude Authorization to prevent cache bloat on token refresh,
-        // but keep content-affecting headers
+    void realWorldScenarioKeepCredentialOutOfKeyText() {
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter.excluding("Authorization");
 
-        // Authorization excluded (solves cache bloat)
+        // Authorization is not reproduced in the verbatim header section
         assertFalse(filter.includeInCacheKey("Authorization"));
 
-        // Content-affecting headers included (maintains correctness)
+        // Content-negotiating headers still split entries
         assertTrue(filter.includeInCacheKey("Accept-Language"));
         assertTrue(filter.includeInCacheKey("Accept-Encoding"));
         assertTrue(filter.includeInCacheKey("Accept-Charset"));
@@ -354,7 +364,7 @@ class CacheKeyHeaderFilterTest {
 
     @Test
     void realWorldScenarioExcludeTraceHeaders() {
-        // Exclude all trace/debug headers
+        // Keep incidental per-request headers out of the key so they do not fragment the cache
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter
                 .excluding("Authorization")
                 .and(CacheKeyHeaderFilter.excludingPrefix("X-"));
@@ -364,7 +374,7 @@ class CacheKeyHeaderFilterTest {
         assertFalse(filter.includeInCacheKey("X-Trace-ID"));
         assertFalse(filter.includeInCacheKey("X-Correlation-ID"));
 
-        // Authorization excluded
+        // Authorization excluded from the key text
         assertFalse(filter.includeInCacheKey("Authorization"));
 
         // Content headers included

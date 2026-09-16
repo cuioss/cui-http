@@ -166,6 +166,75 @@ class HttpHandlerHttpsIntegrationTest {
                         "the server must have served exactly one exchange, so the handshake completed"));
     }
 
+    /**
+     * The TLS floor is only real if it reaches the wire: {@link SecureSSLContextProvider} declares
+     * the policy, and {@link HttpHandler} pins it through {@code SSLParameters.setProtocols(...)}.
+     * This asserts the negotiated protocol of a completed handshake against the provider's own
+     * {@code getEnabledProtocols()}, so a handler that dropped the pinning — and let the JVM
+     * negotiate whatever it happened to have enabled — is detectable rather than silently green.
+     */
+    @Test
+    @DisplayName("The negotiated protocol honours the configured TLS floor")
+    @ModuleDispatcher
+    void negotiatedProtocolHonoursTheConfiguredTlsFloor(URIBuilder uriBuilder, SSLContext sslContext) throws Exception {
+        SecureSSLContextProvider floor = new SecureSSLContextProvider(SecureSSLContextProvider.TLS_V1_2);
+        dispatcher.withSuccess(Generators.letterStrings(16, 64).next(), null);
+
+        HttpResponse<String> response = sendOverTls(uriBuilder, sslContext, floor);
+        String negotiated = negotiatedProtocolOf(response);
+
+        assertAll("the protocol the handshake actually negotiated",
+                () -> assertEquals(200, response.statusCode(), "the exchange must have completed"),
+                () -> assertTrue(List.of(floor.getEnabledProtocols()).contains(negotiated),
+                        "the negotiated protocol must be one the configured floor enables, but was: " + negotiated));
+    }
+
+    /**
+     * The discriminating half of the test above: a {@code TLSv1.3} floor enables exactly one
+     * protocol, so the negotiated value is pinned to a single expected string. A 1.2 floor would
+     * still satisfy the set-membership assertion above, which is why this case exists alongside it.
+     */
+    @Test
+    @DisplayName("A TLS 1.3 floor negotiates exactly TLS 1.3")
+    @ModuleDispatcher
+    void tlsThirteenFloorNegotiatesExactlyTlsThirteen(URIBuilder uriBuilder, SSLContext sslContext) throws Exception {
+        SecureSSLContextProvider floor = new SecureSSLContextProvider(SecureSSLContextProvider.TLS_V1_3);
+        dispatcher.withSuccess(Generators.letterStrings(16, 64).next(), null);
+
+        HttpResponse<String> response = sendOverTls(uriBuilder, sslContext, floor);
+
+        assertAll("a single-protocol floor leaves nothing to negotiate",
+                () -> assertEquals(200, response.statusCode(), "the exchange must have completed"),
+                () -> assertEquals(SecureSSLContextProvider.TLS_V1_3, negotiatedProtocolOf(response),
+                        "a TLSv1.3-only floor must negotiate TLSv1.3"));
+    }
+
+    /**
+     * Performs one GET over TLS with the given floor configured on the handler.
+     */
+    private static HttpResponse<String> sendOverTls(URIBuilder uriBuilder, SSLContext sslContext,
+            SecureSSLContextProvider floor) throws Exception {
+        URI target = uriBuilder.addPathSegments("api", "data").build();
+        try (HttpHandler handler = HttpHandler.builder()
+                     .uri(target)
+                     .sslContext(sslContext)
+                     .tlsVersions(floor)
+                     .build()) {
+            return handler.send(handler.requestBuilder().GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+        }
+    }
+
+    /**
+     * The protocol the completed handshake negotiated, read from the response's own TLS session —
+     * server-observed state, not a flag the client reports about its own configuration.
+     */
+    private static String negotiatedProtocolOf(HttpResponse<String> response) {
+        return response.sslSession()
+                .orElseThrow(() -> new AssertionError("the response carried no TLS session, so no handshake completed"))
+                .getProtocol();
+    }
+
     @Test
     @DisplayName("A 302 off TLS to a cleartext target is refused before the target is contacted")
     @ModuleDispatcher(providerMethod = "getRedirectDispatcher")

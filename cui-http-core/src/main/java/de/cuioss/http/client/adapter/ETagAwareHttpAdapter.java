@@ -31,6 +31,10 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -46,7 +50,7 @@ import static de.cuioss.http.client.HttpLogMessages.WARN;
  * Implements RFC 7232 conditional requests using ETags:
  * </p>
  * <ul>
- *   <li>GET requests with cached responses send If-None-Match header</li>
+ *   <li>GET and HEAD requests that resolve a cached entry send an If-None-Match header</li>
  *   <li>Server responds with 304 Not Modified if content unchanged</li>
  *   <li>Only GET responses are cached (POST/PUT/DELETE never cached)</li>
  *   <li>ETags extracted from all responses for optimistic locking patterns</li>
@@ -70,14 +74,14 @@ import static de.cuioss.http.client.HttpLogMessages.WARN;
  * </ul>
  *
  * <p><strong>Do not supply your own {@code If-None-Match} header.</strong> The adapter manages
- * conditional GETs itself: when it holds a cached entry for a GET it sets {@code If-None-Match} to
- * the cached ETag, replacing (not appending to) any caller-supplied value. A caller-driven
- * conditional request is therefore only partially honored. Because caller headers are applied to
- * <em>every</em> method, a caller-supplied {@code If-None-Match} is also the only way a non-GET
- * request can draw a {@code 304} at all — which then resolves per the table above rather than as a
- * success. On a caching-disabled adapter a caller-triggered {@code 304} has no cached entry to
- * return and is reported as an {@code INVALID_CONTENT} failure. Let the adapter drive revalidation
- * instead.</p>
+ * conditional requests itself: whenever it resolves a cached entry — for a GET or a HEAD, the two
+ * methods that read the cache — it sets {@code If-None-Match} to the cached ETag, replacing (not
+ * appending to) any caller-supplied value. A caller-driven conditional request is therefore only
+ * partially honored. Because caller headers are applied to <em>every</em> method, a caller-supplied
+ * {@code If-None-Match} is the only way a POST/PUT/PATCH/DELETE/OPTIONS request can draw a
+ * {@code 304} at all — which then resolves per the table above rather than as a success. On a
+ * caching-disabled adapter a caller-triggered {@code 304} has no cached entry to return and is
+ * reported as an {@code INVALID_CONTENT} failure. Let the adapter drive revalidation instead.</p>
  *
  * <h3>ETag caching is optional</h3>
  * <p>
@@ -139,23 +143,35 @@ import static de.cuioss.http.client.HttpLogMessages.WARN;
  * }
  * }</pre>
  *
- * <h2>Example: Token Refresh Without Cache Bloat</h2>
+ * <h2>Example: Keeping the Credential Out of the Key Text</h2>
  * <pre>{@code
- * // Mobile app with frequent token refresh - exclude Authorization from cache key
+ * // Exclude Authorization from the verbatim header section of the cache key
  * HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
  *     .httpHandler(handler)
  *     .responseConverter(userConverter)
  *     .cacheKeyHeaderFilter(CacheKeyHeaderFilter.excluding("Authorization"))
  *     .build();
  *
- * // Token refresh doesn't create duplicate cache entries
  * Map<String, String> headers1 = Map.of("Authorization", "Bearer old-token");
  * HttpResult<User> result1 = adapter.get(headers1).join();
  *
- * // After token refresh - same cache key!
+ * // A different credential is a different principal, so it resolves to an entry of its own
+ * // and fetches from the origin - the filter governs the key text, never the isolation
  * Map<String, String> headers2 = Map.of("Authorization", "Bearer new-token");
- * HttpResult<User> result2 = adapter.get(headers2).join();  // 304 Not Modified
+ * HttpResult<User> result2 = adapter.get(headers2).join();  // 200, not a cache hit
  * }</pre>
+ *
+ * <h2>Cache Entries Are Principal-Scoped</h2>
+ * <p>
+ * Every cache key carries a binding derived from the request's credential-bearing headers
+ * ({@code Authorization}, {@code Cookie}, {@code Proxy-Authorization}), and that binding is applied
+ * <strong>unconditionally</strong> — no {@link CacheKeyHeaderFilter} configuration removes it. Two
+ * callers presenting different credentials therefore never share an entry, and a request presenting
+ * none binds to a stable anonymous term of its own. The credential itself is never stored verbatim:
+ * only its SHA-256 digest reaches the key. Entries additionally expire on a configurable TTL (see
+ * {@link Builder#cacheEntryTtl(java.time.Duration)}), because an entry records what one principal
+ * was authorized to see at one moment and nothing in the cache learns of a later revocation.
+ * </p>
  *
  * <h2>Thread Safety</h2>
  * <p>
@@ -206,6 +222,32 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
     private static final CuiLogger LOGGER = new CuiLogger(ETagAwareHttpAdapter.class);
 
+    /**
+     * Headers whose presence identifies the requesting principal. Matched case-insensitively and
+     * evaluated in this order, so the derived binding is stable across header-map iteration order.
+     */
+    private static final List<String> CREDENTIAL_HEADERS = List.of("authorization", "cookie", "proxy-authorization");
+
+    /** Binding used for a request that presents no credential material at all. */
+    private static final String ANONYMOUS_PRINCIPAL = "anonymous";
+
+    /**
+     * Separates the header section of a cache key from the trailing principal term. Doubled
+     * deliberately: an escaped header token can never contain two consecutive raw {@code |}.
+     */
+    private static final String PRINCIPAL_SEPARATOR = "||principal:";
+
+    /** Marks a key component as the SHA-256 digest of a credential rather than the credential. */
+    private static final String DIGEST_PREFIX = "sha256:";
+
+    /**
+     * Default lifetime of a cache entry. Deliberately short: an entry is a snapshot of what one
+     * principal was authorized to see at one moment, and nothing in the cache observes a later
+     * revocation of that authorization. Callers that know their data is stable may lengthen it via
+     * {@link Builder#cacheEntryTtl(Duration)}.
+     */
+    private static final Duration DEFAULT_CACHE_ENTRY_TTL = Duration.ofMinutes(5);
+
     private final HttpHandler httpHandler;
     private final HttpResponseConverter<T> responseConverter;
     @Nullable
@@ -213,6 +255,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
     private final boolean etagCachingEnabled;
     private final CacheKeyHeaderFilter cacheKeyHeaderFilter;
     private final int maxCacheSize;
+    private final Duration cacheEntryTtl;
     private final ConcurrentHashMap<String, CacheEntry<T>> cache;
 
     /**
@@ -251,10 +294,11 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         this.etagCachingEnabled = builder.etagCachingEnabled;
         this.cacheKeyHeaderFilter = Objects.requireNonNull(builder.cacheKeyHeaderFilter, "cacheKeyHeaderFilter is required");
         this.maxCacheSize = builder.maxCacheSize;
+        this.cacheEntryTtl = Objects.requireNonNull(builder.cacheEntryTtl, "cacheEntryTtl is required");
         this.cache = new ConcurrentHashMap<>();
 
-        LOGGER.debug("Created ETagAwareHttpAdapter: etagCachingEnabled=%s, maxCacheSize=%s",
-                etagCachingEnabled, maxCacheSize);
+        LOGGER.debug("Created ETagAwareHttpAdapter: etagCachingEnabled=%s, maxCacheSize=%s, cacheEntryTtl=%s",
+                etagCachingEnabled, maxCacheSize, cacheEntryTtl);
     }
 
     /**
@@ -539,7 +583,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      * </p>
      * <ol>
      *   <li>Retrieve cache entry BEFORE building request (local reference held)</li>
-     *   <li>Add If-None-Match header if cache entry exists (GET only)</li>
+     *   <li>Add If-None-Match header if a cache entry was resolved (GET and HEAD)</li>
      *   <li>Execute request asynchronously via the handler's redirect-following send</li>
      *   <li>Route every 304 through {@link #handleNotModified}, which resolves it against the
      *       cached entry when one is held and reports the RFC 7232 violation when none is</li>
@@ -617,12 +661,17 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             // Add custom headers
             headers.forEach(requestBuilder::header);
 
-            // Add If-None-Match header if cached entry exists (GET only). Uses setHeader (replace),
-            // not header (append), so the adapter's conditional validator wins over any caller-
-            // supplied If-None-Match instead of sending two conflicting values.
-            if (cachedEntry != null && method == HttpMethod.GET) {
+            // Add If-None-Match header if a cached entry was resolved. The gate is canReadCache, the
+            // same predicate that decided whether an entry could be looked up at all: a method that
+            // holds an entry is exactly the method entitled to revalidate against it, and a HEAD
+            // that resolved one but sent no validator would be asking the origin for an
+            // unconditional response while still standing ready to interpret a 304. Uses setHeader
+            // (replace), not header (append), so the adapter's conditional validator wins over any
+            // caller-supplied If-None-Match instead of sending two conflicting values.
+            if (cachedEntry != null && canReadCache(method)) {
                 requestBuilder.setHeader("If-None-Match", cachedEntry.etag());
-                LOGGER.debug("Adding If-None-Match header for GET request: %s", cachedEntry.etag());
+                LOGGER.debug("Adding If-None-Match header for %s request: %s",
+                        method.methodName(), cachedEntry.etag());
             }
 
             HttpRequest request = requestBuilder.build();
@@ -705,23 +754,31 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
     }
 
     /**
-     * Generates cache key from URI and filtered headers.
+     * Generates cache key from URI, filtered headers and the requesting principal.
      *
      * <p>
-     * Cache key format: URI + sorted headers (filtered by predicate)
+     * Cache key format: URI + sorted headers (filtered by predicate) + principal binding
      * </p>
      *
      * <h3>Example Cache Keys</h3>
      * <pre>{@code
-     * // With ALL filter:
-     * "https://api.example.com/users|Accept:application/json|Authorization:Bearer token123"
+     * // With ALL filter (the credential appears only as a digest):
+     * "https://api.example.com/users|accept:application/json|authorization:sha256:9f86d0…||principal:sha256:4c8b1e…"
      *
-     * // With NONE filter (URI only):
-     * "https://api.example.com/users"
+     * // With NONE filter (URI only), no credential presented:
+     * "https://api.example.com/users||principal:anonymous"
      *
-     * // With excluding("Authorization"):
-     * "https://api.example.com/users|Accept:application/json"
+     * // With excluding("Authorization") - the credential leaves the header section, the binding stays:
+     * "https://api.example.com/users|accept:application/json||principal:sha256:4c8b1e…"
      * }</pre>
+     *
+     * <p>The trailing principal term is <strong>unconditional</strong>: the filter governs which
+     * headers appear verbatim in the key, never whether the requesting principal is bound to the
+     * entry. See {@link #principalBinding(Map)}.</p>
+     *
+     * <p>No credential value is ever stored verbatim. A credential-bearing header is reduced to its
+     * SHA-256 digest both in the header section and in the principal term, so the key separates
+     * principals without retaining what identified them.</p>
      *
      * @param uri Request URI
      * @param headers HTTP headers
@@ -745,12 +802,100 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             // Normalize the header name to lower case so that maps differing only in header-name
             // case (e.g. "Accept-Language" vs "accept-language" - identical on the wire) resolve to
             // the same cache entry instead of duplicate downloads.
-            keyBuilder.append(escapeCacheKeyToken(entry.getKey().toLowerCase(Locale.ROOT)));
+            String headerName = entry.getKey().toLowerCase(Locale.ROOT);
+            keyBuilder.append(escapeCacheKeyToken(headerName));
             keyBuilder.append(':');
-            keyBuilder.append(escapeCacheKeyToken(entry.getValue()));
+            // A credential the filter admits into the key still must not be stored verbatim: the key
+            // outlives the request in the cache map, so the digest is what is retained.
+            keyBuilder.append(escapeCacheKeyToken(isCredentialHeader(headerName)
+                    ? digest(entry.getValue())
+                    : entry.getValue()));
         }
 
+        // Bind the entry to the principal that produced it. The doubled delimiter cannot be forged
+        // from a header: escapeCacheKeyToken turns every literal '|' inside a name or value into
+        // "\|", so two consecutive raw pipes never occur in the header section above. A header
+        // literally named "principal" therefore cannot impersonate this term.
+        keyBuilder.append(PRINCIPAL_SEPARATOR);
+        keyBuilder.append(escapeCacheKeyToken(principalBinding(headers)));
+
         return keyBuilder.toString();
+    }
+
+    /**
+     * Derives the principal-binding term for a request from its credential-bearing headers.
+     *
+     * <p>The term is computed <strong>unconditionally</strong>, independently of the configured
+     * {@link CacheKeyHeaderFilter}. The filter decides which headers are reproduced verbatim in the
+     * key — a legitimate bandwidth choice, since a token that is refreshed for the <em>same</em>
+     * principal should not fragment the cache — but it must never decide whether two
+     * <em>different</em> principals share an entry. Letting it do so is what allowed the documented
+     * {@code excluding("Authorization")} configuration to serve one caller's representation to
+     * another.</p>
+     *
+     * <p>Every header in {@link #CREDENTIAL_HEADERS} is matched case-insensitively and contributes
+     * its own digest in a fixed order, so two requests bind identically exactly when they present
+     * the same credential material. A request carrying none of them binds to the stable
+     * {@link #ANONYMOUS_PRINCIPAL} term rather than to the empty string, which keeps anonymous
+     * entries in a namespace of their own instead of colliding with credentialed ones.</p>
+     *
+     * <p>The credential material itself is never part of the returned term — only its SHA-256
+     * digest is. The digest separates principals exactly as the raw values would, while keeping the
+     * credential out of a key that is retained in the cache map for as long as the entry lives. Each
+     * header is digested <strong>individually</strong>, before the per-header digests are joined with
+     * {@code &}: a digest is a fixed-length lower-case hex string, so it can never itself contain
+     * {@code &} or {@code =}, and a caller cannot forge a second header by embedding those
+     * delimiters in a credential value — the exact collision a raw name=value&name=value
+     * concatenation would have permitted.</p>
+     *
+     * @param headers the caller-supplied headers for this request
+     * @return the principal term, never empty
+     */
+    private static String principalBinding(Map<String, String> headers) {
+        StringBuilder binding = new StringBuilder();
+        for (String credentialHeader : CREDENTIAL_HEADERS) {
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                if (credentialHeader.equalsIgnoreCase(entry.getKey())) {
+                    if (!binding.isEmpty()) {
+                        binding.append('&');
+                    }
+                    binding.append(credentialHeader).append('=').append(digest(entry.getValue()));
+                }
+            }
+        }
+
+        return binding.isEmpty() ? ANONYMOUS_PRINCIPAL : digest(binding.toString());
+    }
+
+    /**
+     * Reports whether {@code lowerCaseHeaderName} names a credential-bearing header.
+     *
+     * @param lowerCaseHeaderName header name, already lower-cased
+     * @return true when the header carries credential material
+     */
+    private static boolean isCredentialHeader(String lowerCaseHeaderName) {
+        return CREDENTIAL_HEADERS.contains(lowerCaseHeaderName);
+    }
+
+    /**
+     * Renders the SHA-256 digest of {@code value} as a prefixed hex string.
+     *
+     * <p>The digest is a key component, not a secret store: it exists so that a credential value
+     * never appears verbatim in a string the adapter retains, while two requests presenting the same
+     * credential still resolve to the same key.</p>
+     *
+     * @param value the value to digest
+     * @return {@code sha256:} followed by the lower-case hex digest
+     */
+    private static String digest(String value) {
+        try {
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+            return DIGEST_PREFIX + HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            // Every conformant JRE provides SHA-256, so this is an environment defect rather than a
+            // condition a caller can act on.
+            throw new IllegalStateException("SHA-256 is unavailable in this JRE", e);
+        }
     }
 
     /**
@@ -896,6 +1041,15 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      *   <li>Conversion failure handling for 2xx responses, excluding the no-body statuses
      *       {@code 204} and {@code 205} (see {@link #isNoBodyStatus})</li>
      *   <li>Success/failure result creation based on status code</li>
+     *   <li><strong>Failure with fallback</strong> — an error response surfaces the cached content
+     *       and cached ETag only when the failure is one of <em>availability</em>: a GET holding a
+     *       cache entry that was answered with a {@code 5xx}. A {@code 5xx} means the server could
+     *       not serve the representation right now, which is precisely what stale content bridges.
+     *       Every {@code 4xx} is a statement about this request — the caller may no longer read the
+     *       resource ({@code 401}/{@code 403}), it is gone ({@code 404}/{@code 410}), or the request
+     *       is malformed ({@code 400}) — so a {@code 4xx} yields a failure whose
+     *       {@code fallbackContent} and ETag are both {@code null}, rather than returning a body the
+     *       server has just declined to serve.</li>
      * </ul>
      *
      * @param response HTTP response from server
@@ -978,13 +1132,23 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         }
 
         // Return failure for error status codes. When a cached entry is in hand (a GET that was
-        // revalidated but the server returned an error instead of 304), surface it as fallback
-        // content so callers can degrade gracefully - the documented "Failure with fallback" state.
-        // Only GET may use cached fallback: the cache is populated exclusively by GET (see above),
-        // so gating on the method prevents a non-GET failure from surfacing a prior GET's body/ETag
-        // through a method-agnostic cache key.
+        // revalidated but the server answered with an availability failure instead of 304), surface
+        // it as fallback content so callers can degrade gracefully - the documented "Failure with
+        // fallback" state.
+        //
+        // Two conjuncts gate it. Only GET may use cached fallback: the cache is populated
+        // exclusively by GET (see above), so gating on the method prevents a non-GET failure from
+        // surfacing a prior GET's body/ETag through a method-agnostic cache key. And only a 5xx
+        // qualifies: a 5xx says the server could not serve the representation right now, which is
+        // exactly the availability failure stale content is meant to bridge. A 4xx says something
+        // about THIS request - 401/403 that the caller may no longer read the resource, 404 that it
+        // is gone, 400/410 that the request itself is wrong - so answering it with the previously
+        // cached body would hand back a representation the server has just declined to serve, and
+        // in the authorization cases would leak it past the very check that rejected the caller.
+        // Every 4xx therefore yields a failure carrying neither fallback content nor a cached ETag.
         HttpErrorCategory errorCategory = HttpStatusFamily.fromStatusCode(statusCode).toErrorCategory();
-        boolean canUseCachedFallback = method == HttpMethod.GET && cachedEntry != null;
+        boolean canUseCachedFallback = method == HttpMethod.GET && cachedEntry != null
+                && HttpStatusFamily.isServerError(statusCode);
 
         return HttpResult.<T>failureWithFallback(
                 "HTTP %d: %s".formatted(statusCode, method.methodName()),
@@ -1002,6 +1166,14 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      * <p>GET populates and reads the cache; HEAD reads it so a conditional HEAD answered with
      * {@code 304} can be resolved against the stored validator (see {@link #handleNotModified}).
      * No other method touches it.</p>
+     *
+     * <p>This predicate governs <strong>both halves</strong> of a cache read, and deliberately the
+     * same halves for both methods: whether an entry is looked up at all
+     * ({@link #prepareCacheContext}), and whether the resolved entry's validator is sent back to the
+     * origin as {@code If-None-Match} ({@link #buildAndExecute}). The two must agree. A method
+     * allowed to resolve an entry but not to send its validator would ask for an unconditional
+     * response while still standing ready to interpret a {@code 304} — it would be relying on a
+     * caller-supplied conditional header, or on nothing at all.</p>
      *
      * <p><strong>Do not narrow this to GET.</strong> Dropping HEAD would leave a conditional HEAD
      * with no cached entry, silently turning its {@code 304} into a plain failure and deleting the
@@ -1139,7 +1311,34 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         String cacheKey = generateCacheKey(httpHandler.getUri(), headers, cacheKeyHeaderFilter);
 
         // Retrieve cache entry BEFORE building request (hold local reference for 304 handling)
-        return new CacheContext<>(cacheKey, cache.get(cacheKey));
+        CacheEntry<T> cachedEntry = cache.get(cacheKey);
+
+        // An entry past its TTL is treated as absent, not as stale-but-usable: it is neither served
+        // as fallback content nor offered as an If-None-Match validator. Dropping it here rather
+        // than merely ignoring it keeps the map from retaining expired entries until the
+        // size-triggered eviction happens to reach them.
+        if (cachedEntry != null && isExpired(cachedEntry)) {
+            LOGGER.debug("Discarding cache entry past its TTL of %s", cacheEntryTtl);
+            evictFromCache(cacheKey);
+            cachedEntry = null;
+        }
+
+        return new CacheContext<>(cacheKey, cachedEntry);
+    }
+
+    /**
+     * Reports whether {@code entry} has outlived the configured TTL.
+     *
+     * <p>Complements, and does not replace, the size-triggered eviction in {@link #checkAndEvict()}:
+     * that one bounds how much the cache holds, this one bounds how long a single entry may answer
+     * for. A TTL of {@link Duration#ZERO} expires every entry at once, which is how caching is
+     * reduced to pure pass-through revalidation without disabling ETag extraction.</p>
+     *
+     * @param entry the entry to test
+     * @return true when the entry is at or past its TTL
+     */
+    private boolean isExpired(CacheEntry<T> entry) {
+        return System.currentTimeMillis() - entry.timestamp() >= cacheEntryTtl.toMillis();
     }
 
     /**
@@ -1162,6 +1361,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         private boolean etagCachingEnabled = true;
         private CacheKeyHeaderFilter cacheKeyHeaderFilter = CacheKeyHeaderFilter.ALL;
         private int maxCacheSize = 1000;
+        private Duration cacheEntryTtl = DEFAULT_CACHE_ENTRY_TTL;
 
         /**
          * Sets the HTTP handler (required).
@@ -1223,14 +1423,20 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
          * Sets the cache key header filter (default: ALL).
          *
          * <p>
-         * Controls which headers are included in cache key generation.
+         * Controls which headers are reproduced verbatim in the cache key. It does <strong>not</strong>
+         * control principal isolation: the credential binding described in the class documentation is
+         * applied whatever this filter returns, so no setting here lets one principal read another's
+         * entry. Choose it on content-negotiation and key-hygiene grounds alone.
          * </p>
          *
          * <h3>Recommendations</h3>
          * <ul>
-         *   <li>Single-user apps with token refresh: Use {@link CacheKeyHeaderFilter#excluding(String...)} to exclude "Authorization"</li>
-         *   <li>Multi-user shared adapters: Use default {@link CacheKeyHeaderFilter#ALL} for security</li>
-         *   <li>Per-user adapter instances: Safe to use {@link CacheKeyHeaderFilter#NONE} for efficiency</li>
+         *   <li>Responses that vary by {@code Accept-*}: keep the default {@link CacheKeyHeaderFilter#ALL},
+         *       or {@link CacheKeyHeaderFilter#including(String...)} exactly the negotiating headers</li>
+         *   <li>Incidental per-request headers (trace ids, request ids) fragmenting the cache: use
+         *       {@link CacheKeyHeaderFilter#excluding(String...)} or {@link CacheKeyHeaderFilter#excludingPrefix(String)}</li>
+         *   <li>Responses that vary by URI alone: {@link CacheKeyHeaderFilter#NONE} gives the fewest
+         *       entries per principal</li>
          * </ul>
          *
          * @param filter Filter predicate for cache key header inclusion
@@ -1272,6 +1478,40 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
                 throw new IllegalArgumentException("maxCacheSize must be positive, got: " + maxCacheSize);
             }
             this.maxCacheSize = maxCacheSize;
+            return this;
+        }
+
+        /**
+         * Sets how long a cache entry may be used (default: 5 minutes).
+         *
+         * <p>This bounds an entry's <em>age</em>; {@link #maxCacheSize(int)} bounds the cache's
+         * <em>size</em>. The two are complementary and both remain in force — the TTL does not
+         * replace the size-triggered eviction.</p>
+         *
+         * <p>An entry at or past its TTL is treated as absent: it is neither returned as fallback
+         * content nor offered to the origin as an {@code If-None-Match} validator. The default is
+         * deliberately short, because an entry records what one principal was authorized to see at
+         * one moment and nothing in the cache learns of a later revocation.</p>
+         *
+         * <h3>Sizing Guidance</h3>
+         * <ul>
+         *   <li>{@link Duration#ZERO}: every entry expires immediately — each request goes to the
+         *       origin. ETags are still extracted; only reuse is switched off.</li>
+         *   <li>Seconds to minutes: authorization-sensitive data behind a credential.</li>
+         *   <li>Hours: stable, public, slow-moving representations.</li>
+         * </ul>
+         *
+         * @param cacheEntryTtl maximum age of a usable cache entry (must not be negative)
+         * @return this builder
+         * @throws NullPointerException if cacheEntryTtl is null
+         * @throws IllegalArgumentException if cacheEntryTtl is negative
+         */
+        public Builder<T> cacheEntryTtl(Duration cacheEntryTtl) {
+            Objects.requireNonNull(cacheEntryTtl, "cacheEntryTtl cannot be null");
+            if (cacheEntryTtl.isNegative()) {
+                throw new IllegalArgumentException("cacheEntryTtl must not be negative, got: " + cacheEntryTtl);
+            }
+            this.cacheEntryTtl = cacheEntryTtl;
             return this;
         }
 

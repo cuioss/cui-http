@@ -107,7 +107,12 @@ class RetryConfigTest {
         assertThrows(IllegalArgumentException.class,
                 () -> RetryConfig.builder().initialDelay(Duration.ofSeconds(-1)));
 
-        // when/then - positive is valid
+        // when/then - positive but sub-millisecond not allowed: it truncates to zero in
+        // calculateDelay, so the exponential backoff would never leave zero
+        assertThrows(IllegalArgumentException.class,
+                () -> RetryConfig.builder().initialDelay(Duration.ofNanos(999_999)));
+
+        // when/then - exactly one millisecond is valid (the inclusive floor)
         assertDoesNotThrow(() -> RetryConfig.builder().initialDelay(Duration.ofMillis(1)).build());
     }
 
@@ -148,7 +153,12 @@ class RetryConfigTest {
         assertThrows(IllegalArgumentException.class,
                 () -> RetryConfig.builder().maxDelay(Duration.ofSeconds(-1)));
 
-        // when/then - positive is valid
+        // when/then - positive but sub-millisecond not allowed: it truncates to zero, capping
+        // every delay at nothing
+        assertThrows(IllegalArgumentException.class,
+                () -> RetryConfig.builder().maxDelay(Duration.ofNanos(999_999)));
+
+        // when/then - exactly one millisecond is valid (the inclusive floor)
         assertDoesNotThrow(() -> RetryConfig.builder().maxDelay(Duration.ofMillis(1)).build());
     }
 
@@ -440,11 +450,20 @@ class RetryConfigTest {
         }
 
         @Test
-        void shouldRejectNonPositiveInitialDelay() {
+        void shouldRejectInitialDelayBelowOneMillisecond() {
             IllegalArgumentException zero = assertThrows(IllegalArgumentException.class,
                     () -> new RetryConfig(VALID_MAX_ATTEMPTS, Duration.ZERO, VALID_MULTIPLIER,
                             VALID_MAX_DELAY, VALID_JITTER, true));
-            assertEquals("initialDelay must be positive", zero.getMessage());
+            assertEquals("initialDelay must be at least 1 millisecond, but was: PT0S", zero.getMessage());
+
+            Duration subMillisecond = Duration.ofNanos(999_999);
+            IllegalArgumentException tooShort = assertThrows(IllegalArgumentException.class,
+                    () -> new RetryConfig(VALID_MAX_ATTEMPTS, subMillisecond, VALID_MULTIPLIER,
+                            VALID_MAX_DELAY, VALID_JITTER, true),
+                    "a positive sub-millisecond delay truncates to zero in calculateDelay, so the "
+                            + "backoff would never leave zero — it must be rejected, not accepted");
+            assertTrue(tooShort.getMessage().startsWith("initialDelay must be at least 1 millisecond"),
+                    tooShort.getMessage());
 
             Duration negativeDelay = Duration.ofSeconds(-1);
             assertThrows(IllegalArgumentException.class,
@@ -454,14 +473,26 @@ class RetryConfigTest {
             assertThrows(IllegalArgumentException.class,
                     () -> new RetryConfig(VALID_MAX_ATTEMPTS, null, VALID_MULTIPLIER,
                             VALID_MAX_DELAY, VALID_JITTER, true));
+
+            assertDoesNotThrow(() -> new RetryConfig(VALID_MAX_ATTEMPTS, Duration.ofMillis(1),
+                            VALID_MULTIPLIER, VALID_MAX_DELAY, VALID_JITTER, true),
+                    "exactly one millisecond is the inclusive floor — the positive control");
         }
 
         @Test
-        void shouldRejectNonPositiveMaxDelay() {
+        void shouldRejectMaxDelayBelowOneMillisecond() {
             IllegalArgumentException zero = assertThrows(IllegalArgumentException.class,
                     () -> new RetryConfig(VALID_MAX_ATTEMPTS, VALID_INITIAL_DELAY, VALID_MULTIPLIER,
                             Duration.ZERO, VALID_JITTER, true));
-            assertEquals("maxDelay must be positive", zero.getMessage());
+            assertEquals("maxDelay must be at least 1 millisecond, but was: PT0S", zero.getMessage());
+
+            Duration subMillisecond = Duration.ofNanos(999_999);
+            IllegalArgumentException tooShort = assertThrows(IllegalArgumentException.class,
+                    () -> new RetryConfig(VALID_MAX_ATTEMPTS, VALID_INITIAL_DELAY, VALID_MULTIPLIER,
+                            subMillisecond, VALID_JITTER, true),
+                    "a positive sub-millisecond cap truncates to zero, capping every delay at nothing");
+            assertTrue(tooShort.getMessage().startsWith("maxDelay must be at least 1 millisecond"),
+                    tooShort.getMessage());
 
             Duration negativeDelay = Duration.ofSeconds(-1);
             assertThrows(IllegalArgumentException.class,
@@ -471,6 +502,10 @@ class RetryConfigTest {
             assertThrows(IllegalArgumentException.class,
                     () -> new RetryConfig(VALID_MAX_ATTEMPTS, VALID_INITIAL_DELAY, VALID_MULTIPLIER,
                             null, VALID_JITTER, true));
+
+            assertDoesNotThrow(() -> new RetryConfig(VALID_MAX_ATTEMPTS, VALID_INITIAL_DELAY,
+                            VALID_MULTIPLIER, Duration.ofMillis(1), VALID_JITTER, true),
+                    "exactly one millisecond is the inclusive floor — the positive control");
         }
 
         @Test

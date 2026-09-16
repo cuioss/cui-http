@@ -268,14 +268,12 @@
  * HttpResult<User> deleteResult = adapter.deleteBlocking();
  * }</pre>
  *
- * <h2>Example: Token Refresh Cache Bloat Solution</h2>
+ * <h2>Example: Shaping the Cache Key</h2>
  *
  * <pre>{@code
  * import de.cuioss.http.client.adapter.CacheKeyHeaderFilter;
  *
- * // Problem: Default ALL filter creates new cache entry for each token refresh
- * // Solution: Exclude Authorization header from cache key
- *
+ * // Keep the Authorization header out of the verbatim header section of the key
  * HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
  *     .httpHandler(handler)
  *     .responseConverter(userConverter)
@@ -283,14 +281,16 @@
  *     .build();
  *
  * // Now:
- * // - Accept-Language IS included → separate cache per language ✓
- * // - Authorization NOT included → token refresh doesn't bloat cache ✓
+ * // - Accept-Language IS included → separate cache per language
+ * // - Authorization NOT reproduced in the header section
  *
  * Map<String, String> headers1 = Map.of("Authorization", "Bearer old-token");
  * HttpResult<User> result1 = adapter.get(headers1).join();
  *
+ * // Every entry is bound to the credential that produced it, whatever the filter says, so a
+ * // different credential resolves to a different entry rather than reading the first one
  * Map<String, String> headers2 = Map.of("Authorization", "Bearer new-token");
- * HttpResult<User> result2 = adapter.get(headers2).join();  // 304 Not Modified!
+ * HttpResult<User> result2 = adapter.get(headers2).join();  // 200, not a cache hit
  * }</pre>
  *
  * <h2>Security Integration</h2>

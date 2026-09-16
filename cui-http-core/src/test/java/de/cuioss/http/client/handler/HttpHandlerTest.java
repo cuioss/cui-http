@@ -61,6 +61,112 @@ class HttpHandlerTest {
     private static final int CUSTOM_READ_TIMEOUT = 20;
 
     @Nested
+    @DisplayName("Cleartext http rejects TLS-shaped configuration instead of discarding it")
+    class CleartextTlsConfigurationRejection {
+
+        private static final String CLEARTEXT_URL = "http://example.com";
+
+        @Test
+        @DisplayName("Should reject a caller-supplied sslContext on a cleartext http URI")
+        void shouldRejectCallerSuppliedSslContextOnCleartextHttp() {
+            SSLContext callerContext = new SecureSSLContextProvider().getOrCreateSecureSSLContext(null);
+            HttpHandler.HttpHandlerBuilder builder = HttpHandler.builder()
+                    .url(CLEARTEXT_URL)
+                    .allowInsecureHttp(true)
+                    .sslContext(callerContext);
+
+            IllegalArgumentException rejected = assertThrows(IllegalArgumentException.class, builder::build);
+
+            assertTrue(rejected.getMessage().contains("sslContext"),
+                    "the rejection must name the conflicting setting, but was: " + rejected.getMessage());
+        }
+
+        @Test
+        @DisplayName("Should reject verifyHostname(false) on a cleartext http URI")
+        void shouldRejectRelaxedHostnameOnCleartextHttp() {
+            HttpHandler.HttpHandlerBuilder builder = HttpHandler.builder()
+                    .url(CLEARTEXT_URL)
+                    .allowInsecureHttp(true)
+                    .verifyHostname(false);
+
+            IllegalArgumentException rejected = assertThrows(IllegalArgumentException.class, builder::build);
+
+            assertTrue(rejected.getMessage().contains("verifyHostname"),
+                    "the rejection must name the conflicting setting, but was: " + rejected.getMessage());
+        }
+
+        @Test
+        @DisplayName("Should reject a caller-supplied tlsVersions provider on a cleartext http URI")
+        void shouldRejectCallerSuppliedTlsVersionsOnCleartextHttp() {
+            HttpHandler.HttpHandlerBuilder builder = HttpHandler.builder()
+                    .url(CLEARTEXT_URL)
+                    .allowInsecureHttp(true)
+                    .tlsVersions(new SecureSSLContextProvider());
+
+            IllegalArgumentException rejected = assertThrows(IllegalArgumentException.class, builder::build);
+
+            assertTrue(rejected.getMessage().contains("tlsVersions"),
+                    "the rejection must name the conflicting setting, but was: " + rejected.getMessage());
+        }
+
+        /**
+         * A handler's own resolved TLS-floor provider is re-injected through the derived seam, so a
+         * round-tripped builder must not be rejected for a {@code tlsVersions(...)} the caller never
+         * set.
+         */
+        @Test
+        @DisplayName("Should still build a cleartext handler from an https handler's asBuilder round-trip")
+        void shouldBuildCleartextHandlerFromRoundTrippedBuilder() {
+            HttpHandler httpsHandler = HttpHandler.builder()
+                    .url(VALID_URL)
+                    .tlsVersions(new SecureSSLContextProvider())
+                    .build();
+
+            HttpHandler cleartextHandler = httpsHandler.asBuilder()
+                    .url(CLEARTEXT_URL)
+                    .allowInsecureHttp(true)
+                    .build();
+
+            assertNotNull(cleartextHandler, "the round-tripped cleartext handler must build");
+        }
+
+        /**
+         * Positive control: cleartext with no TLS-shaped configuration still builds, so the three
+         * rejections above are attributable to those settings rather than to the http scheme.
+         */
+        @Test
+        @DisplayName("Should still build a cleartext handler carrying no TLS configuration")
+        void shouldBuildCleartextHandlerWithoutTlsConfiguration() {
+            HttpHandler handler = HttpHandler.builder()
+                    .url(CLEARTEXT_URL)
+                    .allowInsecureHttp(true)
+                    .build();
+
+            assertNotNull(handler);
+            assertNull(handler.getSslContext(), "a cleartext handler carries no SSLContext");
+        }
+
+        /**
+         * A cleartext handler must survive the {@code asBuilder().build()} round trip: it re-injects
+         * its own (null) context through the derived seam, which the rejections deliberately do not
+         * key off. {@code asBuilder()} carries configuration but not the URI, so the URI is supplied
+         * again here.
+         */
+        @Test
+        @DisplayName("Should round-trip a cleartext handler through asBuilder()")
+        void shouldRoundTripCleartextHandlerThroughAsBuilder() {
+            HttpHandler original = HttpHandler.builder()
+                    .url(CLEARTEXT_URL)
+                    .allowInsecureHttp(true)
+                    .build();
+
+            HttpHandler rebuilt = assertDoesNotThrow(() -> original.asBuilder().uri(original.getUri()).build());
+
+            assertEquals(original.getUri(), rebuilt.getUri());
+        }
+    }
+
+    @Nested
     @DisplayName("Builder Tests")
     class BuilderTests {
 

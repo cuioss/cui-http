@@ -26,15 +26,23 @@ import java.util.function.Predicate;
  * combination. Headers excluded from cache keys allow cache sharing across
  * different header values.
  *
- * <p>This functional interface allows fine-grained control beyond simple all-or-nothing
- * choices, solving the token refresh cache bloat problem while maintaining security.
+ * <h2>What this filter does not decide</h2>
+ *
+ * <p><strong>Isolation between principals is not this filter's responsibility, and cannot be
+ * weakened by it.</strong> {@link ETagAwareHttpAdapter} binds every cache entry to the credential
+ * material that produced it — unconditionally, and independently of the verdict returned here. No
+ * configuration of this filter lets one principal read an entry another principal populated.
+ *
+ * <p>What the filter governs is which headers are reproduced <em>verbatim</em> in the key text, and
+ * therefore how finely entries are split across header values that genuinely vary the response
+ * (typically the {@code Accept-*} family). Credential values are never keyed verbatim in any case:
+ * a credential-bearing header is reduced to its digest wherever it enters the key.
  *
  * <h2>Usage Examples</h2>
  *
- * <h3>Example 1: Solve Token Refresh Cache Bloat</h3>
+ * <h3>Example 1: Keep the Credential Out of the Key Text</h3>
  * <pre>{@code
- * // Problem: ALL causes cache bloat on token refresh
- * // Solution: Exclude Authorization, keep content-affecting headers
+ * // Exclude Authorization from the verbatim header section, keep content-affecting headers
  * HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
  *     .httpHandler(handler)
  *     .responseConverter(userConverter)
@@ -42,8 +50,10 @@ import java.util.function.Predicate;
  *     .build();
  *
  * // Now:
- * // - Accept-Language IS included → separate cache per language ✓
- * // - Authorization NOT included → token refresh doesn't bloat cache ✓
+ * // - Accept-Language IS included → separate cache per language
+ * // - Authorization NOT reproduced in the header section
+ * // - Entries remain scoped to the presenting credential either way, so a refreshed token
+ * //   still resolves to an entry of its own - exclusion is key hygiene, not cache sharing
  * }</pre>
  *
  * <h3>Example 2: Exclude All Trace Headers</h3>
@@ -87,29 +97,33 @@ public interface CacheKeyHeaderFilter {
     // ========== PRESET FILTERS ==========
 
     /**
-     * Include all headers in cache key (default, safest).
+     * Include all headers in cache key (default).
      *
      * <p><b>Use when:</b>
      * <ul>
-     *   <li>Adapter is shared across multiple users</li>
-     *   <li>Headers affect response content</li>
+     *   <li>Any header may vary the response and you would rather not enumerate which</li>
      *   <li>Defense-in-depth against server ETag bugs</li>
      * </ul>
      *
-     * <p><b>Trade-off:</b> Token refresh creates cache bloat
+     * <p><b>Trade-off:</b> every distinct header combination is a distinct entry, so incidental
+     * per-request headers (trace ids and the like) fragment the cache.
      */
     CacheKeyHeaderFilter ALL = header -> true;
 
     /**
-     * Exclude all headers from cache key (URI only).
+     * Exclude all headers from cache key (URI only, plus the adapter's unconditional principal
+     * binding).
      *
-     * <p><b>Use ONLY when:</b>
+     * <p><b>Use when:</b>
      * <ul>
-     *   <li>Single-user client (not shared)</li>
-     *   <li>Server implements user-aware ETags</li>
+     *   <li>The response varies by URI alone</li>
+     *   <li>You want the smallest possible number of entries per principal</li>
      * </ul>
      *
-     * <p><b>Risk:</b> Multi-user scenarios may cache wrong content
+     * <p><b>Trade-off:</b> headers that genuinely vary the representation — {@code Accept-Language}
+     * and the rest of the {@code Accept-*} family — collapse onto one entry, so a request may be
+     * answered from a representation negotiated for different headers. This is a content-negotiation
+     * trade-off, not an isolation one: entries stay scoped to the presenting credential regardless.
      */
     CacheKeyHeaderFilter NONE = header -> false;
 
@@ -118,12 +132,14 @@ public interface CacheKeyHeaderFilter {
     /**
      * Exclude specific headers from cache key, include all others.
      *
-     * <p><b>Solves token refresh cache bloat</b> by excluding Authorization
-     * while keeping content-affecting headers like Accept-Language.
+     * <p>Keeps incidental per-request headers — trace ids and the like — from fragmenting the cache,
+     * while content-affecting headers such as {@code Accept-Language} continue to split entries.
+     * Excluding a credential header additionally keeps it out of the verbatim header section; it
+     * does not make entries shared, because the principal binding is applied either way.
      *
      * <p>Example:
      * <pre>{@code
-     * // Exclude frequently-changing headers, include others
+     * // Exclude incidental per-request headers, include the rest
      * .cacheKeyHeaderFilter(CacheKeyHeaderFilter.excluding(
      *     "Authorization", "X-Request-ID", "X-Trace-ID"
      * ))

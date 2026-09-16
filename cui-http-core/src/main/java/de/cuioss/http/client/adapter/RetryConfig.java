@@ -16,6 +16,7 @@
 package de.cuioss.http.client.adapter;
 
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 import java.time.Duration;
 import java.util.concurrent.ThreadLocalRandom;
@@ -84,9 +85,9 @@ import java.util.concurrent.ThreadLocalRandom;
  * {@link ThreadLocalRandom} for thread-local randomization without contention.
  *
  * @param maxAttempts   Total attempts including initial try (must be >= 1)
- * @param initialDelay  Starting delay after first failure (must be positive)
+ * @param initialDelay  Starting delay after first failure (must be at least one millisecond)
  * @param multiplier    Each retry delay multiplied by this value (must be finite and >= 1.0)
- * @param maxDelay      Cap on delay regardless of exponential growth (must be positive)
+ * @param maxDelay      Cap on delay regardless of exponential growth (must be at least one millisecond)
  * @param jitter        Randomization factor to prevent thundering herd (must be finite, 0.0 to 1.0)
  * @param idempotentOnly When true, only retry GET/PUT/DELETE/HEAD/OPTIONS; skip POST/PATCH
  *
@@ -111,29 +112,48 @@ boolean idempotentOnly
      * (direct {@code new RetryConfig(...)} calls), so an invariant-violating instance can never
      * be created.
      *
-     * @throws IllegalArgumentException if {@code maxAttempts < 1}, {@code initialDelay} is null,
-     *         negative or zero, {@code maxDelay} is null, negative or zero, {@code jitter} is
-     *         non-finite ({@code NaN} or infinite) or outside {@code [0.0, 1.0]}, or
-     *         {@code multiplier} is non-finite or {@code < 1.0}. Non-finite values are rejected
-     *         explicitly because every ordered comparison against {@code NaN} evaluates to
-     *         {@code false}, so a range check alone would silently admit it.
+     * @throws IllegalArgumentException if {@code maxAttempts < 1}, {@code initialDelay} is null or
+     *         shorter than one millisecond, {@code maxDelay} is null or shorter than one
+     *         millisecond, {@code jitter} is non-finite ({@code NaN} or infinite) or outside
+     *         {@code [0.0, 1.0]}, or {@code multiplier} is non-finite or {@code < 1.0}. Non-finite
+     *         values are rejected explicitly because every ordered comparison against {@code NaN}
+     *         evaluates to {@code false}, so a range check alone would silently admit it.
      */
-    @SuppressWarnings("java:S2589") // False positive: @NonNull doesn't enforce runtime null checks
     public RetryConfig {
         if (maxAttempts < 1) {
             throw new IllegalArgumentException("maxAttempts must be >= 1, but was: " + maxAttempts);
         }
-        if (initialDelay == null || initialDelay.isNegative() || initialDelay.isZero()) {
-            throw new IllegalArgumentException("initialDelay must be positive");
-        }
-        if (maxDelay == null || maxDelay.isNegative() || maxDelay.isZero()) {
-            throw new IllegalArgumentException("maxDelay must be positive");
-        }
+        requireAtLeastOneMillisecond(initialDelay, "initialDelay");
+        requireAtLeastOneMillisecond(maxDelay, "maxDelay");
         if (!Double.isFinite(jitter) || jitter < 0.0 || jitter > 1.0) {
             throw new IllegalArgumentException("jitter must be between 0.0 and 1.0, but was: " + jitter);
         }
         if (!Double.isFinite(multiplier) || multiplier < 1.0) {
             throw new IllegalArgumentException("multiplier must be >= 1.0, but was: " + multiplier);
+        }
+    }
+
+    /**
+     * The shortest delay this configuration can express. {@link #calculateDelay(int)} works in whole
+     * milliseconds, so a positive-but-sub-millisecond {@code initialDelay} truncates to zero and the
+     * exponential backoff never leaves zero however many attempts it multiplies — a "retry delay"
+     * that is in fact a busy loop. The floor is one millisecond rather than merely positive so that
+     * a configuration cannot declare a delay the implementation silently cannot honour.
+     */
+    private static final Duration MIN_DELAY = Duration.ofMillis(1);
+
+    /**
+     * Rejects a delay that is null or shorter than {@link #MIN_DELAY}, naming the offending
+     * parameter. Shared by the compact constructor and the corresponding {@link Builder} setters so
+     * the canonical-constructor path enforces exactly the same floor the builder does.
+     *
+     * @param value the delay to check
+     * @param name  the parameter name to quote in the failure message
+     * @throws IllegalArgumentException if {@code value} is null or shorter than one millisecond
+     */
+    private static void requireAtLeastOneMillisecond(@Nullable Duration value, String name) {
+        if (value == null || value.compareTo(MIN_DELAY) < 0) {
+            throw new IllegalArgumentException(name + " must be at least 1 millisecond, but was: " + value);
         }
     }
 
@@ -247,15 +267,12 @@ boolean idempotentOnly
         /**
          * Sets the initial delay after first failure.
          *
-         * @param delay starting delay (must be positive, non-null)
+         * @param delay starting delay (must be at least one millisecond, non-null)
          * @return this builder for chaining
-         * @throws IllegalArgumentException if delay is null, negative, or zero
+         * @throws IllegalArgumentException if delay is null or shorter than one millisecond
          */
-        @SuppressWarnings("java:S2589") // False positive: @NonNull doesn't enforce runtime null checks
         public Builder initialDelay(@NonNull Duration delay) {
-            if (delay == null || delay.isNegative() || delay.isZero()) {
-                throw new IllegalArgumentException("initialDelay must be positive");
-            }
+            requireAtLeastOneMillisecond(delay, "initialDelay");
             this.initialDelay = delay;
             return this;
         }
@@ -285,15 +302,13 @@ boolean idempotentOnly
          * by up to the configured {@code jitter} factor; it bounds the exponential growth, not the
          * post-jitter value.</p>
          *
-         * @param maxDelay cap on the exponential backoff before jitter (must be positive, non-null)
+         * @param maxDelay cap on the exponential backoff before jitter (must be at least one
+         *                 millisecond, non-null)
          * @return this builder for chaining
-         * @throws IllegalArgumentException if maxDelay is null, negative, or zero
+         * @throws IllegalArgumentException if maxDelay is null or shorter than one millisecond
          */
-        @SuppressWarnings("java:S2589") // False positive: @NonNull doesn't enforce runtime null checks
         public Builder maxDelay(@NonNull Duration maxDelay) {
-            if (maxDelay == null || maxDelay.isNegative() || maxDelay.isZero()) {
-                throw new IllegalArgumentException("maxDelay must be positive");
-            }
+            requireAtLeastOneMillisecond(maxDelay, "maxDelay");
             this.maxDelay = maxDelay;
             return this;
         }

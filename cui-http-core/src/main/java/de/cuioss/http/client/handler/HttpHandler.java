@@ -286,8 +286,8 @@ public final class HttpHandler implements AutoCloseable {
     private static final String HEADER_CONTENT_LOCATION = "Content-Location";
     private static final String HEADER_DIGEST = "Digest";
     private static final String HEADER_LAST_MODIFIED = "Last-Modified";
-    private static final String METHOD_GET = "GET";
     private static final String METHOD_HEAD = "HEAD";
+    private static final String METHOD_POST = "POST";
 
     /**
      * The representation-metadata fields dropped together with the request body when a {@code 301},
@@ -498,6 +498,13 @@ public final class HttpHandler implements AutoCloseable {
      * tripping the mutual-exclusion rejection. A context that genuinely came from the caller is
      * re-injected through {@link HttpHandlerBuilder#sslContext(SSLContext)} and keeps that
      * provenance.</p>
+     * <p>The handler's resolved TLS-floor provider is carried over the same way, through the
+     * package-private {@link HttpHandlerBuilder#derivedTlsVersions(SecureSSLContextProvider)} seam:
+     * a handler always holds a provider (defaulted when the caller set none), so re-injecting it
+     * through the public {@link HttpHandlerBuilder#tlsVersions(SecureSSLContextProvider)} would make
+     * every round-tripped builder look as if the caller had configured a TLS floor, and
+     * {@code asBuilder().url("http://...").build()} would be rejected for a setting the caller never
+     * made.</p>
      * <p>The re-injected derived context also carries whether it is <em>hostname-relaxed</em> — i.e.
      * whether this handler itself was built with {@code verifyHostname(false)}. {@link
      * HttpHandlerBuilder#build()} consults that flag to refuse silently reusing a relaxed context for
@@ -510,7 +517,7 @@ public final class HttpHandler implements AutoCloseable {
         HttpHandlerBuilder handlerBuilder = builder()
                 .connectionTimeoutSeconds(connectionTimeoutSeconds)
                 .readTimeoutSeconds(readTimeoutSeconds)
-                .tlsVersions(secureSSLContextProvider)
+                .derivedTlsVersions(secureSSLContextProvider)
                 .allowInsecureHttp(allowInsecureHttp)
                 .verifyHostname(verifyHostname)
                 .redirectPolicy(redirectPolicy);
@@ -768,9 +775,12 @@ public final class HttpHandler implements AutoCloseable {
      * Rebuilds {@code request} for the next hop, applying the RFC 9110 method-and-body rules and the
      * policy's credential-forwarding verdict.
      * <p>
-     * {@code 303} always rewrites to {@code GET} and drops the body. {@code 301} and {@code 302}
-     * preserve a {@code GET} or {@code HEAD} and otherwise rewrite to {@code GET}, dropping the body.
-     * {@code 307} and {@code 308} preserve both the method and the original body publisher. Whenever
+     * {@code 301} and {@code 302} rewrite to {@code GET} and drop the body <em>only</em> when the
+     * request method is {@code POST} (RFC 9110 §15.4.2–§15.4.3, which sanction the rewrite for
+     * historical reasons but limit it to {@code POST}); every other method keeps both its method and
+     * its body. {@code 303} rewrites to {@code GET} and drops the body for every method except
+     * {@code HEAD}, which RFC 9110 §15.4.4 preserves as {@code HEAD}. {@code 307} and {@code 308}
+     * preserve both the method and the original body publisher. Whenever
      * the body is dropped, every {@linkplain #BODY_REPRESENTATION_HEADERS representation-metadata
      * header} describing it is dropped with it — not only {@code Content-Type} and
      * {@code Content-Length}, but also {@code Content-Encoding}, {@code Content-Language},
@@ -783,8 +793,10 @@ public final class HttpHandler implements AutoCloseable {
     private HttpRequest rebuildForHop(HttpRequest request, URI currentUri, URI target, int statusCode) {
         String method = request.method();
         boolean preserveMethodAndBody = statusCode == 307 || statusCode == 308;
-        boolean bodylessMethod = METHOD_GET.equals(method) || METHOD_HEAD.equals(method);
-        boolean dropBody = !preserveMethodAndBody && !(statusCode != 303 && bodylessMethod);
+        // The method rewrite and the body drop are one decision rather than two conditions that can
+        // drift apart: the body is discarded exactly when the method becomes GET.
+        boolean rewriteToGet = !preserveMethodAndBody
+                && (statusCode == 303 ? !METHOD_HEAD.equals(method) : METHOD_POST.equals(method));
 
         boolean forwardCredentials = redirectPolicy.forwardsCredentials(currentUri, target);
         BiPredicate<String, String> headerFilter = (name, value) -> {
@@ -792,11 +804,11 @@ public final class HttpHandler implements AutoCloseable {
                     && (HEADER_AUTHORIZATION.equalsIgnoreCase(name) || HEADER_COOKIE.equalsIgnoreCase(name))) {
                 return false;
             }
-            return !dropBody || !BODY_REPRESENTATION_HEADERS.contains(name);
+            return !rewriteToGet || !BODY_REPRESENTATION_HEADERS.contains(name);
         };
 
         HttpRequest.Builder builder = HttpRequest.newBuilder(request, headerFilter).uri(target);
-        if (!preserveMethodAndBody && (statusCode == 303 || !bodylessMethod)) {
+        if (rewriteToGet) {
             // GET() also clears the body publisher carried over from the original request.
             builder.GET();
         }
@@ -910,6 +922,10 @@ public final class HttpHandler implements AutoCloseable {
         private boolean allowInsecureHttp = false;
         private boolean verifyHostname = true;
         private boolean sslContextCallerSupplied = false;
+        // True when the current secureSSLContextProvider was handed in through the public
+        // tlsVersions(...) setter rather than re-injected by asBuilder(). build() rejects that
+        // provenance on a cleartext http URI, exactly as it does for a caller-supplied sslContext.
+        private boolean secureSSLContextProviderCallerSupplied = false;
         private @Nullable RedirectPolicy redirectPolicy;
         // True when the current (derived, non-caller-supplied) sslContext was produced by
         // createHostnameRelaxedSSLContext() on the handler asBuilder() cloned this builder from.
@@ -1060,11 +1076,37 @@ public final class HttpHandler implements AutoCloseable {
 
         /**
          * Sets the TLS versions configuration.
+         * <p>
+         * Passing a non-null provider marks it as <em>caller-supplied</em>, which is mutually
+         * exclusive with a cleartext {@code http://} URI and makes {@link #build()} reject that
+         * combination: a cleartext handler establishes no TLS connection, so a TLS floor has
+         * nothing to act on. Passing {@code null} clears both the provider and the caller-supplied
+         * claim.
+         * </p>
          *
          * @param secureSSLContextProvider The TLS versions configuration to use.
          * @return This builder instance.
          */
         public HttpHandlerBuilder tlsVersions(@Nullable SecureSSLContextProvider secureSSLContextProvider) {
+            this.secureSSLContextProvider = secureSSLContextProvider;
+            this.secureSSLContextProviderCallerSupplied = secureSSLContextProvider != null;
+            return this;
+        }
+
+        /**
+         * Re-injects an already-resolved TLS-floor provider without marking it caller-supplied.
+         * <p>
+         * This seam exists for {@link HttpHandler#asBuilder()}: the provider it carries over was
+         * <em>resolved</em> by {@link HttpHandler} itself (a handler always holds one, defaulted
+         * when the caller set none), not handed in by the caller, so it must not assert the
+         * caller-supplied provenance that a cleartext {@code http://} URI is rejected against. It is
+         * otherwise identical to {@link #tlsVersions(SecureSSLContextProvider)}.
+         * </p>
+         *
+         * @param secureSSLContextProvider The already-resolved TLS-floor provider to carry over.
+         * @return This builder instance.
+         */
+        HttpHandlerBuilder derivedTlsVersions(@Nullable SecureSSLContextProvider secureSSLContextProvider) {
             this.secureSSLContextProvider = secureSSLContextProvider;
             return this;
         }
@@ -1186,9 +1228,14 @@ public final class HttpHandler implements AutoCloseable {
          * Builds a new {@link HttpHandler} instance with the configured parameters.
          *
          * @return A new {@link HttpHandler} instance.
-         * @throws IllegalArgumentException If any parameter is invalid, or if
+         * @throws IllegalArgumentException If any parameter is invalid; if
          *                                  {@code verifyHostname(false)} is combined with a
-         *                                  caller-supplied {@link #sslContext(SSLContext)}.
+         *                                  caller-supplied {@link #sslContext(SSLContext)}; or if a
+         *                                  resolved cleartext {@code http} URI is combined with
+         *                                  either a caller-supplied {@link #sslContext(SSLContext)}
+         *                                  or {@code verifyHostname(false)} — an http handler
+         *                                  establishes no TLS connection, so neither setting could
+         *                                  take effect and neither is silently discarded.
          * @throws IllegalStateException    If the resolved URI cannot be converted to a
          *                                  {@link URL} — the URI is syntactically valid but names
          *                                  no protocol handler this JVM can resolve.
@@ -1244,27 +1291,88 @@ public final class HttpHandler implements AutoCloseable {
             // Fail-secure scheme policy: HTTPS is required; http is opt-in; anything else is rejected.
             String scheme = resolvedUri.getScheme();
             if ("https".equalsIgnoreCase(scheme)) {
-                // For HTTPS, create or validate SSL context and pin the enabled protocols
-                SecureSSLContextProvider actualSecureSSLContextProvider = secureSSLContextProvider != null ?
-                        secureSSLContextProvider : new SecureSSLContextProvider();
-                SSLContext secureContext = resolveHttpsSecureContext(actualSecureSSLContextProvider, resolvedUri);
-                return new HttpHandler(resolvedUri, verifiedUrl, secureContext, actualSecureSSLContextProvider,
-                        actualConnectionTimeoutSeconds, actualReadTimeoutSeconds, allowInsecureHttp,
-                        verifyHostname, sslContextCallerSupplied, resolvedRedirectPolicy);
+                return buildHttpsHandler(resolvedUri, verifiedUrl, actualConnectionTimeoutSeconds,
+                        actualReadTimeoutSeconds, resolvedRedirectPolicy);
             }
             if ("http".equalsIgnoreCase(scheme)) {
-                if (!allowInsecureHttp) {
-                    throw new IllegalArgumentException("Refusing to build a plaintext HTTP handler for " + resolvedUri
-                            + "; HTTPS is required. Call allowInsecureHttp(true) to permit cleartext HTTP, "
-                            + "or use an https:// URI.");
-                }
-                LOGGER.warn(HttpLogMessages.WARN.INSECURE_HTTP_CONNECTION, resolvedUri);
-                // For HTTP, no SSL context needed
-                return new HttpHandler(resolvedUri, verifiedUrl, actualConnectionTimeoutSeconds, actualReadTimeoutSeconds,
-                        resolvedRedirectPolicy);
+                return buildCleartextHandler(resolvedUri, verifiedUrl, actualConnectionTimeoutSeconds,
+                        actualReadTimeoutSeconds, resolvedRedirectPolicy);
             }
             throw new IllegalArgumentException("Unsupported URI scheme '" + scheme + "' for " + resolvedUri
                     + "; only http and https are supported.");
+        }
+
+        /**
+         * Builds the HTTPS handler for an already-resolved {@code https} URI: the TLS-floor provider
+         * is defaulted, the {@link SSLContext} is resolved through
+         * {@link #resolveHttpsSecureContext(SecureSSLContextProvider, URI)}, and the handler is
+         * constructed with the TLS-shaped builder state carried through verbatim.
+         *
+         * @param resolvedUri                   the resolved {@code https} URI
+         * @param verifiedUrl                   the {@link URL} materialised from {@code resolvedUri}
+         * @param actualConnectionTimeoutSeconds the validated connection timeout
+         * @param actualReadTimeoutSeconds      the validated read timeout
+         * @param resolvedRedirectPolicy        the resolved redirect policy
+         * @return the constructed HTTPS handler
+         */
+        private HttpHandler buildHttpsHandler(URI resolvedUri, URL verifiedUrl, int actualConnectionTimeoutSeconds,
+                int actualReadTimeoutSeconds, RedirectPolicy resolvedRedirectPolicy) {
+            // For HTTPS, create or validate SSL context and pin the enabled protocols
+            SecureSSLContextProvider actualSecureSSLContextProvider = secureSSLContextProvider != null ?
+                    secureSSLContextProvider : new SecureSSLContextProvider();
+            SSLContext secureContext = resolveHttpsSecureContext(actualSecureSSLContextProvider, resolvedUri);
+            return new HttpHandler(resolvedUri, verifiedUrl, secureContext, actualSecureSSLContextProvider,
+                    actualConnectionTimeoutSeconds, actualReadTimeoutSeconds, allowInsecureHttp,
+                    verifyHostname, sslContextCallerSupplied, resolvedRedirectPolicy);
+        }
+
+        /**
+         * Builds the cleartext handler for an already-resolved {@code http} URI, enforcing the
+         * cleartext opt-in and refusing the TLS-shaped settings that could never take effect on a
+         * connection that establishes no TLS at all.
+         *
+         * @param resolvedUri                   the resolved {@code http} URI
+         * @param verifiedUrl                   the {@link URL} materialised from {@code resolvedUri}
+         * @param actualConnectionTimeoutSeconds the validated connection timeout
+         * @param actualReadTimeoutSeconds      the validated read timeout
+         * @param resolvedRedirectPolicy        the resolved redirect policy
+         * @return the constructed cleartext handler
+         * @throws IllegalArgumentException if cleartext HTTP was not opted into, or if the URI is
+         *                                  combined with a caller-supplied {@link SSLContext},
+         *                                  {@code verifyHostname(false)}, or a caller-supplied
+         *                                  {@link SecureSSLContextProvider}
+         */
+        private HttpHandler buildCleartextHandler(URI resolvedUri, URL verifiedUrl, int actualConnectionTimeoutSeconds,
+                int actualReadTimeoutSeconds, RedirectPolicy resolvedRedirectPolicy) {
+            if (!allowInsecureHttp) {
+                throw new IllegalArgumentException("Refusing to build a plaintext HTTP handler for " + resolvedUri
+                        + "; HTTPS is required. Call allowInsecureHttp(true) to permit cleartext HTTP, "
+                        + "or use an https:// URI.");
+            }
+            // A cleartext handler establishes no TLS connection, so TLS-shaped configuration has
+            // nothing to act on. Rejecting it here mirrors the HTTPS-path rejection in build() rather
+            // than discarding it silently: a caller who supplied a custom trust store, or who
+            // relaxed hostname verification, would otherwise be left believing that setting is in
+            // force on a connection that has no TLS at all.
+            if (sslContextCallerSupplied) {
+                throw new IllegalArgumentException("sslContext(...) cannot be combined with the cleartext http URI "
+                        + resolvedUri + "; an http handler establishes no TLS connection, so the supplied context "
+                        + "would never be used. Either use an https:// URI or drop the sslContext(...).");
+            }
+            if (!verifyHostname) {
+                throw new IllegalArgumentException("verifyHostname(false) cannot be combined with the cleartext "
+                        + "http URI " + resolvedUri + "; an http handler performs no TLS hostname verification, so "
+                        + "there is nothing to relax. Either use an https:// URI or keep verifyHostname(true).");
+            }
+            if (secureSSLContextProviderCallerSupplied) {
+                throw new IllegalArgumentException("tlsVersions(...) cannot be combined with the cleartext http URI "
+                        + resolvedUri + "; an http handler establishes no TLS connection, so the supplied TLS floor "
+                        + "would never be used. Either use an https:// URI or drop the tlsVersions(...).");
+            }
+            LOGGER.warn(HttpLogMessages.WARN.INSECURE_HTTP_CONNECTION, resolvedUri);
+            // For HTTP, no SSL context needed
+            return new HttpHandler(resolvedUri, verifiedUrl, actualConnectionTimeoutSeconds, actualReadTimeoutSeconds,
+                    resolvedRedirectPolicy);
         }
 
         /**
