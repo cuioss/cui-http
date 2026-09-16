@@ -213,11 +213,14 @@ public final class RedirectPolicy {
      * <p>
      * For an {@code https} target the strategy decides: a same-origin hop forwards credentials under
      * both strategies, and a non-same-origin hop forwards them only under
-     * {@link CredentialForwarding#FORWARD_TO_ALLOWLISTED}.
+     * {@link CredentialForwarding#FORWARD_TO_ALLOWLISTED} <em>and</em> only when the host of
+     * {@code to} is itself in {@link #getAllowedHosts()}. That allowlist check is performed here
+     * rather than assumed from an earlier {@link #refuse(URI, URI)} call: the answer is a pure
+     * function of this policy and the two URIs, so it is the same whether or not {@code refuse} was
+     * consulted first and in whichever order a caller invokes the two.
      * <p>
-     * This method never changes a {@link #refuse(URI, URI)} verdict and is meaningful only for a hop
-     * that {@code refuse} already permitted — a hop it refused is not taken at all. The cleartext
-     * rule narrows only what is carried; it refuses no hop and redirects none.
+     * This method never changes a {@link #refuse(URI, URI)} verdict. The cleartext rule narrows only
+     * what is carried; it refuses no hop and redirects none.
      *
      * @param from the URI the redirect response was received from
      * @param to   the absolute redirect target
@@ -227,7 +230,16 @@ public final class RedirectPolicy {
         if (SCHEME_HTTP.equals(asciiLowerCase(to.getScheme()))) {
             return false;
         }
-        return isSameOrigin(from, to) || credentialForwarding == CredentialForwarding.FORWARD_TO_ALLOWLISTED;
+        if (isSameOrigin(from, to)) {
+            return true;
+        }
+        if (credentialForwarding != CredentialForwarding.FORWARD_TO_ALLOWLISTED) {
+            return false;
+        }
+        // The allowlist is re-checked here rather than inferred from a prior refuse(...) call, so the
+        // verdict holds on its own instead of depending on the order a caller invokes the two methods.
+        String toHost = asciiLowerCase(to.getHost());
+        return toHost != null && allowedHosts.contains(toHost);
     }
 
     /**
@@ -349,11 +361,13 @@ public final class RedirectPolicy {
          */
         STRIP_ON_CROSS_ORIGIN,
         /**
-         * Explicit opt-in: let credentials survive a cross-origin hop, but only to a host
-         * {@link RedirectPolicy#refuse(URI, URI)} already permitted and only when that host is
-         * reached over {@code https} — a cleartext target is stripped under this strategy too, see
-         * {@link RedirectPolicy#forwardsCredentials(URI, URI)}. It changes no refusal verdict —
-         * a hop that is refused is never taken, so no credential is ever forwarded to it.
+         * Explicit opt-in: let credentials survive a cross-origin hop, but only to a host named in
+         * {@link RedirectPolicy#getAllowedHosts()} and only when that host is reached over
+         * {@code https} — a cleartext target is stripped under this strategy too, see
+         * {@link RedirectPolicy#forwardsCredentials(URI, URI)}, which checks the allowlist itself
+         * rather than relying on an earlier {@link RedirectPolicy#refuse(URI, URI)} call. It changes
+         * no refusal verdict — a hop that is refused is never taken, so no credential is ever
+         * forwarded to it.
          */
         FORWARD_TO_ALLOWLISTED
     }

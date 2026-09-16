@@ -302,6 +302,7 @@ class RedirectPolicyTest {
     class ForwardsCredentialsTests {
 
         private static final URI ALLOWLISTED = URI.create("https://cdn.example.net/asset");
+        private static final URI NON_ALLOWLISTED = URI.create("https://evil.example.org/asset");
         private static final URI SAME_ORIGIN = URI.create("https://api.example.com/v2/other");
         private static final URI CLEARTEXT_ORIGIN = URI.create("http://api.example.com/v1/resource");
         private static final URI CLEARTEXT_SAME_ORIGIN = URI.create("http://api.example.com/v2/other");
@@ -336,6 +337,57 @@ class RedirectPolicyTest {
         @DisplayName("Should forward credentials on an allowlisted cross-host hop under FORWARD_TO_ALLOWLISTED")
         void shouldForwardCrossOriginUnderForward() {
             assertTrue(policyWith(CredentialForwarding.FORWARD_TO_ALLOWLISTED).forwardsCredentials(ORIGIN, ALLOWLISTED));
+        }
+
+        @Test
+        @DisplayName("Should strip credentials on a non-allowlisted https cross-host hop under FORWARD_TO_ALLOWLISTED")
+        void shouldStripNonAllowlistedCrossOriginUnderForward() {
+            assertFalse(policyWith(CredentialForwarding.FORWARD_TO_ALLOWLISTED)
+                    .forwardsCredentials(ORIGIN, NON_ALLOWLISTED),
+                    "the opt-in forwards to an allowlisted host, not to any cross-origin host");
+        }
+
+        @Test
+        @DisplayName("Should reach the same verdict whether or not refuse() was consulted first")
+        void shouldNotDependOnRefuseBeingCalledFirst() {
+            RedirectPolicy forwarding = policyWith(CredentialForwarding.FORWARD_TO_ALLOWLISTED);
+
+            // Standalone: nothing has narrowed the candidate hop, so the allowlist must be consulted
+            // by forwardsCredentials itself rather than assumed from a refuse() call that never ran.
+            boolean standalone = forwarding.forwardsCredentials(ORIGIN, NON_ALLOWLISTED);
+
+            assertRefused(forwarding, ORIGIN, NON_ALLOWLISTED, RedirectRefusal.CROSS_ORIGIN);
+            boolean afterRefuse = forwarding.forwardsCredentials(ORIGIN, NON_ALLOWLISTED);
+
+            assertFalse(standalone, "a non-allowlisted host must not carry credentials, refuse() or not");
+            assertEquals(standalone, afterRefuse,
+                    "the verdict is a pure function of the policy and the two URIs, so call order cannot change it");
+        }
+
+        @Test
+        @DisplayName("Should strip credentials under FORWARD_TO_ALLOWLISTED when the policy allowlists nothing")
+        void shouldStripUnderForwardWhenAllowlistIsEmpty() {
+            RedirectPolicy emptyAllowlist = RedirectPolicy.builder()
+                    .credentialForwarding(CredentialForwarding.FORWARD_TO_ALLOWLISTED)
+                    .build();
+
+            assertTrue(emptyAllowlist.getAllowedHosts().isEmpty());
+            assertFalse(emptyAllowlist.forwardsCredentials(ORIGIN, ALLOWLISTED),
+                    "naming the strategy without allowlisting a host forwards to nothing cross-origin");
+            assertTrue(emptyAllowlist.forwardsCredentials(ORIGIN, SAME_ORIGIN),
+                    "a same-origin hop never consults the allowlist — the negative control for the rule above");
+        }
+
+        @Test
+        @DisplayName("Should match the allowlist case-insensitively when deciding credential forwarding")
+        void shouldMatchAllowlistCaseInsensitivelyWhenForwarding() {
+            RedirectPolicy policy = RedirectPolicy.builder()
+                    .allowedHosts(List.of("CDN.Example.NET"))
+                    .credentialForwarding(CredentialForwarding.FORWARD_TO_ALLOWLISTED)
+                    .build();
+
+            assertTrue(policy.forwardsCredentials(ORIGIN, URI.create("https://CDN.EXAMPLE.net/asset")),
+                    "both the configured and the target host are ASCII-lowercased before comparison");
         }
 
         @Test
