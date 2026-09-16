@@ -109,6 +109,7 @@ public class SecurityConfigurationBuilder {
     // add published surface rather than remove duplication.
     private boolean allowNullBytes = false;
     private boolean allowControlCharacters = false;
+    private boolean allowLineBreaksInParameterValues = true;
     private boolean allowExtendedAscii = false;
     private boolean normalizeUnicode = true;
 
@@ -311,6 +312,26 @@ public class SecurityConfigurationBuilder {
      */
     public SecurityConfigurationBuilder allowControlCharacters(boolean allow) {
         this.allowControlCharacters = allow;
+        return this;
+    }
+
+    /**
+     * Sets whether decoded CR ({@code U+000D}) and LF ({@code U+000A}) are tolerated inside
+     * query-parameter values.
+     *
+     * <p>Consulted by {@code DecodingStage} for {@code PARAMETER_VALUE} <em>only</em>.
+     * {@code BODY} and every header and cookie type are unaffected, because form-encoded bodies and
+     * multi-line header values legitimately carry line breaks. TAB ({@code U+0009}) is never gated
+     * by this flag.</p>
+     *
+     * <p>Default: {@code true} (the historical behaviour). Set it to {@code false} to opt into
+     * rejecting decoded line breaks in parameter values.</p>
+     *
+     * @param allow true to tolerate decoded CR/LF in parameter values, false to reject them
+     * @return This builder for method chaining
+     */
+    public SecurityConfigurationBuilder allowLineBreaksInParameterValues(boolean allow) {
+        this.allowLineBreaksInParameterValues = allow;
         return this;
     }
 
@@ -607,7 +628,8 @@ public class SecurityConfigurationBuilder {
                 maxHeaderNameLength, maxHeaderValueLength,
                 maxCookieNameLength, maxCookieValueLength,
                 maxBodySize,
-                allowNullBytes, allowControlCharacters, allowExtendedAscii, normalizeUnicode,
+                allowNullBytes, allowControlCharacters, allowLineBreaksInParameterValues,
+                allowExtendedAscii, normalizeUnicode,
                 caseSensitiveComparison, failOnSuspiciousPatterns,
                 requireSecureCookies, requireHttpOnlyCookies,
                 maxParameterCount, maxHeaderCount, maxCookieCount,

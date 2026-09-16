@@ -155,6 +155,7 @@ class SecurityDefaultsTest {
                 config.maxCookieNameLength(), config.maxCookieValueLength(),
                 config.maxBodySize(),
                 config.allowNullBytes(), config.allowControlCharacters(),
+                config.allowLineBreaksInParameterValues(),
                 config.allowExtendedAscii(), config.normalizeUnicode(),
                 config.caseSensitiveComparison(), config.failOnSuspiciousPatterns(),
                 config.requireSecureCookies(), config.requireHttpOnlyCookies(),

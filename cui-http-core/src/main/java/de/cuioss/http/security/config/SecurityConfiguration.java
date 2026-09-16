@@ -70,6 +70,14 @@ import java.util.Set;
  * @param maxBodySize Maximum allowed body size in bytes (non-negative)
  * @param allowNullBytes Whether null bytes are allowed in content
  * @param allowControlCharacters Whether control characters are allowed in content
+ * @param allowLineBreaksInParameterValues Whether decoded CR ({@code U+000D}) and LF
+ *        ({@code U+000A}) are tolerated inside query-parameter values. <strong>Defaults to
+ *        {@code true} in every preset</strong>, which preserves the historical behaviour; set it to
+ *        {@code false} to opt into rejecting decoded line breaks. It is consulted by
+ *        {@code DecodingStage} for {@code PARAMETER_VALUE} <em>only</em> - {@code BODY} and every
+ *        header and cookie type are unaffected by it, because form-encoded bodies and multi-line
+ *        header values legitimately carry line breaks. TAB ({@code U+0009}) is never gated by this
+ *        flag.
  * @param allowExtendedAscii Whether extended ASCII (128-255) and applicable Unicode characters are
  *        allowed. <strong>Defaults to {@code false}</strong> (fail-secure); {@link #lenient()} still
  *        enables it. The flag has two blast radii, and the second is easy to miss: for
@@ -147,6 +155,7 @@ int maxCookieValueLength,
 long maxBodySize,
 boolean allowNullBytes,
 boolean allowControlCharacters,
+boolean allowLineBreaksInParameterValues,
 boolean allowExtendedAscii,
 boolean normalizeUnicode,
 boolean caseSensitiveComparison,
@@ -317,7 +326,8 @@ Set<String> blockedParameterNames
                 maxHeaderNameLength, maxHeaderValueLength,
                 maxCookieNameLength, maxCookieValueLength,
                 maxBodySize,
-                allowNullBytes, allowControlCharacters, allowExtendedAscii, normalizeUnicode,
+                allowNullBytes, allowControlCharacters, allowLineBreaksInParameterValues,
+                allowExtendedAscii, normalizeUnicode,
                 caseSensitiveComparison, failOnSuspiciousPatterns,
                 requireSecureCookies, requireHttpOnlyCookies,
                 maxParameterCount, maxHeaderCount, maxCookieCount,

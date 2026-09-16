@@ -202,7 +202,7 @@ class SecurityConfigurationTest {
         assertThrows(IllegalArgumentException.class, () -> new SecurityConfiguration(
                 pathLength, false, paramNameLength, paramValueLength,
                 headerNameLength, headerValueLength, cookieNameLength, cookieValueLength,
-                bodySize, false, false, true, false, false, false,
+                bodySize, false, false, false, true, false, false, false,
                 false, false, 100, 50, 20,
                 Set.of(), Set.of(), Set.of(), Set.of(), Set.of(), Set.of()));
     }
@@ -249,6 +249,16 @@ class SecurityConfigurationTest {
         assertFalse(lenientBuilder().allowExtendedAscii(false).build().isLenient());
         assertFalse(lenientBuilder().normalizeUnicode(true).build().isLenient());
         assertFalse(lenientBuilder().failOnSuspiciousPatterns(true).build().isLenient());
+    }
+
+    @Test
+    void everyPresetShouldAllowLineBreaksInParameterValuesByDefault() {
+        // The option is opt-in hardening below the strict baseline: no preset turns it on,
+        // so the historical behaviour is preserved everywhere until a caller opts in.
+        assertTrue(SecurityConfiguration.defaults().allowLineBreaksInParameterValues());
+        assertTrue(SecurityConfiguration.strict().allowLineBreaksInParameterValues());
+        assertTrue(SecurityConfiguration.lenient().allowLineBreaksInParameterValues());
+        assertTrue(SecurityConfiguration.paranoid().allowLineBreaksInParameterValues());
     }
 
     private static SecurityConfigurationBuilder strictBuilder() {

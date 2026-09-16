@@ -1,5 +1,9 @@
 {
   "best_practices": [],
+  "generation": {
+    "by": "architecture",
+    "tree_sha": null
+  },
   "insights": [],
   "internal_dependencies": [],
   "key_dependencies": [
@@ -9,16 +13,16 @@
   ],
   "key_dependencies_reasoning": "cui-java-tools supplies CuiLogger and core utilities; Lombok generates builders/values; JSpecify provides null-safety annotations mandated by CUI standards",
   "key_packages": {
-    "de.cuioss.http.client.adapter": {
+    "cui-http-core/src/main/java/de/cuioss/http/client/adapter": {
       "description": "Async HTTP adapters layering ETag-aware caching and resilient retry (RetryConfig) over HttpHandler; HttpResult-based error handling."
     },
-    "de.cuioss.http.forwarded": {
+    "cui-http-core/src/main/java/de/cuioss/http/forwarded": {
       "description": "RFC 7239 Forwarded and X-Forwarded-* header resolution with trusted-proxy CIDR matching and configurable sanitization (ForwardedHeaderResolver, ForwardedResolverConfig, RfcForwardedParser)."
     },
-    "de.cuioss.http.security.pipeline": {
+    "cui-http-core/src/main/java/de/cuioss/http/security/pipeline": {
       "description": "Composed validation pipelines per HTTP component type (URL path, parameters, headers, cookies, body) built via PipelineFactory; the primary public entry point for security validation."
     },
-    "de.cuioss.http.security.validation": {
+    "cui-http-core/src/main/java/de/cuioss/http/security/validation": {
       "description": "Individual validation stages (decoding, normalization, character/length validation, pattern matching, allow/block lists) chained by the pipelines; each implements HttpSecurityValidator."
     }
   },

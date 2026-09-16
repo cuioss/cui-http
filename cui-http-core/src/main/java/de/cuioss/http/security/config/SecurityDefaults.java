@@ -303,7 +303,7 @@ public final class SecurityDefaults {
             MAX_HEADER_NAME_LENGTH_STRICT, MAX_HEADER_VALUE_LENGTH_STRICT,
             MAX_COOKIE_NAME_LENGTH_STRICT, MAX_COOKIE_VALUE_LENGTH_STRICT,
             MAX_BODY_SIZE_STRICT,
-            false, false, false, true, // no null bytes, no control chars, no extended ASCII, normalize Unicode
+            false, false, true, false, true, // no null bytes, no control chars, line breaks allowed in parameter values, no extended ASCII, normalize Unicode
             false, true, // case-insensitive comparison (detects a superset), fail on suspicious patterns
             false, false, // requireSecureCookies, requireHttpOnlyCookies (opt-in)
             MAX_PARAMETER_COUNT_STRICT, MAX_HEADER_COUNT_STRICT, MAX_COOKIE_COUNT_STRICT,
@@ -360,7 +360,7 @@ public final class SecurityDefaults {
             MAX_HEADER_NAME_LENGTH_LENIENT, MAX_HEADER_VALUE_LENGTH_LENIENT,
             MAX_COOKIE_NAME_LENGTH_LENIENT, MAX_COOKIE_VALUE_LENGTH_LENIENT,
             MAX_BODY_SIZE_LENIENT,
-            false, true, true, false, // no null bytes (never allowed), control chars, extended ASCII, no normalization
+            false, true, true, true, false, // no null bytes (never allowed), control chars, line breaks allowed in parameter values, extended ASCII, no normalization
             false, false, // case-insensitive comparison, no suspicious-pattern failures
             false, false, // requireSecureCookies, requireHttpOnlyCookies (opt-in)
             MAX_PARAMETER_COUNT_LENIENT, MAX_HEADER_COUNT_LENIENT, MAX_COOKIE_COUNT_LENIENT,

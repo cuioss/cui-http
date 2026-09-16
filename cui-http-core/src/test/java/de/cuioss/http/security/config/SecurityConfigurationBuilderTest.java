@@ -240,6 +240,25 @@ class SecurityConfigurationBuilderTest {
     }
 
     @Test
+    void shouldDefaultToAllowingLineBreaksInParameterValues() {
+        SecurityConfiguration config = SecurityConfiguration.builder().build();
+
+        // Opt-in hardening: the historical behaviour is the default, so an existing caller that
+        // never names the flag keeps tolerating decoded CR/LF in parameter values.
+        assertTrue(config.allowLineBreaksInParameterValues());
+    }
+
+    @Test
+    void shouldSetAllowLineBreaksInParameterValues() {
+        // false differs from the builder default, so the assertion cannot pass vacuously.
+        SecurityConfiguration config = SecurityConfiguration.builder()
+                .allowLineBreaksInParameterValues(false)
+                .build();
+
+        assertFalse(config.allowLineBreaksInParameterValues());
+    }
+
+    @Test
     void shouldSetGeneralPolicySettings() {
         SecurityConfiguration config = SecurityConfiguration.builder()
                 .caseSensitiveComparison(true)
