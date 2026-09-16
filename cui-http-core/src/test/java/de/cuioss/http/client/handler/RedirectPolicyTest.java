@@ -343,7 +343,7 @@ class RedirectPolicyTest {
         @DisplayName("Should strip credentials on a non-allowlisted https cross-host hop under FORWARD_TO_ALLOWLISTED")
         void shouldStripNonAllowlistedCrossOriginUnderForward() {
             assertFalse(policyWith(CredentialForwarding.FORWARD_TO_ALLOWLISTED)
-                    .forwardsCredentials(ORIGIN, NON_ALLOWLISTED),
+                            .forwardsCredentials(ORIGIN, NON_ALLOWLISTED),
                     "the opt-in forwards to an allowlisted host, not to any cross-origin host");
         }
 

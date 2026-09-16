@@ -252,7 +252,7 @@ class HttpErrorCategoryTest {
             cutShort.initCause(transportCause);
 
             assertAll(transportCause.getClass().getSimpleName()
-                            + " cut the handshake short, so retrying may well succeed",
+                    + " cut the handshake short, so retrying may well succeed",
                     () -> assertEquals(HttpErrorCategory.NETWORK_ERROR,
                             HttpErrorCategory.fromException(cutShort), "bare"),
                     () -> assertEquals(HttpErrorCategory.NETWORK_ERROR,

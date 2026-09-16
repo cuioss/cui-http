@@ -30,6 +30,7 @@ import mockwebserver3.MockResponse;
 import mockwebserver3.RecordedRequest;
 import okhttp3.Headers;
 import okio.ByteString;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -46,7 +47,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -489,7 +489,7 @@ class ETagAwareHttpAdapterTest {
         }
 
         private HttpAdapter<String> adapterFor(URIBuilder uriBuilder,
-                @org.jspecify.annotations.Nullable HttpRequestConverter<String> requestConverter) {
+                @Nullable HttpRequestConverter<String> requestConverter) {
             return ETagAwareHttpAdapter.<String>builder()
                     .httpHandler(handlerFor(uriBuilder))
                     .responseConverter(new TestResponseConverter())

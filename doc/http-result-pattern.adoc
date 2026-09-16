@@ -166,6 +166,11 @@ result.getErrorCategory().ifPresent(category -> {
             logger.error("Configuration error, check SSL/URL settings");
             alertOperations("HTTP handler misconfigured");
         }
+        case INTERRUPTED_ERROR -> {
+            // The caller asked us to stop - never retry, the flag is already restored
+            logger.warn("Request interrupted, abandoning without retry");
+            abortPendingWork();
+        }
     }
 });
 ----

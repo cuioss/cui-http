@@ -250,6 +250,7 @@ Error categorization for HTTP operations.
 * `CLIENT_ERROR` - 4xx responses
 * `INVALID_CONTENT` - Content conversion failures
 * `CONFIGURATION_ERROR` - Setup/config issues (invalid URL, SSL, request-build failures)
+* `INTERRUPTED_ERROR` - The waiting thread was interrupted; non-retryable, and the interrupt flag is restored
 * Retry eligibility determination
 
 === Logging

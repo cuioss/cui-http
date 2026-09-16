@@ -622,7 +622,7 @@ class HttpHandlerRedirectTest {
     @Test
     @DisplayName("The derived non-POST method population must not be empty")
     void bodyCarryingNonPostMethodsMustNotBeEmpty() {
-        assertEquals(List.of("DELETE", "PUT"), BODY_CARRYING_NON_POST_METHODS,
+        assertEquals(BODY_CARRYING_NON_POST_METHODS, List.of("DELETE", "PUT"),
                 "the redirect fixture must serve every body-carrying non-POST method HttpMethodMapper "
                         + "exposes, otherwise the method-preservation cases below run vacuously");
     }
