@@ -29,6 +29,7 @@ import lombok.NonNull;
 import mockwebserver3.MockResponse;
 import mockwebserver3.RecordedRequest;
 import okhttp3.Headers;
+import okio.ByteString;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -56,14 +57,21 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class ETagAwareHttpAdapterTest {
 
+    /**
+     * URI used by the tests in this outer class. None of them issues a request: they exercise
+     * builder validation and pure cache-key derivation, where the URI is input data rather than a
+     * destination. Every test that actually sends a request lives in a nested class bound to
+     * MockWebServer, so no test in this file contacts a real host.
+     */
+    private static final String NEVER_CONTACTED_URI = "https://api.example.com/test";
+
     private HttpHandler handler;
     private TestResponseConverter responseConverter;
 
     @BeforeEach
     void setUp() {
-        // Create test handler with mock URI
         handler = HttpHandler.builder()
-                .uri("https://api.example.com/test")
+                .uri(NEVER_CONTACTED_URI)
                 .build();
 
         responseConverter = new TestResponseConverter();
@@ -87,28 +95,22 @@ class ETagAwareHttpAdapterTest {
                 "Builder should require responseConverter");
     }
 
+    /**
+     * The default header filter is {@code ALL}: a header the caller sends is reproduced in the key,
+     * which is what makes two requests differing only by that header resolve to different entries.
+     */
     @Test
-    void builderDefaultValues() {
+    void builderDefaultsToTheAllHeaderFilter() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
                 .httpHandler(handler)
                 .responseConverter(responseConverter)
                 .build();
 
-        assertNotNull(adapter, "Adapter should be built with defaults");
-    }
+        String key = adapter.generateCacheKey(URI.create(NEVER_CONTACTED_URI),
+                Map.of("Accept", "application/json"), CacheKeyHeaderFilter.ALL);
 
-    @Test
-    void builderWithAllParameters() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .requestConverter(new TestRequestConverter())
-                .etagCachingEnabled(false)
-                .cacheKeyHeaderFilter(CacheKeyHeaderFilter.NONE)
-                .maxCacheSize(500)
-                .build();
-
-        assertNotNull(adapter, "Adapter should be built with all parameters");
+        assertTrue(key.contains("accept:application/json"),
+                "The ALL filter keys the header verbatim, but key was: " + key);
     }
 
     @Test
@@ -133,579 +135,472 @@ class ETagAwareHttpAdapterTest {
                 "Builder should reject null cacheKeyHeaderFilter");
     }
 
+    /**
+     * Each filter is asserted by what it does to the key, paired against the value it must NOT drop:
+     * a filter that removed every header would otherwise satisfy each "does not contain" half on its
+     * own.
+     */
     @Test
-    void statusCodeOnlyFactory() {
-        HttpAdapter<Void> adapter = ETagAwareHttpAdapter.statusCodeOnly(handler);
-
-        assertNotNull(adapter, "statusCodeOnly should create adapter");
-    }
-
-    @Test
-    void statusCodeOnlyUsesVoidConverter() {
-        // statusCodeOnly should use VoidResponseConverter
-        HttpAdapter<Void> adapter = ETagAwareHttpAdapter.statusCodeOnly(handler);
-
-        // Verify adapter is created successfully (converter internally uses VoidResponseConverter)
-        assertNotNull(adapter);
-    }
-
-    @Test
-    void clearETagCache() {
+    void cacheKeyFiltersShouldSelectExactlyTheHeadersTheyName() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
                 .httpHandler(handler)
                 .responseConverter(responseConverter)
                 .build();
+        var uri = URI.create(NEVER_CONTACTED_URI);
+        var headers = new LinkedHashMap<String, String>();
+        headers.put("Accept", "application/json");
+        headers.put("X-Custom", "custom-value");
 
-        // Should not throw even on empty cache
-        assertDoesNotThrow(adapter::clearETagCache);
+        String all = adapter.generateCacheKey(uri, headers, CacheKeyHeaderFilter.ALL);
+        String none = adapter.generateCacheKey(uri, headers, CacheKeyHeaderFilter.NONE);
+        String including = adapter.generateCacheKey(uri, headers, CacheKeyHeaderFilter.including("Accept"));
+        String excluding = adapter.generateCacheKey(uri, headers, CacheKeyHeaderFilter.excluding("Accept"));
+
+        assertAll("Each filter keeps exactly the headers it names",
+                () -> assertTrue(all.contains("application/json") && all.contains("custom-value"),
+                        "ALL keeps both headers, but key was: " + all),
+                () -> assertFalse(none.contains("application/json") || none.contains("custom-value"),
+                        "NONE keeps neither header, but key was: " + none),
+                () -> assertEquals(adapter.generateCacheKey(uri, Map.of(), CacheKeyHeaderFilter.NONE), none,
+                        "NONE yields the same key regardless of which headers were sent"),
+                () -> assertTrue(including.contains("application/json") && !including.contains("custom-value"),
+                        "including(\"Accept\") keeps only Accept, but key was: " + including),
+                () -> assertTrue(!excluding.contains("application/json") && excluding.contains("custom-value"),
+                        "excluding(\"Accept\") drops only Accept, but key was: " + excluding));
     }
 
+    /**
+     * The key is derived from the header set, not from the order the caller happened to supply it in:
+     * two maps carrying the same headers must resolve to one entry rather than two.
+     */
     @Test
-    void builderChaining() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .etagCachingEnabled(true)
-                .cacheKeyHeaderFilter(CacheKeyHeaderFilter.ALL)
-                .maxCacheSize(1000)
-                .build();
-
-        assertNotNull(adapter, "Builder chaining should work");
-    }
-
-    @Test
-    void builderWithRequestConverter() {
-        var requestConverter = new TestRequestConverter();
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .requestConverter(requestConverter)
-                .build();
-
-        assertNotNull(adapter, "Builder should accept request converter");
-    }
-
-    @Test
-    void builderWithNullRequestConverter() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .requestConverter(null)
-                .build();
-
-        assertNotNull(adapter, "Builder should accept null request converter");
-    }
-
-    // === Task 9: Request Execution Tests ===
-
-    @Test
-    void getMethodCreatesRequest() {
+    void cacheKeyShouldBeIndependentOfHeaderOrder() {
         var adapter = ETagAwareHttpAdapter.<String>builder()
                 .httpHandler(handler)
                 .responseConverter(responseConverter)
                 .build();
+        var uri = URI.create(NEVER_CONTACTED_URI);
 
-        // GET should create a CompletableFuture
-        var future = adapter.get();
-        assertNotNull(future, "GET should return non-null CompletableFuture");
+        var oneOrder = new LinkedHashMap<String, String>();
+        oneOrder.put("Accept", "application/json");
+        oneOrder.put("X-Custom", "custom-value");
+        var otherOrder = new LinkedHashMap<String, String>();
+        otherOrder.put("X-Custom", "custom-value");
+        otherOrder.put("Accept", "application/json");
+
+        assertEquals(adapter.generateCacheKey(uri, oneOrder, CacheKeyHeaderFilter.ALL),
+                adapter.generateCacheKey(uri, otherOrder, CacheKeyHeaderFilter.ALL),
+                "Header order must not fragment the cache");
     }
 
-    @Test
-    void getMethodWithHeadersCreatesRequest() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .build();
-
-        var headers = Map.of("Accept", "application/json");
-        var future = adapter.get(headers);
-        assertNotNull(future, "GET with headers should return non-null CompletableFuture");
-    }
-
-    @Test
-    void safeMethodsRejectBody() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .requestConverter(new TestRequestConverter())
-                .build();
-
-        // Note: We can't directly test send() as it's private, but we can verify
-        // that the adapter is properly constructed for safe method validation
-        assertNotNull(adapter);
-    }
-
-    @Test
-    void cacheKeyGenerationWithAllFilter() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .cacheKeyHeaderFilter(CacheKeyHeaderFilter.ALL)
-                .build();
-
-        assertNotNull(adapter, "Adapter with ALL filter should be created");
-    }
-
-    @Test
-    void cacheKeyGenerationWithNoneFilter() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .cacheKeyHeaderFilter(CacheKeyHeaderFilter.NONE)
-                .build();
-
-        assertNotNull(adapter, "Adapter with NONE filter should be created");
-    }
-
-    @Test
-    void cacheKeyGenerationWithExcludingFilter() {
-        var filter = CacheKeyHeaderFilter.excluding("Authorization");
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .cacheKeyHeaderFilter(filter)
-                .build();
-
-        assertNotNull(adapter, "Adapter with excluding filter should be created");
-    }
-
-    @Test
-    void cacheKeyGenerationWithIncludingFilter() {
-        var filter = CacheKeyHeaderFilter.including("Accept", "Content-Type");
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .cacheKeyHeaderFilter(filter)
-                .build();
-
-        assertNotNull(adapter, "Adapter with including filter should be created");
-    }
-
-    @Test
-    void bodyPublisherCreationWithoutConverter() {
-        // Adapter without request converter should handle body gracefully
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .requestConverter(null)
-                .build();
-
-        assertNotNull(adapter, "Adapter without request converter should be created");
-    }
-
-    @Test
-    void bodyPublisherCreationWithConverter() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .requestConverter(new TestRequestConverter())
-                .build();
-
-        assertNotNull(adapter, "Adapter with request converter should be created");
-    }
-
-    @Test
-    void etagCachingDisabled() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .etagCachingEnabled(false)
-                .build();
-
-        // With caching disabled, GET should still work
-        var future = adapter.get();
-        assertNotNull(future, "GET with caching disabled should return CompletableFuture");
-    }
-
-    @Test
-    void cacheKeyConsistencyWithSameHeaders() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .cacheKeyHeaderFilter(CacheKeyHeaderFilter.ALL)
-                .build();
-
-        var headers1 = Map.of("Accept", "application/json", "Authorization", "Bearer token");
-        var headers2 = Map.of("Authorization", "Bearer token", "Accept", "application/json");
-
-        // Both should generate requests (cache key generation happens internally)
-        var future1 = adapter.get(headers1);
-        var future2 = adapter.get(headers2);
-
-        assertNotNull(future1, "First request should be created");
-        assertNotNull(future2, "Second request should be created");
-    }
-
-    // === Task 11: HTTP Method Implementation Tests ===
-
-    @Test
-    void postMethodWithBody() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .requestConverter(new TestRequestConverter())
-                .build();
-
-        var future = adapter.post("test body");
-        assertNotNull(future, "POST should return non-null CompletableFuture");
-    }
-
-    @Test
-    void postMethodWithBodyAndHeaders() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .requestConverter(new TestRequestConverter())
-                .build();
-
-        var headers = Map.of("Content-Type", "text/plain");
-        var future = adapter.post("test body", headers);
-        assertNotNull(future, "POST with headers should return non-null CompletableFuture");
-    }
-
-    @Test
-    void postMethodWithNullBody() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .requestConverter(new TestRequestConverter())
-                .build();
-
-        var future = adapter.post(null);
-        assertNotNull(future, "POST with null body should return non-null CompletableFuture");
-    }
-
-    @Test
-    void postMethodWithExplicitConverter() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .build();
-
-        var customConverter = new TestRequestConverter();
-        var future = adapter.post(customConverter, "test body");
-        assertNotNull(future, "POST with explicit converter should return non-null CompletableFuture");
-    }
-
-    @Test
-    void postMethodWithExplicitConverterAndHeaders() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .build();
-
-        var customConverter = new TestRequestConverter();
-        var headers = Map.of("Content-Type", "text/plain");
-        var future = adapter.post(customConverter, "test body", headers);
-        assertNotNull(future, "POST with explicit converter and headers should return non-null CompletableFuture");
-    }
-
-    @Test
-    void putMethodWithBody() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .requestConverter(new TestRequestConverter())
-                .build();
-
-        var future = adapter.put("test body");
-        assertNotNull(future, "PUT should return non-null CompletableFuture");
-    }
-
-    @Test
-    void putMethodWithBodyAndHeaders() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .requestConverter(new TestRequestConverter())
-                .build();
-
-        var headers = Map.of("Content-Type", "text/plain");
-        var future = adapter.put("test body", headers);
-        assertNotNull(future, "PUT with headers should return non-null CompletableFuture");
-    }
-
-    @Test
-    void putMethodWithExplicitConverter() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .build();
-
-        var customConverter = new TestRequestConverter();
-        var future = adapter.put(customConverter, "test body");
-        assertNotNull(future, "PUT with explicit converter should return non-null CompletableFuture");
-    }
-
-    @Test
-    void patchMethodWithBody() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .requestConverter(new TestRequestConverter())
-                .build();
-
-        var future = adapter.patch("test body");
-        assertNotNull(future, "PATCH should return non-null CompletableFuture");
-    }
-
-    @Test
-    void patchMethodWithBodyAndHeaders() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .requestConverter(new TestRequestConverter())
-                .build();
-
-        var headers = Map.of("Content-Type", "text/plain");
-        var future = adapter.patch("test body", headers);
-        assertNotNull(future, "PATCH with headers should return non-null CompletableFuture");
-    }
-
-    @Test
-    void patchMethodWithExplicitConverter() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .build();
-
-        var customConverter = new TestRequestConverter();
-        var future = adapter.patch(customConverter, "test body");
-        assertNotNull(future, "PATCH with explicit converter should return non-null CompletableFuture");
-    }
-
-    @Test
-    void deleteMethodNoBody() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .build();
-
-        var future = adapter.delete();
-        assertNotNull(future, "DELETE should return non-null CompletableFuture");
-    }
-
-    @Test
-    void deleteMethodNoBodyWithHeaders() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .build();
-
-        var headers = Map.of("Authorization", "Bearer token");
-        var future = adapter.delete(headers);
-        assertNotNull(future, "DELETE with headers should return non-null CompletableFuture");
-    }
-
-    @Test
-    void deleteMethodWithBody() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .requestConverter(new TestRequestConverter())
-                .build();
-
-        var future = adapter.delete("test body");
-        assertNotNull(future, "DELETE with body should return non-null CompletableFuture");
-    }
-
-    @Test
-    void deleteMethodWithBodyAndHeaders() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .requestConverter(new TestRequestConverter())
-                .build();
-
-        var headers = Map.of("Authorization", "Bearer token");
-        var future = adapter.delete("test body", headers);
-        assertNotNull(future, "DELETE with body and headers should return non-null CompletableFuture");
-    }
-
-    @Test
-    void deleteMethodWithExplicitConverter() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .build();
-
-        var customConverter = new TestRequestConverter();
-        var future = adapter.delete(customConverter, "test body");
-        assertNotNull(future, "DELETE with explicit converter should return non-null CompletableFuture");
-    }
-
-    @Test
-    void headMethod() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .build();
-
-        var future = adapter.head();
-        assertNotNull(future, "HEAD should return non-null CompletableFuture");
-    }
-
-    @Test
-    void headMethodWithHeaders() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .build();
-
-        var headers = Map.of("Accept", "application/json");
-        var future = adapter.head(headers);
-        assertNotNull(future, "HEAD with headers should return non-null CompletableFuture");
-    }
-
-    @Test
-    void optionsMethod() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .build();
-
-        var future = adapter.options();
-        assertNotNull(future, "OPTIONS should return non-null CompletableFuture");
-    }
-
-    @Test
-    void optionsMethodWithHeaders() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .build();
-
-        var headers = Map.of("Origin", "https://example.com");
-        var future = adapter.options(headers);
-        assertNotNull(future, "OPTIONS with headers should return non-null CompletableFuture");
-    }
-
-    @Test
-    void genericBodyMethodsWithDifferentTypes() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .build();
-
-        // Test with Integer body type (different from String response type)
-        var intConverter = new HttpRequestConverter<Integer>() {
-            @Override
-            public HttpRequest.BodyPublisher toBodyPublisher(Integer content) {
-                if (content == null) {
-                    return HttpRequest.BodyPublishers.noBody();
+    // === Request Dispatch Tests (every request goes to MockWebServer) ===
+
+    /**
+     * Every test that actually issues a request lives here, bound to MockWebServer. The dispatcher
+     * echoes the request method and the received body back, so each method's assertion can be exact —
+     * the status, the body the server produced, and the validator it sent — rather than merely
+     * "a future was returned".
+     */
+    @Nested
+    @EnableMockWebServer(useHttps = false)
+    @DisplayName("Requests dispatch against MockWebServer with exact results")
+    class RequestDispatch {
+
+        public ModuleDispatcherElement getModuleDispatcher() {
+            return new EchoDispatcher();
+        }
+
+        @ParameterizedTest(name = "{0} reaches the origin and yields its response")
+        @ValueSource(strings = {"GET", "HEAD", "OPTIONS", "DELETE"})
+        @DisplayName("Body-less methods should yield the origin's status and body")
+        @ModuleDispatcher
+        void bodylessMethodShouldYieldOriginResponse(String method, URIBuilder uriBuilder) {
+            HttpAdapter<String> adapter = adapterFor(uriBuilder, null);
+
+            HttpResult<String> result = switch (method) {
+                case "GET" -> adapter.get().join();
+                case "HEAD" -> adapter.head().join();
+                case "OPTIONS" -> adapter.options().join();
+                default -> adapter.delete().join();
+            };
+
+            assertAll(method + " against the echo dispatcher",
+                    () -> assertTrue(result.isSuccess(), method + " should succeed"),
+                    () -> assertEquals(Optional.of(200), result.getHttpStatus(),
+                            "The origin's status should be reported"),
+                    () -> assertEquals(EchoDispatcher.ETAG, result.getETag().orElse(null),
+                            "The origin's validator should be reported"),
+                    // A HEAD response carries no body by protocol, so the echo never reaches the
+                    // caller and the converter sees an empty payload.
+                    () -> assertEquals("HEAD".equals(method) ? "" : EchoDispatcher.echoFor(method, ""),
+                            result.getContent().orElse(null),
+                            "The origin's body should be reported verbatim"));
+        }
+
+        @ParameterizedTest(name = "{0} sends its serialized body")
+        @ValueSource(strings = {"POST", "PUT", "PATCH", "DELETE"})
+        @DisplayName("Body-carrying methods should send the converter's output to the origin")
+        @ModuleDispatcher
+        void bodyCarryingMethodShouldSendSerializedBody(String method, URIBuilder uriBuilder) {
+            HttpAdapter<String> adapter = adapterFor(uriBuilder, new TestRequestConverter());
+
+            HttpResult<String> result = switch (method) {
+                case "POST" -> adapter.post("payload").join();
+                case "PUT" -> adapter.put("payload").join();
+                case "PATCH" -> adapter.patch("payload").join();
+                default -> adapter.delete("payload").join();
+            };
+
+            assertAll(method + " with a body",
+                    () -> assertTrue(result.isSuccess(), method + " should succeed"),
+                    () -> assertEquals(Optional.of(200), result.getHttpStatus(),
+                            "The origin's status should be reported"),
+                    () -> assertEquals(EchoDispatcher.echoFor(method, "payload"), result.getContent().orElse(null),
+                            "The origin should have received the serialized body"));
+        }
+
+        /**
+         * The explicit-converter overloads serialize a body of a type unrelated to the response type.
+         * Asserted through the echo so the converter's actual output is what reaches the origin.
+         */
+        @Test
+        @DisplayName("An explicit converter should serialize a differently-typed body")
+        @ModuleDispatcher
+        void explicitConverterShouldSerializeDifferentlyTypedBody(URIBuilder uriBuilder) {
+            HttpAdapter<String> adapter = adapterFor(uriBuilder, null);
+            HttpRequestConverter<Integer> intConverter = new HttpRequestConverter<>() {
+                @Override
+                public HttpRequest.BodyPublisher toBodyPublisher(Integer content) {
+                    return content == null
+                            ? HttpRequest.BodyPublishers.noBody()
+                            : HttpRequest.BodyPublishers.ofString(content.toString());
                 }
-                return HttpRequest.BodyPublishers.ofString(content.toString());
-            }
 
-            @Override
-            public ContentType contentType() {
-                return ContentType.TEXT_PLAIN;
-            }
-        };
+                @Override
+                public ContentType contentType() {
+                    return ContentType.TEXT_PLAIN;
+                }
+            };
 
-        var futurePost = adapter.post(intConverter, 42);
-        var futurePut = adapter.put(intConverter, 42);
-        var futurePatch = adapter.patch(intConverter, 42);
-        var futureDelete = adapter.delete(intConverter, 42);
+            HttpResult<String> result = adapter.post(intConverter, 42).join();
 
-        assertNotNull(futurePost, "POST with different type should return CompletableFuture");
-        assertNotNull(futurePut, "PUT with different type should return CompletableFuture");
-        assertNotNull(futurePatch, "PATCH with different type should return CompletableFuture");
-        assertNotNull(futureDelete, "DELETE with different type should return CompletableFuture");
+            assertEquals(EchoDispatcher.echoFor("POST", "42"), result.getContent().orElse(null),
+                    "The Integer body should reach the origin as the converter serialized it");
+        }
+
+        /**
+         * A caller-supplied header must reach the origin; the echo reports back what it saw, so the
+         * assertion is on the received header rather than on the absence of an exception.
+         */
+        @Test
+        @DisplayName("Caller-supplied headers should reach the origin")
+        @ModuleDispatcher
+        void callerHeadersShouldReachOrigin(URIBuilder uriBuilder) {
+            HttpAdapter<String> adapter = adapterFor(uriBuilder, null);
+
+            adapter.get(Map.of(EchoDispatcher.ECHOED_HEADER, "custom-value")).join();
+
+            assertEquals("custom-value", EchoDispatcher.lastEchoedHeader(),
+                    "The caller's header should have been sent to the origin");
+        }
+
+        /**
+         * {@code statusCodeOnly} builds a Void adapter: it reports the status and holds no content,
+         * which is exactly what distinguishes it from the String adapters above.
+         */
+        @Test
+        @DisplayName("statusCodeOnly should report the status and carry no content")
+        @ModuleDispatcher
+        void statusCodeOnlyShouldReportStatusWithoutContent(URIBuilder uriBuilder) {
+            HttpAdapter<Void> adapter = ETagAwareHttpAdapter.statusCodeOnly(handlerFor(uriBuilder));
+
+            HttpResult<Void> result = adapter.get().join();
+
+            assertAll("statusCodeOnly GET",
+                    () -> assertTrue(result.isSuccess(), "The request should succeed"),
+                    () -> assertEquals(Optional.of(200), result.getHttpStatus(), "The status should be reported"),
+                    () -> assertTrue(result.getContent().isEmpty(), "A Void adapter holds no content"));
+        }
+
+        /**
+         * {@code clearETagCache} must actually drop the entry: after clearing, the next GET carries no
+         * validator, which is the observable the bare non-throwing assertion could not distinguish.
+         */
+        @Test
+        @DisplayName("clearETagCache should drop the stored validator")
+        @ModuleDispatcher
+        void clearETagCacheShouldDropTheStoredValidator(URIBuilder uriBuilder) {
+            EchoDispatcher.reset();
+            var adapter = ETagAwareHttpAdapter.<String>builder()
+                    .httpHandler(handlerFor(uriBuilder))
+                    .responseConverter(new TestResponseConverter())
+                    .build();
+            adapter.get().join();
+
+            adapter.clearETagCache();
+            adapter.get().join();
+
+            assertEquals("", EchoDispatcher.lastIfNoneMatch(),
+                    "After clearing, the next GET must not revalidate against the dropped entry");
+        }
+
+        /**
+         * Control for the test above: without the clear, the second GET does revalidate — so the
+         * empty validator asserted there is attributable to the clear, not to the cache never storing
+         * anything.
+         */
+        @Test
+        @DisplayName("Without clearing, the second GET revalidates against the stored validator")
+        @ModuleDispatcher
+        void secondGetShouldRevalidateWhenCacheIsNotCleared(URIBuilder uriBuilder) {
+            EchoDispatcher.reset();
+            var adapter = ETagAwareHttpAdapter.<String>builder()
+                    .httpHandler(handlerFor(uriBuilder))
+                    .responseConverter(new TestResponseConverter())
+                    .build();
+            adapter.get().join();
+
+            adapter.get().join();
+
+            assertEquals(EchoDispatcher.ETAG, EchoDispatcher.lastIfNoneMatch(),
+                    "The stored validator should accompany the second GET");
+        }
+
+        // === Cache Key Allocation Skip Tests ===
+
+        /**
+         * Positive control for the allocation skip: GET reads and populates the cache, so it must
+         * build a key. Without this the negative cases below would also pass against an adapter that
+         * never generated a key at all.
+         */
+        @Test
+        @DisplayName("GET should build a cache key")
+        @ModuleDispatcher
+        void getShouldGenerateCacheKey(URIBuilder uriBuilder) {
+            var filter = new CountingCacheKeyHeaderFilter();
+
+            cachingAdapterWith(uriBuilder, filter).get(Map.of("Accept", "application/json")).join();
+
+            assertTrue(filter.consultations() > 0, "GET reads the cache and must build a key");
+        }
+
+        /**
+         * HEAD reads the cache to resolve a conditional 304 against the stored validator, so it must
+         * build a key too. This is the guard against narrowing the lookup to GET alone, which would
+         * silently delete the documented HEAD 304 behaviour.
+         */
+        @Test
+        @DisplayName("HEAD should build a cache key")
+        @ModuleDispatcher
+        void headShouldGenerateCacheKey(URIBuilder uriBuilder) {
+            var filter = new CountingCacheKeyHeaderFilter();
+
+            cachingAdapterWith(uriBuilder, filter).head(Map.of("Accept", "application/json")).join();
+
+            assertTrue(filter.consultations() > 0, "HEAD reads the cache to resolve a 304 and must build a key");
+        }
+
+        @Test
+        @DisplayName("Methods that never touch the cache should build no key")
+        @ModuleDispatcher
+        void nonCacheableMethodsShouldNotGenerateCacheKey(URIBuilder uriBuilder) {
+            var headers = Map.of("Accept", "application/json");
+            var postFilter = new CountingCacheKeyHeaderFilter();
+            var putFilter = new CountingCacheKeyHeaderFilter();
+            var patchFilter = new CountingCacheKeyHeaderFilter();
+            var deleteFilter = new CountingCacheKeyHeaderFilter();
+
+            cachingAdapterWith(uriBuilder, postFilter).post((String) null, headers).join();
+            cachingAdapterWith(uriBuilder, putFilter).put((String) null, headers).join();
+            cachingAdapterWith(uriBuilder, patchFilter).patch((String) null, headers).join();
+            cachingAdapterWith(uriBuilder, deleteFilter).delete(headers).join();
+
+            assertAll("Methods that never touch the cache should not build a key",
+                    () -> assertEquals(0, postFilter.consultations(), "POST should not build a cache key"),
+                    () -> assertEquals(0, putFilter.consultations(), "PUT should not build a cache key"),
+                    () -> assertEquals(0, patchFilter.consultations(), "PATCH should not build a cache key"),
+                    () -> assertEquals(0, deleteFilter.consultations(), "DELETE should not build a cache key"));
+        }
+
+        @Test
+        @DisplayName("A caching-disabled adapter should build no key")
+        @ModuleDispatcher
+        void cachingDisabledAdapterShouldNotGenerateCacheKey(URIBuilder uriBuilder) {
+            var filter = new CountingCacheKeyHeaderFilter();
+            var adapter = ETagAwareHttpAdapter.<String>builder()
+                    .httpHandler(handlerFor(uriBuilder))
+                    .responseConverter(new TestResponseConverter())
+                    .cacheKeyHeaderFilter(filter)
+                    .etagCachingEnabled(false)
+                    .build();
+
+            adapter.get(Map.of("Accept", "application/json")).join();
+
+            assertEquals(0, filter.consultations(),
+                    "A caching-disabled adapter never reads the key, so it should not build one");
+        }
+
+        /**
+         * Once the request-converter guard has passed, the configured converter is the one the
+         * request is built from — it serializes the body <em>and</em> supplies the Content-Type.
+         */
+        @Test
+        @DisplayName("A body with a configured converter should reach that converter")
+        @ModuleDispatcher
+        void bodyWithRequestConverterShouldReachConverter(URIBuilder uriBuilder) {
+            var requestConverter = new RecordingRequestConverter();
+            HttpAdapter<String> adapter = adapterFor(uriBuilder, requestConverter);
+
+            adapter.post("payload").join();
+
+            assertAll("A body with a configured converter reaches that converter",
+                    () -> assertEquals("payload", requestConverter.lastBody(),
+                            "The body should be handed to the converter for serialization"),
+                    () -> assertEquals(1, requestConverter.contentTypeCalls(),
+                            "The request Content-Type should be resolved from the converter"));
+        }
+
+        /**
+         * Negative control for the test above: with no body there is nothing to serialize, so the
+         * converter is never consulted and no Content-Type is derived from it.
+         */
+        @Test
+        @DisplayName("A null body should not resolve a Content-Type from the converter")
+        @ModuleDispatcher
+        void nullBodyShouldNotResolveContentTypeFromRequestConverter(URIBuilder uriBuilder) {
+            var requestConverter = new RecordingRequestConverter();
+            HttpAdapter<String> adapter = adapterFor(uriBuilder, requestConverter);
+
+            adapter.post((String) null).join();
+
+            assertAll("A null body never reaches the converter",
+                    () -> assertNull(requestConverter.lastBody(),
+                            "A null body should not be handed to the converter"),
+                    () -> assertEquals(0, requestConverter.contentTypeCalls(),
+                            "No Content-Type should be resolved when there is no body"));
+        }
+
+        private ETagAwareHttpAdapter<String> cachingAdapterWith(URIBuilder uriBuilder, CacheKeyHeaderFilter filter) {
+            return ETagAwareHttpAdapter.<String>builder()
+                    .httpHandler(handlerFor(uriBuilder))
+                    .responseConverter(new TestResponseConverter())
+                    .cacheKeyHeaderFilter(filter)
+                    .build();
+        }
+
+        private HttpAdapter<String> adapterFor(URIBuilder uriBuilder,
+                @org.jspecify.annotations.Nullable HttpRequestConverter<String> requestConverter) {
+            return ETagAwareHttpAdapter.<String>builder()
+                    .httpHandler(handlerFor(uriBuilder))
+                    .responseConverter(new TestResponseConverter())
+                    .requestConverter(requestConverter)
+                    .build();
+        }
+
+        private HttpHandler handlerFor(URIBuilder uriBuilder) {
+            String serverUrl = uriBuilder.addPathSegments("echo", "resource").build().toString();
+            return HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
+        }
     }
-
-    @Test
-    void allMethodsReturnCompletableFuture() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .requestConverter(new TestRequestConverter())
-                .build();
-
-        // All methods should return CompletableFuture (async-first design)
-        assertInstanceOf(CompletableFuture.class, adapter.get(), "GET should return CompletableFuture");
-        assertInstanceOf(CompletableFuture.class, adapter.post("body"), "POST should return CompletableFuture");
-        assertInstanceOf(CompletableFuture.class, adapter.put("body"), "PUT should return CompletableFuture");
-        assertInstanceOf(CompletableFuture.class, adapter.patch("body"), "PATCH should return CompletableFuture");
-        assertInstanceOf(CompletableFuture.class, adapter.delete(), "DELETE should return CompletableFuture");
-        assertInstanceOf(CompletableFuture.class, adapter.head(), "HEAD should return CompletableFuture");
-        assertInstanceOf(CompletableFuture.class, adapter.options(), "OPTIONS should return CompletableFuture");
-    }
-
-    // === Cache Key Allocation Skip Tests ===
 
     /**
-     * Positive control for the allocation skip: GET reads and populates the cache, so it must build
-     * a key. Without this the negative cases below would also pass against an adapter that never
-     * generated a key at all.
+     * Echoes the request method and the body it received, and records the caller-supplied header and
+     * the {@code If-None-Match} each request carried. Echoing is what lets a dispatch assertion be
+     * exact: the response body names which method the origin actually saw and what it sent.
+     *
+     * <p>The records are static because the dispatcher resolver serves requests from its own instance
+     * rather than the one the test handed it — the same caveat the other dispatchers in this file
+     * document.</p>
      */
-    @Test
-    void getShouldGenerateCacheKey() {
-        var filter = new CountingCacheKeyHeaderFilter();
-        var adapter = cachingAdapterWith(filter);
+    static final class EchoDispatcher implements ModuleDispatcherElement {
 
-        adapter.get(Map.of("Accept", "application/json"));
+        static final String BASE_PATH = "/echo";
+        static final String PATH = BASE_PATH + "/resource";
+        static final String ETAG = "\"etag-echo\"";
+        static final String ECHOED_HEADER = "X-Echo-Me";
 
-        assertTrue(filter.consultations() > 0, "GET reads the cache and must build a key");
-    }
+        private static final Map<String, String> RECORDS = new ConcurrentHashMap<>();
 
-    /**
-     * HEAD reads the cache to resolve a conditional 304 against the stored validator, so it must
-     * build a key too. This is the guard against narrowing the lookup to GET alone, which would
-     * silently delete the documented HEAD 304 behaviour.
-     */
-    @Test
-    void headShouldGenerateCacheKey() {
-        var filter = new CountingCacheKeyHeaderFilter();
-        var adapter = cachingAdapterWith(filter);
+        static void reset() {
+            RECORDS.clear();
+        }
 
-        adapter.head(Map.of("Accept", "application/json"));
+        static String echoFor(String method, String body) {
+            return "%s:%s".formatted(method, body);
+        }
 
-        assertTrue(filter.consultations() > 0, "HEAD reads the cache to resolve a 304 and must build a key");
-    }
+        /** The caller header the most recent request carried, or the empty string when it carried none. */
+        static String lastEchoedHeader() {
+            return RECORDS.getOrDefault("header", "");
+        }
 
-    @Test
-    void nonCacheableMethodsShouldNotGenerateCacheKey() {
-        var headers = Map.of("Accept", "application/json");
-        var postFilter = new CountingCacheKeyHeaderFilter();
-        var putFilter = new CountingCacheKeyHeaderFilter();
-        var patchFilter = new CountingCacheKeyHeaderFilter();
-        var deleteFilter = new CountingCacheKeyHeaderFilter();
+        /** The {@code If-None-Match} the most recent request carried, or the empty string when none. */
+        static String lastIfNoneMatch() {
+            return RECORDS.getOrDefault("if-none-match", "");
+        }
 
-        cachingAdapterWith(postFilter).post((String) null, headers);
-        cachingAdapterWith(putFilter).put((String) null, headers);
-        cachingAdapterWith(patchFilter).patch((String) null, headers);
-        cachingAdapterWith(deleteFilter).delete(headers);
+        @Override
+        public Optional<MockResponse> handleGet(@NonNull RecordedRequest request) {
+            return respond(request, "GET");
+        }
 
-        assertAll("Methods that never touch the cache should not build a key",
-                () -> assertEquals(0, postFilter.consultations(), "POST should not build a cache key"),
-                () -> assertEquals(0, putFilter.consultations(), "PUT should not build a cache key"),
-                () -> assertEquals(0, patchFilter.consultations(), "PATCH should not build a cache key"),
-                () -> assertEquals(0, deleteFilter.consultations(), "DELETE should not build a cache key"));
-    }
+        @Override
+        public Optional<MockResponse> handleHead(@NonNull RecordedRequest request) {
+            return respond(request, "HEAD");
+        }
 
-    @Test
-    void cachingDisabledAdapterShouldNotGenerateCacheKey() {
-        var filter = new CountingCacheKeyHeaderFilter();
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .cacheKeyHeaderFilter(filter)
-                .etagCachingEnabled(false)
-                .build();
+        @Override
+        public Optional<MockResponse> handleOptions(@NonNull RecordedRequest request) {
+            return respond(request, "OPTIONS");
+        }
 
-        adapter.get(Map.of("Accept", "application/json"));
+        @Override
+        public Optional<MockResponse> handlePost(@NonNull RecordedRequest request) {
+            return respond(request, "POST");
+        }
 
-        assertEquals(0, filter.consultations(),
-                "A caching-disabled adapter never reads the key, so it should not build one");
-    }
+        @Override
+        public Optional<MockResponse> handlePut(@NonNull RecordedRequest request) {
+            return respond(request, "PUT");
+        }
 
-    private ETagAwareHttpAdapter<String> cachingAdapterWith(CacheKeyHeaderFilter filter) {
-        return ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .cacheKeyHeaderFilter(filter)
-                .build();
+        @Override
+        public Optional<MockResponse> handlePatch(@NonNull RecordedRequest request) {
+            return respond(request, "PATCH");
+        }
+
+        @Override
+        public Optional<MockResponse> handleDelete(@NonNull RecordedRequest request) {
+            return respond(request, "DELETE");
+        }
+
+        private Optional<MockResponse> respond(RecordedRequest request, String method) {
+            if (!PATH.equals(request.getUrl().encodedPath())) {
+                return Optional.empty();
+            }
+            RECORDS.put("header", Optional.ofNullable(request.getHeaders().get(ECHOED_HEADER)).orElse(""));
+            RECORDS.put("if-none-match", Optional.ofNullable(request.getHeaders().get("If-None-Match")).orElse(""));
+
+            // ByteString.toString() renders a debug form ("[text=42]"), so decode explicitly.
+            String body = Optional.ofNullable(request.getBody()).map(ByteString::utf8).orElse("");
+            Headers headers = new Headers.Builder()
+                    .add("ETag", ETAG)
+                    .add("Content-Type", "text/plain")
+                    .build();
+            return Optional.of(new MockResponse(200, headers, echoFor(method, body)));
+        }
+
+        @Override
+        public String getBaseUrl() {
+            return BASE_PATH;
+        }
+
+        @Override
+        public @NonNull Set<HttpMethodMapper> supportedMethods() {
+            return Set.of(HttpMethodMapper.GET, HttpMethodMapper.HEAD, HttpMethodMapper.OPTIONS,
+                    HttpMethodMapper.POST, HttpMethodMapper.PUT, HttpMethodMapper.PATCH,
+                    HttpMethodMapper.DELETE);
+        }
     }
 
     /**
@@ -798,54 +693,6 @@ class ETagAwareHttpAdapterTest {
                 () -> assertGuardRejects(() -> adapter.put("body"), "PUT"),
                 () -> assertGuardRejects(() -> adapter.patch("body"), "PATCH"),
                 () -> assertGuardRejects(() -> adapter.delete("body"), "DELETE"));
-    }
-
-    /**
-     * Second half of the same guard: once the guard has passed, the configured converter is the one
-     * the request is built from — it serializes the body <em>and</em> supplies the Content-Type. The
-     * Content-Type is resolved from the converter the guard bound, not from a second null test the
-     * guard already made always true.
-     */
-    @Test
-    void bodyWithRequestConverterShouldReachConverter() {
-        var requestConverter = new RecordingRequestConverter();
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .requestConverter(requestConverter)
-                .build();
-
-        adapter.post("payload");
-
-        assertAll("A body with a configured converter reaches that converter",
-                () -> assertEquals("payload", requestConverter.lastBody(),
-                        "The body should be handed to the converter for serialization"),
-                () -> assertEquals(1, requestConverter.contentTypeCalls(),
-                        "The request Content-Type should be resolved from the converter"));
-    }
-
-    /**
-     * Negative control for the test above: with no body there is nothing to serialize, so the
-     * converter is never consulted and no Content-Type is derived from it. Without this control the
-     * assertion above would also pass against an adapter that resolved the content type
-     * unconditionally.
-     */
-    @Test
-    void nullBodyShouldNotResolveContentTypeFromRequestConverter() {
-        var requestConverter = new RecordingRequestConverter();
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .requestConverter(requestConverter)
-                .build();
-
-        adapter.post((String) null);
-
-        assertAll("A null body never reaches the converter",
-                () -> assertNull(requestConverter.lastBody(),
-                        "A null body should not be handed to the converter"),
-                () -> assertEquals(0, requestConverter.contentTypeCalls(),
-                        "No Content-Type should be resolved when there is no body"));
     }
 
     private static void assertGuardRejects(Executable call, String methodName) {

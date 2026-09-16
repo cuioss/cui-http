@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 
 import javax.net.ssl.SSLHandshakeException;
 import java.io.IOException;
+import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -677,6 +678,101 @@ class ResilientHttpAdapterTest {
             // Clear the flag so it cannot leak into sibling tests on this thread.
             Thread.interrupted();
         }
+    }
+
+    /**
+     * A {@code 5xx} that never clears must consume exactly the configured attempt budget and then
+     * surface the server failure itself — not a synthetic "retries exhausted" error that loses the
+     * status class the caller needs in order to decide what to do next.
+     */
+    @Test
+    void serverErrorExhaustsTheAttemptBudgetAndPreservesTheFailure() {
+        AtomicInteger attemptCount = new AtomicInteger(0);
+        HttpAdapter<String> alwaysUnavailable = new MockAdapter<>(attemptCount, Integer.MAX_VALUE,
+                HttpResult.failureWithFallback("HTTP 503: GET", null, null,
+                        HttpErrorCategory.SERVER_ERROR, null, 503),
+                HttpResult.success("Should not reach", null, 200));
+
+        RetryConfig config = RetryConfig.builder()
+                .maxAttempts(4)
+                .initialDelay(Duration.ofMillis(10))
+                .multiplier(1.0)
+                .jitter(0.0)
+                .build();
+
+        HttpResult<String> result = ResilientHttpAdapter.wrap(alwaysUnavailable, config).getBlocking();
+
+        assertAll("A persistent 5xx exhausts the budget and reports itself",
+                () -> assertFalse(result.isSuccess(), "The exhausted chain is a failure"),
+                () -> assertEquals(4, attemptCount.get(),
+                        "Exactly maxAttempts attempts are made - no more, and no fewer"),
+                () -> assertEquals(HttpErrorCategory.SERVER_ERROR, result.getErrorCategory().orElse(null),
+                        "The server's own classification survives exhaustion"),
+                () -> assertEquals(503, result.getHttpStatus().orElse(null),
+                        "The observed status survives exhaustion"),
+                () -> assertTrue(result.isRetryable(),
+                        "The category stays retryable - the budget ran out, the condition did not change"));
+    }
+
+    /**
+     * A request timeout is the canonical transient failure, so it is retried; and when every attempt
+     * times out the original {@link HttpTimeoutException} is what reaches the caller, rather than a
+     * wrapper that hides which failure actually occurred.
+     */
+    @Test
+    void timeoutIsRetriedAndTheTimeoutSurvivesExhaustion() {
+        AtomicInteger attemptCount = new AtomicInteger(0);
+        HttpAdapter<String> alwaysTimingOut = MockAdapter.exceptional(attemptCount, Integer.MAX_VALUE,
+                new HttpTimeoutException("request timed out"),
+                HttpResult.success("Should not reach", null, 200));
+
+        RetryConfig config = RetryConfig.builder()
+                .maxAttempts(3)
+                .initialDelay(Duration.ofMillis(10))
+                .multiplier(1.0)
+                .jitter(0.0)
+                .build();
+
+        CompletionException thrown = assertThrows(CompletionException.class,
+                ResilientHttpAdapter.wrap(alwaysTimingOut, config)::getBlocking);
+
+        assertAll("A timeout is transient: retried, then reported as itself",
+                () -> assertInstanceOf(HttpTimeoutException.class, thrown.getCause(),
+                        "The timeout is re-propagated, not swallowed"),
+                () -> assertEquals(HttpErrorCategory.NETWORK_ERROR, HttpErrorCategory.fromException(thrown),
+                        "A timeout classifies as a retryable network error"),
+                () -> assertEquals(3, attemptCount.get(),
+                        "Every attempt in the budget is spent before giving up"));
+    }
+
+    /**
+     * An unparseable response body is a property of what the server sent, not of the connection:
+     * retrying would re-fetch the same malformed representation. The adapter must stop after one
+     * attempt and preserve {@code INVALID_CONTENT} along with the status the response carried.
+     */
+    @Test
+    void malformedResponseIsNotRetried() {
+        AtomicInteger attemptCount = new AtomicInteger(0);
+        HttpAdapter<String> malformed = new MockAdapter<>(attemptCount, Integer.MAX_VALUE,
+                HttpResult.failureWithFallback("Failed to convert response body (HTTP 200)", null, null,
+                        HttpErrorCategory.INVALID_CONTENT, "\"etag-malformed\"", 200),
+                HttpResult.success("Should not reach", null, 200));
+
+        RetryConfig config = RetryConfig.builder()
+                .maxAttempts(5)
+                .initialDelay(Duration.ofMillis(10))
+                .build();
+
+        HttpResult<String> result = ResilientHttpAdapter.wrap(malformed, config).getBlocking();
+
+        assertAll("A malformed body is not a transient condition",
+                () -> assertFalse(result.isSuccess(), "The conversion failure is a failure"),
+                () -> assertEquals(1, attemptCount.get(), "Exactly one attempt, no retries"),
+                () -> assertEquals(HttpErrorCategory.INVALID_CONTENT, result.getErrorCategory().orElse(null),
+                        "The content classification is preserved"),
+                () -> assertFalse(result.isRetryable(), "INVALID_CONTENT is never retryable"),
+                () -> assertEquals(200, result.getHttpStatus().orElse(null),
+                        "The status the malformed response carried is preserved"));
     }
 
     /**
