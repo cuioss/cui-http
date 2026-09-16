@@ -19,7 +19,12 @@ import de.cuioss.test.generator.Generators;
 import de.cuioss.test.generator.TypedGenerator;
 
 /**
- * Generator for {@link HttpResult} success instances with random content, ETag and 2xx status.
+ * Generator for {@link HttpResult} success instances with random content, ETag and a status drawn
+ * from the set {@link HttpResult#success(Object, String, int)} accepts: any 2xx, or exactly 304.
+ * <p>
+ * The status is constrained to that set deliberately — a success carrying any other status is a
+ * contract violation the compact constructor rejects, so a generator that produced one would fail
+ * at construction rather than exercise the consumers it feeds.
  * <p>
  * Instantiated directly as a test field and driven via {@link #next()}, for example:
  * <pre>{@code
@@ -30,15 +35,19 @@ import de.cuioss.test.generator.TypedGenerator;
  */
 public class HttpResultSuccessGenerator implements TypedGenerator<HttpResult<String>> {
 
+    /** The one non-2xx status a success may carry: 304 Not Modified. */
+    private static final int NOT_MODIFIED = 304;
+
     private final TypedGenerator<String> strings = Generators.nonEmptyStrings();
     private final TypedGenerator<Integer> status = Generators.integers(200, 299);
     private final TypedGenerator<Boolean> hasEtag = Generators.booleans();
+    private final TypedGenerator<Boolean> notModified = Generators.booleans();
 
     @Override
     public HttpResult<String> next() {
         String content = strings.next();
         String etag = hasEtag.next() ? strings.next() : null;
-        int httpStatus = status.next();
+        int httpStatus = notModified.next() ? NOT_MODIFIED : status.next();
 
         return HttpResult.success(content, etag, httpStatus);
     }

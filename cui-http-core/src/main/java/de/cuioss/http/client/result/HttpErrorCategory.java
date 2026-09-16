@@ -85,7 +85,18 @@ public enum HttpErrorCategory {
      * Configuration or setup errors.
      * Includes invalid URLs, missing settings, SSL configuration issues, authentication failures.
      */
-    CONFIGURATION_ERROR;
+    CONFIGURATION_ERROR,
+
+    /**
+     * The operation was interrupted or cancelled before it could complete.
+     * <p>
+     * Raised when the waiting thread was interrupted — {@link InterruptedException}, whether thrown
+     * directly or delivered wrapped through an asynchronous pipeline. Interruption is a request from
+     * within this process to stop, not a condition of the remote endpoint, so it is deliberately
+     * <strong>not</strong> retryable: retrying would ignore the very cancellation that was asked
+     * for.
+     */
+    INTERRUPTED_ERROR;
 
     /**
      * Returns whether this error category represents a transient condition worth retrying.
@@ -103,6 +114,16 @@ public enum HttpErrorCategory {
      * maps to the retryable {@link #NETWORK_ERROR}; any other throwable (e.g.
      * {@link IllegalArgumentException} / {@link IllegalStateException} from request building, or a
      * misconfiguration) maps to the non-retryable {@link #CONFIGURATION_ERROR}.
+     *
+     * <h3>Interruption</h3>
+     * <p>An {@link InterruptedException} is classified ahead of every other test — including the
+     * {@code IOException} test — as the non-retryable {@link #INTERRUPTED_ERROR}. It reaches this
+     * method either directly or unwrapped from a {@link CompletionException} /
+     * {@link ExecutionException}, and it does not describe the remote endpoint at all: something in
+     * this process asked the waiting thread to stop. Throwing the exception cleared the thread's
+     * interrupt status, so this method calls {@link Thread#interrupt()} on the current thread before
+     * returning, leaving the cancellation observable to callers further up the stack rather than
+     * silently absorbed here.</p>
      *
      * <h3>TLS carve-out</h3>
      * <p>A TLS failure is an {@code IOException} by inheritance, but a trust, certificate, key or
@@ -147,9 +168,12 @@ public enum HttpErrorCategory {
      * try {
      *     HttpResponse<String> response = httpClient.send(request, ofString());
      *     return HttpResult.success(response.body(), etag, response.statusCode());
-     * } catch (IOException | InterruptedException e) {
-     *     HttpErrorCategory category = HttpErrorCategory.fromException(e);
-     *     return HttpResult.failure("Request failed", e, category);
+     * } catch (InterruptedException e) {
+     *     // Restore the flag the throw cleared - never swallow a cancellation.
+     *     Thread.currentThread().interrupt();
+     *     return HttpResult.failure("Request interrupted", e, HttpErrorCategory.fromException(e));
+     * } catch (IOException e) {
+     *     return HttpResult.failure("Request failed", e, HttpErrorCategory.fromException(e));
      * }
      * }</pre>
      *
@@ -161,6 +185,12 @@ public enum HttpErrorCategory {
         while ((unwrapped instanceof CompletionException || unwrapped instanceof ExecutionException)
                 && unwrapped.getCause() != null && unwrapped.getCause() != unwrapped) {
             unwrapped = unwrapped.getCause();
+        }
+        if (unwrapped instanceof InterruptedException) {
+            // The interrupt was consumed by the throw; restore it so callers up the stack can still
+            // observe the cancellation instead of it being swallowed here.
+            Thread.currentThread().interrupt();
+            return INTERRUPTED_ERROR;
         }
         if (unwrapped instanceof SSLHandshakeException) {
             // Ambiguous by itself — see the TLS carve-out above; the cause chain says which it is.

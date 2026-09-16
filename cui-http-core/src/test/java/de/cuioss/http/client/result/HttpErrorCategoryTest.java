@@ -15,6 +15,7 @@
  */
 package de.cuioss.http.client.result;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -54,13 +55,14 @@ class HttpErrorCategoryTest {
         assertFalse(HttpErrorCategory.CLIENT_ERROR.isRetryable());
         assertFalse(HttpErrorCategory.INVALID_CONTENT.isRetryable());
         assertFalse(HttpErrorCategory.CONFIGURATION_ERROR.isRetryable());
+        assertFalse(HttpErrorCategory.INTERRUPTED_ERROR.isRetryable());
     }
 
     @Test
     void shouldHaveMinimalButSufficientStates() {
         // Verify we have exactly the essential states
         HttpErrorCategory[] allCodes = HttpErrorCategory.values();
-        assertEquals(5, allCodes.length, "Should have exactly 5 essential error codes");
+        assertEquals(6, allCodes.length, "Should have exactly 6 essential error codes");
 
         // Verify all expected codes exist
         assertNotNull(HttpErrorCategory.valueOf("NETWORK_ERROR"));
@@ -68,6 +70,7 @@ class HttpErrorCategoryTest {
         assertNotNull(HttpErrorCategory.valueOf("CLIENT_ERROR"));
         assertNotNull(HttpErrorCategory.valueOf("INVALID_CONTENT"));
         assertNotNull(HttpErrorCategory.valueOf("CONFIGURATION_ERROR"));
+        assertNotNull(HttpErrorCategory.valueOf("INTERRUPTED_ERROR"));
     }
 
     @Test
@@ -100,8 +103,9 @@ class HttpErrorCategoryTest {
         var nonRetryable = Arrays.stream(HttpErrorCategory.values())
                 .filter(c -> !c.isRetryable())
                 .collect(Collectors.toSet());
-        assertEquals(Set.of(HttpErrorCategory.CLIENT_ERROR, HttpErrorCategory.INVALID_CONTENT, HttpErrorCategory.CONFIGURATION_ERROR), nonRetryable,
-                "CLIENT_ERROR, INVALID_CONTENT, and CONFIGURATION_ERROR should be non-retryable.");
+        assertEquals(Set.of(HttpErrorCategory.CLIENT_ERROR, HttpErrorCategory.INVALID_CONTENT,
+                        HttpErrorCategory.CONFIGURATION_ERROR, HttpErrorCategory.INTERRUPTED_ERROR), nonRetryable,
+                "CLIENT_ERROR, INVALID_CONTENT, CONFIGURATION_ERROR and INTERRUPTED_ERROR should be non-retryable.");
     }
 
     @Test
@@ -139,6 +143,74 @@ class HttpErrorCategoryTest {
                 HttpErrorCategory.fromException(new IllegalStateException("bad state")));
         assertEquals(HttpErrorCategory.CONFIGURATION_ERROR,
                 HttpErrorCategory.fromException(new RuntimeException("other")));
+    }
+
+    /**
+     * Verifies interruption classification: an {@link InterruptedException} maps to the
+     * non-retryable {@link HttpErrorCategory#INTERRUPTED_ERROR} — bare and through the async unwrap
+     * loop — and the thread's interrupt flag, which the throw cleared, is restored before
+     * {@link HttpErrorCategory#fromException(Throwable)} returns.
+     */
+    @Nested
+    class InterruptionClassification {
+
+        /**
+         * Clears the interrupt flag after every test in this class, whether or not that test set
+         * it. Restoring the flag is the behaviour under test, so a flag left set would leak into
+         * unrelated tests sharing the thread.
+         */
+        @AfterEach
+        void clearInterruptFlag() {
+            Thread.interrupted();
+        }
+
+        @Test
+        void shouldMapInterruptedExceptionToInterruptedError() {
+            assertEquals(HttpErrorCategory.INTERRUPTED_ERROR,
+                    HttpErrorCategory.fromException(new InterruptedException("cancelled")));
+        }
+
+        @Test
+        void shouldMapAsyncWrappedInterruptedExceptionToInterruptedError() {
+            assertAll("the unwrap loop reaches the interruption through both async wrappers",
+                    () -> assertEquals(HttpErrorCategory.INTERRUPTED_ERROR,
+                            HttpErrorCategory.fromException(
+                                    new CompletionException(new InterruptedException("cancelled"))),
+                            "wrapped in CompletionException"),
+                    () -> assertEquals(HttpErrorCategory.INTERRUPTED_ERROR,
+                            HttpErrorCategory.fromException(
+                                    new ExecutionException(new InterruptedException("cancelled"))),
+                            "wrapped in ExecutionException"));
+        }
+
+        @Test
+        void shouldRestoreTheInterruptFlag() {
+            assertFalse(Thread.currentThread().isInterrupted(), "precondition: the flag starts clear");
+
+            HttpErrorCategory category =
+                    HttpErrorCategory.fromException(new InterruptedException("cancelled"));
+
+            assertEquals(HttpErrorCategory.INTERRUPTED_ERROR, category);
+            assertTrue(Thread.currentThread().isInterrupted(),
+                    "fromException must restore the flag the throw cleared");
+        }
+
+        @Test
+        void shouldLeaveTheInterruptFlagAloneForOtherFailures() {
+            assertFalse(Thread.currentThread().isInterrupted(), "precondition: the flag starts clear");
+
+            assertEquals(HttpErrorCategory.NETWORK_ERROR,
+                    HttpErrorCategory.fromException(new IOException("timeout")));
+
+            assertFalse(Thread.currentThread().isInterrupted(),
+                    "a failure that is not an interruption must not touch the flag");
+        }
+
+        @Test
+        void shouldNotBeRetryable() {
+            assertFalse(HttpErrorCategory.INTERRUPTED_ERROR.isRetryable(),
+                    "retrying would ignore the cancellation that was asked for");
+        }
     }
 
     /**

@@ -17,6 +17,7 @@ package de.cuioss.http.client.result;
 
 import org.jspecify.annotations.Nullable;
 
+import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
 
@@ -112,6 +113,10 @@ import java.util.function.Function;
  *         case CONFIGURATION_ERROR -&gt; {
  *             logger.error("Configuration error, check SSL/URL settings");
  *             alertOperations("HTTP handler misconfigured");
+ *         }
+ *         case INTERRUPTED_ERROR -&gt; {
+ *             logger.warn("Request interrupted, abandoning without retry");
+ *             abortPendingWork();
  *         }
  *     }
  * });
@@ -236,11 +241,20 @@ public sealed interface HttpResult<T>
 
     /**
      * Creates a successful result with content and HTTP metadata.
+     * <p>
+     * {@code httpStatus} must describe an outcome a success can actually represent: any 2xx status
+     * (200..299), or exactly 304 Not Modified. Every other status — every other 3xx, every 4xx and
+     * every 5xx — is a contract violation and is rejected with an {@link IllegalArgumentException}.
+     * A redirect or an error status carries no successfully obtained representation, so wrapping one
+     * in a {@code Success} would make {@link #isSuccess()} disagree with what the server said.
      *
      * <h3>Usage Example</h3>
      * <pre>
      * // Fresh content from HTTP 200 OK
      * return HttpResult.success(parsedContent, etag, 200);
+     *
+     * // Created resource from HTTP 201
+     * return HttpResult.success(createdResource, null, 201);
      *
      * // Cached content from HTTP 304 Not Modified
      * return HttpResult.success(cachedContent, cachedEtag, 304);
@@ -249,9 +263,10 @@ public sealed interface HttpResult<T>
      * @param content the response content; may be null only for operations that
      *                 intentionally produce no content (e.g. {@code Void} status-code-only operations)
      * @param etag optional ETag header value for caching
-     * @param httpStatus HTTP status code
+     * @param httpStatus HTTP status code; must be in 200..299 or exactly 304
      * @param <T> content type
      * @return Success result
+     * @throws IllegalArgumentException if {@code httpStatus} is neither a 2xx status nor 304
      */
     static <T> HttpResult<T> success(@Nullable T content, @Nullable String etag, int httpStatus) {
         return new Success<>(content, etag, httpStatus);
@@ -326,7 +341,7 @@ public sealed interface HttpResult<T>
      * @param content the response content; null only for operations that intentionally
      *                produce no content (e.g. {@code Void} status-code-only operations)
      * @param etag optional ETag header value for caching
-     * @param httpStatus HTTP status code (typically 200 or 304)
+     * @param httpStatus HTTP status code; must be in 200..299 or exactly 304
      * @param <T> content type
      */
     record Success<T>(
@@ -336,6 +351,21 @@ public sealed interface HttpResult<T>
     String etag,
     int httpStatus
     ) implements HttpResult<T> {
+
+        /**
+         * Rejects any status a success cannot represent. The accepted set is every 2xx status plus
+         * 304 Not Modified — not a literal 200-or-304 pair, because the production construction site
+         * guards on {@code HttpStatusFamily.isSuccess} and so legitimately yields 201, 204, 205 and
+         * 206 as well.
+         *
+         * @throws IllegalArgumentException if {@code httpStatus} is neither a 2xx status nor 304
+         */
+        public Success {
+            if ((httpStatus < 200 || httpStatus > 299) && httpStatus != 304) {
+                throw new IllegalArgumentException(
+                        "Success requires a 2xx or 304 HTTP status, but was: " + httpStatus);
+            }
+        }
 
         @Override
         public boolean isSuccess() {
@@ -401,6 +431,19 @@ public sealed interface HttpResult<T>
     @Nullable
     Integer httpStatus
     ) implements HttpResult<T> {
+
+        /**
+         * Rejects a {@code null} {@code errorMessage} or {@code category}. Both are mandatory: the
+         * message is what {@link #getErrorMessage()} promises to return and the category is what
+         * {@link #isRetryable()} decides on, so a {@code null} in either position would surface as a
+         * {@code NullPointerException} far from the construction site that caused it.
+         *
+         * @throws NullPointerException if {@code errorMessage} or {@code category} is {@code null}
+         */
+        public Failure {
+            Objects.requireNonNull(errorMessage, "errorMessage must not be null");
+            Objects.requireNonNull(category, "category must not be null");
+        }
 
         @Override
         public boolean isSuccess() {

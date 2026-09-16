@@ -79,6 +79,65 @@ class HttpResultTest {
             assertTrue(result.getHttpStatus().isPresent());
             assertEquals(status, result.getHttpStatus().get());
         }
+
+        /**
+         * The accepted set is the whole 2xx range plus 304 — not the literal 200-or-304 pair. The
+         * edges (200 and 299) are asserted alongside the interior values a real response yields.
+         */
+        @ParameterizedTest
+        @ValueSource(ints = {200, 201, 204, 206, 299, 304})
+        void shouldAcceptEveryStatusInTheSuccessSet(int status) {
+            HttpResult<String> result = HttpResult.success(strings.next(), null, status);
+
+            assertTrue(result.isSuccess());
+            assertEquals(status, result.getHttpStatus().orElseThrow());
+        }
+
+        /**
+         * Negative control for the boundary above: the values immediately outside the 2xx range
+         * (199, 300), the 3xx neighbours of the one carved-out 304, and representative 4xx / 5xx
+         * statuses are all contract violations.
+         */
+        @ParameterizedTest
+        @ValueSource(ints = {199, 300, 303, 305, 400, 500})
+        void shouldRejectStatusOutsideTheSuccessSet(int status) {
+            String content = strings.next();
+
+            IllegalArgumentException rejected = assertThrows(IllegalArgumentException.class,
+                    () -> HttpResult.success(content, null, status));
+
+            assertTrue(rejected.getMessage().contains(String.valueOf(status)),
+                    "the rejection must name the offending status, but was: " + rejected.getMessage());
+        }
+    }
+
+    @Nested
+    class FailureNullRejection {
+
+        @Test
+        void shouldRejectNullErrorMessage() {
+            assertThrows(NullPointerException.class,
+                    () -> new HttpResult.Failure<String>(
+                            null, null, null, HttpErrorCategory.CLIENT_ERROR, null, null),
+                    "errorMessage is what getErrorMessage() promises to return");
+        }
+
+        @Test
+        void shouldRejectNullCategory() {
+            assertThrows(NullPointerException.class,
+                    () -> new HttpResult.Failure<String>(
+                            "Error", null, null, null, null, null),
+                    "category is what isRetryable() decides on");
+        }
+
+        @Test
+        void shouldAcceptAFailureCarryingBothMandatoryFields() {
+            HttpResult<String> result = new HttpResult.Failure<>(
+                    "Error", null, null, HttpErrorCategory.CLIENT_ERROR, null, null);
+
+            assertEquals("Error", result.getErrorMessage().orElseThrow());
+            assertEquals(HttpErrorCategory.CLIENT_ERROR, result.getErrorCategory().orElseThrow());
+        }
     }
 
     @Nested
@@ -254,7 +313,7 @@ class HttpResultTest {
         }
 
         @ParameterizedTest
-        @EnumSource(value = HttpErrorCategory.class, names = {"CLIENT_ERROR", "INVALID_CONTENT", "CONFIGURATION_ERROR"})
+        @EnumSource(value = HttpErrorCategory.class, names = {"CLIENT_ERROR", "INVALID_CONTENT", "CONFIGURATION_ERROR", "INTERRUPTED_ERROR"})
         void shouldNotBeRetryableForPermanentErrors(HttpErrorCategory category) {
             HttpResult<String> result = HttpResult.failure("Error", null, category);
 
