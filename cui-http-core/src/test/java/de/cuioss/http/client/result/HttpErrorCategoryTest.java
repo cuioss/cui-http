@@ -17,17 +17,24 @@ package de.cuioss.http.client.result;
 
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import javax.net.ssl.*;
+import java.io.EOFException;
 import java.io.IOException;
+import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpTimeoutException;
+import java.security.cert.CertPathValidatorException;
+import java.security.cert.CertificateException;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -135,16 +142,64 @@ class HttpErrorCategoryTest {
     }
 
     /**
-     * Verifies the TLS carve-out: non-transient TLS subtypes are non-retryable configuration
-     * errors even though they inherit from {@link IOException}, while the {@link SSLException}
-     * base type and the HTTP timeout types stay on the retryable network-error path.
+     * Verifies the TLS carve-out: the three unconditionally non-transient TLS subtypes are
+     * non-retryable configuration errors even though they inherit from {@link IOException}, while
+     * the {@link SSLException} base type and the HTTP timeout types stay on the retryable
+     * network-error path. {@link SSLHandshakeException} is the conditional one — it is classified
+     * by the root of its cause chain, so both outcomes are asserted here.
      */
     @Nested
     class TlsClassification {
 
         @Test
-        void shouldMapHandshakeFailureToConfigurationError() {
+        void shouldMapCauselessHandshakeFailureToConfigurationError() {
             assertNonRetryableTlsFailure(new SSLHandshakeException("untrusted certificate"));
+        }
+
+        @Test
+        void shouldMapCertificatePathCausedHandshakeFailureToConfigurationError() {
+            SSLHandshakeException untrustedCertificate = new SSLHandshakeException("PKIX path building failed");
+            untrustedCertificate.initCause(new CertificateException("no trusted certificate found",
+                    new CertPathValidatorException("unable to find valid certification path")));
+
+            assertNonRetryableTlsFailure(untrustedCertificate);
+        }
+
+        static Stream<Throwable> transportLevelCauses() {
+            return Stream.of(
+                    new SocketException("Connection reset"),
+                    new EOFException("SSL peer shut down incorrectly"),
+                    new SocketTimeoutException("Read timed out"),
+                    new HttpConnectTimeoutException("connect timed out"));
+        }
+
+        @ParameterizedTest
+        @MethodSource("transportLevelCauses")
+        void shouldMapTransportCausedHandshakeFailureToNetworkError(Throwable transportCause) {
+            SSLHandshakeException cutShort = new SSLHandshakeException("Remote host terminated the handshake");
+            cutShort.initCause(transportCause);
+
+            assertAll(transportCause.getClass().getSimpleName()
+                            + " cut the handshake short, so retrying may well succeed",
+                    () -> assertEquals(HttpErrorCategory.NETWORK_ERROR,
+                            HttpErrorCategory.fromException(cutShort), "bare"),
+                    () -> assertEquals(HttpErrorCategory.NETWORK_ERROR,
+                            HttpErrorCategory.fromException(new CompletionException(cutShort)),
+                            "wrapped in CompletionException"),
+                    () -> assertEquals(HttpErrorCategory.NETWORK_ERROR,
+                            HttpErrorCategory.fromException(new ExecutionException(cutShort)),
+                            "wrapped in ExecutionException"),
+                    () -> assertTrue(HttpErrorCategory.fromException(cutShort).isRetryable(),
+                            "must be retried"));
+        }
+
+        @Test
+        void shouldFindTheTransportCauseThroughAnIntermediateLink() {
+            SSLHandshakeException cutShort = new SSLHandshakeException("Remote host terminated the handshake");
+            cutShort.initCause(new SSLException("Connection reset", new SocketException("Connection reset")));
+
+            assertEquals(HttpErrorCategory.NETWORK_ERROR, HttpErrorCategory.fromException(cutShort),
+                    "the chain is walked to its root, not only one link deep");
         }
 
         @Test

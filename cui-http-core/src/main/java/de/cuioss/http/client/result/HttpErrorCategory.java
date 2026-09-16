@@ -21,7 +21,11 @@ import javax.net.ssl.SSLHandshakeException;
 import javax.net.ssl.SSLKeyException;
 import javax.net.ssl.SSLPeerUnverifiedException;
 import javax.net.ssl.SSLProtocolException;
+import java.io.EOFException;
 import java.io.IOException;
+import java.net.SocketException;
+import java.net.SocketTimeoutException;
+import java.net.http.HttpConnectTimeoutException;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 
@@ -101,21 +105,32 @@ public enum HttpErrorCategory {
      * misconfiguration) maps to the non-retryable {@link #CONFIGURATION_ERROR}.
      *
      * <h3>TLS carve-out</h3>
-     * <p>A TLS failure is an {@code IOException} by inheritance, but the non-transient TLS
-     * subtypes describe a trust, certificate, key, or protocol mismatch that retrying cannot
-     * resolve — retrying them only multiplies the handshake cost before the same failure. The
-     * following subtypes are therefore carved out ahead of the generic {@code IOException} test
-     * and map to the non-retryable {@link #CONFIGURATION_ERROR}:</p>
+     * <p>A TLS failure is an {@code IOException} by inheritance, but a trust, certificate, key or
+     * protocol mismatch is something retrying cannot resolve — retrying only multiplies the
+     * handshake cost before the same failure. Three subtypes describe exactly such a mismatch and
+     * nothing else, so they are carved out unconditionally ahead of the generic {@code IOException}
+     * test and map to the non-retryable {@link #CONFIGURATION_ERROR}:</p>
      * <ul>
-     *   <li>{@link SSLHandshakeException} — handshake failed (untrusted or invalid certificate)</li>
      *   <li>{@link SSLKeyException} — the local key material is unusable</li>
      *   <li>{@link SSLPeerUnverifiedException} — the peer identity could not be verified</li>
      *   <li>{@link SSLProtocolException} — a protocol-level TLS error</li>
      * </ul>
-     * <p>The bare {@link javax.net.ssl.SSLException} base type deliberately stays on the retryable
-     * {@link #NETWORK_ERROR} path: it also covers genuinely transient conditions such as a
-     * connection reset mid-handshake. Likewise {@link java.net.http.HttpTimeoutException} and
-     * {@link java.net.http.HttpConnectTimeoutException} keep the retryable classification.</p>
+     * <p>{@link SSLHandshakeException} is <em>not</em> unconditional, because it does not name one
+     * condition. The JDK raises it both when the peer's credentials were rejected on their merits
+     * and when the handshake was simply cut off by the network — a reset connection or a peer that
+     * closed mid-handshake surfaces as an {@code SSLHandshakeException} whose cause chain bottoms
+     * out in a transport failure. Only the first is a configuration problem; the second is exactly
+     * the transient condition {@link #NETWORK_ERROR} exists for. So the root of its cause chain is
+     * inspected: a chain terminating in {@link SocketException}, {@link EOFException},
+     * {@link SocketTimeoutException} or {@link HttpConnectTimeoutException} classifies as the
+     * retryable {@link #NETWORK_ERROR}, and every other chain — a certificate-path, trust, key or
+     * protocol failure, or a handshake exception carrying no cause at all — keeps
+     * {@link #CONFIGURATION_ERROR}.</p>
+     * <p>The bare {@link javax.net.ssl.SSLException} base type stays on the retryable
+     * {@link #NETWORK_ERROR} path for the same reason: it also covers genuinely transient
+     * conditions such as a connection reset mid-handshake. Likewise
+     * {@link java.net.http.HttpTimeoutException} and {@link HttpConnectTimeoutException} keep the
+     * retryable classification.</p>
      *
      * <p>Asynchronous pipelines ({@link java.util.concurrent.CompletableFuture}) deliver failures
      * wrapped in {@link CompletionException} / {@link ExecutionException}. Such wrappers are
@@ -147,13 +162,53 @@ public enum HttpErrorCategory {
                 && unwrapped.getCause() != null && unwrapped.getCause() != unwrapped) {
             unwrapped = unwrapped.getCause();
         }
-        if (unwrapped instanceof SSLHandshakeException
-                || unwrapped instanceof SSLKeyException
+        if (unwrapped instanceof SSLHandshakeException) {
+            // Ambiguous by itself — see the TLS carve-out above; the cause chain says which it is.
+            return isTransportFailure(rootCause(unwrapped)) ? NETWORK_ERROR : CONFIGURATION_ERROR;
+        }
+        if (unwrapped instanceof SSLKeyException
                 || unwrapped instanceof SSLPeerUnverifiedException
                 || unwrapped instanceof SSLProtocolException) {
             return CONFIGURATION_ERROR;
         }
         return unwrapped instanceof IOException ? NETWORK_ERROR : CONFIGURATION_ERROR;
+    }
+
+    /**
+     * Upper bound on the cause-chain walk in {@link #rootCause(Throwable)}. A {@link Throwable}
+     * reaches this method from the JDK and from remote-driven failures, so a chain that loops back
+     * on itself through more than one link must terminate the walk rather than hang the caller —
+     * the {@code cause != current} self-reference test alone does not catch a two-element cycle.
+     * Real cause chains are a handful of links deep, so the bound never truncates a genuine one.
+     */
+    private static final int MAX_CAUSE_DEPTH = 32;
+
+    /**
+     * Walks {@code throwable}'s cause chain to its deepest link — the failure the chain bottoms out
+     * in — returning {@code throwable} itself when it carries no cause.
+     */
+    private static Throwable rootCause(Throwable throwable) {
+        Throwable current = throwable;
+        for (int depth = 0; depth < MAX_CAUSE_DEPTH; depth++) {
+            Throwable cause = current.getCause();
+            if (cause == null || cause == current) {
+                break;
+            }
+            current = cause;
+        }
+        return current;
+    }
+
+    /**
+     * Whether {@code throwable} is a transport-level failure: the connection was reset, closed, or
+     * timed out, rather than the peer's credentials having been rejected. Used to tell a handshake
+     * the network cut short from one the trust material failed.
+     */
+    private static boolean isTransportFailure(Throwable throwable) {
+        return throwable instanceof SocketException
+                || throwable instanceof EOFException
+                || throwable instanceof SocketTimeoutException
+                || throwable instanceof HttpConnectTimeoutException;
     }
 
 }
