@@ -31,7 +31,9 @@ import okhttp3.Headers;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.InputStream;
@@ -46,6 +48,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -96,6 +99,29 @@ class HttpHandlerRedirectTest {
     private static final List<String> SETTABLE_REPRESENTATION_ECHO_FIELDS = RedirectDispatcher.REPRESENTATION_ECHO_FIELDS
             .stream()
             .filter(field -> !"contentLength".equals(field))
+            .toList();
+
+    /**
+     * The body-carrying methods a {@code 301} or {@code 302} must leave untouched — every method
+     * {@link RedirectDispatcher} serves except the three that are not body-carrying non-{@code POST}
+     * requests: {@code POST} is the one method the rewrite still applies to, and {@code GET} /
+     * {@code HEAD} carry no body of their own (they are covered by
+     * {@link #bodylessMethodShouldBePreserved}).
+     * <p>
+     * Derived from the dispatcher's own supported set rather than restated as a literal, so a method
+     * the fixture starts serving is asserted here in the same edit. {@code PATCH} and {@code OPTIONS}
+     * are consequently absent: {@code HttpMethodMapper} does not expose them, so MockWebServer cannot
+     * route them at all. They would exercise exactly the branch {@code PUT} and {@code DELETE} already
+     * pin — "the method is not {@code POST}, so keep it" — so their absence costs no distinct verdict.
+     * {@link #bodyCarryingNonPostMethodsMustNotBeEmpty} is the non-vacuity guard that stops this
+     * runtime-derived population from silently emptying.
+     */
+    private static final List<String> BODY_CARRYING_NON_POST_METHODS = new RedirectDispatcher()
+            .supportedMethods()
+            .stream()
+            .map(Enum::name)
+            .filter(method -> !Set.of("POST", "GET", "HEAD").contains(method))
+            .sorted()
             .toList();
 
     private final RedirectDispatcher redirectDispatcher = new RedirectDispatcher();
@@ -571,8 +597,8 @@ class HttpHandlerRedirectTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"301,GET", "302,GET", "301,HEAD", "302,HEAD"})
-    @DisplayName("A bodyless method should be preserved across 301 and 302")
+    @CsvSource({"301,GET", "302,GET", "301,HEAD", "302,HEAD", "303,HEAD"})
+    @DisplayName("A bodyless method should be preserved across 301 and 302, and HEAD across 303 as well")
     @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
     void bodylessMethodShouldBePreserved(int status, String method, URIBuilder uriBuilder) throws Exception {
         try (HttpHandler handler = handlerFor(uriBuilder, RedirectDispatcher.PATH_STATUS_PREFIX + status)) {
@@ -582,7 +608,61 @@ class HttpHandlerRedirectTest {
 
             String echo = echoOf(handler.send(request, HttpResponse.BodyHandlers.ofString()));
 
-            assertEquals(method, field(echo, "method"), status + " must preserve a bodyless method");
+            assertEquals(method, field(echo, "method"), status + " must preserve a bodyless method — 303 "
+                    + "rewrites every method to GET except HEAD, which RFC 9110 §15.4.4 preserves as HEAD");
+        }
+    }
+
+    /**
+     * Non-vacuity guard for {@link #BODY_CARRYING_NON_POST_METHODS}: the population is derived from
+     * {@link RedirectDispatcher#supportedMethods()} at runtime, so a fixture that stopped serving
+     * {@code PUT} / {@code DELETE} would empty it and make
+     * {@link #nonPostMethodShouldSurvive301And302} pass by running no case at all.
+     */
+    @Test
+    @DisplayName("The derived non-POST method population must not be empty")
+    void bodyCarryingNonPostMethodsMustNotBeEmpty() {
+        assertEquals(List.of("DELETE", "PUT"), BODY_CARRYING_NON_POST_METHODS,
+                "the redirect fixture must serve every body-carrying non-POST method HttpMethodMapper "
+                        + "exposes, otherwise the method-preservation cases below run vacuously");
+    }
+
+    static Stream<Arguments> nonPostMethodRewriteCases() {
+        return BODY_CARRYING_NON_POST_METHODS.stream()
+                .flatMap(method -> Stream.of(301, 302).map(status -> Arguments.of(status, method)));
+    }
+
+    @ParameterizedTest
+    @MethodSource("nonPostMethodRewriteCases")
+    @DisplayName("A non-POST body-carrying method should survive 301 and 302 with method and body intact")
+    @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
+    void nonPostMethodShouldSurvive301And302(int status, String method, URIBuilder uriBuilder) throws Exception {
+        try (HttpHandler handler = handlerFor(uriBuilder, RedirectDispatcher.PATH_STATUS_PREFIX + status)) {
+            String echo = echoOf(handler.send(bodyCarryingRequest(handler, method),
+                    HttpResponse.BodyHandlers.ofString()));
+
+            assertEquals(method, field(echo, "method"), status + " sanctions the GET rewrite for POST alone "
+                    + "(RFC 9110 §15.4.2–§15.4.3), so " + method + " must keep its method");
+            assertEquals(Integer.toString(POST_BODY.length()), field(echo, "body"),
+                    "a preserved method must replay its original body");
+            assertEquals("present", field(echo, "contentType"),
+                    "a preserved body keeps the representation metadata that describes it");
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"303,PUT", "303,DELETE"})
+    @DisplayName("303 should still rewrite a body-carrying non-POST method to a bodyless GET")
+    @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
+    void nonPostMethodShouldBeRewrittenByThe303(int status, String method, URIBuilder uriBuilder) throws Exception {
+        try (HttpHandler handler = handlerFor(uriBuilder, RedirectDispatcher.PATH_STATUS_PREFIX + status)) {
+            String echo = echoOf(handler.send(bodyCarryingRequest(handler, method),
+                    HttpResponse.BodyHandlers.ofString()));
+
+            assertEquals("GET", field(echo, "method"),
+                    "303 rewrites every method but HEAD to GET — the HEAD carve-out is the only exception");
+            assertEquals("absent", field(echo, "body"), "the 303 rewrite drops the request body");
+            assertEquals("absent", field(echo, "contentType"), "a dropped body drops Content-Type with it");
         }
     }
 
@@ -671,6 +751,14 @@ class HttpHandlerRedirectTest {
 
     private static HttpResponse<String> get(HttpHandler handler) throws Exception {
         return handler.send(handler.requestBuilder().GET().build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** A request carrying {@link #POST_BODY} and a {@code Content-Type} under an arbitrary method. */
+    private static HttpRequest bodyCarryingRequest(HttpHandler handler, String method) {
+        return handler.requestBuilder()
+                .header("Content-Type", "application/json")
+                .method(method, HttpRequest.BodyPublishers.ofString(POST_BODY))
+                .build();
     }
 
     private static HttpRequest postRequest(HttpHandler handler) {

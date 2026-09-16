@@ -226,6 +226,16 @@ public class RedirectDispatcher implements ModuleDispatcherElement {
         return handle(request);
     }
 
+    @Override
+    public Optional<MockResponse> handlePut(@NonNull RecordedRequest request) {
+        return handle(request);
+    }
+
+    @Override
+    public Optional<MockResponse> handleDelete(@NonNull RecordedRequest request) {
+        return handle(request);
+    }
+
     /**
      * Describes the request that reached the terminal hop, as a {@code ;}-separated list of
      * {@code key=value} fields: {@code method}, {@code body} ({@code absent} or the byte count), then
@@ -344,8 +354,19 @@ public class RedirectDispatcher implements ModuleDispatcherElement {
         return BASE_PATH;
     }
 
+    /**
+     * Every method {@link HttpMethodMapper} exposes, so the per-status method/body rewrite rules can
+     * be pinned for the non-{@code POST} methods too — a {@code 301} or {@code 302} must leave those
+     * untouched, and a fixture that served only {@code GET}/{@code HEAD}/{@code POST} could not
+     * observe that. {@code PATCH} and {@code OPTIONS} are absent because {@link HttpMethodMapper}
+     * does not expose them; MockWebServer cannot route them at all, so no assertion here can reach
+     * them. They exercise the same branch {@code PUT} and {@code DELETE} already do.
+     *
+     * @return the methods this dispatcher serves
+     */
     @Override
     public @NonNull Set<HttpMethodMapper> supportedMethods() {
-        return Set.of(HttpMethodMapper.GET, HttpMethodMapper.HEAD, HttpMethodMapper.POST);
+        return Set.of(HttpMethodMapper.GET, HttpMethodMapper.HEAD, HttpMethodMapper.POST,
+                HttpMethodMapper.PUT, HttpMethodMapper.DELETE);
     }
 }

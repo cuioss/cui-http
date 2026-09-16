@@ -286,8 +286,8 @@ public final class HttpHandler implements AutoCloseable {
     private static final String HEADER_CONTENT_LOCATION = "Content-Location";
     private static final String HEADER_DIGEST = "Digest";
     private static final String HEADER_LAST_MODIFIED = "Last-Modified";
-    private static final String METHOD_GET = "GET";
     private static final String METHOD_HEAD = "HEAD";
+    private static final String METHOD_POST = "POST";
 
     /**
      * The representation-metadata fields dropped together with the request body when a {@code 301},
@@ -768,9 +768,12 @@ public final class HttpHandler implements AutoCloseable {
      * Rebuilds {@code request} for the next hop, applying the RFC 9110 method-and-body rules and the
      * policy's credential-forwarding verdict.
      * <p>
-     * {@code 303} always rewrites to {@code GET} and drops the body. {@code 301} and {@code 302}
-     * preserve a {@code GET} or {@code HEAD} and otherwise rewrite to {@code GET}, dropping the body.
-     * {@code 307} and {@code 308} preserve both the method and the original body publisher. Whenever
+     * {@code 301} and {@code 302} rewrite to {@code GET} and drop the body <em>only</em> when the
+     * request method is {@code POST} (RFC 9110 §15.4.2–§15.4.3, which sanction the rewrite for
+     * historical reasons but limit it to {@code POST}); every other method keeps both its method and
+     * its body. {@code 303} rewrites to {@code GET} and drops the body for every method except
+     * {@code HEAD}, which RFC 9110 §15.4.4 preserves as {@code HEAD}. {@code 307} and {@code 308}
+     * preserve both the method and the original body publisher. Whenever
      * the body is dropped, every {@linkplain #BODY_REPRESENTATION_HEADERS representation-metadata
      * header} describing it is dropped with it — not only {@code Content-Type} and
      * {@code Content-Length}, but also {@code Content-Encoding}, {@code Content-Language},
@@ -783,8 +786,10 @@ public final class HttpHandler implements AutoCloseable {
     private HttpRequest rebuildForHop(HttpRequest request, URI currentUri, URI target, int statusCode) {
         String method = request.method();
         boolean preserveMethodAndBody = statusCode == 307 || statusCode == 308;
-        boolean bodylessMethod = METHOD_GET.equals(method) || METHOD_HEAD.equals(method);
-        boolean dropBody = !preserveMethodAndBody && !(statusCode != 303 && bodylessMethod);
+        // The method rewrite and the body drop are one decision rather than two conditions that can
+        // drift apart: the body is discarded exactly when the method becomes GET.
+        boolean rewriteToGet = !preserveMethodAndBody
+                && (statusCode == 303 ? !METHOD_HEAD.equals(method) : METHOD_POST.equals(method));
 
         boolean forwardCredentials = redirectPolicy.forwardsCredentials(currentUri, target);
         BiPredicate<String, String> headerFilter = (name, value) -> {
@@ -792,11 +797,11 @@ public final class HttpHandler implements AutoCloseable {
                     && (HEADER_AUTHORIZATION.equalsIgnoreCase(name) || HEADER_COOKIE.equalsIgnoreCase(name))) {
                 return false;
             }
-            return !dropBody || !BODY_REPRESENTATION_HEADERS.contains(name);
+            return !rewriteToGet || !BODY_REPRESENTATION_HEADERS.contains(name);
         };
 
         HttpRequest.Builder builder = HttpRequest.newBuilder(request, headerFilter).uri(target);
-        if (!preserveMethodAndBody && (statusCode == 303 || !bodylessMethod)) {
+        if (rewriteToGet) {
             // GET() also clears the body publisher carried over from the original request.
             builder.GET();
         }
