@@ -143,23 +143,35 @@ import static de.cuioss.http.client.HttpLogMessages.WARN;
  * }
  * }</pre>
  *
- * <h2>Example: Token Refresh Without Cache Bloat</h2>
+ * <h2>Example: Keeping the Credential Out of the Key Text</h2>
  * <pre>{@code
- * // Mobile app with frequent token refresh - exclude Authorization from cache key
+ * // Exclude Authorization from the verbatim header section of the cache key
  * HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
  *     .httpHandler(handler)
  *     .responseConverter(userConverter)
  *     .cacheKeyHeaderFilter(CacheKeyHeaderFilter.excluding("Authorization"))
  *     .build();
  *
- * // Token refresh doesn't create duplicate cache entries
  * Map<String, String> headers1 = Map.of("Authorization", "Bearer old-token");
  * HttpResult<User> result1 = adapter.get(headers1).join();
  *
- * // After token refresh - same cache key!
+ * // A different credential is a different principal, so it resolves to an entry of its own
+ * // and fetches from the origin - the filter governs the key text, never the isolation
  * Map<String, String> headers2 = Map.of("Authorization", "Bearer new-token");
- * HttpResult<User> result2 = adapter.get(headers2).join();  // 304 Not Modified
+ * HttpResult<User> result2 = adapter.get(headers2).join();  // 200, not a cache hit
  * }</pre>
+ *
+ * <h2>Cache Entries Are Principal-Scoped</h2>
+ * <p>
+ * Every cache key carries a binding derived from the request's credential-bearing headers
+ * ({@code Authorization}, {@code Cookie}, {@code Proxy-Authorization}), and that binding is applied
+ * <strong>unconditionally</strong> — no {@link CacheKeyHeaderFilter} configuration removes it. Two
+ * callers presenting different credentials therefore never share an entry, and a request presenting
+ * none binds to a stable anonymous term of its own. The credential itself is never stored verbatim:
+ * only its SHA-256 digest reaches the key. Entries additionally expire on a configurable TTL (see
+ * {@link Builder#cacheEntryTtl(java.time.Duration)}), because an entry records what one principal
+ * was authorized to see at one moment and nothing in the cache learns of a later revocation.
+ * </p>
  *
  * <h2>Thread Safety</h2>
  * <p>
@@ -1406,14 +1418,20 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
          * Sets the cache key header filter (default: ALL).
          *
          * <p>
-         * Controls which headers are included in cache key generation.
+         * Controls which headers are reproduced verbatim in the cache key. It does <strong>not</strong>
+         * control principal isolation: the credential binding described in the class documentation is
+         * applied whatever this filter returns, so no setting here lets one principal read another's
+         * entry. Choose it on content-negotiation and key-hygiene grounds alone.
          * </p>
          *
          * <h3>Recommendations</h3>
          * <ul>
-         *   <li>Single-user apps with token refresh: Use {@link CacheKeyHeaderFilter#excluding(String...)} to exclude "Authorization"</li>
-         *   <li>Multi-user shared adapters: Use default {@link CacheKeyHeaderFilter#ALL} for security</li>
-         *   <li>Per-user adapter instances: Safe to use {@link CacheKeyHeaderFilter#NONE} for efficiency</li>
+         *   <li>Responses that vary by {@code Accept-*}: keep the default {@link CacheKeyHeaderFilter#ALL},
+         *       or {@link CacheKeyHeaderFilter#including(String...)} exactly the negotiating headers</li>
+         *   <li>Incidental per-request headers (trace ids, request ids) fragmenting the cache: use
+         *       {@link CacheKeyHeaderFilter#excluding(String...)} or {@link CacheKeyHeaderFilter#excludingPrefix(String)}</li>
+         *   <li>Responses that vary by URI alone: {@link CacheKeyHeaderFilter#NONE} gives the fewest
+         *       entries per principal</li>
          * </ul>
          *
          * @param filter Filter predicate for cache key header inclusion
