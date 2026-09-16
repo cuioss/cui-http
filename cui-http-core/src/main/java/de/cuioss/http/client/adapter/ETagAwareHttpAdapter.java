@@ -206,6 +206,21 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
 
     private static final CuiLogger LOGGER = new CuiLogger(ETagAwareHttpAdapter.class);
 
+    /**
+     * Headers whose presence identifies the requesting principal. Matched case-insensitively and
+     * evaluated in this order, so the derived binding is stable across header-map iteration order.
+     */
+    private static final List<String> CREDENTIAL_HEADERS = List.of("authorization", "cookie", "proxy-authorization");
+
+    /** Binding used for a request that presents no credential material at all. */
+    private static final String ANONYMOUS_PRINCIPAL = "anonymous";
+
+    /**
+     * Separates the header section of a cache key from the trailing principal term. Doubled
+     * deliberately: an escaped header token can never contain two consecutive raw {@code |}.
+     */
+    private static final String PRINCIPAL_SEPARATOR = "||principal:";
+
     private final HttpHandler httpHandler;
     private final HttpResponseConverter<T> responseConverter;
     @Nullable
@@ -705,23 +720,27 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
     }
 
     /**
-     * Generates cache key from URI and filtered headers.
+     * Generates cache key from URI, filtered headers and the requesting principal.
      *
      * <p>
-     * Cache key format: URI + sorted headers (filtered by predicate)
+     * Cache key format: URI + sorted headers (filtered by predicate) + principal binding
      * </p>
      *
      * <h3>Example Cache Keys</h3>
      * <pre>{@code
      * // With ALL filter:
-     * "https://api.example.com/users|Accept:application/json|Authorization:Bearer token123"
+     * "https://api.example.com/users|accept:application/json|authorization:Bearer token123||principal:authorization=Bearer token123"
      *
      * // With NONE filter (URI only):
-     * "https://api.example.com/users"
+     * "https://api.example.com/users||principal:anonymous"
      *
      * // With excluding("Authorization"):
-     * "https://api.example.com/users|Accept:application/json"
+     * "https://api.example.com/users|accept:application/json||principal:authorization=Bearer token123"
      * }</pre>
+     *
+     * <p>The trailing principal term is <strong>unconditional</strong>: the filter governs which
+     * headers appear verbatim in the key, never whether the requesting principal is bound to the
+     * entry. See {@link #principalBinding(Map)}.</p>
      *
      * @param uri Request URI
      * @param headers HTTP headers
@@ -750,7 +769,50 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             keyBuilder.append(escapeCacheKeyToken(entry.getValue()));
         }
 
+        // Bind the entry to the principal that produced it. The doubled delimiter cannot be forged
+        // from a header: escapeCacheKeyToken turns every literal '|' inside a name or value into
+        // "\|", so two consecutive raw pipes never occur in the header section above. A header
+        // literally named "principal" therefore cannot impersonate this term.
+        keyBuilder.append(PRINCIPAL_SEPARATOR);
+        keyBuilder.append(escapeCacheKeyToken(principalBinding(headers)));
+
         return keyBuilder.toString();
+    }
+
+    /**
+     * Derives the principal-binding term for a request from its credential-bearing headers.
+     *
+     * <p>The term is computed <strong>unconditionally</strong>, independently of the configured
+     * {@link CacheKeyHeaderFilter}. The filter decides which headers are reproduced verbatim in the
+     * key — a legitimate bandwidth choice, since a token that is refreshed for the <em>same</em>
+     * principal should not fragment the cache — but it must never decide whether two
+     * <em>different</em> principals share an entry. Letting it do so is what allowed the documented
+     * {@code excluding("Authorization")} configuration to serve one caller's representation to
+     * another.</p>
+     *
+     * <p>Every header in {@link #CREDENTIAL_HEADERS} is matched case-insensitively and contributes
+     * its value in a fixed order, so two requests bind identically exactly when they present the
+     * same credential material. A request carrying none of them binds to the stable
+     * {@link #ANONYMOUS_PRINCIPAL} term rather than to the empty string, which keeps anonymous
+     * entries in a namespace of their own instead of colliding with credentialed ones.</p>
+     *
+     * @param headers the caller-supplied headers for this request
+     * @return the principal term, never empty
+     */
+    private static String principalBinding(Map<String, String> headers) {
+        StringBuilder binding = new StringBuilder();
+        for (String credentialHeader : CREDENTIAL_HEADERS) {
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                if (credentialHeader.equalsIgnoreCase(entry.getKey())) {
+                    if (!binding.isEmpty()) {
+                        binding.append('&');
+                    }
+                    binding.append(credentialHeader).append('=').append(entry.getValue());
+                }
+            }
+        }
+
+        return binding.isEmpty() ? ANONYMOUS_PRINCIPAL : binding.toString();
     }
 
     /**

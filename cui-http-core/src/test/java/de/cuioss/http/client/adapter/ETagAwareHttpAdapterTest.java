@@ -45,6 +45,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -1028,6 +1029,171 @@ class ETagAwareHttpAdapterTest {
                     .add("ETag", ETAG)
                     .add("Content-Type", "application/json")
                     .build(), PRINCIPAL_A_BODY));
+        }
+
+        @Override
+        public String getBaseUrl() {
+            return BASE_PATH;
+        }
+
+        @Override
+        public @NonNull Set<HttpMethodMapper> supportedMethods() {
+            return Set.of(HttpMethodMapper.GET);
+        }
+    }
+
+    // === Principal-Binding Tests ===
+
+    /**
+     * Pins the rule that a cache entry belongs to the credential material that produced it.
+     *
+     * <p>The adapter is built with {@code excluding("Authorization")} — the configuration under which
+     * the credential never appears verbatim in the key. The binding term must still separate the two
+     * principals, so B performs its own origin fetch instead of revalidating A's entry. The
+     * same-principal control is what keeps the rule from degrading into "never cache".</p>
+     */
+    @Nested
+    @EnableMockWebServer(useHttps = false)
+    @DisplayName("Cache entries are bound to the credential material that produced them")
+    class PrincipalBinding {
+
+        public ModuleDispatcherElement getModuleDispatcher() {
+            return new PerPrincipalDispatcher();
+        }
+
+        @Test
+        @DisplayName("A second principal should fetch from origin rather than revalidate the first principal's entry")
+        @ModuleDispatcher
+        void secondPrincipalShouldNotReuseFirstPrincipalsEntry(URIBuilder uriBuilder) {
+            PerPrincipalDispatcher.reset();
+            HttpAdapter<String> adapter = tokenRefreshAdapter(uriBuilder);
+
+            HttpResult<String> asA = adapter.get(PerPrincipalDispatcher.headersFor(PerPrincipalDispatcher.TOKEN_A)).join();
+            assertAll("Principal A populates the cache",
+                    () -> assertTrue(asA.isSuccess(), "A's GET should succeed"),
+                    () -> assertEquals(PerPrincipalDispatcher.bodyFor(PerPrincipalDispatcher.TOKEN_A),
+                            asA.getContent().orElse(null), "A should receive A's representation"));
+
+            HttpResult<String> asB = adapter.get(PerPrincipalDispatcher.headersFor(PerPrincipalDispatcher.TOKEN_B)).join();
+
+            assertAll("Principal B requests the same URI",
+                    () -> assertTrue(asB.isSuccess(), "B's GET should succeed"),
+                    () -> assertEquals(Optional.of(200), asB.getHttpStatus(),
+                            "B has no entry of its own, so this is a full origin fetch"),
+                    () -> assertEquals(PerPrincipalDispatcher.bodyFor(PerPrincipalDispatcher.TOKEN_B),
+                            asB.getContent().orElse(null), "B should receive B's own representation"),
+                    () -> assertEquals("", PerPrincipalDispatcher.ifNoneMatchSeenFor(PerPrincipalDispatcher.TOKEN_B),
+                            "B's request must carry no conditional validator at all"),
+                    () -> assertNotEquals(PerPrincipalDispatcher.etagFor(PerPrincipalDispatcher.TOKEN_A),
+                            PerPrincipalDispatcher.ifNoneMatchSeenFor(PerPrincipalDispatcher.TOKEN_B),
+                            "A's validator must never appear on B's request"));
+        }
+
+        /**
+         * The control against over-correction: binding to the credential must not stop the same
+         * principal from reusing its own entry, or the cache would have been disabled rather than
+         * scoped.
+         */
+        @Test
+        @DisplayName("The same principal should still revalidate against its own cached entry")
+        @ModuleDispatcher
+        void samePrincipalShouldStillHitTheCache(URIBuilder uriBuilder) {
+            PerPrincipalDispatcher.reset();
+            HttpAdapter<String> adapter = tokenRefreshAdapter(uriBuilder);
+            Map<String, String> headers = PerPrincipalDispatcher.headersFor(PerPrincipalDispatcher.TOKEN_A);
+
+            assertTrue(adapter.get(headers).join().isSuccess(), "The first GET should populate the cache");
+
+            HttpResult<String> revalidated = adapter.get(headers).join();
+
+            assertAll("Principal A repeats its own request",
+                    () -> assertTrue(revalidated.isSuccess(), "The revalidation should succeed"),
+                    () -> assertEquals(Optional.of(304), revalidated.getHttpStatus(),
+                            "A's own entry should still be revalidated, not re-fetched"),
+                    () -> assertEquals(PerPrincipalDispatcher.etagFor(PerPrincipalDispatcher.TOKEN_A),
+                            PerPrincipalDispatcher.ifNoneMatchSeenFor(PerPrincipalDispatcher.TOKEN_A),
+                            "A's own validator should be sent back to the origin"),
+                    () -> assertEquals(PerPrincipalDispatcher.bodyFor(PerPrincipalDispatcher.TOKEN_A),
+                            revalidated.getContent().orElse(null), "The cached body resolves the 304"));
+        }
+
+        /**
+         * Builds the adapter over the token-refresh filter: the credential is deliberately kept out
+         * of the verbatim header section, which is exactly the configuration the principal binding
+         * has to hold on its own.
+         */
+        private HttpAdapter<String> tokenRefreshAdapter(URIBuilder uriBuilder) {
+            String serverUrl = uriBuilder.addPathSegments("per-principal", "resource").build().toString();
+            HttpHandler serverHandler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
+
+            return ETagAwareHttpAdapter.<String>builder()
+                    .httpHandler(serverHandler)
+                    .responseConverter(new TestResponseConverter())
+                    .cacheKeyHeaderFilter(CacheKeyHeaderFilter.excluding("Authorization"))
+                    .build();
+        }
+    }
+
+    /**
+     * Serves a per-principal representation and records the {@code If-None-Match} each principal's
+     * request carried, so "did this request revalidate, and against whose validator" is observable
+     * on the wire rather than inferred from the result.
+     *
+     * <p>The record is static because the dispatcher resolver serves requests from its own instance
+     * rather than the one the test handed it.</p>
+     */
+    static final class PerPrincipalDispatcher implements ModuleDispatcherElement {
+
+        static final String BASE_PATH = "/per-principal";
+        static final String PATH = BASE_PATH + "/resource";
+        static final String TOKEN_A = "Bearer token-principal-a";
+        static final String TOKEN_B = "Bearer token-principal-b";
+
+        private static final String ANONYMOUS = "anonymous";
+        private static final Map<String, String> IF_NONE_MATCH_BY_PRINCIPAL = new ConcurrentHashMap<>();
+
+        static void reset() {
+            IF_NONE_MATCH_BY_PRINCIPAL.clear();
+        }
+
+        static Map<String, String> headersFor(String token) {
+            return Map.of("Authorization", token);
+        }
+
+        static String bodyFor(String token) {
+            return "{\"owner\":\"%s\"}".formatted(token);
+        }
+
+        static String etagFor(String token) {
+            return "\"etag-%s\"".formatted(token);
+        }
+
+        /**
+         * The {@code If-None-Match} the named principal's most recent request carried, or the empty
+         * string when it carried none. Never null, so a caller cannot read "no conditional header"
+         * as "this principal never requested".
+         */
+        static String ifNoneMatchSeenFor(String token) {
+            return IF_NONE_MATCH_BY_PRINCIPAL.getOrDefault(token, "");
+        }
+
+        @Override
+        public Optional<MockResponse> handleGet(@NonNull RecordedRequest request) {
+            if (!PATH.equals(request.getUrl().encodedPath())) {
+                return Optional.empty();
+            }
+            String principal = Optional.ofNullable(request.getHeaders().get("Authorization")).orElse(ANONYMOUS);
+            String ifNoneMatch = Optional.ofNullable(request.getHeaders().get("If-None-Match")).orElse("");
+            IF_NONE_MATCH_BY_PRINCIPAL.put(principal, ifNoneMatch);
+
+            String etag = etagFor(principal);
+            if (etag.equals(ifNoneMatch)) {
+                return Optional.of(new MockResponse(304, new Headers.Builder().add("ETag", etag).build(), ""));
+            }
+            return Optional.of(new MockResponse(200, new Headers.Builder()
+                    .add("ETag", etag)
+                    .add("Content-Type", "application/json")
+                    .build(), bodyFor(principal)));
         }
 
         @Override
