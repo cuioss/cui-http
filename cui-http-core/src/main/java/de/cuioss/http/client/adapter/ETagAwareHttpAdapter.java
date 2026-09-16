@@ -50,7 +50,7 @@ import static de.cuioss.http.client.HttpLogMessages.WARN;
  * Implements RFC 7232 conditional requests using ETags:
  * </p>
  * <ul>
- *   <li>GET requests with cached responses send If-None-Match header</li>
+ *   <li>GET and HEAD requests that resolve a cached entry send an If-None-Match header</li>
  *   <li>Server responds with 304 Not Modified if content unchanged</li>
  *   <li>Only GET responses are cached (POST/PUT/DELETE never cached)</li>
  *   <li>ETags extracted from all responses for optimistic locking patterns</li>
@@ -74,14 +74,14 @@ import static de.cuioss.http.client.HttpLogMessages.WARN;
  * </ul>
  *
  * <p><strong>Do not supply your own {@code If-None-Match} header.</strong> The adapter manages
- * conditional GETs itself: when it holds a cached entry for a GET it sets {@code If-None-Match} to
- * the cached ETag, replacing (not appending to) any caller-supplied value. A caller-driven
- * conditional request is therefore only partially honored. Because caller headers are applied to
- * <em>every</em> method, a caller-supplied {@code If-None-Match} is also the only way a non-GET
- * request can draw a {@code 304} at all — which then resolves per the table above rather than as a
- * success. On a caching-disabled adapter a caller-triggered {@code 304} has no cached entry to
- * return and is reported as an {@code INVALID_CONTENT} failure. Let the adapter drive revalidation
- * instead.</p>
+ * conditional requests itself: whenever it resolves a cached entry — for a GET or a HEAD, the two
+ * methods that read the cache — it sets {@code If-None-Match} to the cached ETag, replacing (not
+ * appending to) any caller-supplied value. A caller-driven conditional request is therefore only
+ * partially honored. Because caller headers are applied to <em>every</em> method, a caller-supplied
+ * {@code If-None-Match} is the only way a POST/PUT/PATCH/DELETE/OPTIONS request can draw a
+ * {@code 304} at all — which then resolves per the table above rather than as a success. On a
+ * caching-disabled adapter a caller-triggered {@code 304} has no cached entry to return and is
+ * reported as an {@code INVALID_CONTENT} failure. Let the adapter drive revalidation instead.</p>
  *
  * <h3>ETag caching is optional</h3>
  * <p>
@@ -571,7 +571,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      * </p>
      * <ol>
      *   <li>Retrieve cache entry BEFORE building request (local reference held)</li>
-     *   <li>Add If-None-Match header if cache entry exists (GET only)</li>
+     *   <li>Add If-None-Match header if a cache entry was resolved (GET and HEAD)</li>
      *   <li>Execute request asynchronously via the handler's redirect-following send</li>
      *   <li>Route every 304 through {@link #handleNotModified}, which resolves it against the
      *       cached entry when one is held and reports the RFC 7232 violation when none is</li>
@@ -649,12 +649,17 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             // Add custom headers
             headers.forEach(requestBuilder::header);
 
-            // Add If-None-Match header if cached entry exists (GET only). Uses setHeader (replace),
-            // not header (append), so the adapter's conditional validator wins over any caller-
-            // supplied If-None-Match instead of sending two conflicting values.
-            if (cachedEntry != null && method == HttpMethod.GET) {
+            // Add If-None-Match header if a cached entry was resolved. The gate is canReadCache, the
+            // same predicate that decided whether an entry could be looked up at all: a method that
+            // holds an entry is exactly the method entitled to revalidate against it, and a HEAD
+            // that resolved one but sent no validator would be asking the origin for an
+            // unconditional response while still standing ready to interpret a 304. Uses setHeader
+            // (replace), not header (append), so the adapter's conditional validator wins over any
+            // caller-supplied If-None-Match instead of sending two conflicting values.
+            if (cachedEntry != null && canReadCache(method)) {
                 requestBuilder.setHeader("If-None-Match", cachedEntry.etag());
-                LOGGER.debug("Adding If-None-Match header for GET request: %s", cachedEntry.etag());
+                LOGGER.debug("Adding If-None-Match header for %s request: %s",
+                        method.methodName(), cachedEntry.etag());
             }
 
             HttpRequest request = requestBuilder.build();
@@ -1144,6 +1149,14 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      * <p>GET populates and reads the cache; HEAD reads it so a conditional HEAD answered with
      * {@code 304} can be resolved against the stored validator (see {@link #handleNotModified}).
      * No other method touches it.</p>
+     *
+     * <p>This predicate governs <strong>both halves</strong> of a cache read, and deliberately the
+     * same halves for both methods: whether an entry is looked up at all
+     * ({@link #prepareCacheContext}), and whether the resolved entry's validator is sent back to the
+     * origin as {@code If-None-Match} ({@link #buildAndExecute}). The two must agree. A method
+     * allowed to resolve an entry but not to send its validator would ask for an unconditional
+     * response while still standing ready to interpret a {@code 304} — it would be relying on a
+     * caller-supplied conditional header, or on nothing at all.</p>
      *
      * <p><strong>Do not narrow this to GET.</strong> Dropping HEAD would leave a conditional HEAD
      * with no cached entry, silently turning its {@code 304} into a plain failure and deleting the

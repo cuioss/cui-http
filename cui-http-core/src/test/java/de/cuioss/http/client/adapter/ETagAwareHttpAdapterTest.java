@@ -1043,6 +1043,134 @@ class ETagAwareHttpAdapterTest {
         }
     }
 
+    // === Conditional HEAD Tests ===
+
+    /**
+     * HEAD reads the cache so that a {@code 304} can be resolved against the stored validator. That
+     * entitlement only makes sense if the HEAD actually asks conditionally, so the validator has to
+     * reach the wire — otherwise the adapter would be interpreting a {@code 304} it never invited.
+     */
+    @Nested
+    @EnableMockWebServer(useHttps = false)
+    @DisplayName("HEAD revalidates conditionally against its cached entry")
+    class ConditionalHead {
+
+        public ModuleDispatcherElement getModuleDispatcher() {
+            return new HeadRevalidationDispatcher();
+        }
+
+        @Test
+        @DisplayName("A HEAD holding a cached entry should send If-None-Match")
+        @ModuleDispatcher
+        void headWithCachedEntryShouldSendIfNoneMatch(URIBuilder uriBuilder) {
+            HeadRevalidationDispatcher.reset();
+            HttpAdapter<String> adapter = adapterFor(uriBuilder);
+            assertTrue(adapter.get().join().isSuccess(), "The seeding GET should populate the cache");
+
+            adapter.head().join();
+
+            assertEquals(HeadRevalidationDispatcher.ETAG, HeadRevalidationDispatcher.ifNoneMatchSeenOnHead(),
+                    "The cached validator must accompany the HEAD that resolved it");
+        }
+
+        /**
+         * The preservation control: making the HEAD conditional must not change what a {@code 304}
+         * to a HEAD yields — status and validator, and no body, because a HEAD response has none.
+         */
+        @Test
+        @DisplayName("A 304 to HEAD should still report status and ETag without a body")
+        @ModuleDispatcher
+        void head304ShouldStillReportStatusAndETagWithoutBody(URIBuilder uriBuilder) {
+            HeadRevalidationDispatcher.reset();
+            HttpAdapter<String> adapter = adapterFor(uriBuilder);
+            assertTrue(adapter.get().join().isSuccess(), "The seeding GET should populate the cache");
+
+            HttpResult<String> revalidated = adapter.head().join();
+
+            assertAll("HEAD answered with 304",
+                    () -> assertTrue(revalidated.isSuccess(), "A 304 to HEAD is a valid revalidation"),
+                    () -> assertEquals(Optional.of(304), revalidated.getHttpStatus(), "Status should be reported as 304"),
+                    () -> assertEquals(HeadRevalidationDispatcher.ETAG, revalidated.getETag().orElse(null),
+                            "The validator should be reported"),
+                    () -> assertTrue(revalidated.getContent().isEmpty(), "A HEAD response carries no body"));
+        }
+
+        private HttpAdapter<String> adapterFor(URIBuilder uriBuilder) {
+            String serverUrl = uriBuilder.addPathSegments("conditional-head", "resource").build().toString();
+            HttpHandler serverHandler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
+
+            return ETagAwareHttpAdapter.<String>builder()
+                    .httpHandler(serverHandler)
+                    .responseConverter(new TestResponseConverter())
+                    .build();
+        }
+    }
+
+    /**
+     * Serves a validator-bearing representation to GET and answers a conditional HEAD with
+     * {@code 304}, recording what the HEAD asked with. The record is the observable for "the HEAD
+     * revalidated" — a result-only assertion could not distinguish a conditional request from an
+     * unconditional one the server happened to answer with a 304.
+     */
+    static final class HeadRevalidationDispatcher implements ModuleDispatcherElement {
+
+        static final String BASE_PATH = "/conditional-head";
+        static final String PATH = BASE_PATH + "/resource";
+        static final String BODY = "{\"id\":1,\"name\":\"head-revalidation\"}";
+        static final String ETAG = "\"etag-head-revalidation\"";
+
+        private static final Map<String, String> IF_NONE_MATCH_BY_METHOD = new ConcurrentHashMap<>();
+
+        static void reset() {
+            IF_NONE_MATCH_BY_METHOD.clear();
+        }
+
+        /**
+         * What the most recent HEAD carried as {@code If-None-Match}, or the empty string when it
+         * carried none. Never null, so "no validator sent" is not confused with "no HEAD issued".
+         */
+        static String ifNoneMatchSeenOnHead() {
+            return IF_NONE_MATCH_BY_METHOD.getOrDefault("HEAD", "");
+        }
+
+        @Override
+        public Optional<MockResponse> handleGet(@NonNull RecordedRequest request) {
+            return respond(request, "GET", BODY);
+        }
+
+        @Override
+        public Optional<MockResponse> handleHead(@NonNull RecordedRequest request) {
+            return respond(request, "HEAD", "");
+        }
+
+        private Optional<MockResponse> respond(RecordedRequest request, String method, String body) {
+            if (!PATH.equals(request.getUrl().encodedPath())) {
+                return Optional.empty();
+            }
+            String ifNoneMatch = Optional.ofNullable(request.getHeaders().get("If-None-Match")).orElse("");
+            IF_NONE_MATCH_BY_METHOD.put(method, ifNoneMatch);
+
+            Headers headers = new Headers.Builder()
+                    .add("ETag", ETAG)
+                    .add("Content-Type", "application/json")
+                    .build();
+            if (ETAG.equals(ifNoneMatch)) {
+                return Optional.of(new MockResponse(304, headers, ""));
+            }
+            return Optional.of(new MockResponse(200, headers, body));
+        }
+
+        @Override
+        public String getBaseUrl() {
+            return BASE_PATH;
+        }
+
+        @Override
+        public @NonNull Set<HttpMethodMapper> supportedMethods() {
+            return Set.of(HttpMethodMapper.GET, HttpMethodMapper.HEAD);
+        }
+    }
+
     // === Credential-Digest and TTL Tests ===
 
     /**
