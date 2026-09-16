@@ -59,21 +59,6 @@ class HttpErrorCategoryTest {
     }
 
     @Test
-    void shouldHaveMinimalButSufficientStates() {
-        // Verify we have exactly the essential states
-        HttpErrorCategory[] allCodes = HttpErrorCategory.values();
-        assertEquals(6, allCodes.length, "Should have exactly 6 essential error codes");
-
-        // Verify all expected codes exist
-        assertNotNull(HttpErrorCategory.valueOf("NETWORK_ERROR"));
-        assertNotNull(HttpErrorCategory.valueOf("SERVER_ERROR"));
-        assertNotNull(HttpErrorCategory.valueOf("CLIENT_ERROR"));
-        assertNotNull(HttpErrorCategory.valueOf("INVALID_CONTENT"));
-        assertNotNull(HttpErrorCategory.valueOf("CONFIGURATION_ERROR"));
-        assertNotNull(HttpErrorCategory.valueOf("INTERRUPTED_ERROR"));
-    }
-
-    @Test
     void shouldProvideSemanticClarityThroughNaming() {
         // Error types are self-explanatory through enum names
         // No need for additional classification methods

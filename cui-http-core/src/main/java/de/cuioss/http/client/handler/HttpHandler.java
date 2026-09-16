@@ -498,6 +498,13 @@ public final class HttpHandler implements AutoCloseable {
      * tripping the mutual-exclusion rejection. A context that genuinely came from the caller is
      * re-injected through {@link HttpHandlerBuilder#sslContext(SSLContext)} and keeps that
      * provenance.</p>
+     * <p>The handler's resolved TLS-floor provider is carried over the same way, through the
+     * package-private {@link HttpHandlerBuilder#derivedTlsVersions(SecureSSLContextProvider)} seam:
+     * a handler always holds a provider (defaulted when the caller set none), so re-injecting it
+     * through the public {@link HttpHandlerBuilder#tlsVersions(SecureSSLContextProvider)} would make
+     * every round-tripped builder look as if the caller had configured a TLS floor, and
+     * {@code asBuilder().url("http://...").build()} would be rejected for a setting the caller never
+     * made.</p>
      * <p>The re-injected derived context also carries whether it is <em>hostname-relaxed</em> — i.e.
      * whether this handler itself was built with {@code verifyHostname(false)}. {@link
      * HttpHandlerBuilder#build()} consults that flag to refuse silently reusing a relaxed context for
@@ -510,7 +517,7 @@ public final class HttpHandler implements AutoCloseable {
         HttpHandlerBuilder handlerBuilder = builder()
                 .connectionTimeoutSeconds(connectionTimeoutSeconds)
                 .readTimeoutSeconds(readTimeoutSeconds)
-                .tlsVersions(secureSSLContextProvider)
+                .derivedTlsVersions(secureSSLContextProvider)
                 .allowInsecureHttp(allowInsecureHttp)
                 .verifyHostname(verifyHostname)
                 .redirectPolicy(redirectPolicy);
@@ -915,6 +922,10 @@ public final class HttpHandler implements AutoCloseable {
         private boolean allowInsecureHttp = false;
         private boolean verifyHostname = true;
         private boolean sslContextCallerSupplied = false;
+        // True when the current secureSSLContextProvider was handed in through the public
+        // tlsVersions(...) setter rather than re-injected by asBuilder(). build() rejects that
+        // provenance on a cleartext http URI, exactly as it does for a caller-supplied sslContext.
+        private boolean secureSSLContextProviderCallerSupplied = false;
         private @Nullable RedirectPolicy redirectPolicy;
         // True when the current (derived, non-caller-supplied) sslContext was produced by
         // createHostnameRelaxedSSLContext() on the handler asBuilder() cloned this builder from.
@@ -1065,11 +1076,37 @@ public final class HttpHandler implements AutoCloseable {
 
         /**
          * Sets the TLS versions configuration.
+         * <p>
+         * Passing a non-null provider marks it as <em>caller-supplied</em>, which is mutually
+         * exclusive with a cleartext {@code http://} URI and makes {@link #build()} reject that
+         * combination: a cleartext handler establishes no TLS connection, so a TLS floor has
+         * nothing to act on. Passing {@code null} clears both the provider and the caller-supplied
+         * claim.
+         * </p>
          *
          * @param secureSSLContextProvider The TLS versions configuration to use.
          * @return This builder instance.
          */
         public HttpHandlerBuilder tlsVersions(@Nullable SecureSSLContextProvider secureSSLContextProvider) {
+            this.secureSSLContextProvider = secureSSLContextProvider;
+            this.secureSSLContextProviderCallerSupplied = secureSSLContextProvider != null;
+            return this;
+        }
+
+        /**
+         * Re-injects an already-resolved TLS-floor provider without marking it caller-supplied.
+         * <p>
+         * This seam exists for {@link HttpHandler#asBuilder()}: the provider it carries over was
+         * <em>resolved</em> by {@link HttpHandler} itself (a handler always holds one, defaulted
+         * when the caller set none), not handed in by the caller, so it must not assert the
+         * caller-supplied provenance that a cleartext {@code http://} URI is rejected against. It is
+         * otherwise identical to {@link #tlsVersions(SecureSSLContextProvider)}.
+         * </p>
+         *
+         * @param secureSSLContextProvider The already-resolved TLS-floor provider to carry over.
+         * @return This builder instance.
+         */
+        HttpHandlerBuilder derivedTlsVersions(@Nullable SecureSSLContextProvider secureSSLContextProvider) {
             this.secureSSLContextProvider = secureSSLContextProvider;
             return this;
         }
@@ -1301,8 +1338,9 @@ public final class HttpHandler implements AutoCloseable {
          * @param resolvedRedirectPolicy        the resolved redirect policy
          * @return the constructed cleartext handler
          * @throws IllegalArgumentException if cleartext HTTP was not opted into, or if the URI is
-         *                                  combined with a caller-supplied {@link SSLContext} or
-         *                                  {@code verifyHostname(false)}
+         *                                  combined with a caller-supplied {@link SSLContext},
+         *                                  {@code verifyHostname(false)}, or a caller-supplied
+         *                                  {@link SecureSSLContextProvider}
          */
         private HttpHandler buildCleartextHandler(URI resolvedUri, URL verifiedUrl, int actualConnectionTimeoutSeconds,
                 int actualReadTimeoutSeconds, RedirectPolicy resolvedRedirectPolicy) {
@@ -1325,6 +1363,11 @@ public final class HttpHandler implements AutoCloseable {
                 throw new IllegalArgumentException("verifyHostname(false) cannot be combined with the cleartext "
                         + "http URI " + resolvedUri + "; an http handler performs no TLS hostname verification, so "
                         + "there is nothing to relax. Either use an https:// URI or keep verifyHostname(true).");
+            }
+            if (secureSSLContextProviderCallerSupplied) {
+                throw new IllegalArgumentException("tlsVersions(...) cannot be combined with the cleartext http URI "
+                        + resolvedUri + "; an http handler establishes no TLS connection, so the supplied TLS floor "
+                        + "would never be used. Either use an https:// URI or drop the tlsVersions(...).");
             }
             LOGGER.warn(HttpLogMessages.WARN.INSECURE_HTTP_CONNECTION, resolvedUri);
             // For HTTP, no SSL context needed

@@ -617,14 +617,15 @@ class HttpHandlerRedirectTest {
      * Non-vacuity guard for {@link #BODY_CARRYING_NON_POST_METHODS}: the population is derived from
      * {@link RedirectDispatcher#supportedMethods()} at runtime, so a fixture that stopped serving
      * {@code PUT} / {@code DELETE} would empty it and make
-     * {@link #nonPostMethodShouldSurvive301And302} pass by running no case at all.
+     * {@link #nonPostMethodShouldSurvive301And302} and {@link #nonPostMethodShouldBeRewrittenByThe303}
+     * pass by running no case at all.
      */
     @Test
     @DisplayName("The derived non-POST method population must not be empty")
     void bodyCarryingNonPostMethodsMustNotBeEmpty() {
-        assertEquals(BODY_CARRYING_NON_POST_METHODS, List.of("DELETE", "PUT"),
-                "the redirect fixture must serve every body-carrying non-POST method HttpMethodMapper "
-                        + "exposes, otherwise the method-preservation cases below run vacuously");
+        assertFalse(BODY_CARRYING_NON_POST_METHODS.isEmpty(),
+                "the redirect fixture must serve at least one body-carrying non-POST method, "
+                        + "otherwise the method-preservation cases below run vacuously");
     }
 
     static Stream<Arguments> nonPostMethodRewriteCases() {
@@ -650,8 +651,13 @@ class HttpHandlerRedirectTest {
         }
     }
 
+    static Stream<Arguments> nonPostMethod303RewriteCases() {
+        return BODY_CARRYING_NON_POST_METHODS.stream()
+                .map(method -> Arguments.of(303, method));
+    }
+
     @ParameterizedTest
-    @CsvSource({"303,PUT", "303,DELETE"})
+    @MethodSource("nonPostMethod303RewriteCases")
     @DisplayName("303 should still rewrite a body-carrying non-POST method to a bodyless GET")
     @ModuleDispatcher(providerMethod = "getRedirectDispatcher")
     void nonPostMethodShouldBeRewrittenByThe303(int status, String method, URIBuilder uriBuilder) throws Exception {

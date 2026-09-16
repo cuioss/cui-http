@@ -68,7 +68,7 @@ class HttpHandlerTest {
 
         @Test
         @DisplayName("Should reject a caller-supplied sslContext on a cleartext http URI")
-        void shouldRejectCallerSuppliedSslContextOnCleartextHttp() throws Exception {
+        void shouldRejectCallerSuppliedSslContextOnCleartextHttp() {
             SSLContext callerContext = new SecureSSLContextProvider().getOrCreateSecureSSLContext(null);
             HttpHandler.HttpHandlerBuilder builder = HttpHandler.builder()
                     .url(CLEARTEXT_URL)
@@ -95,8 +95,43 @@ class HttpHandlerTest {
                     "the rejection must name the conflicting setting, but was: " + rejected.getMessage());
         }
 
+        @Test
+        @DisplayName("Should reject a caller-supplied tlsVersions provider on a cleartext http URI")
+        void shouldRejectCallerSuppliedTlsVersionsOnCleartextHttp() {
+            HttpHandler.HttpHandlerBuilder builder = HttpHandler.builder()
+                    .url(CLEARTEXT_URL)
+                    .allowInsecureHttp(true)
+                    .tlsVersions(new SecureSSLContextProvider());
+
+            IllegalArgumentException rejected = assertThrows(IllegalArgumentException.class, builder::build);
+
+            assertTrue(rejected.getMessage().contains("tlsVersions"),
+                    "the rejection must name the conflicting setting, but was: " + rejected.getMessage());
+        }
+
         /**
-         * Positive control: cleartext with no TLS-shaped configuration still builds, so the two
+         * A handler's own resolved TLS-floor provider is re-injected through the derived seam, so a
+         * round-tripped builder must not be rejected for a {@code tlsVersions(...)} the caller never
+         * set.
+         */
+        @Test
+        @DisplayName("Should still build a cleartext handler from an https handler's asBuilder round-trip")
+        void shouldBuildCleartextHandlerFromRoundTrippedBuilder() {
+            HttpHandler httpsHandler = HttpHandler.builder()
+                    .url(VALID_URL)
+                    .tlsVersions(new SecureSSLContextProvider())
+                    .build();
+
+            HttpHandler cleartextHandler = httpsHandler.asBuilder()
+                    .url(CLEARTEXT_URL)
+                    .allowInsecureHttp(true)
+                    .build();
+
+            assertNotNull(cleartextHandler, "the round-tripped cleartext handler must build");
+        }
+
+        /**
+         * Positive control: cleartext with no TLS-shaped configuration still builds, so the three
          * rejections above are attributable to those settings rather than to the http scheme.
          */
         @Test

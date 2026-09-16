@@ -723,9 +723,12 @@ class ETagAwareHttpAdapterTest {
      * Pins the rule that cached content is fallback for an <em>availability</em> failure only.
      *
      * <p>The adapter under test is configured with the documented token-refresh filter
-     * ({@code excluding("Authorization")}), which is exactly the configuration under which two
-     * principals share one cache key. Principal A seeds the cache with a distinctive body; principal
-     * B then draws a 4xx on the same URI and must receive nothing of A's — neither the body nor the
+     * ({@code excluding("Authorization")}), which keeps the credential out of the verbatim header
+     * section of the cache key. It does <em>not</em> make two principals share an entry — the
+     * principal binding term is appended unconditionally and always separates them (see
+     * {@link ETagAwareHttpAdapter#generateCacheKey}). The principal therefore seeds the cache with a
+     * distinctive body and then draws a 4xx on the same URI, against a cache entry that genuinely
+     * exists: it must receive nothing of the cached representation — neither the body nor the
      * validator. A {@code 5xx} keeps serving the cached body, which is the control that proves the
      * narrowing is to the status class and not a blanket removal of fallback content.</p>
      */
@@ -739,15 +742,19 @@ class ETagAwareHttpAdapterTest {
         }
 
         /**
-         * The centrepiece: a 4xx is a statement about <em>this</em> request, so the previous
-         * principal's cached representation must not answer it. 403 is the case that motivated the
-         * change; 401 and 404 are the same rule on the same path.
+         * The centrepiece: a 4xx is a statement about <em>this</em> request, so a cached
+         * representation must not answer it. 403 is the case that motivated the change; 401 and 404
+         * are the same rule on the same path.
+         *
+         * <p>The seeding GET and the failing GET run under the <em>same</em> principal on purpose:
+         * the principal binding term always separates two principals, so a cross-principal probe
+         * would find no entry at all and would pass even if the 4xx guard were removed.</p>
          */
         @ParameterizedTest(name = "HTTP {0}")
         @ValueSource(ints = {401, 403, 404})
-        @DisplayName("A 4xx for a second principal should surface no cached content or validator")
+        @DisplayName("A 4xx should surface no cached content or validator")
         @ModuleDispatcher
-        void clientErrorShouldNotServeAnotherPrincipalsCachedContent(int status, URIBuilder uriBuilder) {
+        void clientErrorShouldNotServeCachedContent(int status, URIBuilder uriBuilder) {
             PrincipalIsolationDispatcher.reset();
             HttpAdapter<String> adapter = sharedKeyAdapter(uriBuilder);
 
@@ -758,16 +765,16 @@ class ETagAwareHttpAdapterTest {
                             "The seeding GET should return A's representation"));
 
             PrincipalIsolationDispatcher.failWith(status);
-            HttpResult<String> denied = adapter.get(PrincipalIsolationDispatcher.PRINCIPAL_B_HEADERS).join();
+            HttpResult<String> denied = adapter.get(PrincipalIsolationDispatcher.PRINCIPAL_A_HEADERS).join();
 
-            assertAll("Principal B answered with %d".formatted(status),
+            assertAll("Principal A answered with %d".formatted(status),
                     () -> assertFalse(denied.isSuccess(), "A 4xx is a failure"),
                     () -> assertEquals(Optional.of(status), denied.getHttpStatus(),
                             "The observed status should be preserved"),
                     () -> assertTrue(denied.getContent().isEmpty(),
                             "A 4xx must carry no fallback content at all"),
                     () -> assertFalse(denied.getContent().orElse("").contains(PrincipalIsolationDispatcher.SECRET_MARKER),
-                            "Principal A's body must not reach principal B"),
+                            "The cached body must not reach a 4xx response"),
                     () -> assertTrue(denied.getETag().isEmpty(),
                             "A 4xx must not surface the cached validator either"));
         }
@@ -803,8 +810,10 @@ class ETagAwareHttpAdapterTest {
         }
 
         /**
-         * Builds the adapter over the token-refresh filter, which is what makes two principals share
-         * one cache key — the precondition the isolation case needs in order to be observable at all.
+         * Builds the adapter over the documented token-refresh filter. The filter keeps the
+         * credential out of the verbatim header section of the cache key; it does not make two
+         * principals share an entry, because the principal binding term is appended regardless of
+         * the filter.
          */
         private HttpAdapter<String> sharedKeyAdapter(URIBuilder uriBuilder) {
             String serverUrl = uriBuilder.addPathSegments("principal", "resource").build().toString();
@@ -834,7 +843,6 @@ class ETagAwareHttpAdapterTest {
         static final String PRINCIPAL_A_BODY = "{\"owner\":\"principal-a\",\"secret\":\"" + SECRET_MARKER + "\"}";
         static final String ETAG = "\"etag-principal-a\"";
         static final Map<String, String> PRINCIPAL_A_HEADERS = Map.of("Authorization", "Bearer token-principal-a");
-        static final Map<String, String> PRINCIPAL_B_HEADERS = Map.of("Authorization", "Bearer token-principal-b");
 
         private static final AtomicInteger ARMED_FAILURE = new AtomicInteger();
 
@@ -1172,12 +1180,13 @@ class ETagAwareHttpAdapterTest {
         var builder = ETagAwareHttpAdapter.<String>builder()
                 .httpHandler(handler)
                 .responseConverter(responseConverter);
+        Duration negativeTtl = Duration.ofSeconds(-1);
 
         assertAll("The TTL knob rejects unusable values",
                 () -> assertThrows(NullPointerException.class, () -> builder.cacheEntryTtl(null),
                         "Builder should reject a null TTL"),
                 () -> assertThrows(IllegalArgumentException.class,
-                        () -> builder.cacheEntryTtl(Duration.ofSeconds(-1)),
+                        () -> builder.cacheEntryTtl(negativeTtl),
                         "Builder should reject a negative TTL"),
                 () -> assertDoesNotThrow(() -> builder.cacheEntryTtl(Duration.ZERO),
                         "Zero is the documented expire-immediately setting, not an error"));
