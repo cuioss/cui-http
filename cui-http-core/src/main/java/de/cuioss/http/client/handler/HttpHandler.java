@@ -1191,9 +1191,14 @@ public final class HttpHandler implements AutoCloseable {
          * Builds a new {@link HttpHandler} instance with the configured parameters.
          *
          * @return A new {@link HttpHandler} instance.
-         * @throws IllegalArgumentException If any parameter is invalid, or if
+         * @throws IllegalArgumentException If any parameter is invalid; if
          *                                  {@code verifyHostname(false)} is combined with a
-         *                                  caller-supplied {@link #sslContext(SSLContext)}.
+         *                                  caller-supplied {@link #sslContext(SSLContext)}; or if a
+         *                                  resolved cleartext {@code http} URI is combined with
+         *                                  either a caller-supplied {@link #sslContext(SSLContext)}
+         *                                  or {@code verifyHostname(false)} — an http handler
+         *                                  establishes no TLS connection, so neither setting could
+         *                                  take effect and neither is silently discarded.
          * @throws IllegalStateException    If the resolved URI cannot be converted to a
          *                                  {@link URL} — the URI is syntactically valid but names
          *                                  no protocol handler this JVM can resolve.
@@ -1262,6 +1267,21 @@ public final class HttpHandler implements AutoCloseable {
                     throw new IllegalArgumentException("Refusing to build a plaintext HTTP handler for " + resolvedUri
                             + "; HTTPS is required. Call allowInsecureHttp(true) to permit cleartext HTTP, "
                             + "or use an https:// URI.");
+                }
+                // A cleartext handler establishes no TLS connection, so TLS-shaped configuration has
+                // nothing to act on. Rejecting it here mirrors the HTTPS-path rejection above rather
+                // than discarding it silently: a caller who supplied a custom trust store, or who
+                // relaxed hostname verification, would otherwise be left believing that setting is in
+                // force on a connection that has no TLS at all.
+                if (sslContextCallerSupplied) {
+                    throw new IllegalArgumentException("sslContext(...) cannot be combined with the cleartext http URI "
+                            + resolvedUri + "; an http handler establishes no TLS connection, so the supplied context "
+                            + "would never be used. Either use an https:// URI or drop the sslContext(...).");
+                }
+                if (!verifyHostname) {
+                    throw new IllegalArgumentException("verifyHostname(false) cannot be combined with the cleartext "
+                            + "http URI " + resolvedUri + "; an http handler performs no TLS hostname verification, so "
+                            + "there is nothing to relax. Either use an https:// URI or keep verifyHostname(true).");
                 }
                 LOGGER.warn(HttpLogMessages.WARN.INSECURE_HTTP_CONNECTION, resolvedUri);
                 // For HTTP, no SSL context needed

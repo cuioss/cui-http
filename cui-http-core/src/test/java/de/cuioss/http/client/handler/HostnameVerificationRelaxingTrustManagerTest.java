@@ -22,7 +22,9 @@ import org.junit.jupiter.api.Test;
 
 import javax.net.ssl.*;
 import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.security.SecureRandom;
+import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.concurrent.TimeUnit;
 
@@ -44,6 +46,14 @@ import static org.junit.jupiter.api.Assertions.*;
 class HostnameVerificationRelaxingTrustManagerTest {
 
     private static final long ONE_DAY_MILLIS = TimeUnit.DAYS.toMillis(1);
+
+    /**
+     * Key-exchange authentication type handed to the extended overloads. It must name a key exchange
+     * the JDK's end-entity checker recognises AND one the test certificates' ECDSA keys satisfy — an
+     * unrecognised token is rejected as {@code Unknown authType} before the chain is ever examined,
+     * which would make every rejection assertion below pass for the wrong reason.
+     */
+    private static final String AUTH_TYPE = "ECDHE_ECDSA";
 
     @Test
     @DisplayName("Should wrap extended trust managers and pass other entries through unchanged")
@@ -151,6 +161,85 @@ class HostnameVerificationRelaxingTrustManagerTest {
             assertThrows(SSLHandshakeException.class, () -> handshake(relaxed, server.port()),
                     "A not-yet-valid certificate must still be rejected under the relaxing wrapper");
         }
+    }
+
+    /**
+     * The handshake-driven cases above prove the enforcement end to end. This one proves it at the
+     * seam the Javadoc makes its claim about: both {@code null}-argument extended overloads, called
+     * directly, still reject a chain that terminates in an untrusted anchor.
+     */
+    @Test
+    @DisplayName("Should still reject an untrusted chain through both extended overloads directly")
+    void shouldRejectUntrustedChainThroughExtendedOverloads() {
+        HeldCertificate servingCa = certificateAuthority();
+        HeldCertificate otherCa = certificateAuthority();
+        HeldCertificate leaf = leafSignedBy(servingCa, "localhost");
+        X509Certificate[] chain = {leaf.certificate(), servingCa.certificate()};
+
+        HostnameVerificationRelaxingTrustManager relaxed = relaxingWrapperTrusting(otherCa);
+
+        assertAll("chain trust survives the relaxation on both extended overloads",
+                () -> assertThrows(CertificateException.class,
+                        () -> relaxed.checkServerTrusted(chain, AUTH_TYPE, (SSLEngine) null),
+                        "SSLEngine overload"),
+                () -> assertThrows(CertificateException.class,
+                        () -> relaxed.checkServerTrusted(chain, AUTH_TYPE, (Socket) null),
+                        "Socket overload"));
+    }
+
+    @Test
+    @DisplayName("Should still reject an expired chain through both extended overloads directly")
+    void shouldRejectExpiredChainThroughExtendedOverloads() {
+        HeldCertificate ca = certificateAuthority();
+        long now = System.currentTimeMillis();
+        HeldCertificate expiredLeaf = new HeldCertificate.Builder()
+                .signedBy(ca)
+                .commonName("localhost")
+                .addSubjectAlternativeName("localhost")
+                .validityInterval(now - 2 * ONE_DAY_MILLIS, now - ONE_DAY_MILLIS)
+                .build();
+        X509Certificate[] chain = {expiredLeaf.certificate(), ca.certificate()};
+
+        HostnameVerificationRelaxingTrustManager relaxed = relaxingWrapperTrusting(ca);
+
+        assertAll("validity-period enforcement survives the relaxation on both extended overloads",
+                () -> assertThrows(CertificateException.class,
+                        () -> relaxed.checkServerTrusted(chain, AUTH_TYPE, (SSLEngine) null),
+                        "SSLEngine overload"),
+                () -> assertThrows(CertificateException.class,
+                        () -> relaxed.checkServerTrusted(chain, AUTH_TYPE, (Socket) null),
+                        "Socket overload"));
+    }
+
+    /**
+     * Positive control for the two direct-overload rejections above: the same seam accepts a chain
+     * that is trusted and in date, so those rejections are attributable to the chain rather than to
+     * the overload refusing everything handed to it.
+     */
+    @Test
+    @DisplayName("Should accept a trusted, in-date chain through both extended overloads directly")
+    void shouldAcceptTrustedChainThroughExtendedOverloads() {
+        HeldCertificate ca = certificateAuthority();
+        HeldCertificate leaf = leafSignedBy(ca, "wrong.host.invalid");
+        X509Certificate[] chain = {leaf.certificate(), ca.certificate()};
+
+        HostnameVerificationRelaxingTrustManager relaxed = relaxingWrapperTrusting(ca);
+
+        assertAll("a trusted in-date chain passes, mismatched SAN notwithstanding",
+                () -> assertDoesNotThrow(
+                        () -> relaxed.checkServerTrusted(chain, AUTH_TYPE, (SSLEngine) null),
+                        "SSLEngine overload"),
+                () -> assertDoesNotThrow(
+                        () -> relaxed.checkServerTrusted(chain, AUTH_TYPE, (Socket) null),
+                        "Socket overload"));
+    }
+
+    /**
+     * Builds the relaxing wrapper around a platform trust manager that trusts exactly {@code anchor}.
+     */
+    private static HostnameVerificationRelaxingTrustManager relaxingWrapperTrusting(HeldCertificate anchor) {
+        return new HostnameVerificationRelaxingTrustManager(
+                (X509ExtendedTrustManager) platformTrustManager(anchor));
     }
 
     /**

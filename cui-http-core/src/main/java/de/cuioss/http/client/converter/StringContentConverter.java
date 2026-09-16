@@ -36,7 +36,9 @@ import java.util.Optional;
  * with that charset whenever it names a charset this JVM supports. The charset passed to the
  * constructor (UTF-8 by default) is the <em>fallback</em>, applied when the response declares no
  * {@code charset} parameter, or declares one that is malformed or unsupported. A bogus charset token
- * never fails the conversion — it falls back silently.
+ * never fails the conversion — it falls back silently. Whitespace around the parameter's {@code =} is
+ * tolerated, so {@code charset=X}, {@code charset =X}, {@code charset= X} and {@code charset = X} are
+ * all read as the same declaration.
  * <p>
  * Subclasses need only implement the conversion logic and content type declaration.
  * The String raw type handling is managed internally.
@@ -49,7 +51,7 @@ public abstract class StringContentConverter<T> implements HttpResponseConverter
 
     private static final String CONTENT_TYPE_HEADER = "Content-Type";
 
-    private static final String CHARSET_PARAMETER = "charset=";
+    private static final String CHARSET_PARAMETER_NAME = "charset";
 
     private final Charset charset;
 
@@ -102,6 +104,12 @@ public abstract class StringContentConverter<T> implements HttpResponseConverter
 
     /**
      * Extracts the {@code charset} parameter from a {@code Content-Type} header value.
+     * <p>
+     * Each {@code ;}-separated parameter is split on its <em>first</em> {@code =} and both halves are
+     * trimmed, so {@code charset=X}, {@code charset =X}, {@code charset= X} and {@code charset = X}
+     * all resolve to the same charset. A segment carrying no {@code =} — the media type itself, or a
+     * bare token — is skipped. The parameter name is matched case-insensitively; the value keeps its
+     * quoted-string handling and its silent fallback on an unsupported name.
      *
      * @param contentTypeHeader the raw header value, e.g. {@code "text/plain; charset=ISO-8859-1"}
      * @return the declared charset, or empty when none is declared or the declared token is
@@ -109,9 +117,13 @@ public abstract class StringContentConverter<T> implements HttpResponseConverter
      */
     private static Optional<Charset> parseDeclaredCharset(String contentTypeHeader) {
         for (String parameter : contentTypeHeader.split(";")) {
-            String trimmed = parameter.trim();
-            if (trimmed.regionMatches(true, 0, CHARSET_PARAMETER, 0, CHARSET_PARAMETER.length())) {
-                return toSupportedCharset(unquote(trimmed.substring(CHARSET_PARAMETER.length()).trim()));
+            int separator = parameter.indexOf('=');
+            if (separator < 0) {
+                continue;
+            }
+            String name = parameter.substring(0, separator).trim();
+            if (CHARSET_PARAMETER_NAME.equalsIgnoreCase(name)) {
+                return toSupportedCharset(unquote(parameter.substring(separator + 1).trim()));
             }
         }
         return Optional.empty();

@@ -107,8 +107,16 @@ final class HostnameVerificationRelaxingTrustManager extends X509ExtendedTrustMa
     /**
      * {@inheritDoc}
      * <p>
-     * Forwards to the delegate with a {@code null} {@link Socket}, which suppresses
-     * hostname/endpoint-identification matching while keeping chain validation intact.
+     * Forwards to the delegate with a {@code null} {@link Socket}. The {@code null} argument removes
+     * the peer-identity context and so suppresses hostname/endpoint-identification matching — that
+     * check alone. The delegate still performs, unchanged:
+     * <ul>
+     *   <li>certificate-chain trust — the chain must terminate in a trust anchor the delegate
+     *       accepts</li>
+     *   <li>validity period — expired and not-yet-valid certificates are rejected</li>
+     *   <li>revocation posture — whatever revocation checking the delegate is configured for</li>
+     *   <li>algorithm constraints — the JDK's disabled-algorithm and key-size policies</li>
+     * </ul>
      */
     @Override
     public void checkClientTrusted(X509Certificate[] chain, String authType, Socket socket) throws CertificateException {
@@ -118,8 +126,16 @@ final class HostnameVerificationRelaxingTrustManager extends X509ExtendedTrustMa
     /**
      * {@inheritDoc}
      * <p>
-     * Forwards to the delegate with a {@code null} {@link SSLEngine}, which suppresses
-     * hostname/endpoint-identification matching while keeping chain validation intact.
+     * Forwards to the delegate with a {@code null} {@link SSLEngine}. The {@code null} argument
+     * removes the peer-identity context and so suppresses hostname/endpoint-identification
+     * matching — that check alone. The delegate still performs, unchanged:
+     * <ul>
+     *   <li>certificate-chain trust — the chain must terminate in a trust anchor the delegate
+     *       accepts</li>
+     *   <li>validity period — expired and not-yet-valid certificates are rejected</li>
+     *   <li>revocation posture — whatever revocation checking the delegate is configured for</li>
+     *   <li>algorithm constraints — the JDK's disabled-algorithm and key-size policies</li>
+     * </ul>
      */
     @Override
     public void checkClientTrusted(X509Certificate[] chain, String authType, SSLEngine engine) throws CertificateException {
@@ -129,8 +145,19 @@ final class HostnameVerificationRelaxingTrustManager extends X509ExtendedTrustMa
     /**
      * {@inheritDoc}
      * <p>
-     * Forwards to the delegate with a {@code null} {@link Socket}, which suppresses
-     * hostname/endpoint-identification matching while keeping chain validation intact.
+     * Forwards to the delegate with a {@code null} {@link Socket}. The {@code null} argument removes
+     * the peer-identity context and so suppresses hostname/endpoint-identification matching — that
+     * check alone. The delegate still performs, unchanged:
+     * <ul>
+     *   <li>certificate-chain trust — the chain must terminate in a trust anchor the delegate
+     *       accepts, so a certificate signed by an unknown CA is still rejected</li>
+     *   <li>validity period — expired and not-yet-valid certificates are rejected</li>
+     *   <li>revocation posture — whatever revocation checking the delegate is configured for</li>
+     *   <li>algorithm constraints — the JDK's disabled-algorithm and key-size policies</li>
+     * </ul>
+     * <p>
+     * What is given up is precisely the protection against a peer presenting a valid certificate
+     * issued for a <em>different</em> host.
      */
     @Override
     public void checkServerTrusted(X509Certificate[] chain, String authType, Socket socket) throws CertificateException {
@@ -140,8 +167,19 @@ final class HostnameVerificationRelaxingTrustManager extends X509ExtendedTrustMa
     /**
      * {@inheritDoc}
      * <p>
-     * Forwards to the delegate with a {@code null} {@link SSLEngine}, which suppresses
-     * hostname/endpoint-identification matching while keeping chain validation intact.
+     * Forwards to the delegate with a {@code null} {@link SSLEngine}. The {@code null} argument
+     * removes the peer-identity context and so suppresses hostname/endpoint-identification
+     * matching — that check alone. The delegate still performs, unchanged:
+     * <ul>
+     *   <li>certificate-chain trust — the chain must terminate in a trust anchor the delegate
+     *       accepts, so a certificate signed by an unknown CA is still rejected</li>
+     *   <li>validity period — expired and not-yet-valid certificates are rejected</li>
+     *   <li>revocation posture — whatever revocation checking the delegate is configured for</li>
+     *   <li>algorithm constraints — the JDK's disabled-algorithm and key-size policies</li>
+     * </ul>
+     * <p>
+     * What is given up is precisely the protection against a peer presenting a valid certificate
+     * issued for a <em>different</em> host.
      */
     @Override
     public void checkServerTrusted(X509Certificate[] chain, String authType, SSLEngine engine) throws CertificateException {
