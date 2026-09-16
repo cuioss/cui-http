@@ -40,6 +40,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import java.net.URI;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -1042,6 +1043,154 @@ class ETagAwareHttpAdapterTest {
         }
     }
 
+    // === Credential-Digest and TTL Tests ===
+
+    /**
+     * The cache key outlives the request that produced it — it is retained in the cache map for as
+     * long as the entry lives — so no credential value may appear in it verbatim. The two headers
+     * asserted here take different routes into the key: {@code Authorization} is reproduced in the
+     * header section under the {@code ALL} filter, while both contribute to the trailing principal
+     * term.
+     */
+    @Test
+    void cacheKeyShouldNotContainVerbatimCredentialValues() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .cacheKeyHeaderFilter(CacheKeyHeaderFilter.ALL)
+                .build();
+
+        var headers = new LinkedHashMap<String, String>();
+        headers.put("Accept", "application/json");
+        headers.put("Authorization", "Bearer super-secret-token");
+        headers.put("Cookie", "session=super-secret-session");
+
+        String key = adapter.generateCacheKey(URI.create("https://api.example.com/test"), headers,
+                CacheKeyHeaderFilter.ALL);
+
+        assertAll("Credential values are reduced to digests",
+                () -> assertFalse(key.contains("super-secret-token"),
+                        "The Authorization value must not appear verbatim, but key was: " + key),
+                () -> assertFalse(key.contains("super-secret-session"),
+                        "The Cookie value must not appear verbatim, but key was: " + key),
+                // The digest marker is written through the same escaping as every other token, so the
+                // colon appears as "\:" in the key - match the marker alone rather than the
+                // pre-escape spelling.
+                () -> assertTrue(key.contains("sha256"), "The credential should be represented by its digest"),
+                () -> assertTrue(key.contains("application/json"),
+                        "A non-credential header value is still keyed verbatim - without this the "
+                                + "assertions above would also pass against a key that dropped every header"));
+    }
+
+    /**
+     * The digest separates principals exactly as the raw credential would: two different tokens must
+     * not collapse onto one key, and the same token must reproduce the same key.
+     */
+    @Test
+    void cacheKeyDigestShouldSeparatePrincipalsAndBeStable() {
+        var adapter = ETagAwareHttpAdapter.<String>builder()
+                .httpHandler(handler)
+                .responseConverter(responseConverter)
+                .cacheKeyHeaderFilter(CacheKeyHeaderFilter.excluding("Authorization"))
+                .build();
+
+        var uri = URI.create("https://api.example.com/test");
+        var filter = CacheKeyHeaderFilter.excluding("Authorization");
+        String keyA = adapter.generateCacheKey(uri, Map.of("Authorization", "Bearer token-a"), filter);
+        String keyASecondTime = adapter.generateCacheKey(uri, Map.of("Authorization", "Bearer token-a"), filter);
+        String keyB = adapter.generateCacheKey(uri, Map.of("Authorization", "Bearer token-b"), filter);
+        String anonymous = adapter.generateCacheKey(uri, Map.of(), filter);
+
+        assertAll("Digest-based principal binding",
+                () -> assertEquals(keyA, keyASecondTime, "The same credential must yield the same key"),
+                () -> assertNotEquals(keyA, keyB, "Different credentials must yield different keys"),
+                () -> assertNotEquals(keyA, anonymous, "An anonymous request must not share a credentialed key"));
+    }
+
+    /**
+     * The TTL bounds how long an entry may answer for, which the size-triggered eviction alone
+     * cannot do. Both halves are asserted here: an expired entry is neither served nor offered as a
+     * validator, and an entry inside its TTL still is — the control that keeps the rule from
+     * degrading into "never cache".
+     */
+    @Nested
+    @EnableMockWebServer(useHttps = false)
+    @DisplayName("Cache entries expire on the configured TTL")
+    class CacheEntryTimeToLive {
+
+        public ModuleDispatcherElement getModuleDispatcher() {
+            return new PerPrincipalDispatcher();
+        }
+
+        @Test
+        @DisplayName("An entry past its TTL should be neither served nor used for revalidation")
+        @ModuleDispatcher
+        void expiredEntryShouldNotBeServedOrRevalidated(URIBuilder uriBuilder) {
+            PerPrincipalDispatcher.reset();
+            HttpAdapter<String> adapter = adapterWithTtl(uriBuilder, Duration.ZERO);
+
+            assertTrue(adapter.get().join().isSuccess(), "The first GET should populate the cache");
+
+            HttpResult<String> second = adapter.get().join();
+
+            assertAll("The entry expired before the second request",
+                    () -> assertTrue(second.isSuccess(), "The second GET should succeed"),
+                    () -> assertEquals(Optional.of(200), second.getHttpStatus(),
+                            "An expired entry cannot be revalidated, so this is a full fetch"),
+                    () -> assertEquals("", PerPrincipalDispatcher.ifNoneMatchSeenForAnonymous(),
+                            "An expired entry's validator must not be sent to the origin"));
+        }
+
+        @Test
+        @DisplayName("An entry inside its TTL should still be revalidated and served")
+        @ModuleDispatcher
+        void unexpiredEntryShouldStillBeUsed(URIBuilder uriBuilder) {
+            PerPrincipalDispatcher.reset();
+            HttpAdapter<String> adapter = adapterWithTtl(uriBuilder, Duration.ofMinutes(5));
+
+            assertTrue(adapter.get().join().isSuccess(), "The first GET should populate the cache");
+
+            HttpResult<String> second = adapter.get().join();
+
+            assertAll("The entry is still inside its TTL",
+                    () -> assertTrue(second.isSuccess(), "The second GET should succeed"),
+                    () -> assertEquals(Optional.of(304), second.getHttpStatus(),
+                            "A live entry should be revalidated rather than re-fetched"),
+                    () -> assertEquals(PerPrincipalDispatcher.etagForAnonymous(),
+                            PerPrincipalDispatcher.ifNoneMatchSeenForAnonymous(),
+                            "The live entry's validator should be offered to the origin"),
+                    () -> assertEquals(PerPrincipalDispatcher.bodyForAnonymous(),
+                            second.getContent().orElse(null), "The cached body resolves the 304"));
+        }
+
+        private HttpAdapter<String> adapterWithTtl(URIBuilder uriBuilder, Duration ttl) {
+            String serverUrl = uriBuilder.addPathSegments("per-principal", "resource").build().toString();
+            HttpHandler serverHandler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
+
+            return ETagAwareHttpAdapter.<String>builder()
+                    .httpHandler(serverHandler)
+                    .responseConverter(new TestResponseConverter())
+                    .cacheEntryTtl(ttl)
+                    .build();
+        }
+    }
+
+    @Test
+    void builderValidatesCacheEntryTtl() {
+        var builder = ETagAwareHttpAdapter.<String>builder()
+                .httpHandler(handler)
+                .responseConverter(responseConverter);
+
+        assertAll("The TTL knob rejects unusable values",
+                () -> assertThrows(NullPointerException.class, () -> builder.cacheEntryTtl(null),
+                        "Builder should reject a null TTL"),
+                () -> assertThrows(IllegalArgumentException.class,
+                        () -> builder.cacheEntryTtl(Duration.ofSeconds(-1)),
+                        "Builder should reject a negative TTL"),
+                () -> assertDoesNotThrow(() -> builder.cacheEntryTtl(Duration.ZERO),
+                        "Zero is the documented expire-immediately setting, not an error"));
+    }
+
     // === Principal-Binding Tests ===
 
     /**
@@ -1175,6 +1324,19 @@ class ETagAwareHttpAdapterTest {
          */
         static String ifNoneMatchSeenFor(String token) {
             return IF_NONE_MATCH_BY_PRINCIPAL.getOrDefault(token, "");
+        }
+
+        /** The same record for a request that presented no credential at all. */
+        static String ifNoneMatchSeenForAnonymous() {
+            return ifNoneMatchSeenFor(ANONYMOUS);
+        }
+
+        static String bodyForAnonymous() {
+            return bodyFor(ANONYMOUS);
+        }
+
+        static String etagForAnonymous() {
+            return etagFor(ANONYMOUS);
         }
 
         @Override

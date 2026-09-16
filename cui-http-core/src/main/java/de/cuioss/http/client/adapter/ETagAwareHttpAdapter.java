@@ -31,6 +31,10 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -221,6 +225,17 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      */
     private static final String PRINCIPAL_SEPARATOR = "||principal:";
 
+    /** Marks a key component as the SHA-256 digest of a credential rather than the credential. */
+    private static final String DIGEST_PREFIX = "sha256:";
+
+    /**
+     * Default lifetime of a cache entry. Deliberately short: an entry is a snapshot of what one
+     * principal was authorized to see at one moment, and nothing in the cache observes a later
+     * revocation of that authorization. Callers that know their data is stable may lengthen it via
+     * {@link Builder#cacheEntryTtl(Duration)}.
+     */
+    private static final Duration DEFAULT_CACHE_ENTRY_TTL = Duration.ofMinutes(5);
+
     private final HttpHandler httpHandler;
     private final HttpResponseConverter<T> responseConverter;
     @Nullable
@@ -228,6 +243,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
     private final boolean etagCachingEnabled;
     private final CacheKeyHeaderFilter cacheKeyHeaderFilter;
     private final int maxCacheSize;
+    private final Duration cacheEntryTtl;
     private final ConcurrentHashMap<String, CacheEntry<T>> cache;
 
     /**
@@ -266,10 +282,11 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         this.etagCachingEnabled = builder.etagCachingEnabled;
         this.cacheKeyHeaderFilter = Objects.requireNonNull(builder.cacheKeyHeaderFilter, "cacheKeyHeaderFilter is required");
         this.maxCacheSize = builder.maxCacheSize;
+        this.cacheEntryTtl = Objects.requireNonNull(builder.cacheEntryTtl, "cacheEntryTtl is required");
         this.cache = new ConcurrentHashMap<>();
 
-        LOGGER.debug("Created ETagAwareHttpAdapter: etagCachingEnabled=%s, maxCacheSize=%s",
-                etagCachingEnabled, maxCacheSize);
+        LOGGER.debug("Created ETagAwareHttpAdapter: etagCachingEnabled=%s, maxCacheSize=%s, cacheEntryTtl=%s",
+                etagCachingEnabled, maxCacheSize, cacheEntryTtl);
     }
 
     /**
@@ -728,19 +745,23 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      *
      * <h3>Example Cache Keys</h3>
      * <pre>{@code
-     * // With ALL filter:
-     * "https://api.example.com/users|accept:application/json|authorization:Bearer token123||principal:authorization=Bearer token123"
+     * // With ALL filter (the credential appears only as a digest):
+     * "https://api.example.com/users|accept:application/json|authorization:sha256:9f86d0…||principal:sha256:4c8b1e…"
      *
-     * // With NONE filter (URI only):
+     * // With NONE filter (URI only), no credential presented:
      * "https://api.example.com/users||principal:anonymous"
      *
-     * // With excluding("Authorization"):
-     * "https://api.example.com/users|accept:application/json||principal:authorization=Bearer token123"
+     * // With excluding("Authorization") - the credential leaves the header section, the binding stays:
+     * "https://api.example.com/users|accept:application/json||principal:sha256:4c8b1e…"
      * }</pre>
      *
      * <p>The trailing principal term is <strong>unconditional</strong>: the filter governs which
      * headers appear verbatim in the key, never whether the requesting principal is bound to the
      * entry. See {@link #principalBinding(Map)}.</p>
+     *
+     * <p>No credential value is ever stored verbatim. A credential-bearing header is reduced to its
+     * SHA-256 digest both in the header section and in the principal term, so the key separates
+     * principals without retaining what identified them.</p>
      *
      * @param uri Request URI
      * @param headers HTTP headers
@@ -764,9 +785,14 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             // Normalize the header name to lower case so that maps differing only in header-name
             // case (e.g. "Accept-Language" vs "accept-language" - identical on the wire) resolve to
             // the same cache entry instead of duplicate downloads.
-            keyBuilder.append(escapeCacheKeyToken(entry.getKey().toLowerCase(Locale.ROOT)));
+            String headerName = entry.getKey().toLowerCase(Locale.ROOT);
+            keyBuilder.append(escapeCacheKeyToken(headerName));
             keyBuilder.append(':');
-            keyBuilder.append(escapeCacheKeyToken(entry.getValue()));
+            // A credential the filter admits into the key still must not be stored verbatim: the key
+            // outlives the request in the cache map, so the digest is what is retained.
+            keyBuilder.append(escapeCacheKeyToken(isCredentialHeader(headerName)
+                    ? digest(entry.getValue())
+                    : entry.getValue()));
         }
 
         // Bind the entry to the principal that produced it. The doubled delimiter cannot be forged
@@ -796,6 +822,10 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      * {@link #ANONYMOUS_PRINCIPAL} term rather than to the empty string, which keeps anonymous
      * entries in a namespace of their own instead of colliding with credentialed ones.</p>
      *
+     * <p>The credential material itself is never part of the returned term — only its SHA-256
+     * digest is. The digest separates principals exactly as the raw values would, while keeping the
+     * credential out of a key that is retained in the cache map for as long as the entry lives.</p>
+     *
      * @param headers the caller-supplied headers for this request
      * @return the principal term, never empty
      */
@@ -812,7 +842,38 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             }
         }
 
-        return binding.isEmpty() ? ANONYMOUS_PRINCIPAL : binding.toString();
+        return binding.isEmpty() ? ANONYMOUS_PRINCIPAL : digest(binding.toString());
+    }
+
+    /**
+     * Reports whether {@code lowerCaseHeaderName} names a credential-bearing header.
+     *
+     * @param lowerCaseHeaderName header name, already lower-cased
+     * @return true when the header carries credential material
+     */
+    private static boolean isCredentialHeader(String lowerCaseHeaderName) {
+        return CREDENTIAL_HEADERS.contains(lowerCaseHeaderName);
+    }
+
+    /**
+     * Renders the SHA-256 digest of {@code value} as a prefixed hex string.
+     *
+     * <p>The digest is a key component, not a secret store: it exists so that a credential value
+     * never appears verbatim in a string the adapter retains, while two requests presenting the same
+     * credential still resolve to the same key.</p>
+     *
+     * @param value the value to digest
+     * @return {@code sha256:} followed by the lower-case hex digest
+     */
+    private static String digest(String value) {
+        try {
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+            return DIGEST_PREFIX + HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            // Every conformant JRE provides SHA-256, so this is an environment defect rather than a
+            // condition a caller can act on.
+            throw new IllegalStateException("SHA-256 is unavailable in this JRE", e);
+        }
     }
 
     /**
@@ -1220,7 +1281,34 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         String cacheKey = generateCacheKey(httpHandler.getUri(), headers, cacheKeyHeaderFilter);
 
         // Retrieve cache entry BEFORE building request (hold local reference for 304 handling)
-        return new CacheContext<>(cacheKey, cache.get(cacheKey));
+        CacheEntry<T> cachedEntry = cache.get(cacheKey);
+
+        // An entry past its TTL is treated as absent, not as stale-but-usable: it is neither served
+        // as fallback content nor offered as an If-None-Match validator. Dropping it here rather
+        // than merely ignoring it keeps the map from retaining expired entries until the
+        // size-triggered eviction happens to reach them.
+        if (cachedEntry != null && isExpired(cachedEntry)) {
+            LOGGER.debug("Discarding cache entry past its TTL of %s", cacheEntryTtl);
+            evictFromCache(cacheKey);
+            cachedEntry = null;
+        }
+
+        return new CacheContext<>(cacheKey, cachedEntry);
+    }
+
+    /**
+     * Reports whether {@code entry} has outlived the configured TTL.
+     *
+     * <p>Complements, and does not replace, the size-triggered eviction in {@link #checkAndEvict()}:
+     * that one bounds how much the cache holds, this one bounds how long a single entry may answer
+     * for. A TTL of {@link Duration#ZERO} expires every entry at once, which is how caching is
+     * reduced to pure pass-through revalidation without disabling ETag extraction.</p>
+     *
+     * @param entry the entry to test
+     * @return true when the entry is at or past its TTL
+     */
+    private boolean isExpired(CacheEntry<T> entry) {
+        return System.currentTimeMillis() - entry.timestamp() >= cacheEntryTtl.toMillis();
     }
 
     /**
@@ -1243,6 +1331,7 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         private boolean etagCachingEnabled = true;
         private CacheKeyHeaderFilter cacheKeyHeaderFilter = CacheKeyHeaderFilter.ALL;
         private int maxCacheSize = 1000;
+        private Duration cacheEntryTtl = DEFAULT_CACHE_ENTRY_TTL;
 
         /**
          * Sets the HTTP handler (required).
@@ -1353,6 +1442,40 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
                 throw new IllegalArgumentException("maxCacheSize must be positive, got: " + maxCacheSize);
             }
             this.maxCacheSize = maxCacheSize;
+            return this;
+        }
+
+        /**
+         * Sets how long a cache entry may be used (default: 5 minutes).
+         *
+         * <p>This bounds an entry's <em>age</em>; {@link #maxCacheSize(int)} bounds the cache's
+         * <em>size</em>. The two are complementary and both remain in force — the TTL does not
+         * replace the size-triggered eviction.</p>
+         *
+         * <p>An entry at or past its TTL is treated as absent: it is neither returned as fallback
+         * content nor offered to the origin as an {@code If-None-Match} validator. The default is
+         * deliberately short, because an entry records what one principal was authorized to see at
+         * one moment and nothing in the cache learns of a later revocation.</p>
+         *
+         * <h3>Sizing Guidance</h3>
+         * <ul>
+         *   <li>{@link Duration#ZERO}: every entry expires immediately — each request goes to the
+         *       origin. ETags are still extracted; only reuse is switched off.</li>
+         *   <li>Seconds to minutes: authorization-sensitive data behind a credential.</li>
+         *   <li>Hours: stable, public, slow-moving representations.</li>
+         * </ul>
+         *
+         * @param cacheEntryTtl maximum age of a usable cache entry (must not be negative)
+         * @return this builder
+         * @throws NullPointerException if cacheEntryTtl is null
+         * @throws IllegalArgumentException if cacheEntryTtl is negative
+         */
+        public Builder<T> cacheEntryTtl(Duration cacheEntryTtl) {
+            Objects.requireNonNull(cacheEntryTtl, "cacheEntryTtl cannot be null");
+            if (cacheEntryTtl.isNegative()) {
+                throw new IllegalArgumentException("cacheEntryTtl must not be negative, got: " + cacheEntryTtl);
+            }
+            this.cacheEntryTtl = cacheEntryTtl;
             return this;
         }
 
