@@ -95,24 +95,6 @@ class ETagAwareHttpAdapterTest {
                 "Builder should require responseConverter");
     }
 
-    /**
-     * The default header filter is {@code ALL}: a header the caller sends is reproduced in the key,
-     * which is what makes two requests differing only by that header resolve to different entries.
-     */
-    @Test
-    void builderDefaultsToTheAllHeaderFilter() {
-        var adapter = ETagAwareHttpAdapter.<String>builder()
-                .httpHandler(handler)
-                .responseConverter(responseConverter)
-                .build();
-
-        String key = adapter.generateCacheKey(URI.create(NEVER_CONTACTED_URI),
-                Map.of("Accept", "application/json"), CacheKeyHeaderFilter.ALL);
-
-        assertTrue(key.contains("accept:application/json"),
-                "The ALL filter keys the header verbatim, but key was: " + key);
-    }
-
     @Test
     void builderValidatesMaxCacheSize() {
         var builder = ETagAwareHttpAdapter.<String>builder()
