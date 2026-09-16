@@ -1254,42 +1254,82 @@ public final class HttpHandler implements AutoCloseable {
             // Fail-secure scheme policy: HTTPS is required; http is opt-in; anything else is rejected.
             String scheme = resolvedUri.getScheme();
             if ("https".equalsIgnoreCase(scheme)) {
-                // For HTTPS, create or validate SSL context and pin the enabled protocols
-                SecureSSLContextProvider actualSecureSSLContextProvider = secureSSLContextProvider != null ?
-                        secureSSLContextProvider : new SecureSSLContextProvider();
-                SSLContext secureContext = resolveHttpsSecureContext(actualSecureSSLContextProvider, resolvedUri);
-                return new HttpHandler(resolvedUri, verifiedUrl, secureContext, actualSecureSSLContextProvider,
-                        actualConnectionTimeoutSeconds, actualReadTimeoutSeconds, allowInsecureHttp,
-                        verifyHostname, sslContextCallerSupplied, resolvedRedirectPolicy);
+                return buildHttpsHandler(resolvedUri, verifiedUrl, actualConnectionTimeoutSeconds,
+                        actualReadTimeoutSeconds, resolvedRedirectPolicy);
             }
             if ("http".equalsIgnoreCase(scheme)) {
-                if (!allowInsecureHttp) {
-                    throw new IllegalArgumentException("Refusing to build a plaintext HTTP handler for " + resolvedUri
-                            + "; HTTPS is required. Call allowInsecureHttp(true) to permit cleartext HTTP, "
-                            + "or use an https:// URI.");
-                }
-                // A cleartext handler establishes no TLS connection, so TLS-shaped configuration has
-                // nothing to act on. Rejecting it here mirrors the HTTPS-path rejection above rather
-                // than discarding it silently: a caller who supplied a custom trust store, or who
-                // relaxed hostname verification, would otherwise be left believing that setting is in
-                // force on a connection that has no TLS at all.
-                if (sslContextCallerSupplied) {
-                    throw new IllegalArgumentException("sslContext(...) cannot be combined with the cleartext http URI "
-                            + resolvedUri + "; an http handler establishes no TLS connection, so the supplied context "
-                            + "would never be used. Either use an https:// URI or drop the sslContext(...).");
-                }
-                if (!verifyHostname) {
-                    throw new IllegalArgumentException("verifyHostname(false) cannot be combined with the cleartext "
-                            + "http URI " + resolvedUri + "; an http handler performs no TLS hostname verification, so "
-                            + "there is nothing to relax. Either use an https:// URI or keep verifyHostname(true).");
-                }
-                LOGGER.warn(HttpLogMessages.WARN.INSECURE_HTTP_CONNECTION, resolvedUri);
-                // For HTTP, no SSL context needed
-                return new HttpHandler(resolvedUri, verifiedUrl, actualConnectionTimeoutSeconds, actualReadTimeoutSeconds,
-                        resolvedRedirectPolicy);
+                return buildCleartextHandler(resolvedUri, verifiedUrl, actualConnectionTimeoutSeconds,
+                        actualReadTimeoutSeconds, resolvedRedirectPolicy);
             }
             throw new IllegalArgumentException("Unsupported URI scheme '" + scheme + "' for " + resolvedUri
                     + "; only http and https are supported.");
+        }
+
+        /**
+         * Builds the HTTPS handler for an already-resolved {@code https} URI: the TLS-floor provider
+         * is defaulted, the {@link SSLContext} is resolved through
+         * {@link #resolveHttpsSecureContext(SecureSSLContextProvider, URI)}, and the handler is
+         * constructed with the TLS-shaped builder state carried through verbatim.
+         *
+         * @param resolvedUri                   the resolved {@code https} URI
+         * @param verifiedUrl                   the {@link URL} materialised from {@code resolvedUri}
+         * @param actualConnectionTimeoutSeconds the validated connection timeout
+         * @param actualReadTimeoutSeconds      the validated read timeout
+         * @param resolvedRedirectPolicy        the resolved redirect policy
+         * @return the constructed HTTPS handler
+         */
+        private HttpHandler buildHttpsHandler(URI resolvedUri, URL verifiedUrl, int actualConnectionTimeoutSeconds,
+                int actualReadTimeoutSeconds, RedirectPolicy resolvedRedirectPolicy) {
+            // For HTTPS, create or validate SSL context and pin the enabled protocols
+            SecureSSLContextProvider actualSecureSSLContextProvider = secureSSLContextProvider != null ?
+                    secureSSLContextProvider : new SecureSSLContextProvider();
+            SSLContext secureContext = resolveHttpsSecureContext(actualSecureSSLContextProvider, resolvedUri);
+            return new HttpHandler(resolvedUri, verifiedUrl, secureContext, actualSecureSSLContextProvider,
+                    actualConnectionTimeoutSeconds, actualReadTimeoutSeconds, allowInsecureHttp,
+                    verifyHostname, sslContextCallerSupplied, resolvedRedirectPolicy);
+        }
+
+        /**
+         * Builds the cleartext handler for an already-resolved {@code http} URI, enforcing the
+         * cleartext opt-in and refusing the TLS-shaped settings that could never take effect on a
+         * connection that establishes no TLS at all.
+         *
+         * @param resolvedUri                   the resolved {@code http} URI
+         * @param verifiedUrl                   the {@link URL} materialised from {@code resolvedUri}
+         * @param actualConnectionTimeoutSeconds the validated connection timeout
+         * @param actualReadTimeoutSeconds      the validated read timeout
+         * @param resolvedRedirectPolicy        the resolved redirect policy
+         * @return the constructed cleartext handler
+         * @throws IllegalArgumentException if cleartext HTTP was not opted into, or if the URI is
+         *                                  combined with a caller-supplied {@link SSLContext} or
+         *                                  {@code verifyHostname(false)}
+         */
+        private HttpHandler buildCleartextHandler(URI resolvedUri, URL verifiedUrl, int actualConnectionTimeoutSeconds,
+                int actualReadTimeoutSeconds, RedirectPolicy resolvedRedirectPolicy) {
+            if (!allowInsecureHttp) {
+                throw new IllegalArgumentException("Refusing to build a plaintext HTTP handler for " + resolvedUri
+                        + "; HTTPS is required. Call allowInsecureHttp(true) to permit cleartext HTTP, "
+                        + "or use an https:// URI.");
+            }
+            // A cleartext handler establishes no TLS connection, so TLS-shaped configuration has
+            // nothing to act on. Rejecting it here mirrors the HTTPS-path rejection in build() rather
+            // than discarding it silently: a caller who supplied a custom trust store, or who
+            // relaxed hostname verification, would otherwise be left believing that setting is in
+            // force on a connection that has no TLS at all.
+            if (sslContextCallerSupplied) {
+                throw new IllegalArgumentException("sslContext(...) cannot be combined with the cleartext http URI "
+                        + resolvedUri + "; an http handler establishes no TLS connection, so the supplied context "
+                        + "would never be used. Either use an https:// URI or drop the sslContext(...).");
+            }
+            if (!verifyHostname) {
+                throw new IllegalArgumentException("verifyHostname(false) cannot be combined with the cleartext "
+                        + "http URI " + resolvedUri + "; an http handler performs no TLS hostname verification, so "
+                        + "there is nothing to relax. Either use an https:// URI or keep verifyHostname(true).");
+            }
+            LOGGER.warn(HttpLogMessages.WARN.INSECURE_HTTP_CONNECTION, resolvedUri);
+            // For HTTP, no SSL context needed
+            return new HttpHandler(resolvedUri, verifiedUrl, actualConnectionTimeoutSeconds, actualReadTimeoutSeconds,
+                    resolvedRedirectPolicy);
         }
 
         /**
