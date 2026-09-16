@@ -19,9 +19,23 @@ import de.cuioss.http.client.ContentType;
 import de.cuioss.http.client.converter.HttpRequestConverter;
 import de.cuioss.http.client.converter.HttpResponseConverter;
 import de.cuioss.http.client.handler.HttpHandler;
+import de.cuioss.http.client.result.HttpResult;
+import de.cuioss.test.mockwebserver.EnableMockWebServer;
+import de.cuioss.test.mockwebserver.URIBuilder;
+import de.cuioss.test.mockwebserver.dispatcher.HttpMethodMapper;
+import de.cuioss.test.mockwebserver.dispatcher.ModuleDispatcher;
+import de.cuioss.test.mockwebserver.dispatcher.ModuleDispatcherElement;
+import lombok.NonNull;
+import mockwebserver3.MockResponse;
+import mockwebserver3.RecordedRequest;
+import okhttp3.Headers;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.net.URI;
 import java.net.http.HttpRequest;
@@ -29,6 +43,7 @@ import java.net.http.HttpResponse;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -868,6 +883,161 @@ class ETagAwareHttpAdapterTest {
 
         String lastBody() {
             return lastBody;
+        }
+    }
+
+    // === Cached-Fallback Restriction Tests ===
+
+    /**
+     * Pins the rule that cached content is fallback for an <em>availability</em> failure only.
+     *
+     * <p>The adapter under test is configured with the documented token-refresh filter
+     * ({@code excluding("Authorization")}), which is exactly the configuration under which two
+     * principals share one cache key. Principal A seeds the cache with a distinctive body; principal
+     * B then draws a 4xx on the same URI and must receive nothing of A's — neither the body nor the
+     * validator. A {@code 5xx} keeps serving the cached body, which is the control that proves the
+     * narrowing is to the status class and not a blanket removal of fallback content.</p>
+     */
+    @Nested
+    @EnableMockWebServer(useHttps = false)
+    @DisplayName("Cached fallback is restricted to availability failures")
+    class CachedFallbackRestriction {
+
+        public ModuleDispatcherElement getModuleDispatcher() {
+            return new PrincipalIsolationDispatcher();
+        }
+
+        /**
+         * The centrepiece: a 4xx is a statement about <em>this</em> request, so the previous
+         * principal's cached representation must not answer it. 403 is the case that motivated the
+         * change; 401 and 404 are the same rule on the same path.
+         */
+        @ParameterizedTest(name = "HTTP {0}")
+        @ValueSource(ints = {401, 403, 404})
+        @DisplayName("A 4xx for a second principal should surface no cached content or validator")
+        @ModuleDispatcher
+        void clientErrorShouldNotServeAnotherPrincipalsCachedContent(int status, URIBuilder uriBuilder) {
+            PrincipalIsolationDispatcher.reset();
+            HttpAdapter<String> adapter = sharedKeyAdapter(uriBuilder);
+
+            HttpResult<String> seeded = adapter.get(PrincipalIsolationDispatcher.PRINCIPAL_A_HEADERS).join();
+            assertAll("Principal A seeds the cache",
+                    () -> assertTrue(seeded.isSuccess(), "The seeding GET should succeed"),
+                    () -> assertEquals(PrincipalIsolationDispatcher.PRINCIPAL_A_BODY, seeded.getContent().orElse(null),
+                            "The seeding GET should return A's representation"));
+
+            PrincipalIsolationDispatcher.failWith(status);
+            HttpResult<String> denied = adapter.get(PrincipalIsolationDispatcher.PRINCIPAL_B_HEADERS).join();
+
+            assertAll("Principal B answered with %d".formatted(status),
+                    () -> assertFalse(denied.isSuccess(), "A 4xx is a failure"),
+                    () -> assertEquals(Optional.of(status), denied.getHttpStatus(),
+                            "The observed status should be preserved"),
+                    () -> assertTrue(denied.getContent().isEmpty(),
+                            "A 4xx must carry no fallback content at all"),
+                    () -> assertFalse(denied.getContent().orElse("").contains(PrincipalIsolationDispatcher.SECRET_MARKER),
+                            "Principal A's body must not reach principal B"),
+                    () -> assertTrue(denied.getETag().isEmpty(),
+                            "A 4xx must not surface the cached validator either"));
+        }
+
+        /**
+         * The positive control: a {@code 5xx} says the server could not serve the representation
+         * right now, which is precisely the availability failure stale content is meant to bridge.
+         * It runs for the seeding principal itself, so it stays valid independently of how the cache
+         * key is scoped.
+         */
+        @Test
+        @DisplayName("A 503 should still serve the cached body to the principal that cached it")
+        @ModuleDispatcher
+        void serverErrorShouldStillServeCachedContent(URIBuilder uriBuilder) {
+            PrincipalIsolationDispatcher.reset();
+            HttpAdapter<String> adapter = sharedKeyAdapter(uriBuilder);
+
+            assertTrue(adapter.get(PrincipalIsolationDispatcher.PRINCIPAL_A_HEADERS).join().isSuccess(),
+                    "The seeding GET should succeed");
+
+            PrincipalIsolationDispatcher.failWith(503);
+            HttpResult<String> unavailable = adapter.get(PrincipalIsolationDispatcher.PRINCIPAL_A_HEADERS).join();
+
+            assertAll("Principal A answered with 503",
+                    () -> assertFalse(unavailable.isSuccess(), "A 503 is still a failure"),
+                    () -> assertEquals(Optional.of(503), unavailable.getHttpStatus(),
+                            "The observed status should be preserved"),
+                    () -> assertEquals(PrincipalIsolationDispatcher.PRINCIPAL_A_BODY,
+                            unavailable.getContent().orElse(null),
+                            "An availability failure should degrade gracefully onto the cached body"),
+                    () -> assertEquals(PrincipalIsolationDispatcher.ETAG, unavailable.getETag().orElse(null),
+                            "The cached validator accompanies the cached body"));
+        }
+
+        /**
+         * Builds the adapter over the token-refresh filter, which is what makes two principals share
+         * one cache key — the precondition the isolation case needs in order to be observable at all.
+         */
+        private HttpAdapter<String> sharedKeyAdapter(URIBuilder uriBuilder) {
+            String serverUrl = uriBuilder.addPathSegments("principal", "resource").build().toString();
+            HttpHandler serverHandler = HttpHandler.builder().url(serverUrl).allowInsecureHttp(true).build();
+
+            return ETagAwareHttpAdapter.<String>builder()
+                    .httpHandler(serverHandler)
+                    .responseConverter(new TestResponseConverter())
+                    .cacheKeyHeaderFilter(CacheKeyHeaderFilter.excluding("Authorization"))
+                    .build();
+        }
+    }
+
+    /**
+     * Serves principal A's representation until a failure status is armed, then answers every
+     * request with that status and an empty body.
+     *
+     * <p>The armed status is static because the dispatcher resolver serves requests from its own
+     * instance rather than the one the test handed it — the same caveat the redirect dispatchers
+     * document.</p>
+     */
+    static final class PrincipalIsolationDispatcher implements ModuleDispatcherElement {
+
+        static final String BASE_PATH = "/principal";
+        static final String PATH = BASE_PATH + "/resource";
+        static final String SECRET_MARKER = "A-ONLY-PAYLOAD";
+        static final String PRINCIPAL_A_BODY = "{\"owner\":\"principal-a\",\"secret\":\"" + SECRET_MARKER + "\"}";
+        static final String ETAG = "\"etag-principal-a\"";
+        static final Map<String, String> PRINCIPAL_A_HEADERS = Map.of("Authorization", "Bearer token-principal-a");
+        static final Map<String, String> PRINCIPAL_B_HEADERS = Map.of("Authorization", "Bearer token-principal-b");
+
+        private static final AtomicInteger ARMED_FAILURE = new AtomicInteger();
+
+        static void reset() {
+            ARMED_FAILURE.set(0);
+        }
+
+        static void failWith(int status) {
+            ARMED_FAILURE.set(status);
+        }
+
+        @Override
+        public Optional<MockResponse> handleGet(@NonNull RecordedRequest request) {
+            if (!PATH.equals(request.getUrl().encodedPath())) {
+                return Optional.empty();
+            }
+            int armed = ARMED_FAILURE.get();
+            if (armed != 0) {
+                return Optional.of(new MockResponse(armed, new Headers.Builder().build(), ""));
+            }
+            return Optional.of(new MockResponse(200, new Headers.Builder()
+                    .add("ETag", ETAG)
+                    .add("Content-Type", "application/json")
+                    .build(), PRINCIPAL_A_BODY));
+        }
+
+        @Override
+        public String getBaseUrl() {
+            return BASE_PATH;
+        }
+
+        @Override
+        public @NonNull Set<HttpMethodMapper> supportedMethods() {
+            return Set.of(HttpMethodMapper.GET);
         }
     }
 

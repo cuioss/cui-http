@@ -896,6 +896,15 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      *   <li>Conversion failure handling for 2xx responses, excluding the no-body statuses
      *       {@code 204} and {@code 205} (see {@link #isNoBodyStatus})</li>
      *   <li>Success/failure result creation based on status code</li>
+     *   <li><strong>Failure with fallback</strong> — an error response surfaces the cached content
+     *       and cached ETag only when the failure is one of <em>availability</em>: a GET holding a
+     *       cache entry that was answered with a {@code 5xx}. A {@code 5xx} means the server could
+     *       not serve the representation right now, which is precisely what stale content bridges.
+     *       Every {@code 4xx} is a statement about this request — the caller may no longer read the
+     *       resource ({@code 401}/{@code 403}), it is gone ({@code 404}/{@code 410}), or the request
+     *       is malformed ({@code 400}) — so a {@code 4xx} yields a failure whose
+     *       {@code fallbackContent} and ETag are both {@code null}, rather than returning a body the
+     *       server has just declined to serve.</li>
      * </ul>
      *
      * @param response HTTP response from server
@@ -978,13 +987,23 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
         }
 
         // Return failure for error status codes. When a cached entry is in hand (a GET that was
-        // revalidated but the server returned an error instead of 304), surface it as fallback
-        // content so callers can degrade gracefully - the documented "Failure with fallback" state.
-        // Only GET may use cached fallback: the cache is populated exclusively by GET (see above),
-        // so gating on the method prevents a non-GET failure from surfacing a prior GET's body/ETag
-        // through a method-agnostic cache key.
+        // revalidated but the server answered with an availability failure instead of 304), surface
+        // it as fallback content so callers can degrade gracefully - the documented "Failure with
+        // fallback" state.
+        //
+        // Two conjuncts gate it. Only GET may use cached fallback: the cache is populated
+        // exclusively by GET (see above), so gating on the method prevents a non-GET failure from
+        // surfacing a prior GET's body/ETag through a method-agnostic cache key. And only a 5xx
+        // qualifies: a 5xx says the server could not serve the representation right now, which is
+        // exactly the availability failure stale content is meant to bridge. A 4xx says something
+        // about THIS request - 401/403 that the caller may no longer read the resource, 404 that it
+        // is gone, 400/410 that the request itself is wrong - so answering it with the previously
+        // cached body would hand back a representation the server has just declined to serve, and
+        // in the authorization cases would leak it past the very check that rejected the caller.
+        // Every 4xx therefore yields a failure carrying neither fallback content nor a cached ETag.
         HttpErrorCategory errorCategory = HttpStatusFamily.fromStatusCode(statusCode).toErrorCategory();
-        boolean canUseCachedFallback = method == HttpMethod.GET && cachedEntry != null;
+        boolean canUseCachedFallback = method == HttpMethod.GET && cachedEntry != null
+                && HttpStatusFamily.isServerError(statusCode);
 
         return HttpResult.<T>failureWithFallback(
                 "HTTP %d: %s".formatted(statusCode, method.methodName()),
