@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-11",
+  "slug": "generator-contract-test-semantics",
+  "workstream": "WS-04",
+  "status": "shipped",
+  "plan_marshall_plan_id": "generator-contract-test-semantics",
+  "pr": "164",
+  "landing": "landings/PLAN-11.md",
+  "seq": 11
+}

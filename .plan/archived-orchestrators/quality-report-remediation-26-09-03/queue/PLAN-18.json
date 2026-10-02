@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-18",
+  "slug": "semicolon-dot-segment-traversal",
+  "workstream": "WS-01",
+  "status": "shipped",
+  "plan_marshall_plan_id": "semicolon-dot-segment-traversal",
+  "pr": "185",
+  "landing": "landings/PLAN-18.md",
+  "seq": 18
+}

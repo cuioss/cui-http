@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-07",
+  "slug": "forwarded-diagnostics-and-doc-accuracy",
+  "workstream": "WS-02",
+  "status": "shipped",
+  "plan_marshall_plan_id": "plan-07-forwarded-diagnostics-and-doc-accuracy",
+  "pr": "168",
+  "landing": "landings/PLAN-07.md",
+  "seq": 7
+}

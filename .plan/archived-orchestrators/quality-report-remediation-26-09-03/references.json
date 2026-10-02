@@ -1,0 +1,23 @@
+{
+  "source_documents": [
+    {
+      "id": "quality-report",
+      "title": "CUI-HTTP Quality Report",
+      "path": "source/README.adoc",
+      "origin": "doc/quality-report/ (git-controlled until PR #149)",
+      "reviewed_commit": "7ae6499",
+      "reviewed_date": "2026-08-15",
+      "note": "Index document. Severity scale, report index, executive summary, top priorities."
+    },
+    {"id": "sv", "title": "Security Validation Review", "path": "source/security-validation-review.adoc", "findings": "SV-1..SV-29", "scope": "security.validation, .pipeline, .config, .data, .core, .monitoring, .exceptions"},
+    {"id": "cl", "title": "HTTP Client Review", "path": "source/http-client-review.adoc", "findings": "CL-1..CL-20", "scope": "client, .handler, .adapter, .converter, .result"},
+    {"id": "fw", "title": "Forwarded-Header Resolution Review", "path": "source/forwarded-review.adoc", "findings": "FW-1..FW-21", "scope": "forwarded package + doc/forwarded-header-resolution.adoc"},
+    {"id": "tq", "title": "Test Quality Review", "path": "source/test-quality-review.adoc", "findings": "TQ-1..TQ-23", "scope": "complete test suite incl. all 34 generator implementations"},
+    {"id": "doc", "title": "Documentation Review", "path": "source/documentation-review.adoc", "findings": "DOC-1..DOC-14", "scope": "22 AsciiDoc files, CLAUDE.md, agents.md, Javadoc drift"},
+    {"id": "bb", "title": "Build & Benchmarking Review", "path": "source/build-and-benchmarking-review.adoc", "findings": "BB-1..BB-10", "scope": "both pom trees, GitHub workflows, JMH benchmarks, log-message audit"}
+  ],
+  "pull_requests": [
+    {"number": 149, "repo": "cuioss/cui-http", "title": "chore: move doc/quality-report into the orchestrator epic tree", "role": "source-corpus relocation"}
+  ],
+  "repository": {"name": "cuioss/cui-http", "default_branch": "main"}
+}

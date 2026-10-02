@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-17",
+  "slug": "validated-redirect-following",
+  "workstream": "WS-03",
+  "status": "shipped",
+  "plan_marshall_plan_id": "validated-redirect-following",
+  "pr": "186",
+  "landing": "landings/PLAN-17.md",
+  "seq": 17
+}

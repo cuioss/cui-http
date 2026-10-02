@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-16",
+  "slug": "PLAN-16-parameter-value-linebreak-carve-out",
+  "workstream": "WS-01-security-validation-core",
+  "status": "shipped",
+  "plan_marshall_plan_id": "parameter-value-linebreak-carve-out",
+  "pr": "#239",
+  "landing": "landings/PLAN-16.md",
+  "seq": 16
+}
