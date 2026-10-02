@@ -78,20 +78,20 @@
           "auto_rebase_threshold": "no_overlap_only",
           "lane": "minimal"
         },
-        "default:pre-push-quality-gate": {
-          "lane": "minimal"
-        },
-        "default:pre-submission-self-review": {
-          "lane": "minimal"
-        },
         "default:finalize-step-simplify": {
           "lane": "standard"
         },
         "default:finalize-step-security-audit": {
           "lane": "full"
         },
+        "default:pre-submission-self-review": {
+          "lane": "minimal"
+        },
         "default:architecture-refresh": {
           "lane": "full"
+        },
+        "default:pre-push-quality-gate": {
+          "lane": "minimal"
         },
         "plan-marshall:automatic-review": {
           "review_bot_buffer_seconds": 180,
@@ -167,7 +167,8 @@
   "orchestrator": {
     "auto_emit": false,
     "effort": {},
-    "parallelization_scope": 1
+    "parallelization_scope": 1,
+    "use_worktree": true
   },
   "build": {
     "queue": {
@@ -207,6 +208,7 @@
       "project_key": "cuioss_cui-http"
     }
   },
+  "interaction_mode": "advanced",
   "project": {
     "default_base_branch": "main",
     "working_prefixes": [
@@ -288,7 +290,7 @@
       "plugin_cache_keep_versions": 5,
       "plugin_cache_keep_days": 3
     },
-    "provisioned_version": "0.1.1619",
-    "config_seed_fingerprint": "cf572469"
+    "provisioned_version": "0.1.1841",
+    "config_seed_fingerprint": "28c7d1c8"
   }
 }
