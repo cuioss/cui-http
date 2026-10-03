@@ -47,6 +47,16 @@ class URLPathValidationPipelineTest {
     /** RFC 3986 unreserved characters and the path separator: no escape, no backslash, no Unicode. */
     private static final Pattern UNRESERVED_AND_SLASH = Pattern.compile("[A-Za-z0-9._~/-]*");
 
+    /** The number of raw traversals {@code shouldRejectPathTraversal} asserts on. */
+    private static final int TRAVERSAL_SAMPLES = 5;
+
+    /**
+     * The most draws {@code shouldRejectPathTraversal} takes, so a generator that stops emitting raw
+     * traversals fails the test instead of hanging it. About one draw in ten qualifies, so the fifth
+     * sample is expected within roughly fifty draws.
+     */
+    private static final int TRAVERSAL_DRAW_CAP = 2000;
+
     private SecurityConfiguration config;
     private SecurityEventCounter eventCounter;
     private URLPathValidationPipeline pipeline;
@@ -150,9 +160,14 @@ class URLPathValidationPipelineTest {
         void shouldRejectPathTraversal() {
             PathTraversalGenerator generator = new PathTraversalGenerator();
             List<String> rawTraversals = Stream.generate(generator::next)
+                    .limit(TRAVERSAL_DRAW_CAP)
                     .filter(value -> value.contains("../") && UNRESERVED_AND_SLASH.matcher(value).matches())
-                    .limit(5)
+                    .limit(TRAVERSAL_SAMPLES)
                     .toList();
+
+            assertEquals(TRAVERSAL_SAMPLES, rawTraversals.size(),
+                    () -> "PathTraversalGenerator must still emit raw traversals made of unreserved characters "
+                            + "and slashes; fewer than " + TRAVERSAL_SAMPLES + " in " + TRAVERSAL_DRAW_CAP + " draws");
 
             for (String traversalPath : rawTraversals) {
                 UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
