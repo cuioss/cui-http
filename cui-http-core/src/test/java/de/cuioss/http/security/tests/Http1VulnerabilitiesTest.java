@@ -25,8 +25,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import java.util.Locale;
+import java.util.regex.Pattern;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * HTTP/1.x Protocol Vulnerability Tests
@@ -89,6 +91,22 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 @DisplayName("HTTP/1.x Protocol Vulnerability Tests")
 class Http1VulnerabilitiesTest {
 
+    private static final String CONTENT_LENGTH_NAME = "Content-Length:";
+    private static final String CONTENT_LENGTH_HEADER = CONTENT_LENGTH_NAME + "%20";
+    private static final String ZERO_CONTENT_LENGTH = CONTENT_LENGTH_HEADER + "0%0d";
+    private static final String ZERO_CONTENT_LENGTH_THEN_BODY = ZERO_CONTENT_LENGTH + "%0a%0d%0a";
+
+    /** A second request line behind the encoded line break. */
+    private static final Pattern INJECTED_REQUEST_LINE =
+            Pattern.compile("%0d%0a(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)%20/");
+
+    /** A header name and its encoded colon-space behind the encoded line break. */
+    private static final Pattern INJECTED_HEADER = Pattern.compile("%0d%0a[A-Za-z][A-Za-z0-9-]*:%20");
+
+    /** An upstream routing header behind the encoded line break. */
+    private static final Pattern INJECTED_ROUTING_HEADER =
+            Pattern.compile("%0d%0aX-(Original-URL|Rewrite-URL|Forwarded-(Host|Proto|For)):%20");
+
     private URLPathValidationPipeline pathPipeline;
     private SecurityEventCounter eventCounter;
 
@@ -111,6 +129,9 @@ class Http1VulnerabilitiesTest {
     })
     @DisplayName("CL.0 smuggling patterns are rejected as CONTROL_CHARACTERS")
     void shouldRejectClZeroSmugglingPatterns(String clZeroPattern) {
+        assertTrue(clZeroPattern.contains(CONTENT_LENGTH_HEADER) && !clZeroPattern.contains(ZERO_CONTENT_LENGTH),
+                () -> "CL.0 family: payload must declare a non-zero Content-Length - " + clZeroPattern);
+
         var exception = assertRejected(clZeroPattern);
 
         assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
@@ -130,6 +151,10 @@ class Http1VulnerabilitiesTest {
     })
     @DisplayName("0.CL smuggling patterns are rejected as CONTROL_CHARACTERS")
     void shouldRejectZeroClSmugglingPatterns(String zeroClPattern) {
+        int headerEnd = zeroClPattern.indexOf(ZERO_CONTENT_LENGTH_THEN_BODY);
+        assertTrue(headerEnd >= 0 && headerEnd + ZERO_CONTENT_LENGTH_THEN_BODY.length() < zeroClPattern.length(),
+                () -> "0.CL family: payload must carry Content-Length 0, a blank line and a body - " + zeroClPattern);
+
         var exception = assertRejected(zeroClPattern);
 
         assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
@@ -148,6 +173,9 @@ class Http1VulnerabilitiesTest {
     })
     @DisplayName("Expect header desync patterns are rejected as CONTROL_CHARACTERS")
     void shouldRejectExpectHeaderDesyncPatterns(String expectPattern) {
+        assertTrue(expectPattern.contains("Expect:%20100-continue"),
+                () -> "Expect desync family: payload must carry Expect: 100-continue - " + expectPattern);
+
         var exception = assertRejected(expectPattern);
 
         assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
@@ -166,6 +194,9 @@ class Http1VulnerabilitiesTest {
     })
     @DisplayName("Duplicate Content-Length header patterns are rejected as CONTROL_CHARACTERS")
     void shouldRejectDuplicateContentLengthHeadersInPaths(String pathValue) {
+        assertNotEquals(pathValue.indexOf(CONTENT_LENGTH_NAME), pathValue.lastIndexOf(CONTENT_LENGTH_NAME),
+                () -> "Duplicate Content-Length family: Content-Length must occur at least twice - " + pathValue);
+
         var exception = assertRejected(pathValue);
 
         assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
@@ -184,6 +215,9 @@ class Http1VulnerabilitiesTest {
     })
     @DisplayName("Transfer-Encoding obfuscation patterns are rejected as CONTROL_CHARACTERS")
     void shouldRejectTransferEncodingObfuscationInPaths(String pathValue) {
+        assertTrue(pathValue.toLowerCase(Locale.ROOT).contains("transfer-encoding:%20"),
+                () -> "Transfer-Encoding family: payload must carry a Transfer-Encoding header - " + pathValue);
+
         var exception = assertRejected(pathValue);
 
         assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
@@ -205,6 +239,10 @@ class Http1VulnerabilitiesTest {
     })
     @DisplayName("HTTP verb injection in paths is rejected as CONTROL_CHARACTERS")
     void shouldRejectHttpVerbInjectionInPaths(String verbInjectionPath) {
+        assertTrue(INJECTED_REQUEST_LINE.matcher(verbInjectionPath).find(),
+                () -> "Verb injection family: payload must carry a request line behind the encoded break - "
+                        + verbInjectionPath);
+
         var exception = assertRejected(verbInjectionPath);
 
         assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
@@ -224,6 +262,9 @@ class Http1VulnerabilitiesTest {
     })
     @DisplayName("Header injection via the path is rejected as CONTROL_CHARACTERS")
     void shouldRejectHeaderInjectionViaPathParameters(String injectedPath) {
+        assertTrue(INJECTED_HEADER.matcher(injectedPath).find(),
+                () -> "Header injection family: payload must carry a header behind the encoded break - " + injectedPath);
+
         var exception = assertRejected(injectedPath);
 
         assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
@@ -243,6 +284,12 @@ class Http1VulnerabilitiesTest {
     })
     @DisplayName("Encoded whitespace control characters in paths are rejected as CONTROL_CHARACTERS")
     void shouldHandleWhitespaceManipulationInPaths(String pathValue) {
+        String lowerCased = pathValue.toLowerCase(Locale.ROOT);
+        assertTrue((lowerCased.contains("%0d") || lowerCased.contains("%0a") || lowerCased.contains("%09"))
+                && !pathValue.contains(":"),
+                () -> "Whitespace/control family: payload must carry an encoded CR, LF or TAB and smuggle no header - "
+                        + pathValue);
+
         var exception = assertRejected(pathValue);
 
         assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
@@ -262,6 +309,10 @@ class Http1VulnerabilitiesTest {
     })
     @DisplayName("HTTP response injection patterns are rejected as CONTROL_CHARACTERS")
     void shouldRejectHttpResponseInjection(String responseInjection) {
+        assertTrue(responseInjection.contains("%0d%0aHTTP/1.1%20"),
+                () -> "Response injection family: payload must carry a status line behind the encoded break - "
+                        + responseInjection);
+
         var exception = assertRejected(responseInjection);
 
         assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
@@ -281,6 +332,9 @@ class Http1VulnerabilitiesTest {
     })
     @DisplayName("Upstream routing header injection is rejected as CONTROL_CHARACTERS")
     void shouldRejectUpstreamRoutingHeaderInjection(String routingInjection) {
+        assertTrue(INJECTED_ROUTING_HEADER.matcher(routingInjection).find(),
+                () -> "Routing header family: payload must carry an upstream routing header - " + routingInjection);
+
         var exception = assertRejected(routingInjection);
 
         assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
@@ -299,6 +353,9 @@ class Http1VulnerabilitiesTest {
     })
     @DisplayName("Host header injection is rejected as CONTROL_CHARACTERS")
     void shouldRejectHostHeaderInjection(String hostInjection) {
+        assertTrue(hostInjection.contains("%0d%0aHost:%20"),
+                () -> "Host header family: payload must carry an injected Host header - " + hostInjection);
+
         var exception = assertRejected(hostInjection);
 
         assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),

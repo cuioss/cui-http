@@ -28,6 +28,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -69,6 +71,14 @@ import static org.junit.jupiter.api.Assertions.*;
 @EnableGeneratorController
 @DisplayName("T24: Protocol Handler Attack Tests")
 class ProtocolHandlerAttackTest {
+
+    private static final String JAVASCRIPT = "javascript:";
+    private static final String VBSCRIPT = "vbscript:";
+    private static final String DATA = "data:";
+    private static final String FILE = "file:";
+
+    /** The four schemes the pattern stage rejects at the start of a value, lower-cased. */
+    private static final List<String> SCHEMES = List.of(JAVASCRIPT, VBSCRIPT, DATA, FILE);
 
     private URLPathValidationPipeline pipeline;
     private SecurityEventCounter eventCounter;
@@ -112,6 +122,10 @@ class ProtocolHandlerAttackTest {
     })
     @DisplayName("Script protocol attacks are rejected as SUSPICIOUS_PATTERN_DETECTED")
     void shouldBlockScriptProtocolAttacks(String pattern) {
+        String lowerCased = pattern.toLowerCase(Locale.ROOT);
+        assertTrue(lowerCased.startsWith(JAVASCRIPT) || lowerCased.startsWith(VBSCRIPT),
+                () -> "Script family: payload must start with javascript: or vbscript: - " + pattern);
+
         var exception = assertRejected(pattern);
 
         assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType(),
@@ -129,6 +143,9 @@ class ProtocolHandlerAttackTest {
     })
     @DisplayName("Data URI exploitation patterns are rejected as SUSPICIOUS_PATTERN_DETECTED")
     void shouldBlockDataURIExploitationPatterns(String pattern) {
+        assertTrue(pattern.toLowerCase(Locale.ROOT).startsWith(DATA),
+                () -> "Data family: payload must start with data: - " + pattern);
+
         var exception = assertRejected(pattern);
 
         assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType(),
@@ -145,6 +162,9 @@ class ProtocolHandlerAttackTest {
     })
     @DisplayName("File protocol exploitation patterns are rejected as SUSPICIOUS_PATTERN_DETECTED")
     void shouldBlockFileProtocolExploitationPatterns(String pattern) {
+        assertTrue(pattern.toLowerCase(Locale.ROOT).startsWith(FILE),
+                () -> "File family: payload must start with file: - " + pattern);
+
         var exception = assertRejected(pattern);
 
         assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType(),
@@ -162,6 +182,13 @@ class ProtocolHandlerAttackTest {
     })
     @DisplayName("A scheme in another letter case is rejected as SUSPICIOUS_PATTERN_DETECTED")
     void shouldBlockProtocolCaseManipulation(String pattern) {
+        String lowerCased = pattern.toLowerCase(Locale.ROOT);
+        String scheme = SCHEMES.stream().filter(lowerCased::startsWith).findFirst()
+                .orElseGet(() -> fail("Case-manipulation family: lower-cased payload must start with a scheme - "
+                        + pattern));
+        assertNotEquals(scheme, pattern.substring(0, scheme.length()),
+                () -> "Case-manipulation family: the scheme itself must vary the letter case - " + pattern);
+
         var exception = assertRejected(pattern);
 
         assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType(),
@@ -178,6 +205,12 @@ class ProtocolHandlerAttackTest {
     })
     @DisplayName("A percent-encoded scheme is rejected as SUSPICIOUS_PATTERN_DETECTED after decoding")
     void shouldBlockProtocolEncodingAttacks(String pattern) {
+        String lowerCased = pattern.toLowerCase(Locale.ROOT);
+        assertTrue(pattern.contains("%"),
+                () -> "Percent-encoded family: payload must carry a percent-escape - " + pattern);
+        assertTrue(SCHEMES.stream().noneMatch(lowerCased::startsWith),
+                () -> "Percent-encoded family: only decoding may reveal the scheme - " + pattern);
+
         var exception = assertRejected(pattern);
 
         assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType(),
