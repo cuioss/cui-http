@@ -95,9 +95,12 @@ class CookieChaosAttackTest {
 
     /**
      * The printable or non-ASCII characters of the attack cookie values that the RFC 6265
-     * {@code cookie-octet} set does not admit: space, semicolon, comma and the two bidi overrides.
+     * {@code cookie-octet} set does not admit: space, semicolon, comma and the two bidi overrides
+     * (U+202E, U+202D). The overrides are named by code point so the source carries no
+     * bidirectional character.
      */
-    private static final String NON_COOKIE_OCTET_CHARACTERS = " ;,‮‭";
+    private static final String NON_COOKIE_OCTET_CHARACTERS =
+            " ;," + Character.toString(0x202E) + Character.toString(0x202D);
 
     private CharacterValidationStage cookieNameValidator;
     private CharacterValidationStage cookieValueValidator;
