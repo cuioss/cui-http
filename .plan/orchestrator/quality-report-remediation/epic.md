@@ -177,6 +177,30 @@ would lose real parallelism for no coupling gain. **The "PLAN-08 → PLAN-09 seq
 task order inside one plan, not inter-plan sequencing** — left in place as the historical record of
 why the merge was the correct call, not as a live constraint.
 
+⛔ **CLEANUP 2026-10-03 at `c10ffa9` (operator-directed, after `next` refused all three staged
+plans).** **PLAN-09 and PLAN-11 rows are now `superseded`** (were `parked`): each was absorbed by a
+named successor (PLAN-08 / PLAN-10), which is what `superseded` means and `parked` does not — the
+"rows are now `parked`" sentence above is historical. PLAN-10, PLAN-12 and PLAN-13 re-grounded at
+`c10ffa9`: 52 claims, 43 corroborated, 5 contradicted and re-scoped in place, 4 unverifiable.
+Re-scopes — **PLAN-10** claim 12 / deliverable 7 (`COOKIE_VALUE` already maps to
+`RFC6265_COOKIE_OCTET`; the false positive is fixed, only the generator widening remains) and
+claim 16 (35 generator files, not 34); **PLAN-13** claim 2 / deliverable 2 (`allowExtendedAscii`
+defaults to `false`; `DecodingStage` no longer calls `URLDecoder.decode`), claim 5 / deliverable 3
+(6 falsely-claimed WARN records, HTTP-120 is now asserted) and claim 10 / deliverable 4g (23 ADR
+files, rows 0019-0023 unindexed). **PLAN-12** Expected Surface corrected: the bare
+`cui-http-core/src/main` entry resolved to a non-existent file at the gate and is replaced by the
+15 files it stood for (29 declared, was 15).
+
+⛔ **The disjointness gate is structurally unpassable for this epic on plugin 0.1.1842, and the
+cleanup cannot fix it.** `corpus cross-check` compares each candidate against EVERY corpus spec
+regardless of row status, so (a) PLAN-10/12/13 each carry `file_overlap_matches[]` rows against
+SHIPPED specs only (PLAN-01..08/15/16) — plans that can no longer run concurrently — and (b) the
+two superseded stubs (PLAN-09, PLAN-11), which legitimately declare no surface, keep
+`candidate_comparison_determinate: false`. The three staged specs have NO overlap row against one
+another, no live plan exists and no sibling epic is in the store. Emitting therefore needs an
+explicit operator override recorded per emit, or a plugin fix that drops terminal rows from the
+within-corpus candidate population.
+
 ⛔ **Mandatory re-reads before outline** — a shipped sibling changed each of these:
 - **PLAN-05** → `AllowBlockListStage.java`. PLAN-04 rewrote its entry canonicalisation; PLAN-03
   rewrote its `detail` rendering. Both landed after PLAN-05 was staged.

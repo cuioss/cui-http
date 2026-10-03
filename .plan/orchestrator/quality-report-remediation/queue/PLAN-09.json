@@ -2,7 +2,7 @@
   "id": "PLAN-09",
   "slug": "PLAN-09-redirect-retry-tls-result-correctness",
   "workstream": "WS-04-http-client",
-  "status": "parked",
+  "status": "superseded",
   "plan_marshall_plan_id": "",
   "pr": "",
   "landing": "",
