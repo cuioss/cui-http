@@ -43,8 +43,10 @@ import java.util.List;
  */
 public class IISCVEAttackDatabase implements AttackDatabase {
 
-    // CVE-2017-7269: IIS 6.0 WebDAV ScStoragePathFromUrl buffer overflow
-    public static final AttackTestCase CVE_2017_7269_WEBDAV_OVERFLOW = new AttackTestCase(
+    // CVE-2017-7269: IIS 6.0 WebDAV ScStoragePathFromUrl buffer overflow. The overflow is
+    // triggered by an overlong PROPFIND "If" header and has no URL-path expression; both entries
+    // carry a traversal out of a WebDAV path, and their names state that shape.
+    public static final AttackTestCase CVE_2017_7269_WEBDAV_TRAVERSAL = new AttackTestCase(
             "/webdav/long_filename/../../../windows/win.ini",
             UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
             "CVE-2017-7269: IIS 6.0 WebDAV buffer overflow in ScStoragePathFromUrl function. This critical vulnerability allows remote code execution via crafted PROPFIND requests with long filenames. Affects Windows Server 2003 R2 with IIS 6.0. No patch available - Microsoft recommends upgrading to IIS 7.0+.",
@@ -58,38 +60,43 @@ public class IISCVEAttackDatabase implements AttackDatabase {
             "PATH_TRAVERSAL_DETECTED is expected because the attack uses directory traversal sequences to navigate to sensitive system files (/windows/system32/config/sam) outside the intended web directory."
     );
 
-    // CVE-2015-1635: IIS HTTP.sys remote code execution
-    public static final AttackTestCase CVE_2015_1635_HTTPSYS_RCE = new AttackTestCase(
-            "/default.aspx/../../../windows/win.ini HTTP/1.1\\r\\nRange: bytes=0-0-",
+    // CVE-2015-1635: IIS HTTP.sys remote code execution. Code execution is the impact, not a
+    // property of the request; both entries carry an injected Range header line, and their names
+    // state that shape.
+    public static final AttackTestCase CVE_2015_1635_HTTPSYS_RANGE_HEADER = new AttackTestCase(
+            "/default.aspx/../../../windows/win.ini HTTP/1.1\r\nRange: bytes=0-0-",
             UrlSecurityFailureType.INVALID_CHARACTER,
             "CVE-2015-1635: HTTP.sys remote code execution vulnerability via malformed Range headers. This critical flaw (CVSS 10.0) affects Windows 7/Server 2008 R2 and later, allowing remote code execution through specially crafted HTTP requests. Fixed in MS15-034.",
-            "INVALID_CHARACTER is expected because CRLF sequences (\\r\\n) contain invalid characters in URL paths that are rejected by character validation before protocol analysis."
+            "INVALID_CHARACTER is expected because the space that ends the path and precedes the injected HTTP/1.1 token is not a URL-path character, so CharacterValidationStage rejects the payload on that space. The CR/LF pair and the Range header that follow are never examined."
     );
 
     public static final AttackTestCase CVE_2015_1635_RANGE_HEADER = new AttackTestCase(
-            "/index.html/../../../windows/system32/drivers/etc/hosts HTTP/1.1\\r\\nRange: bytes=1-1-",
+            "/index.html/../../../windows/system32/drivers/etc/hosts HTTP/1.1\r\nRange: bytes=1-1-",
             UrlSecurityFailureType.INVALID_CHARACTER,
             "CVE-2015-1635: HTTP.sys Range header exploit variant. The malformed Range header causes buffer overflow conditions in HTTP.sys, potentially leading to Blue Screen of Death (BSoD) or remote code execution in System context.",
-            "INVALID_CHARACTER is expected because CRLF sequences (\\r\\n) contain invalid characters in URL paths that are rejected by character validation before protocol analysis."
+            "INVALID_CHARACTER is expected because the space that ends the path and precedes the injected HTTP/1.1 token is not a URL-path character, so CharacterValidationStage rejects the payload on that space. The CR/LF pair and the Range header that follow are never examined."
     );
 
-    // CVE-2010-2730: IIS ASP.NET request validation bypass
-    public static final AttackTestCase CVE_2010_2730_ASPNET_BYPASS = new AttackTestCase(
+    // CVE-2010-2730: IIS ASP.NET request validation bypass. This entry carries the raw script
+    // tag that request validation exists to stop - it is the baseline, not a bypass - and its name
+    // states that shape. The %u-escaped spelling below is the bypass.
+    public static final AttackTestCase CVE_2010_2730_ASPNET_SCRIPT_TAG = new AttackTestCase(
             "/default.aspx?input=<script>alert(1)</script>/../../../windows/win.ini",
             UrlSecurityFailureType.INVALID_CHARACTER,
             "CVE-2010-2730: IIS ASP.NET request validation bypass vulnerability. This flaw allows attackers to bypass ASP.NET's request validation mechanisms and inject malicious scripts by using specific encoding techniques.",
-            "INVALID_CHARACTER is expected because angle brackets (<, >) in script tags are invalid characters in URL paths that are rejected by character validation before XSS analysis."
+            "INVALID_CHARACTER is expected because the literal '?' that opens the query is not a URL-path character, so CharacterValidationStage rejects the payload on that '?'. The angle brackets of the script tag that follow are never examined."
     );
 
     public static final AttackTestCase CVE_2010_2730_UNICODE_BYPASS = new AttackTestCase(
             "/page.aspx?data=%u003Cscript%u003Ealert(1)%u003C/script%u003E/../../../windows/temp",
             UrlSecurityFailureType.INVALID_CHARACTER,
             "CVE-2010-2730: ASP.NET request validation bypass using Unicode encoding (%u003C = '<', %u003E = '>'). This technique exploits ASP.NET's Unicode handling to inject script content that bypasses standard XSS filters.",
-            "INVALID_CHARACTER is expected because Unicode-encoded sequences (%u003C) are invalid characters in URL paths that are rejected by character validation before XSS decoding."
+            "INVALID_CHARACTER is expected because the literal '?' that opens the query is not a URL-path character, so CharacterValidationStage rejects the payload on that '?'. The %u-escaped sequences (%u003C) that follow are never examined."
     );
 
-    // CVE-2009-1535: IIS WebDAV authentication bypass
-    public static final AttackTestCase CVE_2009_1535_WEBDAV_BYPASS = new AttackTestCase(
+    // CVE-2009-1535: IIS WebDAV authentication bypass. The payload carries nothing specific to
+    // WebDAV or to the bypass; it carries a backslash traversal, and the name states that shape.
+    public static final AttackTestCase CVE_2009_1535_BACKSLASH_TRAVERSAL = new AttackTestCase(
             "/default.asp\\..\\..\\..\\windows\\win.ini",
             UrlSecurityFailureType.INVALID_CHARACTER,
             "CVE-2009-1535: IIS WebDAV authentication bypass vulnerability using Windows-specific path separators. This attack exploits WebDAV's Translate:f header handling to bypass authentication and perform directory traversal using backslashes.",
@@ -117,7 +124,7 @@ public class IISCVEAttackDatabase implements AttackDatabase {
             "/scripts/..%c0%af..%c0%af..%c0%afwinnt%c0%afsystem32%c0%afcmd.exe?/c+dir+c:\\",
             UrlSecurityFailureType.INVALID_CHARACTER,
             "CVE-2003-0226: IIS Unicode directory traversal vulnerability (Nimda worm variant). This historic attack uses overlong UTF-8 encoding (%c0%af for '/') to bypass IIS security filters and execute system commands. Part of the famous Code Red/Nimda attack family.",
-            "INVALID_CHARACTER is expected because invalid UTF-8 sequences (%c0%af) are rejected by character validation before encoding analysis can process overlong encodings."
+            "INVALID_CHARACTER is expected because the literal '?' that introduces the command arguments is not a URL-path character, so CharacterValidationStage rejects the payload on that '?'. The overlong UTF-8 sequences (%c0%af) are well-formed escapes on the wire and are not what the payload is rejected for."
     );
 
     // Windows UNC path attacks
@@ -161,13 +168,13 @@ public class IISCVEAttackDatabase implements AttackDatabase {
     );
 
     private static final List<AttackTestCase> ALL_ATTACK_TEST_CASES = List.of(
-            CVE_2017_7269_WEBDAV_OVERFLOW,
+            CVE_2017_7269_WEBDAV_TRAVERSAL,
             CVE_2017_7269_WEBDAV_SAM,
-            CVE_2015_1635_HTTPSYS_RCE,
+            CVE_2015_1635_HTTPSYS_RANGE_HEADER,
             CVE_2015_1635_RANGE_HEADER,
-            CVE_2010_2730_ASPNET_BYPASS,
+            CVE_2010_2730_ASPNET_SCRIPT_TAG,
             CVE_2010_2730_UNICODE_BYPASS,
-            CVE_2009_1535_WEBDAV_BYPASS,
+            CVE_2009_1535_BACKSLASH_TRAVERSAL,
             CVE_2008_0075_FTP_TRAVERSAL,
             CVE_2006_0026_DOUBLE_DECODE,
             CVE_2003_0226_UNICODE_TRAVERSAL,

@@ -24,8 +24,15 @@ import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.ArgumentsSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Stream;
+
+import static de.cuioss.http.security.tests.AttackNameClaims.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -35,24 +42,47 @@ import static org.junit.jupiter.api.Assertions.*;
  * Microsoft IIS CVE exploit patterns that target specific vulnerabilities in Internet
  * Information Services across different versions and configurations.</p>
  *
- * <p>Tests documented CVE exploits for IIS that include directory traversal bypasses,
- * buffer overflow attempts, request smuggling, and various parsing vulnerabilities
- * specific to Microsoft's web server implementation.</p>
+ * <p>The entries are the URL-path expressions filed under IIS CVEs and Windows-specific path
+ * tricks: forward- and backslash traversal, encoded and overlong separators, injected request-line
+ * fragments, null bytes, alternate data streams and 8.3 short names. A CVE's impact - buffer
+ * overflow, code execution, authentication bypass - is not a property of a URL path and is not
+ * what these tests exercise.</p>
  *
- * <h3>CVE Categories Tested</h3>
- * <ul>
- *   <li><strong>Path Traversal CVEs</strong> - Directory escapes specific to IIS</li>
- *   <li><strong>Buffer Overflow CVEs</strong> - Memory corruption attack patterns</li>
- *   <li><strong>Request Smuggling CVEs</strong> - HTTP request parsing exploits</li>
- *   <li><strong>Authentication Bypass CVEs</strong> - IIS authentication vulnerabilities</li>
- *   <li><strong>Remote Code Execution CVEs</strong> - RCE exploit patterns for IIS</li>
- * </ul>
+ * <h3>What each test verifies</h3>
+ * <p>{@link #shouldRejectIISCVEAttacksWithCorrectFailureTypes} verifies the pipeline verdict only.
+ * {@link #shouldCarryTheFeatureItsNameClaims} verifies, on the payload itself, that each entry
+ * carries the feature its constant name claims.</p>
  *
  * @author Claude Code Generator
  * @since 1.0
  */
 @DisplayName("IIS CVE Attack Database Tests")
 class IISCVEAttackDatabaseTest {
+
+    /**
+     * What the words of an {@link IISCVEAttackDatabase} constant name claim about its payload. A
+     * CVE number is part of the entry's identifier; the product a CVE is filed under is a label.
+     */
+    private static final AttackNameClaims NAME_CLAIMS = new AttackNameClaims(
+            Map.ofEntries(
+                    claim("TRAVERSAL", TRAVERSAL),
+                    claim("WEBDAV", literal("/webdav/", "/dav/")),
+                    claim("SAM", pattern("/config/sam$")),
+                    claim("RANGE_HEADER", literal("\r\nRange: bytes=")),
+                    claim("ASPNET", literal(".aspx")),
+                    claim("SCRIPT_TAG", literal("<script>")),
+                    claim("UNICODE_BYPASS", literal("%u003C")),
+                    claim("BACKSLASH", literal("\\")),
+                    claim("FTP", literal("ftp://")),
+                    claim("DOUBLE_DECODE", literal("%255c")),
+                    claim("UNICODE_TRAVERSAL", literal("..%c0%af")),
+                    claim("UNC_PATH", pattern("\\\\{2}\\w+\\\\\\w+")),
+                    claim("WINDOWS", literal("windows")),
+                    claim("NULL_BYTE", literal("%00")),
+                    claim("ADS", literal(":$DATA")),
+                    claim("8DOT3", pattern("/[A-Z0-9]{1,6}~\\d/")),
+                    claim("METABASE", literal("MetaBase.xml"))),
+            Set.of("CVE", "IIS", "ATTACK", "HTTPSYS"));
 
     private URLPathValidationPipeline pipeline;
     private SecurityEventCounter eventCounter;
@@ -97,5 +127,24 @@ class IISCVEAttackDatabaseTest {
         // And: Security event should be recorded
         assertTrue(eventCounter.getTotalCount() > initialEventCount,
                 "Security event should be recorded for IIS CVE attack: %s".formatted(testCase.getCompactSummary()));
+    }
+
+    /**
+     * Structural claim of the database (ADR-0009): the payload of every entry carries the
+     * feature its constant name claims. An entry whose payload is edited to drop that feature
+     * fails here, whatever the pipeline verdict is.
+     *
+     * @param constantName the name of the database constant
+     * @param payload the attack string of that constant
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("declaredEntries")
+    @DisplayName("Each entry's payload carries the feature its name claims")
+    void shouldCarryTheFeatureItsNameClaims(String constantName, String payload) {
+        NAME_CLAIMS.assertCarriedBy(constantName, payload);
+    }
+
+    static Stream<Arguments> declaredEntries() {
+        return AttackDatabaseEntries.declaredEntries(IISCVEAttackDatabase.class);
     }
 }

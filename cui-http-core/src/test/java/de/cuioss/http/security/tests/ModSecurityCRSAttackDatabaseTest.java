@@ -24,8 +24,15 @@ import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.ArgumentsSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Stream;
+
+import static de.cuioss.http.security.tests.AttackNameClaims.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -41,18 +48,51 @@ import static org.junit.jupiter.api.Assertions.*;
  * of web application security accumulated over two decades of WAF development.</p>
  *
  * <h3>CRS Rule Categories Tested</h3>
- * <ul>
- *   <li><strong>Protocol Violations</strong>: HTTP protocol anomalies</li>
- *   <li><strong>Path Traversal</strong>: Directory traversal attempts</li>
- *   <li><strong>Request Anomalies</strong>: Malformed requests</li>
- *   <li><strong>Session Fixation</strong>: Session manipulation</li>
- * </ul>
+ * <p>Only the categories that have a URL-path expression: path traversal in its plain and
+ * encoded spellings, null byte injection, excessive encoding layers, encoded control characters
+ * and invalid path characters. See {@link ModSecurityCRSAttackDatabase} for the categories that
+ * are deliberately absent.</p>
+ *
+ * <h3>What each test verifies</h3>
+ * <p>{@link #shouldRejectCRSAttacksWithCorrectFailureTypes} verifies the pipeline verdict only.
+ * {@link #shouldCarryTheFeatureItsNameClaims} verifies, on the payload itself, that each entry
+ * carries the feature its constant name claims.</p>
  *
  * @author Claude Code Generator
  * @since 1.0
  */
 @DisplayName("ModSecurity Core Rule Set Attack Database Tests")
 class ModSecurityCRSAttackDatabaseTest {
+
+    /**
+     * What the words of a {@link ModSecurityCRSAttackDatabase} constant name claim about its
+     * payload. The rule number is part of the entry's identifier.
+     */
+    private static final AttackNameClaims NAME_CLAIMS = new AttackNameClaims(
+            Map.ofEntries(
+                    claim("TRAVERSAL", TRAVERSAL),
+                    claim("PATH_TRAVERSAL", TRAVERSAL),
+                    claim("WINDOWS", literal("windows")),
+                    claim("ENCODED", pattern("%[0-9a-fA-F]{2}")),
+                    claim("DOUBLE_ENCODED", literal("%252e")),
+                    claim("PROC", literal("/proc/")),
+                    claim("CONFIG", literal("/config/")),
+                    claim("NULL_BYTE", literal("%00")),
+                    claim("CRLF_INJECTION", pattern("(?i)%0d%0a[a-z-]+:")),
+                    claim("TRIPLE_ENCODING", literal("%25252e")),
+                    claim("OVERLONG_UTF8", literal("%c0%ae")),
+                    claim("ADMIN_PATH", pattern("^/admin")),
+                    claim("DOUBLE_EXTENSION", pattern("\\.[a-z0-9]+%00\\.[a-z0-9]+$")),
+                    claim("API", pattern("^/api/")),
+                    claim("REDIRECT", pattern("^/redirect")),
+                    claim("FILE_SEGMENT", literal("/file/")),
+                    claim("INPUT_SEGMENT", literal("/input/")),
+                    claim("DOUBLE_SLASH", literal("//")),
+                    claim("PATH_SEMICOLON", pattern(";[a-z]+=")),
+                    claim("DOT_SEGMENT", literal("/./")),
+                    claim("DOTDOT", literal("..")),
+                    claim("SESSION_FILE", literal("/sess_"))),
+            Set.of("CRS", "TO", "ACCESS"));
 
     private URLPathValidationPipeline pipeline;
     private SecurityEventCounter eventCounter;
@@ -97,5 +137,24 @@ class ModSecurityCRSAttackDatabaseTest {
         // And: Security event should be recorded
         assertTrue(eventCounter.getTotalCount() > initialEventCount,
                 "Security event should be recorded for attack: %s".formatted(testCase.getCompactSummary()));
+    }
+
+    /**
+     * Structural claim of the database (ADR-0009): the payload of every entry carries the
+     * feature its constant name claims. An entry whose payload is edited to drop that feature
+     * fails here, whatever the pipeline verdict is.
+     *
+     * @param constantName the name of the database constant
+     * @param payload the attack string of that constant
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("declaredEntries")
+    @DisplayName("Each entry's payload carries the feature its name claims")
+    void shouldCarryTheFeatureItsNameClaims(String constantName, String payload) {
+        NAME_CLAIMS.assertCarriedBy(constantName, payload);
+    }
+
+    static Stream<Arguments> declaredEntries() {
+        return AttackDatabaseEntries.declaredEntries(ModSecurityCRSAttackDatabase.class);
     }
 }

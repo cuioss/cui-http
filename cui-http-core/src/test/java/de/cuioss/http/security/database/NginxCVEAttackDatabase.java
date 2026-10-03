@@ -83,21 +83,23 @@ public class NginxCVEAttackDatabase implements AttackDatabase {
 
     // CVE-2017-7529: nginx range filter integer overflow
     public static final AttackTestCase CVE_2017_7529_RANGE_OVERFLOW = new AttackTestCase(
-            "/large.file/../../../etc/passwd HTTP/1.1\\r\\nRange: bytes=0-999999999",
+            "/large.file/../../../etc/passwd HTTP/1.1\r\nRange: bytes=0-999999999",
             UrlSecurityFailureType.INVALID_CHARACTER,
             "CVE-2017-7529: Nginx range filter integer overflow vulnerability using massive byte range values to trigger integer overflow conditions in nginx 1.3.9-1.13.0. The oversized range (999999999) can cause memory corruption while the path traversal attempts unauthorized file access.",
-            "INVALID_CHARACTER is expected because the payload embeds a space and literal control-character sequences (the HTTP/1.1 line and Range header) that are disallowed in a URL path and are rejected at character validation, regardless of the integer-overflow intent of the massive Range value."
+            "INVALID_CHARACTER is expected because the space that ends the path and precedes the injected HTTP/1.1 token is not a URL-path character and is rejected at character validation. The CR/LF pair and the oversized Range header that follow are never examined, regardless of the integer-overflow intent of the Range value."
     );
 
     public static final AttackTestCase CVE_2017_7529_RANGE_SHADOW = new AttackTestCase(
-            "/video.mp4/../../../etc/shadow HTTP/1.1\\r\\nRange: bytes=1-888888888",
+            "/video.mp4/../../../etc/shadow HTTP/1.1\r\nRange: bytes=1-888888888",
             UrlSecurityFailureType.INVALID_CHARACTER,
             "CVE-2017-7529: Range filter overflow targeting shadow file through media endpoint. This combines the integer overflow trigger with path traversal to access password hashes, demonstrating multi-vector attack exploitation of the nginx vulnerability.",
-            "INVALID_CHARACTER is expected because the payload embeds a space and literal control-character sequences (the HTTP/1.1 line and oversized Range header) that are disallowed in a URL path and are rejected at character validation, regardless of the range-filter integer-overflow intent."
+            "INVALID_CHARACTER is expected because the space that ends the path and precedes the injected HTTP/1.1 token is not a URL-path character and is rejected at character validation. The CR/LF pair and the oversized Range header that follow are never examined, regardless of the range-filter integer-overflow intent."
     );
 
-    // CVE-2019-20372: nginx HTTP/2 request smuggling
-    public static final AttackTestCase CVE_2019_20372_H2_SMUGGLING = new AttackTestCase(
+    // CVE-2019-20372: nginx HTTP/2 request smuggling. Neither entry smuggles a second request;
+    // both carry a traversal out of an API path followed by an HTTP/2.0 protocol token, and their
+    // names state that shape.
+    public static final AttackTestCase CVE_2019_20372_H2_API_PASSWD = new AttackTestCase(
             "/api/v1/../../../etc/passwd HTTP/2.0",
             UrlSecurityFailureType.INVALID_CHARACTER,
             "CVE-2019-20372: Nginx HTTP/2 request smuggling vulnerability allowing path traversal through protocol version exploitation. This affects nginx 1.17.7 and earlier with HTTP/2 enabled, where protocol handling inconsistencies can be exploited for directory traversal attacks.",
@@ -111,15 +113,17 @@ public class NginxCVEAttackDatabase implements AttackDatabase {
             "INVALID_CHARACTER is expected because the embedded space before the HTTP/2.0 protocol token is a disallowed URL-path character rejected at character validation, before the API path traversal can be classified as such."
     );
 
-    // CVE-2021-23017: nginx resolver off-by-one buffer overflow
-    public static final AttackTestCase CVE_2021_23017_RESOLVER_OVERFLOW = new AttackTestCase(
+    // CVE-2021-23017: nginx resolver off-by-one buffer overflow. The overflow is triggered by a
+    // crafted DNS response and has no URL-path expression; both entries carry a traversal out of a
+    // path segment named after the resolver, and their names state that shape.
+    public static final AttackTestCase CVE_2021_23017_RESOLVER_TRAVERSAL = new AttackTestCase(
             "/resolver/buffer_overflow/../../../etc/passwd",
             UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
             "CVE-2021-23017: Nginx resolver off-by-one buffer overflow vulnerability in DNS resolution functionality affecting nginx 0.6.18-1.20.0. This memory corruption vulnerability can be combined with path traversal to access system files after triggering the buffer overflow condition.",
             "PATH_TRAVERSAL_DETECTED is expected because while the resolver path triggers the buffer overflow vulnerability, the primary file access mechanism uses directory traversal sequences to escape the web root."
     );
 
-    public static final AttackTestCase CVE_2021_23017_DNS_MALFORMED = new AttackTestCase(
+    public static final AttackTestCase CVE_2021_23017_DNS_TRAVERSAL = new AttackTestCase(
             "/dns/long_hostname/../../../etc/shadow",
             UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
             "CVE-2021-23017: DNS resolver vulnerability with hostname overflow combined with shadow file access. This demonstrates how DNS resolution buffer overflow can be triggered while simultaneously performing path traversal to access authentication databases.",
@@ -128,17 +132,17 @@ public class NginxCVEAttackDatabase implements AttackDatabase {
 
     // CVE-2016-4450: nginx CRLF injection
     public static final AttackTestCase CVE_2016_4450_CRLF_INJECTION = new AttackTestCase(
-            "/redirect?url=http://evil.com\\r\\nSet-Cookie: admin=true\\r\\n\\r\\n/../../../etc/passwd",
+            "/redirect?url=http://evil.com\r\nSet-Cookie: admin=true\r\n\r\n/../../../etc/passwd",
             UrlSecurityFailureType.INVALID_CHARACTER,
             "CVE-2016-4450: Nginx CRLF injection vulnerability allowing HTTP header manipulation through embedded CRLF sequences. This affects nginx configurations with certain modules, where CRLF characters (\\r\\n) can inject malicious headers like cookies while performing path traversal.",
-            "INVALID_CHARACTER is expected because CRLF sequences (\\r\\n) contain invalid characters in URL paths that are rejected by character validation before protocol analysis."
+            "INVALID_CHARACTER is expected because the literal '?' that opens the query is not a URL-path character and is rejected at character validation. The CR/LF pairs and the injected Set-Cookie header that follow are never examined."
     );
 
     public static final AttackTestCase CVE_2016_4450_CRLF_AUTH_BYPASS = new AttackTestCase(
-            "/proxy?target=http://malicious.com\\r\\nX-Auth: bypass\\r\\n\\r\\n/../../../etc/shadow",
+            "/proxy?target=http://malicious.com\r\nX-Auth: bypass\r\n\r\n/../../../etc/shadow",
             UrlSecurityFailureType.INVALID_CHARACTER,
             "CVE-2016-4450: CRLF injection with authentication bypass header injection. This demonstrates how CRLF vulnerabilities can be exploited to inject authentication bypass headers (X-Auth: bypass) while maintaining path traversal capabilities.",
-            "INVALID_CHARACTER is expected because CRLF sequences (\\r\\n) contain invalid characters in URL paths that are rejected by character validation before protocol analysis."
+            "INVALID_CHARACTER is expected because the literal '?' that opens the query is not a URL-path character and is rejected at character validation. The CR/LF pairs and the injected X-Auth header that follow are never examined."
     );
 
     // CVE-2009-3898: nginx directory traversal
@@ -194,7 +198,9 @@ public class NginxCVEAttackDatabase implements AttackDatabase {
             "PATH_TRAVERSAL_DETECTED is expected because the LiteSpeed cache vulnerability enables directory traversal attacks to escape the cache directory and access unauthorized system password files."
     );
 
-    public static final AttackTestCase CVE_2019_12544_LITESPEED_BUFFER = new AttackTestCase(
+    // A buffer overflow has no URL-path expression; the payload carries a traversal out of a CGI
+    // path, and the name states that shape.
+    public static final AttackTestCase CVE_2019_12544_LITESPEED_CGI_TRAVERSAL = new AttackTestCase(
             "/cgi-bin/long_script_name/../../../etc/shadow",
             UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
             "CVE-2019-12544: LiteSpeed buffer overflow vulnerability in CGI script handling with path traversal. This combines buffer overflow triggers through long script names with directory traversal to access sensitive authentication files after triggering the overflow condition.",
@@ -229,10 +235,10 @@ public class NginxCVEAttackDatabase implements AttackDatabase {
             CVE_2013_4547_SPACE_URI_WINDOWS,
             CVE_2017_7529_RANGE_OVERFLOW,
             CVE_2017_7529_RANGE_SHADOW,
-            CVE_2019_20372_H2_SMUGGLING,
+            CVE_2019_20372_H2_API_PASSWD,
             CVE_2019_20372_H2_API_SHADOW,
-            CVE_2021_23017_RESOLVER_OVERFLOW,
-            CVE_2021_23017_DNS_MALFORMED,
+            CVE_2021_23017_RESOLVER_TRAVERSAL,
+            CVE_2021_23017_DNS_TRAVERSAL,
             CVE_2016_4450_CRLF_INJECTION,
             CVE_2016_4450_CRLF_AUTH_BYPASS,
             CVE_2009_3898_DIRECTORY_TRAVERSAL,
@@ -242,7 +248,7 @@ public class NginxCVEAttackDatabase implements AttackDatabase {
             NGINX_VARIABLE_DOCUMENT_ROOT,
             NGINX_VARIABLE_URI_INJECTION,
             CVE_2018_15517_LITESPEED_TRAVERSAL,
-            CVE_2019_12544_LITESPEED_BUFFER,
+            CVE_2019_12544_LITESPEED_CGI_TRAVERSAL,
             NGINX_URL_ENCODED_TRAVERSAL,
             NGINX_MIXED_ENCODING_TRAVERSAL,
             NGINX_BACKSLASH_TRAVERSAL

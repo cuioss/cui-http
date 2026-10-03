@@ -24,41 +24,54 @@ import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.ArgumentsSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Stream;
+
+import static de.cuioss.http.security.tests.AttackNameClaims.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * OWASP Top 10 Attack Database Tests using structured attack database.
  *
- * <p><strong>COMPREHENSIVE OWASP TOP 10 DATABASE TESTING:</strong> This test class validates
- * attack patterns from the OWASP Top 10 most critical web application security risks.
- * Tests include proven attack patterns for injection, broken authentication, sensitive
- * data exposure, and other critical vulnerability categories.</p>
+ * <p>The database holds the OWASP Top 10 2021 patterns that have a URL-path expression: path
+ * traversal in its plain, encoded, double-encoded, overlong-UTF-8 and mixed-case spellings, null
+ * byte injection, and traversal used against a vulnerable component or to step around a protected
+ * path. Application-layer categories - SQL injection, cross-site scripting, command injection,
+ * server-side request forgery - are deliberately absent; see {@link OWASPTop10AttackDatabase}.</p>
  *
- * <p>This database contains 173+ proven OWASP attack patterns including UTF-8 overlong
- * encoding, double URL encoding, cross-site scripting, SQL injection, and other
- * well-documented attack vectors from OWASP security guidelines.</p>
- *
- * <h3>OWASP Top 10 Categories Tested</h3>
- * <ul>
- *   <li><strong>A01 Injection</strong> - SQL, NoSQL, command injection patterns</li>
- *   <li><strong>A02 Broken Authentication</strong> - Authentication bypass techniques</li>
- *   <li><strong>A03 Sensitive Data Exposure</strong> - Data disclosure patterns</li>
- *   <li><strong>A04 XML External Entities (XXE)</strong> - XML processing exploits</li>
- *   <li><strong>A05 Broken Access Control</strong> - Authorization bypass patterns</li>
- *   <li><strong>A06 Security Misconfiguration</strong> - Configuration exploit patterns</li>
- *   <li><strong>A07 Cross-Site Scripting (XSS)</strong> - XSS attack vectors</li>
- *   <li><strong>A08 Insecure Deserialization</strong> - Deserialization exploits</li>
- *   <li><strong>A09 Known Vulnerabilities</strong> - Component vulnerability patterns</li>
- *   <li><strong>A10 Insufficient Logging</strong> - Logging bypass techniques</li>
- * </ul>
+ * <h3>What each test verifies</h3>
+ * <p>{@link #shouldRejectOWASPTop10AttacksWithCorrectFailureTypes} verifies the pipeline verdict
+ * only. {@link #shouldCarryTheFeatureItsNameClaims} verifies, on the payload itself, that each
+ * entry carries the feature its constant name claims.</p>
  *
  * @author Claude Code Generator
  * @since 1.0
  */
 @DisplayName("OWASP Top 10 Attack Database Tests")
 class OWASPTop10AttackDatabaseTest {
+
+    /** What the words of an {@link OWASPTop10AttackDatabase} constant name claim about its payload. */
+    private static final AttackNameClaims NAME_CLAIMS = new AttackNameClaims(
+            Map.ofEntries(
+                    claim("CLASSIC", pattern("^[^%]+$")),
+                    claim("TRAVERSAL", TRAVERSAL),
+                    claim("PATH_TRAVERSAL", TRAVERSAL),
+                    claim("UNIX", literal("../")),
+                    claim("WINDOWS", literal("..\\")),
+                    claim("URL_ENCODED", literal("%2e%2e%2f")),
+                    claim("DOUBLE_ENCODED", literal("%252e%252e%252f")),
+                    claim("UTF8_OVERLONG", literal("%c0%ae%c0%ae%c0%af")),
+                    claim("NULL_BYTE", literal("%00")),
+                    claim("STRUTS2", literal("/struts2")),
+                    claim("AUTH_BYPASS", literal("/admin/../")),
+                    claim("MIXED_ENCODING_BYPASS",
+                            payload -> payload.contains("%2F") && payload.contains("%2f"))),
+            Set.of("COMPONENT"));
 
     private URLPathValidationPipeline pipeline;
     private SecurityEventCounter eventCounter;
@@ -103,5 +116,24 @@ class OWASPTop10AttackDatabaseTest {
         // And: Security event should be recorded
         assertTrue(eventCounter.getTotalCount() > initialEventCount,
                 "Security event should be recorded for OWASP attack: %s".formatted(testCase.getCompactSummary()));
+    }
+
+    /**
+     * Structural claim of the database (ADR-0009): the payload of every entry carries the
+     * feature its constant name claims. An entry whose payload is edited to drop that feature
+     * fails here, whatever the pipeline verdict is.
+     *
+     * @param constantName the name of the database constant
+     * @param payload the attack string of that constant
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("declaredEntries")
+    @DisplayName("Each entry's payload carries the feature its name claims")
+    void shouldCarryTheFeatureItsNameClaims(String constantName, String payload) {
+        NAME_CLAIMS.assertCarriedBy(constantName, payload);
+    }
+
+    static Stream<Arguments> declaredEntries() {
+        return AttackDatabaseEntries.declaredEntries(OWASPTop10AttackDatabase.class);
     }
 }

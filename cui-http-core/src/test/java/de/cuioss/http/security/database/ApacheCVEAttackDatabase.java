@@ -115,24 +115,28 @@ public class ApacheCVEAttackDatabase implements AttackDatabase {
             "PATH_TRAVERSAL_DETECTED is expected because the double-encoded forward slashes (%252f = / -> %2f -> %252f) reconstruct a directory-traversal sequence (../../../) that the pipeline flags as path traversal after decoding."
     );
 
-    // CVE-2020-1927: Apache HTTP Server mod_rewrite
-    public static final AttackTestCase CVE_2020_1927_MOD_REWRITE = new AttackTestCase(
+    // CVE-2020-1927: Apache HTTP Server mod_rewrite. The payload carries an encoded traversal in a
+    // query string; that shape is what the name states.
+    public static final AttackTestCase CVE_2020_1927_MOD_REWRITE_QUERY_TRAVERSAL = new AttackTestCase(
             "/index.php?page=..%2f..%2f..%2f..%2fetc%2fpasswd",
             UrlSecurityFailureType.INVALID_CHARACTER,
             "CVE-2020-1927: Apache HTTP Server mod_rewrite path traversal vulnerability. Affects Apache 2.4.41 and allows attackers to map URLs to files outside configured directories when mod_rewrite is enabled with certain rule configurations.",
-            "INVALID_CHARACTER is expected because the raw encoded-traversal payload (..%2f) in the query string reaches character validation first, where its disallowed characters are rejected before any traversal-specific detection runs."
+            "INVALID_CHARACTER is expected because the full query-bearing URL is validated as a path and its literal '?' is not a URL-path character, so CharacterValidationStage rejects the payload on that '?'. The encoded traversal (..%2f) that follows consists of valid path characters and well-formed escapes; it is not what the payload is rejected for and is never examined."
     );
 
-    // CVE-2019-0211: Apache HTTP Server privilege escalation
-    public static final AttackTestCase CVE_2019_0211_PRIVILEGE_ESCALATION = new AttackTestCase(
+    // CVE-2019-0211: Apache HTTP Server privilege escalation. A local privilege escalation has no
+    // URL-path expression; the payload carries a traversal in the query of the server-status
+    // endpoint, and the name states that shape.
+    public static final AttackTestCase CVE_2019_0211_SERVER_STATUS_QUERY_TRAVERSAL = new AttackTestCase(
             "/server-status?refresh=1&auto=../../../etc/passwd",
             UrlSecurityFailureType.INVALID_CHARACTER,
             "CVE-2019-0211: Apache HTTP Server privilege escalation through mod_prefork vulnerability. This attack combines server-status endpoint access with path traversal to potentially gain elevated privileges on Apache 2.4.17 to 2.4.38.",
             "INVALID_CHARACTER is expected because the full query-bearing URL is validated as a path and its disallowed characters are rejected at character validation before the unencoded traversal sequences (../../../) can be classified as path traversal."
     );
 
-    // CVE-2018-1333: Apache HTTP Server DoS
-    public static final AttackTestCase CVE_2018_1333_DOS_ATTACK = new AttackTestCase(
+    // CVE-2018-1333: Apache HTTP Server DoS. Resource exhaustion has no URL-path expression; the
+    // payload carries a traversal in a query string, and the name states that shape.
+    public static final AttackTestCase CVE_2018_1333_QUERY_TRAVERSAL = new AttackTestCase(
             "/test?long_query_parameter=../../../etc/passwd",
             UrlSecurityFailureType.INVALID_CHARACTER,
             "CVE-2018-1333: Apache HTTP Server Denial of Service vulnerability combined with path traversal. This attack exploits a flaw in Apache 2.4.17 to 2.4.29 that can cause resource exhaustion while attempting unauthorized file access.",
@@ -149,10 +153,10 @@ public class ApacheCVEAttackDatabase implements AttackDatabase {
 
     // CVE-2016-8743: Apache HTTP Server chunked transfer encoding
     public static final AttackTestCase CVE_2016_8743_HTTP_SMUGGLING = new AttackTestCase(
-            "/upload.php HTTP/1.1\\r\\nTransfer-Encoding: chunked\\r\\n\\r\\n0\\r\\n\\r\\nGET ../../../etc/passwd HTTP/1.1",
+            "/upload.php HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\nGET ../../../etc/passwd HTTP/1.1",
             UrlSecurityFailureType.INVALID_CHARACTER,
             "CVE-2016-8743: Apache HTTP Server HTTP request smuggling via chunked transfer encoding. This vulnerability in Apache 2.4.17 to 2.4.25 allows attackers to smuggle HTTP requests through malformed chunked encoding headers.",
-            "INVALID_CHARACTER is expected because the embedded CRLF/control-character sequences (from the injected chunked transfer encoding headers and smuggled HTTP request) are rejected at character validation as disallowed characters for a URL path."
+            "INVALID_CHARACTER is expected because the space that ends the path and precedes the injected HTTP/1.1 token is not a URL-path character, so CharacterValidationStage rejects the payload on that space. The CR/LF pairs, the chunked Transfer-Encoding header and the smuggled second request that follow are never examined."
     );
 
     // CVE-2021-40438: Apache HTTP Server SSRF in mod_proxy
@@ -163,8 +167,9 @@ public class ApacheCVEAttackDatabase implements AttackDatabase {
             "INVALID_CHARACTER is expected because although this is primarily an SSRF attack, the query-bearing URL is rejected at character validation on its disallowed characters before the embedded directory traversal patterns (../../../) can be classified as path traversal."
     );
 
-    // CVE-2020-11993: Apache HTTP Server HTTP/2 request smuggling
-    public static final AttackTestCase CVE_2020_11993_H2_SMUGGLING = new AttackTestCase(
+    // CVE-2020-11993: Apache HTTP Server HTTP/2 request smuggling. HTTP/2 framing has no URL-path
+    // expression; the payload carries a traversal out of an API path, and the name states that shape.
+    public static final AttackTestCase CVE_2020_11993_API_TRAVERSAL = new AttackTestCase(
             "/api/v1/users/../../../etc/passwd",
             UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
             "CVE-2020-11993: Apache HTTP Server HTTP/2 request smuggling vulnerability. This affects Apache 2.4.20 to 2.4.43 and allows attackers to bypass access controls through malformed HTTP/2 requests combined with path traversal.",
@@ -172,7 +177,7 @@ public class ApacheCVEAttackDatabase implements AttackDatabase {
     );
 
     // CVE-2020-1938: Apache Tomcat AJP Request Injection (Ghostcat)
-    public static final AttackTestCase CVE_2020_1938_GHOSTCAT = new AttackTestCase(
+    public static final AttackTestCase CVE_2020_1938_GHOSTCAT_WEB_INF_TRAVERSAL = new AttackTestCase(
             "/WEB-INF/../../../etc/passwd",
             UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
             "CVE-2020-1938 (Ghostcat): Apache Tomcat AJP Request Injection vulnerability. This critical flaw allows attackers to access sensitive files like WEB-INF/web.xml and perform Remote Code Execution through the Apache JServ Protocol (AJP) connector.",
@@ -194,14 +199,14 @@ public class ApacheCVEAttackDatabase implements AttackDatabase {
             CVE_2021_42013_DOUBLE_ENCODING,
             CVE_2021_42013_ICONS_PATH,
             CVE_2019_0230_STRUTS_TRAVERSAL,
-            CVE_2020_1927_MOD_REWRITE,
-            CVE_2019_0211_PRIVILEGE_ESCALATION,
-            CVE_2018_1333_DOS_ATTACK,
+            CVE_2020_1927_MOD_REWRITE_QUERY_TRAVERSAL,
+            CVE_2019_0211_SERVER_STATUS_QUERY_TRAVERSAL,
+            CVE_2018_1333_QUERY_TRAVERSAL,
             CVE_2017_15710_NULL_BYTE,
             CVE_2016_8743_HTTP_SMUGGLING,
             CVE_2021_40438_SSRF,
-            CVE_2020_11993_H2_SMUGGLING,
-            CVE_2020_1938_GHOSTCAT,
+            CVE_2020_11993_API_TRAVERSAL,
+            CVE_2020_1938_GHOSTCAT_WEB_INF_TRAVERSAL,
             CVE_2018_1336_UTF8_BYPASS
     );
 

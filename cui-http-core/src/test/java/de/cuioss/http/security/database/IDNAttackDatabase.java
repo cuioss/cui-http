@@ -51,7 +51,7 @@ public class IDNAttackDatabase implements AttackDatabase {
             "http://аpple.com/../../../etc/passwd",
             UrlSecurityFailureType.INVALID_CHARACTER,
             "Homograph attack using Cyrillic 'а' (U+0430) instead of Latin 'a' (U+0061) in apple.com domain. This attack exploits visual similarity between characters from different Unicode scripts to deceive users into visiting malicious websites that appear to be legitimate apple.com while performing path traversal.",
-            "INVALID_CHARACTER is expected because the attack contains directory traversal sequences (../../../) which are detected before suspicious pattern matching due to validation priority order."
+            "INVALID_CHARACTER is expected because the Cyrillic letter (U+0430) lies above code point 255, the upper bound of the extended range this database is validated with, so CharacterValidationStage rejects it first. The directory traversal sequences (../../../) that follow are never examined."
     );
 
     public static final AttackTestCase CYRILLIC_GOOGLE_HOMOGRAPH = new AttackTestCase(
@@ -93,7 +93,7 @@ public class IDNAttackDatabase implements AttackDatabase {
     public static final AttackTestCase PUNYCODE_CHINESE_ATTACK = new AttackTestCase(
             "http://xn--fsq.com/admin/../../etc/hosts",
             UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
-            "Punycode attack with 'xn--fsq.com' representing Chinese character '中' (meaning 'middle' or 'China'). This shows how single character domains can be used for attack obfuscation while accessing system files through path traversal.",
+            "Punycode attack with 'xn--fsq.com' representing Chinese character '例' (U+4F8B, meaning 'example'). This shows how single character domains can be used for attack obfuscation while accessing system files through path traversal.",
             "PATH_TRAVERSAL_DETECTED is expected because punycode domains are ASCII-compatible and pass character validation, allowing path traversal detection."
     );
 
@@ -105,10 +105,10 @@ public class IDNAttackDatabase implements AttackDatabase {
             "INVALID_CHARACTER is expected because mixing scripts from different Unicode blocks (Latin + Cyrillic) in a single domain is a strong indicator of homograph spoofing attempts."
     );
 
-    public static final AttackTestCase ARMENIAN_PERIOD_TWITTER = new AttackTestCase(
+    public static final AttackTestCase ONE_DOT_LEADER_TWITTER = new AttackTestCase(
             "http://twitter․com/../../admin",
             UrlSecurityFailureType.INVALID_CHARACTER,
-            "Sophisticated punctuation homograph attack using Armenian full stop '․' (U+2024) instead of period '.' (U+002E) in twitter.com domain. This creates a nearly impossible to detect visual deception while attempting administrative directory access.",
+            "Sophisticated punctuation homograph attack using the one dot leader '․' (U+2024) instead of period '.' (U+002E) in twitter.com domain. This creates a nearly impossible to detect visual deception while attempting administrative directory access.",
             "INVALID_CHARACTER is expected because non-ASCII punctuation characters in domain names, especially those visually similar to periods, indicate advanced homograph attacks."
     );
 
@@ -224,7 +224,7 @@ public class IDNAttackDatabase implements AttackDatabase {
             PUNYCODE_RUSSIAN_DOMAIN,
             PUNYCODE_CHINESE_ATTACK,
             MIXED_SCRIPT_GOOGLE,
-            ARMENIAN_PERIOD_TWITTER,
+            ONE_DOT_LEADER_TWITTER,
             HYPHENATION_POINT_INSTAGRAM,
             COMPOSED_ACCENT_CAFE,
             DECOMPOSED_ACCENT_CAFE,
