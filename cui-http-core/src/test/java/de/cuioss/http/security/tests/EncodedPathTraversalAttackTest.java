@@ -29,7 +29,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -135,23 +137,22 @@ class EncodedPathTraversalAttackTest {
     }
 
     @ParameterizedTest
-    @TypeGeneratorSource(value = EncodingCombinationGenerator.class, count = 20)
-    @DisplayName("Should handle legitimate encoded characters correctly")
-    void shouldHandleLegitimateEncodedCharacters(String legitimatePattern) {
-        // Note: Some of these might still be blocked by security rules if they contain
-        // patterns that could be dangerous even in legitimate contexts
-        try {
-            var result = pipeline.validate(legitimatePattern);
-            // If validation passes, result should be present
-            assertTrue(result.isPresent(), "Validated result should be present for: " + legitimatePattern);
-            assertNotNull(result.get(), "Validated result should not be null for: " + legitimatePattern);
-        } catch (UrlSecurityException e) {
-            // Some legitimate patterns might be blocked by strict security rules
-            // This is acceptable for security-first approach
-            // Logging disabled for test performance
-        }
-    }
+    @CsvSource(delimiter = '|', textBlock = """
+            /api/users/john%20doe          | /api/users/john doe
+            /files/report%2Dfinal.pdf      | /files/report-final.pdf
+            /docs/release%5Fnotes          | /docs/release_notes
+            /api/tags/c%2B%2B              | /api/tags/c++
+            /search/caf%C3%A9              | /search/café
+            /api/items/%41%42%43           | /api/items/ABC
+            """)
+    @DisplayName("Should accept legitimate percent-encoded characters and return the decoded path")
+    void shouldAcceptLegitimateEncodedCharacters(String encodedPath, String decodedPath) {
+        Optional<String> validated = assertDoesNotThrow(() -> pipeline.validate(encodedPath),
+                () -> "Legitimate encoded path should be accepted: " + encodedPath);
 
+        assertEquals(Optional.of(decodedPath), validated, () -> "Unexpected decoded form of: " + encodedPath);
+        assertEquals(0, eventCounter.getTotalCount(), "An accepted path records no security event");
+    }
 
     @Test
     @DisplayName("Should validate encoding generator produces expected patterns")

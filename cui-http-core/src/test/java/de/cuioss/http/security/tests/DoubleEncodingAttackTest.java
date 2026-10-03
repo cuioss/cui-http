@@ -27,8 +27,10 @@ import de.cuioss.test.generator.junit.EnableGeneratorController;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -201,76 +203,72 @@ class DoubleEncodingAttackTest {
     @TypeGeneratorSource(value = ValidURLPathGenerator.class, count = 20)
     @DisplayName("Valid URL paths should pass validation")
     void shouldValidateValidPaths(String validPath) {
-        // Given: A valid path from the generator
-        long initialEventCount = eventCounter.getTotalCount();
+        Optional<String> validated = assertDoesNotThrow(() -> pipeline.validate(validPath),
+                () -> "Valid path should be accepted: " + validPath);
 
-        // When: Validating the legitimate path
-        try {
-            var result = pipeline.validate(validPath);
-            // Then: Should return validated result
-            assertTrue(result.isPresent(), "Valid path should return validated result: " + validPath);
-            assertNotNull(result.get(), "Valid path result should not be null: " + validPath);
-
-            // And: No security events should be recorded for valid paths
-            assertEquals(initialEventCount, eventCounter.getTotalCount(),
-                    "No security events should be recorded for valid path: " + validPath);
-
-        } catch (UrlSecurityException e) {
-            // Some paths might still be blocked by other security rules
-            // This is acceptable for a security-first approach
-            // The path might contain patterns that could be dangerous even in legitimate contexts
-            assertTrue(initialEventCount < eventCounter.getTotalCount(),
-                    "If path is blocked, security event should be recorded: " + validPath);
-        }
+        assertEquals(Optional.of(validPath), validated, "A valid path is returned unchanged");
+        assertEquals(0, eventCounter.getTotalCount(),
+                () -> "No security event should be recorded for valid path: " + validPath);
     }
 
     /**
-     * Test edge cases in double encoding detection.
+     * Test the rejected edge cases of double encoding detection.
      *
      * <p>
-     * Tests various edge cases that might cause issues in double encoding
-     * detection logic, including malformed encoding and boundary conditions.
+     * An escape that is truncated is malformed encoding; a {@code %25} followed by two hex
+     * digits is the wire form of a double-encoded character. A double-encoded traversal
+     * sequence is recognised earlier still, by the pattern stage that runs before decoding,
+     * and is therefore reported as path traversal.
      * </p>
+     *
+     * @param edgeCase the edge-case input
+     * @param expected the one failure type the path pipeline reports for it
      */
-    @Test
-    @DisplayName("Should handle edge cases in double encoding detection")
-    void shouldHandleEdgeCases() {
-        String[] edgeCases = {
-                "%",                                    // Incomplete encoding
-                "%2",                                   // Incomplete encoding
-                "%25",                                  // Single % encoding
-                "%%",                                   // Double %
-                "%252",                                 // Incomplete double encoding
-                "%252G",                                // Invalid hex in double encoding
-                "%25252e",                              // Triple % encoding
-                "%25%25",                               // Double %25
-                "/normal%25path",                       // Normal path with %25
-                "/path%252",                            // Incomplete double encoding at end
-                "%2525%252e%252e%252f",                 // Mixed triple/double encoding
-                "/%25%25%25%25%25"                      // Multiple % chars
-        };
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            %                    | INVALID_ENCODING
+            %2                   | INVALID_ENCODING
+            %%                   | INVALID_ENCODING
+            %25252e              | DOUBLE_ENCODING
+            %2525%252e%252e%252f | PATH_TRAVERSAL_DETECTED
+            """)
+    @DisplayName("Malformed and double-encoded edge cases are rejected with their exact failure type")
+    void shouldRejectEncodingEdgeCases(String edgeCase, UrlSecurityFailureType expected) {
+        var exception = assertThrows(UrlSecurityException.class, () -> pipeline.validate(edgeCase),
+                () -> "Edge case should be rejected: " + edgeCase);
 
-        for (String edgeCase : edgeCases) {
-            long initialEventCount = eventCounter.getTotalCount();
+        assertEquals(expected, exception.getFailureType(), () -> "Unexpected verdict for: " + edgeCase);
+        assertEquals(1, eventCounter.getCount(expected), () -> "Exactly one " + expected + " event should be recorded");
+    }
 
-            try {
-                var result = pipeline.validate(edgeCase);
-                // If validation passes, result should be present
-                // Some edge cases might be legitimate patterns
-                assertTrue(result.isPresent(), "Validated result should be present for: " + edgeCase);
-                assertNotNull(result.get(), "Validated result should not be null for: " + edgeCase);
+    /**
+     * Test the accepted edge cases of double encoding detection.
+     *
+     * <p>
+     * A single {@code %25} is an ordinary encoded percent sign: it decodes to a literal
+     * {@code %} that is followed by no hex pair, so nothing is double-encoded.
+     * </p>
+     *
+     * @param edgeCase the edge-case input
+     * @param decoded the decoded form the path pipeline returns
+     */
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            %25              | %
+            %252             | %2
+            %252G            | %2G
+            %25%25           | %%
+            /normal%25path   | /normal%path
+            /path%252        | /path%2
+            /%25%25%25%25%25 | /%%%%%
+            """)
+    @DisplayName("An encoded percent sign that forms no second escape is accepted and decoded")
+    void shouldAcceptEncodedPercentSign(String edgeCase, String decoded) {
+        Optional<String> validated = assertDoesNotThrow(() -> pipeline.validate(edgeCase),
+                () -> "Edge case should be accepted: " + edgeCase);
 
-            } catch (UrlSecurityException e) {
-                // Edge cases might be rejected for various reasons
-                // This is acceptable - either for security reasons or invalid encoding
-                assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                        "Security event should be recorded when rejecting: " + edgeCase);
-
-                // Should have a proper failure type
-                assertNotNull(e.getFailureType(),
-                        "Exception should have failure type for: " + edgeCase);
-            }
-        }
+        assertEquals(Optional.of(decoded), validated, () -> "Unexpected decoded form of: " + edgeCase);
+        assertEquals(0, eventCounter.getTotalCount(), "An accepted path records no security event");
     }
 
     /**

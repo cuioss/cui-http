@@ -16,17 +16,23 @@
 package de.cuioss.http.security.tests;
 
 import de.cuioss.http.security.config.SecurityConfiguration;
+import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.data.Cookie;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.generators.cookie.*;
 import de.cuioss.http.security.validation.CharacterValidationStage;
+import de.cuioss.http.security.validation.CookiePrefixValidationStage;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -59,16 +65,19 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * <h3>Implementation Notes</h3>
  * <p>
- * This test class focuses on character-level validation of cookie names.
- * Cookie prefix semantic validation (e.g., __Host- must not have Domain attribute)
- * is documented as a future enhancement and tested here to demonstrate the attacks
- * even though full semantic validation is not yet implemented in the library.
+ * Tests #1 to #4 and #7 to #9 exercise the character-level validation of cookie names and
+ * values through {@link CharacterValidationStage}. Tests #5 and #6 exercise the cookie prefix
+ * semantics (for example, a {@code __Host-} cookie must not carry a Domain attribute) through
+ * {@link CookiePrefixValidationStage#validateCookie(Cookie)}, which judges name, value and
+ * attributes together and reports a violated prefix rule as
+ * {@link UrlSecurityFailureType#COOKIE_PREFIX_VIOLATION}.
  * </p>
  *
  * @see <a href="https://portswigger.net/research/cookie-chaos-how-to-bypass-host-and-secure-cookie-prefixes">
  *      Cookie Chaos Research</a>
  * @see de.cuioss.http.security.data.Cookie
  * @see de.cuioss.http.security.validation.CharacterValidationStage
+ * @see de.cuioss.http.security.validation.CookiePrefixValidationStage
  * @since 1.0
  */
 @EnableGeneratorController
@@ -76,14 +85,24 @@ import static org.junit.jupiter.api.Assertions.*;
 class CookieChaosAttackTest {
 
     /**
-     * Draws for the aggregate attack-cookie test. The rarest name family is one of four, and the
+     * Draws for the attack-cookie test. The rarest name family is one of four, and the
      * empty name one of seven within it, so 200 draws reach every family with certainty for
      * practical purposes.
      */
     private static final int ATTACK_COOKIE_DRAWS = 200;
 
+    /** The characters of the attack cookie names and values that are C0 controls. */
+    private static final String C0_CONTROLS = "\t\r\n";
+
+    /**
+     * The printable or non-ASCII characters of the attack cookie values that the RFC 6265
+     * {@code cookie-octet} set does not admit: space, semicolon, comma and the two bidi overrides.
+     */
+    private static final String NON_COOKIE_OCTET_CHARACTERS = " ;,‮‭";
+
     private CharacterValidationStage cookieNameValidator;
     private CharacterValidationStage cookieValueValidator;
+    private CookiePrefixValidationStage cookiePrefixValidator;
     private SecurityConfiguration config;
 
     @BeforeEach
@@ -95,6 +114,7 @@ class CookieChaosAttackTest {
                 .build();
         cookieNameValidator = new CharacterValidationStage(config, ValidationType.COOKIE_NAME);
         cookieValueValidator = new CharacterValidationStage(config, ValidationType.COOKIE_VALUE);
+        cookiePrefixValidator = new CookiePrefixValidationStage(config);
     }
 
     /**
@@ -127,12 +147,9 @@ class CookieChaosAttackTest {
                 () -> cookieNameValidator.validate(maliciousName),
                 "Unicode space in cookie name should be rejected: " + getDisplayableString(maliciousName));
 
-        assertNotNull(exception);
         assertEquals(maliciousName, exception.getOriginalInput());
-        // Should be rejected as invalid character (Unicode in cookie name)
-        assertTrue(exception.getFailureType().name().contains("CHARACTER") ||
-                exception.getFailureType().name().contains("CONTROL"),
-                "Should detect invalid Unicode character: " + exception.getFailureType());
+        assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
+                "A non-ASCII whitespace character is outside the cookie-name token set");
     }
 
     /**
@@ -161,8 +178,9 @@ class CookieChaosAttackTest {
                 () -> cookieNameValidator.validate(name),
                 "Zero-width character should be rejected: " + getDisplayableString(name));
 
-        assertNotNull(exception);
         assertEquals(name, exception.getOriginalInput());
+        assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
+                "A zero-width character is outside the cookie-name token set");
     }
 
     /**
@@ -176,7 +194,10 @@ class CookieChaosAttackTest {
      *
      * <p>
      * Uses generator to produce combinations of space/tab characters in
-     * leading, trailing, both, and doubled positions.
+     * leading, trailing, both, and doubled positions. Each draw decorates with one kind of
+     * whitespace only, and the kind decides the verdict: a tab is a C0 control and is reported as
+     * {@code CONTROL_CHARACTERS}, a space is a printable character outside the token set and is
+     * reported as {@code INVALID_CHARACTER}.
      * </p>
      */
     @ParameterizedTest
@@ -189,8 +210,12 @@ class CookieChaosAttackTest {
                 () -> cookieNameValidator.validate(invalidName),
                 "Whitespace in cookie name should be rejected: '" + invalidName + "'");
 
-        assertNotNull(exception);
+        UrlSecurityFailureType expected = invalidName.indexOf('\t') >= 0
+                ? UrlSecurityFailureType.CONTROL_CHARACTERS
+                : UrlSecurityFailureType.INVALID_CHARACTER;
         assertEquals(invalidName, exception.getOriginalInput());
+        assertEquals(expected, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + getDisplayableString(invalidName));
     }
 
     /**
@@ -221,107 +246,109 @@ class CookieChaosAttackTest {
                 () -> cookieNameValidator.validate(legacyName),
                 "Legacy parsing trigger should be rejected: " + legacyName);
 
-        assertNotNull(exception);
         assertEquals(legacyName, exception.getOriginalInput());
-        // Should be rejected due to invalid characters (= , ; in cookie name)
+        assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
+                "The '=' of $Version=1 is outside the cookie-name token set");
     }
 
     /**
      * Test #5: Cookie Prefix Validation - __Host- Requirements
      *
      * <p>
-     * Demonstrates the need for cookie prefix validation. The Cookie data
-     * structure accepts these but applications should validate that:
-     * - __Host- cookies must have Secure attribute
-     * - __Host- cookies must NOT have Domain attribute
-     * - __Host- cookies must have Path=/
+     * {@link CookiePrefixValidationStage#validateCookie(Cookie)} enforces the three
+     * {@code __Host-} rules: the cookie must carry the Secure attribute, must not carry a Domain
+     * attribute, and must carry {@code Path=/}. The prefix token is matched ASCII
+     * case-insensitively, so a case variation cannot slip past the rules.
      * </p>
      *
+     * @param cookieName the {@code __Host-} prefixed cookie name
+     * @param attributes attributes that violate one of the {@code __Host-} rules
+     */
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            __Host-session | Domain=.example.com; Secure; Path=/
+            __Host-session | Path=/
+            __Host-session | Secure; Path=/admin
+            __Host-session | Secure
+            __host-session | Path=/
+            __HOST-session | Domain=example.com; Secure; Path=/
+            """)
+    @DisplayName("Test #5: a __Host- cookie violating a prefix rule is rejected")
+    void shouldRejectHostPrefixViolation(String cookieName, String attributes) {
+        Cookie violating = new Cookie(cookieName, "value", attributes);
+
+        var exception = assertThrows(UrlSecurityException.class,
+                () -> cookiePrefixValidator.validateCookie(violating),
+                () -> "A __Host- cookie with attributes '" + attributes + "' violates the prefix rules");
+
+        assertEquals(UrlSecurityFailureType.COOKIE_PREFIX_VIOLATION, exception.getFailureType());
+        assertEquals(cookieName, exception.getOriginalInput());
+    }
+
+    /**
+     * Test #5: Cookie Prefix Validation - a conforming __Host- cookie
+     *
      * <p>
-     * Note: This test documents the expected behavior for future implementation.
-     * Currently, the library does not enforce cookie prefix semantics - that is
-     * left to applications using the library.
+     * A {@code __Host-} cookie that is Secure, carries no Domain attribute and has
+     * {@code Path=/} satisfies every prefix rule and is accepted.
      * </p>
      */
     @Test
-    @DisplayName("Test #5: __Host- prefix requirements should be validated (documentation)")
-    void shouldDocumentHostPrefixRequirements() {
-        // These cookies violate __Host- requirements but are accepted by Cookie record
-        // Applications must implement additional validation
+    @DisplayName("Test #5: a conforming __Host- cookie is accepted")
+    void shouldAcceptConformingHostPrefixCookie() {
+        Cookie conforming = new Cookie("__Host-session", "value", "Secure; Path=/");
 
-        // VIOLATION: __Host- with Domain attribute (forbidden)
-        Cookie invalidDomain = new Cookie(
-                "__Host-session",
-                "value",
-                "Domain=.example.com; Secure; Path=/"
-        );
-        assertTrue(invalidDomain.getDomain().isPresent(),
-                "Cookie data structure accepts Domain (validation needed by application)");
-
-        // VIOLATION: __Host- without Secure attribute (required)
-        Cookie noSecure = new Cookie(
-                "__Host-session",
-                "value",
-                "Path=/"
-        );
-        assertFalse(noSecure.isSecure(),
-                "Cookie data structure accepts missing Secure (validation needed by application)");
-
-        // VIOLATION: __Host- with Path other than / (must be /)
-        Cookie wrongPath = new Cookie(
-                "__Host-session",
-                "value",
-                "Secure; Path=/admin"
-        );
-        assertEquals("/admin", wrongPath.getPath().orElse(null),
-                "Cookie data structure accepts wrong Path (validation needed by application)");
-
-        // VALID: Proper __Host- cookie
-        Cookie valid = new Cookie(
-                "__Host-session",
-                "value",
-                "Secure; Path=/"
-        );
-        assertTrue(valid.isSecure() &&
-                valid.getDomain().isEmpty() &&
-                "/".equals(valid.getPath().orElse("")),
-                "Valid __Host- cookie has all required attributes");
+        assertDoesNotThrow(() -> cookiePrefixValidator.validateCookie(conforming));
     }
 
     /**
      * Test #6: Cookie Prefix Validation - __Secure- Requirements
      *
      * <p>
-     * Demonstrates __Secure- prefix validation requirements.
-     * __Secure- cookies must have the Secure attribute to ensure HTTPS-only
-     * transmission.
+     * {@link CookiePrefixValidationStage#validateCookie(Cookie)} enforces the single
+     * {@code __Secure-} rule: the cookie must carry the Secure attribute, which ensures
+     * HTTPS-only transmission. Domain and Path are unconstrained for this prefix.
      * </p>
      *
-     * <p>
-     * Note: This test documents expected behavior. Applications must implement
-     * this validation as the library currently focuses on character-level validation.
-     * </p>
+     * @param cookieName the {@code __Secure-} prefixed cookie name
+     * @param attributes attributes that lack the Secure attribute
      */
-    @Test
-    @DisplayName("Test #6: __Secure- prefix requirements should be validated (documentation)")
-    void shouldDocumentSecurePrefixRequirements() {
-        // VIOLATION: __Secure- without Secure attribute
-        Cookie noSecure = new Cookie(
-                "__Secure-session",
-                "value",
-                "Domain=example.com; Path=/"
-        );
-        assertFalse(noSecure.isSecure(),
-                "Cookie data structure accepts __Secure- without Secure attribute (validation needed)");
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            __Secure-session | Domain=example.com; Path=/
+            __Secure-session | Path=/
+            __secure-session | Domain=example.com; Path=/
+            __SECURE-token   | HttpOnly
+            """)
+    @DisplayName("Test #6: a __Secure- cookie without the Secure attribute is rejected")
+    void shouldRejectSecurePrefixViolation(String cookieName, String attributes) {
+        Cookie violating = new Cookie(cookieName, "value", attributes);
 
-        // VALID: Proper __Secure- cookie
-        Cookie valid = new Cookie(
-                "__Secure-session",
-                "value",
-                "Secure; Domain=example.com; Path=/"
-        );
-        assertTrue(valid.isSecure(),
-                "Valid __Secure- cookie has Secure attribute");
+        var exception = assertThrows(UrlSecurityException.class,
+                () -> cookiePrefixValidator.validateCookie(violating),
+                () -> "A __Secure- cookie with attributes '" + attributes + "' lacks the Secure attribute");
+
+        assertEquals(UrlSecurityFailureType.COOKIE_PREFIX_VIOLATION, exception.getFailureType());
+        assertEquals(cookieName, exception.getOriginalInput());
+    }
+
+    /**
+     * Test #6: Cookie Prefix Validation - a conforming __Secure- cookie
+     *
+     * <p>
+     * A {@code __Secure-} cookie that carries the Secure attribute is accepted, with or without
+     * a Domain attribute.
+     * </p>
+     *
+     * @param attributes attributes that include the Secure attribute
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"Secure; Domain=example.com; Path=/", "Secure"})
+    @DisplayName("Test #6: a conforming __Secure- cookie is accepted")
+    void shouldAcceptConformingSecurePrefixCookie(String attributes) {
+        Cookie conforming = new Cookie("__Secure-session", "value", attributes);
+
+        assertDoesNotThrow(() -> cookiePrefixValidator.validateCookie(conforming));
     }
 
     /**
@@ -351,63 +378,85 @@ class CookieChaosAttackTest {
      * Test #8: Attack Cookie Generator Patterns
      *
      * <p>
-     * The existing AttackCookieGenerator includes various attack patterns. Not every attack name
-     * is malformed at the character level — the generator deliberately emits an empty name too —
-     * so rejection cannot be asserted per draw. It is asserted in aggregate instead: across the
-     * draws, the character validator must have rejected at least one attack name and at least one
-     * attack value, and the named-cookie branch must have been reached at all. Without those
-     * after-the-loop assertions a validator that accepted everything would pass this test.
+     * Every name and every value {@link AttackCookieGenerator} emits has exactly one verdict
+     * under character validation, and each draw asserts it. The verdict follows from the first
+     * character the RFC 6265 grammar does not admit: a null byte is
+     * {@code NULL_BYTE_INJECTION}, a tab, CR or LF is {@code CONTROL_CHARACTERS}, any other
+     * character outside the grammar is {@code INVALID_CHARACTER}. A name or value made of
+     * grammar characters only is accepted - character validation judges the grammar, not the
+     * meaning, so a syntactically clean payload such as {@code javascript:alert(1)} passes it.
      * </p>
+     *
+     * @param attackCookie a cookie drawn from the attack generator
      */
-    @Test
-    @DisplayName("Test #8: Attack cookie patterns must be rejected")
-    void shouldRejectAttackCookiePatterns() {
-        AttackCookieGenerator generator = new AttackCookieGenerator();
-        boolean namedCookieReached = false;
-        boolean nameRejected = false;
-        boolean valueRejected = false;
+    @ParameterizedTest
+    @TypeGeneratorSource(value = AttackCookieGenerator.class, count = ATTACK_COOKIE_DRAWS)
+    @DisplayName("Test #8: every attack cookie name and value has its exact character verdict")
+    void shouldGiveAttackCookieItsExactCharacterVerdict(Cookie attackCookie) {
+        assertTrue(attackCookie.hasValue(), "AttackCookieGenerator must emit a cookie carrying a value");
 
-        for (int draw = 0; draw < ATTACK_COOKIE_DRAWS; draw++) {
-            Cookie attackCookie = generator.next();
-
-            if (attackCookie.hasName()) {
-                namedCookieReached = true;
-                nameRejected |= isRejected(cookieNameValidator, attackCookie.name());
-            }
-
-            assertTrue(attackCookie.hasValue(),
-                    "AttackCookieGenerator must emit a cookie carrying a value");
-            valueRejected |= isRejected(cookieValueValidator, attackCookie.value());
-        }
-
-        boolean reachedNamedCookie = namedCookieReached;
-        boolean rejectedAName = nameRejected;
-        boolean rejectedAValue = valueRejected;
-        assertAll("Attack cookie rejection",
-                () -> assertTrue(reachedNamedCookie,
-                        "A cookie with a non-empty name must be reachable within "
-                                + ATTACK_COOKIE_DRAWS + " draws"),
-                () -> assertTrue(rejectedAName,
-                        "The character validator must reject at least one attack cookie name within "
-                                + ATTACK_COOKIE_DRAWS + " draws"),
-                () -> assertTrue(rejectedAValue,
-                        "The character validator must reject at least one attack cookie value within "
-                                + ATTACK_COOKIE_DRAWS + " draws"));
+        assertCharacterVerdict(cookieNameValidator, attackCookie.name(), expectedNameVerdict(attackCookie.name()));
+        assertCharacterVerdict(cookieValueValidator, attackCookie.value(),
+                expectedValueVerdict(attackCookie.value()));
     }
 
     /**
-     * Reports whether the validator rejects the input, without asserting either outcome.
+     * The verdict of the cookie-name character validation for an attack cookie name: the control
+     * names carry a tab, CR or LF; the token names (pipe, apostrophe, the very long name and the
+     * empty name) consist of token characters only; every other attack name carries a printable
+     * separator.
+     */
+    private static Optional<UrlSecurityFailureType> expectedNameVerdict(String name) {
+        if (containsAnyOf(name, C0_CONTROLS)) {
+            return Optional.of(UrlSecurityFailureType.CONTROL_CHARACTERS);
+        }
+        boolean tokenOnly = name.isEmpty() || "cookie|pipe".equals(name) || "cookie'apostrophe".equals(name)
+                || name.startsWith("very_long_cookie_name_");
+        return tokenOnly ? Optional.empty() : Optional.of(UrlSecurityFailureType.INVALID_CHARACTER);
+    }
+
+    /**
+     * The verdict of the cookie-value character validation for an attack cookie value. Every
+     * attack value that carries a control character carries it ahead of any other inadmissible
+     * character, so the control verdict takes precedence.
+     */
+    private static Optional<UrlSecurityFailureType> expectedValueVerdict(String value) {
+        if (value.indexOf('\0') >= 0) {
+            return Optional.of(UrlSecurityFailureType.NULL_BYTE_INJECTION);
+        }
+        if (containsAnyOf(value, C0_CONTROLS)) {
+            return Optional.of(UrlSecurityFailureType.CONTROL_CHARACTERS);
+        }
+        if (containsAnyOf(value, NON_COOKIE_OCTET_CHARACTERS)) {
+            return Optional.of(UrlSecurityFailureType.INVALID_CHARACTER);
+        }
+        return Optional.empty();
+    }
+
+    private static boolean containsAnyOf(String input, String characters) {
+        return input.chars().anyMatch(character -> characters.indexOf(character) >= 0);
+    }
+
+    /**
+     * Asserts the one verdict the validator must reach for the input: rejection with the given
+     * failure type, or acceptance of the unchanged input when no failure type is expected.
      *
      * @param validator the character validation stage to apply
      * @param input the cookie name or value to validate
-     * @return {@code true} when validation threw, {@code false} when it passed
+     * @param expectedFailure the failure type the validator must report, or empty for acceptance
      */
-    private static boolean isRejected(CharacterValidationStage validator, String input) {
-        try {
-            validator.validate(input);
-            return false;
-        } catch (UrlSecurityException e) {
-            return true;
+    private void assertCharacterVerdict(CharacterValidationStage validator, String input,
+            Optional<UrlSecurityFailureType> expectedFailure) {
+        if (expectedFailure.isPresent()) {
+            var exception = assertThrows(UrlSecurityException.class, () -> validator.validate(input),
+                    () -> "Should be rejected: " + getDisplayableString(input));
+            assertEquals(expectedFailure.get(), exception.getFailureType(),
+                    () -> "Unexpected verdict for: " + getDisplayableString(input));
+        } else {
+            Optional<String> validated = assertDoesNotThrow(() -> validator.validate(input),
+                    () -> "Should be accepted: " + getDisplayableString(input));
+            assertEquals(Optional.of(input), validated,
+                    () -> "Accepted input must be returned unchanged: " + getDisplayableString(input));
         }
     }
 
