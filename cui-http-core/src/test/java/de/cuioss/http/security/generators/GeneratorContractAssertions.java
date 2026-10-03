@@ -16,6 +16,7 @@
 package de.cuioss.http.security.generators;
 
 import de.cuioss.http.security.core.HttpSecurityValidator;
+import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 
 import java.util.Optional;
@@ -44,7 +45,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * {@link #assertPipelineRejects(HttpSecurityValidator, String)} express the stronger contract
  * available to generators whose every branch is unambiguously legitimate (accepts) or
  * unambiguously an attack (rejects). Generators that mix the two assert marker properties
- * only.</p>
+ * only. {@link #assertPipelineRejects(HttpSecurityValidator, String, UrlSecurityFailureType)}
+ * additionally pins the failure type, for an arm whose rejection has one exact verdict.</p>
  *
  * @since 1.0
  */
@@ -198,10 +200,31 @@ public final class GeneratorContractAssertions {
      * @param value the generated value that the pipeline must reject
      */
     public static void assertPipelineRejects(HttpSecurityValidator pipeline, String value) {
+        rejectionOf(pipeline, value);
+    }
+
+    /**
+     * Asserts that the pipeline rejects the value with exactly the given failure type - the
+     * exact-verdict variant of {@link #assertPipelineRejects(HttpSecurityValidator, String)}, for
+     * a generator arm whose values are all decided by the same mechanism.
+     *
+     * @param pipeline the validation pipeline under test
+     * @param value the generated value that the pipeline must reject
+     * @param expectedFailureType the one failure type the rejection must report
+     */
+    public static void assertPipelineRejects(HttpSecurityValidator pipeline, String value,
+            UrlSecurityFailureType expectedFailureType) {
+        UrlSecurityException exception = rejectionOf(pipeline, value);
+        assertEquals(expectedFailureType, exception.getFailureType(),
+                () -> "Rejection must report the expected failure type. Value: <" + preview(value) + ">");
+    }
+
+    private static UrlSecurityException rejectionOf(HttpSecurityValidator pipeline, String value) {
         UrlSecurityException exception = assertThrows(UrlSecurityException.class,
                 () -> pipeline.validate(value),
                 () -> "Pipeline must reject the generated value. Value: <" + preview(value) + ">");
         assertEquals(value, exception.getOriginalInput(),
                 "Rejection must report the generated value as its original input");
+        return exception;
     }
 }

@@ -18,6 +18,8 @@ package de.cuioss.http.security.generators.header;
 import de.cuioss.test.generator.Generators;
 import de.cuioss.test.generator.TypedGenerator;
 
+import java.util.Locale;
+
 /**
  * Generator for valid HTTP header values.
  *
@@ -146,15 +148,24 @@ public class ValidHTTPHeaderValueGenerator implements TypedGenerator<String> {
         String language = generateLanguage();
         if (contextSelector.next()) {
             double quality = qualityValues.next();
-            language += ";q=" + "%.1f".formatted(quality);
+            language += ";q=" + formatQuality(quality);
 
             if (contextSelector.next()) {
                 String secondLang = generateLanguage();
                 double secondQuality = qualityValues.next();
-                language += "," + secondLang + ";q=" + "%.1f".formatted(secondQuality);
+                language += "," + secondLang + ";q=" + formatQuality(secondQuality);
             }
         }
         return language;
+    }
+
+    /**
+     * Renders a quality value with a full stop as decimal separator on every platform. The default
+     * locale must not decide it: under a comma-decimal locale {@code q=0,5} would split the value
+     * at the comma, which separates language ranges.
+     */
+    private static String formatQuality(double quality) {
+        return String.format(Locale.ROOT, "%.1f", quality);
     }
 
     private String generateLanguage() {

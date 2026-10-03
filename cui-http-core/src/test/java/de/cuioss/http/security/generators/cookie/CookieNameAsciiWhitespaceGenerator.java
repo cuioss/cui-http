@@ -34,6 +34,8 @@ import de.cuioss.test.generator.TypedGenerator;
  *   <li>Trailing space and tab</li>
  *   <li>Both leading and trailing whitespace</li>
  *   <li>Multiple whitespace characters</li>
+ *   <li>Embedded space and tab, directly behind the prefix token - the one placement a
+ *       leading/trailing trim does not see</li>
  * </ul>
  *
  * <h3>Security Standards</h3>
@@ -50,7 +52,7 @@ public class CookieNameAsciiWhitespaceGenerator implements TypedGenerator<String
 
     private final TypedGenerator<Integer> whitespaceTypeGen = Generators.integers(0, 3);
     private final TypedGenerator<Integer> nameTypeGen = Generators.integers(0, 2);
-    private final TypedGenerator<Integer> positionGen = Generators.integers(0, 4);
+    private final TypedGenerator<Integer> positionGen = Generators.integers(0, 5);
 
     @Override
     public String next() {
@@ -64,8 +66,18 @@ public class CookieNameAsciiWhitespaceGenerator implements TypedGenerator<String
             case 2 -> whitespace + name + whitespace;       // Both
             case 3 -> whitespace + whitespace + name;       // Double leading
             case 4 -> name + whitespace + whitespace;       // Double trailing
+            case 5 -> embedAfterPrefix(name, whitespace);   // Embedded
             default -> whitespace + name;
         };
+    }
+
+    /**
+     * Places the whitespace directly behind the prefix token, so the name keeps its
+     * {@code __Host-} or {@code __Secure-} prefix and carries no leading or trailing whitespace.
+     */
+    private static String embedAfterPrefix(String name, String whitespace) {
+        int prefixEnd = name.indexOf('-') + 1;
+        return name.substring(0, prefixEnd) + whitespace + name.substring(prefixEnd);
     }
 
     private String getWhitespace() {

@@ -498,10 +498,20 @@ class CookiePrefixValidationStageTest {
         @TypeGeneratorSource(value = CookieNameAsciiWhitespaceGenerator.class, count = 20)
         @DisplayName("Should reject cookie names with ASCII whitespace injection")
         void shouldRejectCookieNamesWithWhitespace(String maliciousName) {
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> validator.validate(maliciousName));
+            // The generator also embeds the whitespace behind the prefix token, which the
+            // string-only validate(String) cannot see - it checks leading and trailing whitespace
+            // only. validateCookie is the route that judges the whole name: a leading or trailing
+            // space or tab fails the whitespace check and an embedded space is outside the
+            // cookie-name token set (both INVALID_CHARACTER), while an embedded tab is a C0 control.
+            Cookie malicious = new Cookie(maliciousName, "value", VALID_HOST_ATTRS);
+            boolean embeddedTab = maliciousName.equals(maliciousName.trim()) && maliciousName.indexOf('\t') >= 0;
 
-            assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
+            var exception = assertThrows(UrlSecurityException.class,
+                    () -> validator.validateCookie(malicious));
+
+            assertEquals(embeddedTab ? UrlSecurityFailureType.CONTROL_CHARACTERS
+                    : UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType());
+            assertEquals(maliciousName, exception.getOriginalInput());
             assertTrue(exception.getDetail().isPresent());
         }
 

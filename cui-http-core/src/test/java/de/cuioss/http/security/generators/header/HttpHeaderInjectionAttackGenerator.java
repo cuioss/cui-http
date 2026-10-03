@@ -19,7 +19,9 @@ import de.cuioss.http.security.validation.CharacterValidationConstants;
 import de.cuioss.test.generator.Generators;
 import de.cuioss.test.generator.TypedGenerator;
 
+import java.util.List;
 import java.util.Objects;
+import java.util.stream.Stream;
 
 /**
  * T15: HTTP Header Injection Attack Generator
@@ -273,6 +275,13 @@ public class HttpHeaderInjectionAttackGenerator implements TypedGenerator<String
             XSS_VIA_HEADER, AUTHENTICATION_BYPASS, CORS_MANIPULATION, SECURITY_HEADER_BYPASS,
             CUSTOM_HEADER_INJECTION, MULTI_LINE_INJECTION, LINE_ENDING_VARIANTS
     };
+
+    /**
+     * Every attack family {@link #next()} selects among, in the order the class Javadoc lists
+     * them. Each family lists its payloads in the raw {@link Surface#HEADER_VALUE} spelling;
+     * {@link #asParameterValue(String)} yields the {@link Surface#PARAMETER_VALUE} spelling.
+     */
+    public static final List<List<String>> ATTACK_FAMILIES = Stream.of(FAMILIES).map(List::of).toList();
 
     /** The number of attack families {@link #next()} selects among. */
     public static final int ATTACK_FAMILY_COUNT = FAMILIES.length;

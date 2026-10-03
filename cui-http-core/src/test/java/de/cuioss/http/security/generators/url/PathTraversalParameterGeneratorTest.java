@@ -100,7 +100,7 @@ class PathTraversalParameterGeneratorTest {
         }
 
         assertEquals(EnumSet.of(UrlSecurityFailureType.INVALID_ENCODING, UrlSecurityFailureType.DOUBLE_ENCODING,
-                UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED), reached,
+                        UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED), reached,
                 "Every verdict class must be reachable within " + AGGREGATE_DRAWS + " draws");
     }
 
