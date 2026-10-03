@@ -107,9 +107,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * registered fails the test by name. A generator class is every concrete, named class under
  * {@code de/cuioss/http} that implements {@link TypedGenerator} - nested member classes such as
  * {@link HttpRequestSmugglingAttackGenerator.HeaderShaped} included, because each is a generator
- * a test can instantiate on its own. Anonymous and local classes are not counted: they have no
- * name a registry entry could refer to. The one generator class that does not implement
- * {@link TypedGenerator} is added by name in {@link #LISTED_GENERATOR_CLASSES}.</p>
+ * a test can instantiate on its own - or whose simple name ends in {@code Generator}. The name
+ * rule finds generators that publish a fixed list instead of implementing {@link TypedGenerator},
+ * such as {@link ForwardedHostGenerator}, without a hand-kept list a new one could be left out of.
+ * Anonymous and local classes are not counted: they have no name a registry entry could refer
+ * to.</p>
  */
 @EnableGeneratorController
 @GeneratorSeed(4711L)
@@ -119,8 +121,8 @@ class AllGeneratorsIntegrationTest {
     /** The package tree, relative to the compiled test-classes root, that is scanned for generators. */
     private static final String SCANNED_PACKAGE_PATH = "de/cuioss/http";
 
-    /** Generator classes the type scan cannot find: they publish a fixed list instead of implementing TypedGenerator. */
-    private static final Set<Class<?>> LISTED_GENERATOR_CLASSES = Set.of(ForwardedHostGenerator.class);
+    /** The name suffix that marks a generator class which publishes a fixed list instead of implementing TypedGenerator. */
+    private static final String GENERATOR_NAME_SUFFIX = "Generator";
 
     private static final int DRAWS = 400;
 
@@ -423,14 +425,14 @@ class AllGeneratorsIntegrationTest {
     }
 
     /**
-     * Walks the compiled test-classes root and returns every generator class found there, plus
-     * {@link #LISTED_GENERATOR_CLASSES}. Classes are loaded without being initialized.
+     * Walks the compiled test-classes root and returns every generator class found there. Classes
+     * are loaded without being initialized.
      */
     private static Set<Class<?>> generatorClassesOfTheTestTree() throws IOException, URISyntaxException {
         Path root = Path.of(AllGeneratorsIntegrationTest.class.getProtectionDomain().getCodeSource().getLocation()
                 .toURI());
         ClassLoader loader = AllGeneratorsIntegrationTest.class.getClassLoader();
-        Set<Class<?>> generators = new HashSet<>(LISTED_GENERATOR_CLASSES);
+        Set<Class<?>> generators = new HashSet<>();
         try (Stream<Path> files = Files.walk(root.resolve(SCANNED_PACKAGE_PATH))) {
             files.map(root::relativize)
                     .map(Path::toString)
@@ -444,9 +446,13 @@ class AllGeneratorsIntegrationTest {
         return generators;
     }
 
-    /** A concrete, named {@link TypedGenerator} implementation; anonymous and local classes have no registrable name. */
+    /**
+     * A concrete, named {@link TypedGenerator} implementation or class named {@code *Generator};
+     * anonymous and local classes have no registrable name.
+     */
     private static boolean isGeneratorClass(Class<?> type) {
-        return TypedGenerator.class.isAssignableFrom(type)
+        return (TypedGenerator.class.isAssignableFrom(type)
+                || type.getSimpleName().endsWith(GENERATOR_NAME_SUFFIX))
                 && !type.isInterface()
                 && !Modifier.isAbstract(type.getModifiers())
                 && !type.isAnonymousClass()
