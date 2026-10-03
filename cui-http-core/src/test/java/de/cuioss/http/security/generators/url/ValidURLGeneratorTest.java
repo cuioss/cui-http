@@ -15,71 +15,75 @@
  */
 package de.cuioss.http.security.generators.url;
 
+import de.cuioss.http.security.config.SecurityConfiguration;
+import de.cuioss.http.security.monitoring.SecurityEventCounter;
+import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
+import de.cuioss.test.generator.junit.GeneratorSeed;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 
-import java.util.regex.Pattern;
+import java.util.HashSet;
+import java.util.Set;
 
+import static de.cuioss.http.security.generators.GeneratorContractAssertions.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Test for {@link ValidURLGenerator}
+ * Contract test for {@link ValidURLGenerator}.
+ *
+ * <p>The generator's defining property is that every value is a URL <em>path</em> the URL path
+ * pipeline accepts unchanged: it is rooted at {@code /}, carries no query string - a {@code ?}
+ * is not a path character - and carries no traversal or null-byte marker.</p>
  */
 @EnableGeneratorController
+@GeneratorSeed(4711L)
+@DisplayName("ValidURLGenerator Contract Tests")
 class ValidURLGeneratorTest {
 
-    // Precompiled patterns for URL validation
-    private static final Pattern URL_PARAMS_PATTERN = Pattern.compile("[a-zA-Z0-9=&._%+-]+");
-    private static final Pattern URL_QUERY_SPLIT_PATTERN = Pattern.compile("\\?");
+    private static final int AGGREGATE_DRAWS = 400;
+
+    /** The generator must emit at least this many distinct paths to be worth calling a generator. */
+    private static final int MINIMUM_DISTINCT_PATHS = 20;
 
     @ParameterizedTest
     @TypeGeneratorSource(value = ValidURLGenerator.class, count = 100)
-    @DisplayName("Generator should produce valid URLs")
-    void shouldGenerateValidOutput(String generatedValue) {
+    @DisplayName("Every generated value is a query-free path the path pipeline accepts")
+    void shouldGeneratePathThePipelineAccepts(String generatedValue) {
         assertNotNull(generatedValue, "Generator must not produce null values");
-        assertFalse(generatedValue.isEmpty(), "Generated value should not be empty");
+        assertTrue(generatedValue.startsWith("/"),
+                () -> "A valid path is rooted at '/'. Value: <" + generatedValue + ">");
+        assertFalse(generatedValue.contains("?"),
+                () -> "A valid path carries no query string. Value: <" + generatedValue + ">");
 
-        // Should start with / (valid URL path)
-        assertTrue(generatedValue.startsWith("/"), "Valid URLs should start with /");
+        assertContainsNone(generatedValue, TRAVERSAL_MARKERS, "Valid path (traversal)");
+        assertContainsNone(generatedValue, NULL_BYTE_MARKERS, "Valid path (null-byte)");
 
-        // Should not exceed maximum length
-        assertTrue(generatedValue.length() <= 2048,
-                "Generated path should not exceed max length: " + generatedValue.length());
+        assertPipelineAccepts(
+                new URLPathValidationPipeline(SecurityConfiguration.defaults(), new SecurityEventCounter()),
+                generatedValue);
+    }
 
-        // Should not contain attack patterns (valid URLs are secure)
-        assertFalse(generatedValue.contains("../"), "Valid URLs should not contain path traversal");
-        assertFalse(generatedValue.contains("..\\"), "Valid URLs should not contain Windows path traversal");
-        assertFalse(generatedValue.contains("\u0000"), "Valid URLs should not contain null bytes");
-        assertFalse(generatedValue.contains("<script"), "Valid URLs should not contain script tags");
-        assertFalse(generatedValue.contains("javascript:"), "Valid URLs should not contain javascript protocol");
-
-        // Both arms assert, so a value never reaches the end of this test without a query verdict
-        if (generatedValue.contains("?")) {
-            String[] parts = URL_QUERY_SPLIT_PATTERN.split(generatedValue, 2);
-            assertEquals(2, parts.length, "URL with parameters should have proper format");
-            String params = parts[1];
-            assertTrue(URL_PARAMS_PATTERN.matcher(params).matches(),
-                    "URL parameters should contain valid characters");
-        } else {
-            assertFalse(generatedValue.contains("&") || generatedValue.contains("="),
-                    "A URL carrying no '?' must not carry query syntax either: " + generatedValue);
+    @Test
+    @DisplayName("Should reach at least twenty distinct paths")
+    void shouldReachDistinctPaths() {
+        ValidURLGenerator generator = new ValidURLGenerator();
+        Set<String> paths = new HashSet<>();
+        for (int draw = 0; draw < AGGREGATE_DRAWS; draw++) {
+            paths.add(generator.next());
         }
 
-        // Should have valid structure characteristics
-        boolean hasValidCharacteristic =
-                generatedValue.contains("/api/") ||             // API paths
-                        generatedValue.contains("/static/") ||          // Static resources
-                        generatedValue.contains("/index.html") ||       // Index pages
-                        generatedValue.contains("/docs/") ||            // Documentation
-                        generatedValue.contains("/search?") ||          // Search functionality
-                        generatedValue.contains("/products/") ||        // Product paths
-                        generatedValue.contains("/admin/") ||           // Admin paths
-                        generatedValue.contains("?page=") ||            // Pagination
-                        generatedValue.contains("&sort=");              // Sorting
+        assertTrue(paths.size() >= MINIMUM_DISTINCT_PATHS,
+                () -> "Expected at least " + MINIMUM_DISTINCT_PATHS + " distinct paths across "
+                        + AGGREGATE_DRAWS + " draws but got " + paths.size());
+    }
 
-        assertTrue(hasValidCharacteristic,
-                "Pattern should have valid URL characteristics");
+    @Test
+    @DisplayName("Should return correct type")
+    void shouldReturnCorrectType() {
+        assertEquals(String.class, new ValidURLGenerator().getType(),
+                "Generator should return String.class");
     }
 }

@@ -48,6 +48,7 @@ public class ValidHTTPHeaderValueGenerator implements TypedGenerator<String> {
     private final TypedGenerator<Integer> ipSelector = Generators.integers(1, 4);
     private final TypedGenerator<Boolean> contextSelector = Generators.booleans();
     private final TypedGenerator<Integer> ageValues = Generators.integers(60, 86400);
+    private final TypedGenerator<Integer> portValues = Generators.integers(1024, 65535);
     private final TypedGenerator<Double> qualityValues = Generators.doubles(0.1, 1.0);
     private final TypedGenerator<String> tokenGenerator = Generators.letterStrings(32, 64);
     private final TypedGenerator<String> credentialsGenerator = Generators.letterStrings(16, 32);
@@ -234,20 +235,25 @@ public class ValidHTTPHeaderValueGenerator implements TypedGenerator<String> {
         };
     }
 
+    /**
+     * Produces a real {@code Origin} value as RFC 6454 section 7 serializes it: a scheme, a host
+     * and an optional port, with no path. {@code same-origin}, {@code cors} and {@code no-cors}
+     * are {@code Sec-Fetch-Mode} / request-mode keywords, not origins, and are not emitted.
+     */
     private String generateOriginValue() {
-        String origin = generateOrigin();
-        if ("cors".equals(origin)) {
-            return "https://example.com";
+        String origin = (contextSelector.next() ? "https" : "http") + "://" + generateOriginHost();
+        if (contextSelector.next()) {
+            return origin + ":" + portValues.next();
         }
         return origin;
     }
 
-    private String generateOrigin() {
+    private String generateOriginHost() {
         return switch (originSelector.next()) {
-            case 1 -> "same-origin";
-            case 2 -> "cors";
-            case 3 -> "no-cors";
-            default -> "same-origin";
+            case 1 -> "example.com";
+            case 2 -> "app.example.org";
+            case 3 -> "localhost";
+            default -> "example.com";
         };
     }
 
