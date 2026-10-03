@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-08",
+  "slug": "client-cache-and-result-correctness",
+  "workstream": "WS-03",
+  "status": "shipped",
+  "plan_marshall_plan_id": "plan-08-client-cache-and-result-correctness",
+  "pr": "166",
+  "landing": "landings/PLAN-08.md",
+  "seq": 8
+}

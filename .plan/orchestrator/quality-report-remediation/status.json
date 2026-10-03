@@ -1,0 +1,18 @@
+{
+  "kind": "orchestrator",
+  "title": "cui-http Quality Report Remediation",
+  "phase": "orchestrating",
+  "workstreams": [
+    "WS-01-security-validation-core",
+    "WS-02-contenttype-cookie-collection",
+    "WS-03-forwarded-trust-model",
+    "WS-04-http-client",
+    "WS-05-test-framework-quality",
+    "WS-06-documentation-set",
+    "WS-07-build-ci-benchmarking"
+  ],
+  "metadata": {
+    "parallelization_scope": "2"
+  },
+  "created": "2026-09-05T15:49:41Z"
+}

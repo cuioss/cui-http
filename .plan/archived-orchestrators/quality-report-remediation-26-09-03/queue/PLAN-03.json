@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-03",
+  "slug": "security-api-contract-hardening",
+  "workstream": "WS-01",
+  "status": "shipped",
+  "plan_marshall_plan_id": "security-api-contract-hardening",
+  "pr": "169",
+  "landing": "landings/PLAN-03.md",
+  "seq": 3
+}

@@ -1,0 +1,45 @@
+envelope_version=1
+sender_type=plan
+sender_id=configuration-surface-hygiene
+epic=quality-report-remediation
+kind=candidate-lesson
+created=2026-09-09T09:40:13Z
+
+component=plan-marshall:phase-3-outline
+category=anti-pattern
+signal=qgate
+resolution=fixed
+
+# Outline deliverable declared an affected file its own change list never touched
+
+## Observation
+
+Q-Gate (phase `3-outline`, `scope_criterion_validator`) caught deliverable 2 of the
+`configuration-surface-hygiene` outline declaring `SecurityDefaultsTest.java` with intent
+`(write-replace)` while the same deliverable's own change list recorded **no edit** to that
+file. The false declaration propagated: deliverable 3's stated "must run after D2" dependency
+rationale rested on D2 touching that test, so the ordering rationale was false as well.
+
+Slipped-then-caught within the run — resolution `fixed`.
+
+## Why it matters
+
+The declared footprint is consumed downstream by `manage-references` (declared-vs-realized
+reconciliation), by the epic-level disjointness gate, and by task ordering. A file declared but
+never touched is not a harmless over-declaration: it silently widens the plan's claimed surface
+(blocking a sibling plan that legitimately owns the file) and it can manufacture a dependency
+edge between deliverables that has no basis in the actual change list.
+
+## Corrective rule
+
+When authoring a deliverable's `**Affected files:**` block, derive each entry FROM the
+deliverable's own change list rather than from the narrative intent, and re-read the two against
+each other before the outline is validated. When a deliverable's ordering rationale cites another
+deliverable's file, verify that file is present in that other deliverable's change list — a
+dependency rationale is only as true as the footprint it cites.
+
+## Candidate scope
+
+Plausibly global (the rule is outline-authoring discipline, not project-specific), but the
+orchestrator holds the cross-plan recurrence evidence needed to decide whether this is a
+one-off or a pattern worth codifying.

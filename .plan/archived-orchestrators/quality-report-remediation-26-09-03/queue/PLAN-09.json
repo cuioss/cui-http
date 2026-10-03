@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-09",
+  "slug": "client-config-and-retry-hardening",
+  "workstream": "WS-03",
+  "status": "shipped",
+  "plan_marshall_plan_id": "plan-09-client-config-and-retry-hardening",
+  "pr": "172",
+  "landing": "landings/PLAN-09.md",
+  "seq": 9
+}

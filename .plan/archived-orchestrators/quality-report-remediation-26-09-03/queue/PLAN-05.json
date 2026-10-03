@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-05",
+  "slug": "forwarded-trust-boundary",
+  "workstream": "WS-02",
+  "status": "shipped",
+  "plan_marshall_plan_id": "plan-05-forwarded-trust-boundary",
+  "pr": "155",
+  "landing": "landings/PLAN-05.md",
+  "seq": 5
+}

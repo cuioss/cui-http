@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-03",
+  "slug": "PLAN-03-exception-sanitisation-and-config-hygiene",
+  "workstream": "WS-01-security-validation-core",
+  "status": "shipped",
+  "plan_marshall_plan_id": "exception-sanitisation-and-config-hygiene",
+  "pr": "#222",
+  "landing": "landings/PLAN-03.md",
+  "seq": 3
+}

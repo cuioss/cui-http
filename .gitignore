@@ -19,4 +19,9 @@
 !.plan/plugin-doctor.yml
 .plan/local/worktrees/
 !.plan/project-structure.json
+# Orchestrator ledger (git-tracked epic trees; logs stay local)
+!.plan/orchestrator/
+!.plan/archived-orchestrators/
+.plan/orchestrator/*/logs/
+.plan/archived-orchestrators/*/logs/
 

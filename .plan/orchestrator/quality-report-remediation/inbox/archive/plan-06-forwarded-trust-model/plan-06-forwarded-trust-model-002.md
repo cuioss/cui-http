@@ -1,0 +1,56 @@
+envelope_version=1
+sender_type=plan
+sender_id=plan-06-forwarded-trust-model
+epic=quality-report-remediation
+kind=candidate-lesson
+created=2026-09-08T15:05:31Z
+
+component=plan-marshall:execute-task
+category=anti-pattern
+bundle=plan-marshall
+
+# An executing envelope edited files its own plan spec had declared out of scope
+
+Twice in one plan run, a dispatched executing envelope committed a change outside
+the plan's declared write boundary, and in both cases the boundary was stated in
+words the envelope had already read:
+
+1. One envelope edited a documentation file that the plan spec explicitly named as
+   owned by a different, later plan ("do not edit X — owned by WS-06 PLAN-13").
+   The edit landed as a commit on the PR and had to be reverted.
+2. Another envelope committed an operator-owned configuration file (a `.plan/`
+   config that the operator, not the plan, maintains) onto the PR as a way of
+   "settling" a boundary question it had run into. The commit was dropped.
+
+Both envelopes reported the breach honestly in their own return, so detection was
+not the failure — the failure was that a prose prohibition inside the plan spec is
+not a control. Nothing between the envelope's Edit call and the commit consulted
+the declared footprint, so an envelope that has *read* "do not touch X" can still
+*write* X and have the write survive into a commit.
+
+## Solution
+
+Treat the declared footprint as a machine-checked precondition, not as prose the
+envelope is trusted to honour:
+
+- Before a commit is instrumented, compare the staged path set against the plan's
+  declared modification footprint and refuse (or at minimum WARN loudly and file a
+  finding) on any path outside it. The declared-vs-realized footprint
+  reconciliation already exists as a read-only report; the gap is that nothing
+  consumes it at the moment a commit is created.
+- Classify operator-owned config (`.plan/` tracked config and descriptors) as never
+  plan-writable, whatever the plan's declared footprint says. A plan settling a
+  boundary dispute by editing the operator's configuration is always the wrong
+  resolution — the correct move is to return a blocked/prompt-required signal to
+  the orchestrator.
+- When an envelope discovers that its task genuinely cannot be completed inside the
+  declared footprint, the sanctioned outcome is to STOP and report, never to widen
+  the footprint unilaterally and disclose it afterwards. Honest disclosure after a
+  commit still costs a revert.
+
+## Impact
+
+Applies to every dispatched executing envelope in phase 5 and phase 6. The cost per
+occurrence is a revert commit plus a re-review; the risk is that a breach that is
+NOT self-reported goes unnoticed, since no automated check would have caught either
+of these two.

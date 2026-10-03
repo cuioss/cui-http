@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-02",
+  "slug": "post-decode-character-enforcement",
+  "workstream": "WS-01",
+  "status": "shipped",
+  "plan_marshall_plan_id": "post-decode-character-enforcement",
+  "pr": "159",
+  "landing": "landings/PLAN-02.md",
+  "seq": 2
+}

@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-05",
+  "slug": "PLAN-05-cookie-validation-completeness",
+  "workstream": "WS-02-contenttype-cookie-collection",
+  "status": "shipped",
+  "plan_marshall_plan_id": "cookie-validation-completeness",
+  "pr": "#231",
+  "landing": "landings/PLAN-05.md",
+  "seq": 6
+}
