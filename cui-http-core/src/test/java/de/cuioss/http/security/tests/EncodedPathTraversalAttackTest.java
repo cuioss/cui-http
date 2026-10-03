@@ -16,20 +16,25 @@
 package de.cuioss.http.security.tests;
 
 import de.cuioss.http.security.config.SecurityConfiguration;
+import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.generators.encoding.BoundaryFuzzingGenerator;
-import de.cuioss.http.security.generators.encoding.DoubleEncodingAttackGenerator;
 import de.cuioss.http.security.generators.encoding.EncodingCombinationGenerator;
+import de.cuioss.http.security.generators.encoding.PathTraversalGenerator;
 import de.cuioss.http.security.generators.url.PathTraversalParameterGenerator;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
+import de.cuioss.http.security.pipeline.URLParameterValidationPipeline;
 import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -51,6 +56,22 @@ class EncodedPathTraversalAttackTest {
 
     // Precompiled pattern for control character detection
     private static final Pattern CONTROL_CHARS_PATTERN = Pattern.compile("[\\x00-\\x1F\\x7F-\\x9F]");
+
+    /** The lead byte of a two-byte UTF-8 overlong encoding of an ASCII character. */
+    private static final String OVERLONG_LEAD_BYTE = "%c0";
+
+    private static final String ENCODED_PERCENT = "%25";
+
+    private static final AttackFamilyGuard DOUBLE_ENCODED_TRAVERSAL = new AttackFamilyGuard(
+            "shouldBlockDoubleEncodedPatterns",
+            pattern -> PathWireForm.WIRE_CLEAN.isFormOf(pattern) && pattern.contains(ENCODED_PERCENT));
+    private static final AttackFamilyGuard UTF8_OVERLONG_PARAMETER = new AttackFamilyGuard(
+            "shouldBlockUTF8OverlongPatterns", pattern -> pattern.contains(OVERLONG_LEAD_BYTE));
+
+    @AfterAll
+    static void shouldHaveAdmittedFilteredSamples() {
+        AttackFamilyGuard.assertAllAdmittedSamples(DOUBLE_ENCODED_TRAVERSAL, UTF8_OVERLONG_PARAMETER);
+    }
 
     private URLPathValidationPipeline pipeline;
     private SecurityConfiguration config;
@@ -77,15 +98,26 @@ class EncodedPathTraversalAttackTest {
         assertEquals(pattern, exception.getOriginalInput(), "Should preserve original input");
     }
 
+    /**
+     * The double-encoded family of {@link PathTraversalGenerator}: wire-clean values carrying an
+     * encoded percent sign. Each of them spells a traversal sequence the pattern stage lists, and
+     * that stage runs ahead of decoding, so the verdict is path traversal rather than double
+     * encoding.
+     */
     @ParameterizedTest
-    @DisplayName("Should block double-encoded path traversal patterns")
-    @TypeGeneratorSource(value = DoubleEncodingAttackGenerator.class, count = 22)
+    @DisplayName("Should block double-encoded path traversal patterns as PATH_TRAVERSAL_DETECTED")
+    @TypeGeneratorSource(value = PathTraversalGenerator.class, count = 150)
     void shouldBlockDoubleEncodedPatterns(String pattern) {
+        if (!DOUBLE_ENCODED_TRAVERSAL.admits(pattern)) {
+            return;
+        }
         UrlSecurityException exception = assertThrows(UrlSecurityException.class,
                 () -> pipeline.validate(pattern),
                 "Double-encoded pattern should be rejected: " + pattern);
 
-        assertNotNull(exception.getFailureType(), "Exception should have failure type");
+        assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + pattern);
+        assertEquals(pattern, exception.getOriginalInput(), "Should preserve original input");
     }
 
     @ParameterizedTest
@@ -99,15 +131,32 @@ class EncodedPathTraversalAttackTest {
         assertNotNull(exception.getFailureType(), "Exception should have failure type");
     }
 
+    /**
+     * {@link PathTraversalParameterGenerator} emits parameter <em>values</em>, so its UTF-8 overlong
+     * family is routed through the parameter pipeline. That pipeline has no pattern stage ahead of
+     * decoding, so the overlong byte sequence is what the decoding stage sees first, and it
+     * refuses it as invalid encoding. The path pipeline would report the same bytes as path
+     * traversal, because its pre-decoding pattern stage lists the overlong spellings.
+     */
     @ParameterizedTest
-    @DisplayName("Should block UTF-8 overlong encoded patterns")
-    @TypeGeneratorSource(value = PathTraversalParameterGenerator.class, count = 20)
+    @DisplayName("Should block UTF-8 overlong encoded parameter values")
+    @TypeGeneratorSource(value = PathTraversalParameterGenerator.class, count = 100)
     void shouldBlockUTF8OverlongPatterns(String pattern) {
+        if (!UTF8_OVERLONG_PARAMETER.admits(pattern)) {
+            return;
+        }
+        SecurityEventCounter parameterEventCounter = new SecurityEventCounter();
+        URLParameterValidationPipeline parameterPipeline =
+                new URLParameterValidationPipeline(config, parameterEventCounter);
+
         UrlSecurityException exception = assertThrows(UrlSecurityException.class,
-                () -> pipeline.validate(pattern),
+                () -> parameterPipeline.validate(pattern),
                 "UTF-8 overlong pattern should be rejected: " + pattern);
 
-        assertNotNull(exception.getFailureType(), "Exception should have failure type");
+        assertEquals(UrlSecurityFailureType.INVALID_ENCODING, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + pattern);
+        assertEquals(pattern, exception.getOriginalInput(), "Should preserve original input");
+        assertEquals(1, parameterEventCounter.getCount(UrlSecurityFailureType.INVALID_ENCODING));
     }
 
     @ParameterizedTest
@@ -135,23 +184,22 @@ class EncodedPathTraversalAttackTest {
     }
 
     @ParameterizedTest
-    @TypeGeneratorSource(value = EncodingCombinationGenerator.class, count = 20)
-    @DisplayName("Should handle legitimate encoded characters correctly")
-    void shouldHandleLegitimateEncodedCharacters(String legitimatePattern) {
-        // Note: Some of these might still be blocked by security rules if they contain
-        // patterns that could be dangerous even in legitimate contexts
-        try {
-            var result = pipeline.validate(legitimatePattern);
-            // If validation passes, result should be present
-            assertTrue(result.isPresent(), "Validated result should be present for: " + legitimatePattern);
-            assertNotNull(result.get(), "Validated result should not be null for: " + legitimatePattern);
-        } catch (UrlSecurityException e) {
-            // Some legitimate patterns might be blocked by strict security rules
-            // This is acceptable for security-first approach
-            // Logging disabled for test performance
-        }
-    }
+    @CsvSource(delimiter = '|', textBlock = """
+            /api/users/john%20doe          | /api/users/john doe
+            /files/report%2Dfinal.pdf      | /files/report-final.pdf
+            /docs/release%5Fnotes          | /docs/release_notes
+            /api/tags/c%2B%2B              | /api/tags/c++
+            /search/caf%C3%A9              | /search/café
+            /api/items/%41%42%43           | /api/items/ABC
+            """)
+    @DisplayName("Should accept legitimate percent-encoded characters and return the decoded path")
+    void shouldAcceptLegitimateEncodedCharacters(String encodedPath, String decodedPath) {
+        Optional<String> validated = assertDoesNotThrow(() -> pipeline.validate(encodedPath),
+                () -> "Legitimate encoded path should be accepted: " + encodedPath);
 
+        assertEquals(Optional.of(decodedPath), validated, () -> "Unexpected decoded form of: " + encodedPath);
+        assertEquals(0, eventCounter.getTotalCount(), "An accepted path records no security event");
+    }
 
     @Test
     @DisplayName("Should validate encoding generator produces expected patterns")

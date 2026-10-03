@@ -19,6 +19,8 @@ import de.cuioss.http.security.config.SecurityConfiguration;
 import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
+import de.cuioss.test.generator.Generators;
+import de.cuioss.test.generator.junit.EnableGeneratorController;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -28,6 +30,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@EnableGeneratorController
 class CharacterValidationStageTest {
 
     private final SecurityConfiguration config = SecurityConfiguration.defaults();
@@ -209,18 +212,24 @@ class CharacterValidationStageTest {
      */
     @Test
     void shouldRejectC1ControlCharactersInHeaderValueUnderEveryPreset() {
+        // U+0085 stays pinned as the motivating case; the second code point is drawn from the whole
+        // C1 range, because the rule is a statement about 128-159 and not about NEL alone.
+        int drawnC1 = Generators.integers(0x80, 0x9F).next();
+
         for (SecurityConfiguration preset : SHARED_GATE_PRESETS) {
             CharacterValidationStage stage = new CharacterValidationStage(preset, ValidationType.HEADER_VALUE);
 
-            // Built by code point rather than written literally: U+0085 is invisible in source.
-            String withNel = "value" + (char) 0x85 + "next";
+            for (int c1 : new int[]{0x85, drawnC1}) {
+                // Built by code point rather than written literally: a C1 control is invisible in source.
+                String withC1 = "value" + (char) c1 + "next";
 
-            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
-                    stage.validate(withNel), "U+0085 must be rejected under " + preset);
+                UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                        stage.validate(withC1), "U+%04X must be rejected under %s".formatted(c1, preset));
 
-            assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
-                    "The C1 verdict must not depend on allowExtendedAscii");
-            assertEquals(ValidationType.HEADER_VALUE, exception.getValidationType());
+                assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
+                        "The C1 verdict must not depend on allowExtendedAscii");
+                assertEquals(ValidationType.HEADER_VALUE, exception.getValidationType());
+            }
         }
     }
 
@@ -283,7 +292,11 @@ class CharacterValidationStageTest {
     @ParameterizedTest
     @EnumSource(value = ValidationType.class, names = {"HEADER_NAME", "HEADER_VALUE", "COOKIE_NAME", "COOKIE_VALUE"})
     void shouldRejectC0ControlCharactersInHeadersAndCookiesUnderEveryPreset(ValidationType type) {
-        String withVerticalTab = "head" + (char) 0x0B + "er";
+        // VT stays pinned as the motivating case; the second control is drawn from every C0 control
+        // except NUL (its own verdict, NULL_BYTE_INJECTION) and HTAB (type-legal in a header value,
+        // see shouldStillAcceptHorizontalTabInHeaderValue). The draw covers 1-8 and 10-31.
+        int drawn = Generators.integers(1, 30).next();
+        int drawnC0 = drawn < 0x09 ? drawn : drawn + 1;
         boolean isHeaderType = type == ValidationType.HEADER_NAME || type == ValidationType.HEADER_VALUE;
         UrlSecurityFailureType expectedFailureType = isHeaderType
                 ? UrlSecurityFailureType.INVALID_CHARACTER
@@ -292,13 +305,17 @@ class CharacterValidationStageTest {
         for (SecurityConfiguration preset : SHARED_GATE_PRESETS) {
             CharacterValidationStage stage = new CharacterValidationStage(preset, type);
 
-            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
-                            stage.validate(withVerticalTab),
-                    "VT (0x0B) must be rejected in a " + type + " under " + preset);
+            for (int c0 : new int[]{0x0B, drawnC0}) {
+                String withControl = "head" + (char) c0 + "er";
 
-            assertEquals(expectedFailureType, exception.getFailureType(),
-                    "The C0 verdict must not depend on allowControlCharacters");
-            assertEquals(type, exception.getValidationType());
+                UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                                stage.validate(withControl),
+                        "U+%04X must be rejected in a %s under %s".formatted(c0, type, preset));
+
+                assertEquals(expectedFailureType, exception.getFailureType(),
+                        "The C0 verdict must not depend on allowControlCharacters, for U+%04X".formatted(c0));
+                assertEquals(type, exception.getValidationType());
+            }
         }
     }
 
@@ -477,14 +494,19 @@ class CharacterValidationStageTest {
     void shouldHandleAllValidationTypes(ValidationType type) throws Exception {
         CharacterValidationStage stage = new CharacterValidationStage(config, type);
 
-        // Basic alphanumeric is valid for every validation type
-        var result = stage.validate("abc123");
-        assertTrue(result.isPresent());
-        assertEquals("abc123", result.get(),
-                "Alphanumeric input must pass through unchanged for " + type);
+        // ASCII letters are members of every validation type's character set, so any drawn letter
+        // string - not one hand-picked token - must pass through unchanged.
+        String letters = Generators.letterStrings(1, 60).next();
+        assertEquals(Optional.of(letters), stage.validate(letters),
+                "Letter-only input must pass through unchanged for " + type);
 
-        // Should reject null byte for all types
-        assertThrows(UrlSecurityException.class, () -> stage.validate("test\0null"));
+        // A raw null byte is rejected for every type, with its own verdict, wherever it sits.
+        String withNullByte = letters + "\0" + letters;
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> stage.validate(withNullByte));
+        assertEquals(UrlSecurityFailureType.NULL_BYTE_INJECTION, exception.getFailureType(),
+                "The null-byte verdict must not depend on the validation type " + type);
+        assertEquals(type, exception.getValidationType());
     }
 
     /**

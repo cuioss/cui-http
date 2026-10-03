@@ -16,6 +16,9 @@
 package de.cuioss.http.forwarded;
 
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
+import de.cuioss.test.generator.Generators;
+import de.cuioss.test.generator.TypedGenerator;
+import de.cuioss.test.generator.junit.EnableGeneratorController;
 import de.cuioss.test.juli.LogAsserts;
 import de.cuioss.test.juli.TestLogLevel;
 import de.cuioss.test.juli.TestLoggerFactory;
@@ -33,9 +36,13 @@ import java.util.function.Function;
 import static org.junit.jupiter.api.Assertions.*;
 
 @EnableTestLogger
+@EnableGeneratorController
 @DisplayName("ForwardedHeaderResolver")
 @SuppressWarnings("java:S5778") // assertThrows lambdas intentionally wrap the whole failing call chain
 class ForwardedHeaderResolverTest {
+
+    /** Every port the resolver honors: the whole 1..65535 range. */
+    private static final TypedGenerator<Integer> VALID_PORTS = Generators.integers(1, 65_535);
 
     private static Function<String, List<String>> headers(Map<String, String> values) {
         Map<String, String> copy = new HashMap<>(values);
@@ -239,8 +246,13 @@ class ForwardedHeaderResolverTest {
         @Test
         @DisplayName("takes the last token of a comma-separated port list")
         void lastPortTokenOfList() {
-            assertEquals(9000, trustAllResolver()
-                            .resolve(headers(Map.of("X-Forwarded-Port", "8443, 9000"))).port().orElseThrow(),
+            // Both tokens are drawn from the whole legal range, so the rule is asserted as "the last
+            // token wins" rather than as a property of one hand-picked pair.
+            int prepended = VALID_PORTS.next();
+            int nearestHop = VALID_PORTS.next();
+
+            assertEquals(OptionalInt.of(nearestHop), trustAllResolver()
+                            .resolve(headers(Map.of("X-Forwarded-Port", prepended + ", " + nearestHop))).port(),
                     "the nearest hop appends last, so its port wins");
         }
 
@@ -555,12 +567,25 @@ class ForwardedHeaderResolverTest {
         @Test
         @DisplayName("drops an out-of-range or non-numeric port")
         void dropsInvalidPort() {
-            assertTrue(trustAllResolver()
-                    .resolve(headers(Map.of("X-Forwarded-Port", "70000"))).port().isEmpty());
-            assertTrue(trustAllResolver()
-                    .resolve(headers(Map.of("X-Forwarded-Port", "abc"))).port().isEmpty());
-            assertTrue(trustAllResolver()
-                    .resolve(headers(Map.of("X-Forwarded-Port", "0"))).port().isEmpty());
+            // The two range edges stay pinned; the drawn value covers the open domain above the
+            // upper edge, which three hand-picked literals only sampled once.
+            int aboveRange = Generators.integers(65_536, Integer.MAX_VALUE).next();
+            int insideRange = VALID_PORTS.next();
+
+            assertAll("a port outside 1..65535, or one that is not a number, is dropped",
+                    () -> assertEquals(OptionalInt.empty(), portResolvedFrom(Integer.toString(aboveRange)),
+                            () -> aboveRange + " is above the range"),
+                    () -> assertEquals(OptionalInt.empty(), portResolvedFrom("65536"), "the first value above the range"),
+                    () -> assertEquals(OptionalInt.empty(), portResolvedFrom("0"), "the first value below the range"),
+                    () -> assertEquals(OptionalInt.empty(), portResolvedFrom("abc"), "not a number at all"),
+                    // Positive control: the same header honors a drawn in-range port, so the empty
+                    // results above are attributable to the value and not to the header being ignored.
+                    () -> assertEquals(OptionalInt.of(insideRange), portResolvedFrom(Integer.toString(insideRange)),
+                            () -> insideRange + " is inside the range"));
+        }
+
+        private OptionalInt portResolvedFrom(String portHeaderValue) {
+            return trustAllResolver().resolve(headers(Map.of("X-Forwarded-Port", portHeaderValue))).port();
         }
 
         @Test

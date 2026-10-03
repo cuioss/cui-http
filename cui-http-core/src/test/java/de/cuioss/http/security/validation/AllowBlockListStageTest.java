@@ -22,9 +22,14 @@ import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.http.security.pipeline.PipelineFactory;
+import de.cuioss.test.generator.Generators;
+import de.cuioss.test.generator.TypedGenerator;
+import de.cuioss.test.generator.junit.EnableGeneratorController;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 
@@ -34,7 +39,14 @@ import static org.junit.jupiter.api.Assertions.*;
  * Tests for header-name / content-type allow-block list enforcement (F-08).
  */
 @DisplayName("AllowBlockListStage (F-08)")
+@EnableGeneratorController
 class AllowBlockListStageTest {
+
+    /**
+     * ASCII-letter names, so the upper- and lower-case spellings of a drawn name are still the same
+     * name under the stage's {@code Locale.ROOT} lowercasing.
+     */
+    private static final TypedGenerator<String> HEADER_NAMES = Generators.letterStrings(1, 40);
 
     /** LINE SEPARATOR - a line-forging code point outside the ISO-control range. */
     private static final String LINE_SEPARATOR = Character.toString(0x2028);
@@ -42,11 +54,18 @@ class AllowBlockListStageTest {
     /** PARAGRAPH SEPARATOR - a line-forging code point outside the ISO-control range. */
     private static final String PARAGRAPH_SEPARATOR = Character.toString(0x2029);
 
+    /**
+     * An empty allow-list imposes no restriction, so the verdict cannot depend on what the value
+     * is. The value is drawn rather than hand-picked: an arbitrary string - not only one that looks
+     * like a header name - must come back unchanged.
+     */
     @Test
     @DisplayName("Empty lists allow everything")
     void shouldAllowAllWhenEmpty() {
         var stage = new AllowBlockListStage(Set.of(), Set.of(), ValidationType.HEADER_NAME);
-        assertEquals(Optional.of("X-Anything"), stage.validate("X-Anything"));
+        String arbitrary = Generators.nonEmptyStrings().next();
+
+        assertEquals(Optional.of(arbitrary), stage.validate(arbitrary));
         assertEquals(Optional.empty(), stage.validate(null));
         assertEquals(Optional.of(""), stage.validate(""));
     }
@@ -54,22 +73,34 @@ class AllowBlockListStageTest {
     @Test
     @DisplayName("Block-list rejects case-insensitively")
     void shouldRejectBlocked() {
-        var stage = new AllowBlockListStage(Set.of(), Set.of("X-Debug"), ValidationType.HEADER_NAME);
-        var exception = assertThrows(UrlSecurityException.class, () -> stage.validate("x-debug"));
-        assertEquals(UrlSecurityFailureType.INVALID_INPUT, exception.getFailureType());
-        assertTrue(exception.getDetail().orElse("").contains("block-listed"));
-        // A non-blocked value passes.
-        assertEquals(Optional.of("X-Allowed"), stage.validate("X-Allowed"));
+        String blocked = HEADER_NAMES.next();
+        var stage = new AllowBlockListStage(Set.of(), Set.of(blocked), ValidationType.HEADER_NAME);
+
+        for (String spelling : List.of(blocked, blocked.toLowerCase(Locale.ROOT), blocked.toUpperCase(Locale.ROOT))) {
+            var exception = assertThrows(UrlSecurityException.class, () -> stage.validate(spelling),
+                    () -> "every case spelling of a block-listed name must be rejected: " + spelling);
+            assertEquals(UrlSecurityFailureType.INVALID_INPUT, exception.getFailureType());
+            assertEquals(Optional.of("Value '" + spelling + "' is block-listed"), exception.getDetail());
+        }
+        // A non-blocked value passes: one extra character makes it a different name.
+        String other = blocked + "x";
+        assertEquals(Optional.of(other), stage.validate(other));
     }
 
     @Test
     @DisplayName("Non-empty allow-list rejects values not in it")
     void shouldEnforceAllowList() {
-        var stage = new AllowBlockListStage(Set.of("Accept", "Content-Type"), Set.of(), ValidationType.HEADER_NAME);
-        assertEquals(Optional.of("accept"), stage.validate("accept")); // case-insensitive match
-        var exception = assertThrows(UrlSecurityException.class, () -> stage.validate("X-Custom"));
+        String allowed = HEADER_NAMES.next();
+        var stage = new AllowBlockListStage(Set.of(allowed), Set.of(), ValidationType.HEADER_NAME);
+
+        for (String spelling : List.of(allowed, allowed.toLowerCase(Locale.ROOT), allowed.toUpperCase(Locale.ROOT))) {
+            assertEquals(Optional.of(spelling), stage.validate(spelling),
+                    () -> "the allow-list matches case-insensitively and returns the value as sent: " + spelling);
+        }
+        String other = allowed + "x";
+        var exception = assertThrows(UrlSecurityException.class, () -> stage.validate(other));
         assertEquals(UrlSecurityFailureType.INVALID_INPUT, exception.getFailureType());
-        assertTrue(exception.getDetail().orElse("").contains("allow-list"));
+        assertEquals(Optional.of("Value '" + other + "' is not in the allow-list"), exception.getDetail());
     }
 
     @Test
@@ -93,8 +124,14 @@ class AllowBlockListStageTest {
     @Test
     @DisplayName("Block-list takes precedence over allow-list")
     void shouldPreferBlockOverAllow() {
-        var stage = new AllowBlockListStage(Set.of("X-Debug"), Set.of("X-Debug"), ValidationType.HEADER_NAME);
-        assertThrows(UrlSecurityException.class, () -> stage.validate("X-Debug"));
+        String listedTwice = HEADER_NAMES.next();
+        var stage = new AllowBlockListStage(Set.of(listedTwice), Set.of(listedTwice), ValidationType.HEADER_NAME);
+
+        var exception = assertThrows(UrlSecurityException.class, () -> stage.validate(listedTwice));
+
+        assertEquals(UrlSecurityFailureType.INVALID_INPUT, exception.getFailureType());
+        assertEquals(Optional.of("Value '" + listedTwice + "' is block-listed"), exception.getDetail(),
+                "the detail names the block-list, which is what proves the allow-list did not win");
     }
 
     @Test

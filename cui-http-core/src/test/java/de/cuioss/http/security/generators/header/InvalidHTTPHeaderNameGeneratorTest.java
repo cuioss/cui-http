@@ -16,6 +16,7 @@
 package de.cuioss.http.security.generators.header;
 
 import de.cuioss.test.generator.junit.EnableGeneratorController;
+import de.cuioss.test.generator.junit.GeneratorSeed;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -37,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * injection variants are reachable.</p>
  */
 @EnableGeneratorController
+@GeneratorSeed(4711L)
 @DisplayName("InvalidHTTPHeaderNameGenerator Contract Tests")
 class InvalidHTTPHeaderNameGeneratorTest {
 

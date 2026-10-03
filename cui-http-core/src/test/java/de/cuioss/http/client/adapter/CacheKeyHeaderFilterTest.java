@@ -15,10 +15,14 @@
  */
 package de.cuioss.http.client.adapter;
 
+import de.cuioss.test.generator.Generators;
+import de.cuioss.test.generator.TypedGenerator;
+import de.cuioss.test.generator.junit.EnableGeneratorController;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import java.util.Locale;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Unit tests for {@link CacheKeyHeaderFilter}.
@@ -30,29 +34,39 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * @author Generated
  */
+@EnableGeneratorController
 class CacheKeyHeaderFilterTest {
+
+    /**
+     * ASCII-letter names, so the upper- and lower-case spellings of a drawn name are still the same
+     * name under the filter's {@code Locale.ROOT} lowercasing.
+     */
+    private static final TypedGenerator<String> HEADER_NAMES = Generators.letterStrings(1, 40);
 
     // ========== PRESET FILTERS TESTS ==========
 
+    /**
+     * The two presets answer without looking at the name, so the name is drawn - an arbitrary
+     * string, not a well-known header - alongside the credential header and the empty name, which
+     * stay pinned as the two a special-casing implementation would most plausibly treat differently.
+     */
     @Test
     void allIncludesAllHeaders() {
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter.ALL;
+        String arbitrary = Generators.nonEmptyStrings().next();
 
+        assertTrue(filter.includeInCacheKey(arbitrary), () -> "ALL must include <" + arbitrary + ">");
         assertTrue(filter.includeInCacheKey("Authorization"));
-        assertTrue(filter.includeInCacheKey("Accept-Language"));
-        assertTrue(filter.includeInCacheKey("X-Request-ID"));
-        assertTrue(filter.includeInCacheKey("Content-Type"));
         assertTrue(filter.includeInCacheKey(""));
     }
 
     @Test
     void noneExcludesAllHeaders() {
         CacheKeyHeaderFilter filter = CacheKeyHeaderFilter.NONE;
+        String arbitrary = Generators.nonEmptyStrings().next();
 
+        assertFalse(filter.includeInCacheKey(arbitrary), () -> "NONE must exclude <" + arbitrary + ">");
         assertFalse(filter.includeInCacheKey("Authorization"));
-        assertFalse(filter.includeInCacheKey("Accept-Language"));
-        assertFalse(filter.includeInCacheKey("X-Request-ID"));
-        assertFalse(filter.includeInCacheKey("Content-Type"));
         assertFalse(filter.includeInCacheKey(""));
     }
 
@@ -74,12 +88,15 @@ class CacheKeyHeaderFilterTest {
 
     @Test
     void excludingCaseInsensitive() {
-        CacheKeyHeaderFilter filter = CacheKeyHeaderFilter.excluding("authorization");
+        String name = HEADER_NAMES.next();
+        CacheKeyHeaderFilter filter = CacheKeyHeaderFilter.excluding(name);
 
-        assertFalse(filter.includeInCacheKey("Authorization"));
-        assertFalse(filter.includeInCacheKey("AUTHORIZATION"));
-        assertFalse(filter.includeInCacheKey("authorization"));
-        assertFalse(filter.includeInCacheKey("AuThOrIzAtIoN"));
+        assertAll("every case spelling of the excluded name is excluded, and only that name",
+                () -> assertFalse(filter.includeInCacheKey(name), "as configured"),
+                () -> assertFalse(filter.includeInCacheKey(name.toUpperCase(Locale.ROOT)), "upper case"),
+                () -> assertFalse(filter.includeInCacheKey(name.toLowerCase(Locale.ROOT)), "lower case"),
+                // Positive control: one extra character makes it a different name, which stays included.
+                () -> assertTrue(filter.includeInCacheKey(name + "x"), "a different name is not excluded"));
     }
 
     @Test
@@ -110,12 +127,15 @@ class CacheKeyHeaderFilterTest {
 
     @Test
     void includingCaseInsensitive() {
-        CacheKeyHeaderFilter filter = CacheKeyHeaderFilter.including("accept-language");
+        String name = HEADER_NAMES.next();
+        CacheKeyHeaderFilter filter = CacheKeyHeaderFilter.including(name);
 
-        assertTrue(filter.includeInCacheKey("Accept-Language"));
-        assertTrue(filter.includeInCacheKey("ACCEPT-LANGUAGE"));
-        assertTrue(filter.includeInCacheKey("accept-language"));
-        assertTrue(filter.includeInCacheKey("AcCePt-LaNgUaGe"));
+        assertAll("every case spelling of the included name is included, and only that name",
+                () -> assertTrue(filter.includeInCacheKey(name), "as configured"),
+                () -> assertTrue(filter.includeInCacheKey(name.toUpperCase(Locale.ROOT)), "upper case"),
+                () -> assertTrue(filter.includeInCacheKey(name.toLowerCase(Locale.ROOT)), "lower case"),
+                // Negative control: one extra character makes it a different name, which stays excluded.
+                () -> assertFalse(filter.includeInCacheKey(name + "x"), "a different name is not included"));
     }
 
     @Test

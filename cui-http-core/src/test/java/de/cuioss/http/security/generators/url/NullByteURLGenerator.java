@@ -15,22 +15,22 @@
  */
 package de.cuioss.http.security.generators.url;
 
-import de.cuioss.test.generator.Generators;
 import de.cuioss.test.generator.TypedGenerator;
+
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Generator for URL paths containing null byte injection attacks.
  *
- * <p><strong>CRITICAL NULL BYTE SECURITY DATABASE:</strong> This generator contains precise
- * null byte injection attack patterns that exploit URL parsing vulnerabilities where null bytes
- * (\u0000 and %00 encoded) can bypass security filters or cause path truncation in various
- * web servers and application frameworks.</p>
+ * <p>The attack patterns are a fixed list, {@link #NULL_BYTE_URLS}: the position and the encoding
+ * of the null byte (raw {@code \0} or percent-encoded {@code %00}) are what make each pattern an
+ * attack, so they are curated literals rather than generated values.</p>
  *
- * <p><strong>QI-6 CONVERSION STATUS:</strong> NOT SUITABLE for dynamic conversion.
- * Null byte attacks require exact character sequences and encoding combinations where
- * the position and encoding of the null byte is critical for attack effectiveness
- * (e.g., file.jpg\u0000.php vs file.jpg%00.php). These precise patterns
- * cannot be algorithmically generated without losing attack effectiveness.</p>
+ * <p>{@link #next()} walks that list in declaration order and starts over after the last entry.
+ * A generator instance therefore emits every pattern once per {@code NULL_BYTE_URLS.size()}
+ * calls, independent of any seed. A test that must cover the whole list iterates
+ * {@link #NULL_BYTE_URLS} directly.</p>
  *
  * <h3>Null Byte Attack Database</h3>
  * <ul>
@@ -50,17 +50,13 @@ import de.cuioss.test.generator.TypedGenerator;
  *   <li><strong>Encoding variations:</strong> Different null byte encodings bypass different filters</li>
  * </ul>
  *
- * <p><strong>PRESERVATION RATIONALE:</strong> Null byte attacks depend on exact character
- * positioning and encoding combinations. Each pattern represents a specific vulnerability
- * in URL processing that must be preserved exactly. Algorithmic generation cannot reproduce
- * the precise character sequences and encoding variations required for effective
- * null byte injection testing.</p>
- *
- * Provides various null byte patterns in URL context for security testing.
+ * <p>Thread-safe: the position is an atomic counter, so concurrent callers of one instance each
+ * receive a list entry and no entry is skipped.</p>
  */
 public class NullByteURLGenerator implements TypedGenerator<String> {
 
-    private final TypedGenerator<String> nullByteURLs = Generators.fixedValues(
+    /** Every null byte URL pattern this generator emits, in emission order. */
+    public static final List<String> NULL_BYTE_URLS = List.of(
             "/api/users\0admin",
             "/api/users%00admin",
             "/api\0/users",
@@ -78,9 +74,11 @@ public class NullByteURLGenerator implements TypedGenerator<String> {
             "/api/images/photo.png\0.php"
     );
 
+    private final AtomicInteger position = new AtomicInteger();
+
     @Override
     public String next() {
-        return nullByteURLs.next();
+        return NULL_BYTE_URLS.get(Math.floorMod(position.getAndIncrement(), NULL_BYTE_URLS.size()));
     }
 
     @Override

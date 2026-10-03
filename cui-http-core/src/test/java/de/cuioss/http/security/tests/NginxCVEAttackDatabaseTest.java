@@ -24,8 +24,15 @@ import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.ArgumentsSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Stream;
+
+import static de.cuioss.http.security.tests.AttackNameClaims.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -35,24 +42,56 @@ import static org.junit.jupiter.api.Assertions.*;
  * Nginx CVE exploit patterns that target specific vulnerabilities in the Nginx web server
  * across different versions and module configurations.</p>
  *
- * <p>Tests documented CVE exploits for Nginx including path traversal bypasses,
- * buffer overflow attempts, request smuggling, and various parsing vulnerabilities
- * specific to Nginx's implementation and module system.</p>
+ * <p>The entries are the URL-path expressions filed under Nginx and LiteSpeed CVEs and Nginx
+ * misconfigurations: the space-in-URI trigger, injected request-line and header fragments, alias
+ * off-by-slash traversal, variable-named segments and encoded traversal spellings. A CVE's impact
+ * - buffer overflow, memory corruption - is not a property of a URL path and is not what these
+ * tests exercise.</p>
  *
- * <h3>CVE Categories Tested</h3>
- * <ul>
- *   <li><strong>Path Traversal CVEs</strong> - Directory escapes specific to Nginx</li>
- *   <li><strong>Buffer Overflow CVEs</strong> - Memory corruption in Nginx modules</li>
- *   <li><strong>Request Smuggling CVEs</strong> - HTTP parsing inconsistencies</li>
- *   <li><strong>Module-Specific CVEs</strong> - Vulnerabilities in Nginx modules</li>
- *   <li><strong>Configuration Bypass CVEs</strong> - Security configuration bypasses</li>
- * </ul>
+ * <h3>What each test verifies</h3>
+ * <p>{@link #shouldRejectNginxCVEAttacksWithCorrectFailureTypes} verifies the pipeline verdict
+ * only. {@link #shouldCarryTheFeatureItsNameClaims} verifies, on the payload itself, that each
+ * entry carries the feature its constant name claims.</p>
  *
  * @author Claude Code Generator
  * @since 1.0
  */
 @DisplayName("Nginx CVE Attack Database Tests")
 class NginxCVEAttackDatabaseTest {
+
+    /**
+     * What the words of a {@link NginxCVEAttackDatabase} constant name claim about its payload. A
+     * CVE number is part of the entry's identifier; the server product is a label.
+     */
+    private static final AttackNameClaims NAME_CLAIMS = new AttackNameClaims(
+            Map.ofEntries(
+                    claim("SPACE_URI", pattern("^/[^ ]+ /")),
+                    claim("PASSWD", literal("/etc/passwd")),
+                    claim("SHADOW", literal("/etc/shadow")),
+                    claim("WINDOWS", literal("/windows/")),
+                    claim("RANGE", literal("\r\nRange: bytes=")),
+                    claim("RANGE_OVERFLOW", pattern("\r\nRange: bytes=\\d+-\\d{9,}")),
+                    claim("H2", literal(" HTTP/2.0")),
+                    claim("API", literal("/api/")),
+                    claim("RESOLVER", literal("/resolver/")),
+                    claim("DNS", literal("/dns/")),
+                    claim("TRAVERSAL", TRAVERSAL),
+                    claim("DIRECTORY_TRAVERSAL", TRAVERSAL),
+                    claim("CRLF", literal("\r\n")),
+                    claim("CRLF_INJECTION", pattern("\r\n[A-Za-z-]+: ")),
+                    claim("AUTH_BYPASS", literal("\r\nX-Auth: bypass")),
+                    claim("UPLOADS", literal("/uploads")),
+                    claim("ALIAS", pattern("^/[a-z]+\\.\\./")),
+                    claim("STATIC", literal("/static")),
+                    claim("MEDIA", literal("/media")),
+                    claim("VARIABLE", pattern("/\\$[a-z_]+/")),
+                    claim("DOCUMENT_ROOT", literal("$document_root")),
+                    claim("URI_INJECTION", literal("/$uri/")),
+                    claim("CGI", literal("/cgi-bin/")),
+                    claim("URL_ENCODED", literal("%2e%2e")),
+                    claim("MIXED_ENCODING", literal("..%2f")),
+                    claim("BACKSLASH", literal("\\"))),
+            Set.of("CVE", "NGINX", "LITESPEED"));
 
     private URLPathValidationPipeline pipeline;
     private SecurityEventCounter eventCounter;
@@ -97,5 +136,24 @@ class NginxCVEAttackDatabaseTest {
         // And: Security event should be recorded
         assertTrue(eventCounter.getTotalCount() > initialEventCount,
                 "Security event should be recorded for Nginx CVE attack: %s".formatted(testCase.getCompactSummary()));
+    }
+
+    /**
+     * Structural claim of the database (ADR-0009): the payload of every entry carries the
+     * feature its constant name claims. An entry whose payload is edited to drop that feature
+     * fails here, whatever the pipeline verdict is.
+     *
+     * @param constantName the name of the database constant
+     * @param payload the attack string of that constant
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("declaredEntries")
+    @DisplayName("Each entry's payload carries the feature its name claims")
+    void shouldCarryTheFeatureItsNameClaims(String constantName, String payload) {
+        NAME_CLAIMS.assertCarriedBy(constantName, payload);
+    }
+
+    static Stream<Arguments> declaredEntries() {
+        return AttackDatabaseEntries.declaredEntries(NginxCVEAttackDatabase.class);
     }
 }

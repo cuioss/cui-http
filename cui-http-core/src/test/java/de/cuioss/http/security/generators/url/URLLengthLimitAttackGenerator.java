@@ -15,50 +15,46 @@
  */
 package de.cuioss.http.security.generators.url;
 
+import de.cuioss.http.security.config.SecurityDefaults;
+import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.test.generator.Generators;
 import de.cuioss.test.generator.TypedGenerator;
 
-import java.util.Arrays;
-import java.util.List;
-import java.util.function.BiFunction;
+import java.util.Objects;
 
 /**
- * Generator for URL length limit attack patterns.
+ * Generator for length limit attack patterns.
  *
  * <p>
- * This generator creates comprehensive URL length limit attack vectors that
- * attempt to exploit URL length limitations to cause denial of service,
- * buffer overflows, or bypass security controls. The generator covers various
- * URL length attack techniques used by attackers to exploit web applications
- * through excessive URL sizes.
+ * This generator creates length limit attack vectors that attempt to exploit length limitations
+ * to cause denial of service, buffer overflows, or bypass security controls. A length limit is a
+ * property of one HTTP component, so every value is the content of exactly one component - the
+ * {@link Surface} the instance was created for - and never a URL assembled from several of them.
  * </p>
  *
- * <h3>Attack Types Generated</h3>
+ * <h3>Surfaces</h3>
  * <ul>
- *   <li><strong>Basic Length Overflow</strong> - URLs exceeding standard length limits</li>
- *   <li><strong>Path Component Overflow</strong> - Extremely long path segments</li>
- *   <li><strong>Query Parameter Overflow</strong> - Long query strings and parameters</li>
- *   <li><strong>Fragment Overflow</strong> - Long URL fragments</li>
- *   <li><strong>Hostname Overflow</strong> - Long hostname components</li>
- *   <li><strong>Repeated Parameter Attack</strong> - Many identical parameters</li>
- *   <li><strong>Deep Path Nesting</strong> - Many nested directory levels</li>
- *   <li><strong>Long Parameter Names</strong> - Extremely long parameter names</li>
- *   <li><strong>Long Parameter Values</strong> - Extremely long parameter values</li>
- *   <li><strong>Mixed Length Attacks</strong> - Combination of long components</li>
- *   <li><strong>Buffer Overflow Patterns</strong> - Patterns designed to cause overflows</li>
- *   <li><strong>Memory Exhaustion</strong> - URLs designed to consume memory</li>
- *   <li><strong>Parser Confusion</strong> - Long URLs with parsing challenges</li>
- *   <li><strong>Encoding Length Attacks</strong> - Length amplification via encoding</li>
- *   <li><strong>Algorithmic Complexity</strong> - URLs causing processing slowdown</li>
+ *   <li>{@link Surface#URL_PATH} (the no-argument constructor) - long segments, deep nesting and
+ *       many short segments</li>
+ *   <li>{@link Surface#PARAMETER_NAME} ({@link ForParameterName}) - long parameter names</li>
+ *   <li>{@link Surface#PARAMETER_VALUE} ({@link ForParameterValue}) - long parameter values</li>
+ *   <li>{@link Surface#HEADER_NAME} ({@link ForHeaderName}) - long header names</li>
+ *   <li>{@link Surface#HEADER_VALUE} ({@link ForHeaderValue}) - long header values</li>
  * </ul>
  *
  * <h3>Length Invariant</h3>
  *
- * <p>Every value this generator emits is longer than
- * {@link de.cuioss.http.security.config.SecurityDefaults#MAX_PATH_LENGTH_STRICT} characters and
- * begins either with {@code /} or with an {@code http://} / {@code https://} scheme. That is the
- * defining property of the generator: a value that does not exceed the limit it targets is not a
- * length-limit attack at all. Branches that need a repeated token build it through
+ * <p>Every value this generator emits is longer than the strict limit of its surface
+ * ({@link Surface#strictLimit()}). That is the defining property of the generator: a value that
+ * does not exceed the limit it targets is not a length-limit attack at all. Each surface also
+ * reaches a value beyond its default and beyond its lenient limit.</p>
+ *
+ * <h3>Character Invariant</h3>
+ *
+ * <p>Every value consists exclusively of characters its surface admits and carries no
+ * percent-escape, traversal sequence or other attack marker. Length is therefore the only reason
+ * a pipeline can have to reject it - a path value in particular carries no {@code ?}, {@code #}
+ * or space. Branches that need a repeated token build it through
  * {@code repeat(token, minCount, maxCount)} rather than
  * {@code Generators.strings(token, min, max)} — the latter treats its first argument as an
  * <em>alphabet</em> and would emit a short scramble of the token's characters, leaving the value
@@ -78,9 +74,10 @@ import java.util.function.BiFunction;
  * <pre>
  * &#64;ParameterizedTest
  * &#64;TypeGeneratorSource(value = URLLengthLimitAttackGenerator.class, count = 100)
- * void shouldRejectURLLengthLimitAttacks(String lengthAttack) {
- *     assertThrows(UrlSecurityException.class,
- *         () -> pipeline.validate(lengthAttack));
+ * void shouldRejectOverlongPath(String overlongPath) {
+ *     var exception = assertThrows(UrlSecurityException.class,
+ *         () -> strictPathPipeline.validate(overlongPath));
+ *     assertEquals(UrlSecurityFailureType.PATH_TOO_LONG, exception.getFailureType());
  * }
  * </pre>
  *
@@ -92,290 +89,230 @@ import java.util.function.BiFunction;
 public class URLLengthLimitAttackGenerator implements TypedGenerator<String> {
 
     /**
-     * The attack families {@link #next()} selects among, registered once so the family set and the
-     * selection bound cannot desync.
-     *
-     * <p>The former encoding-attack families were removed because they exercise encoding validation
-     * rather than length validation. Registering the families as a list rather than a switch keyed by
-     * a hand-maintained count means adding or removing one automatically widens or narrows the
-     * selection bound: {@link #ATTACK_FAMILY_COUNT} is derived from {@code size()}, so a new family is
-     * reachable the moment it is registered, with no literal to update.</p>
+     * The HTTP component a generated value is shaped for, together with the three preset limits
+     * of that component.
      */
-    private static final List<BiFunction<URLLengthLimitAttackGenerator, String, String>> ATTACK_FAMILIES = List.of(
-            URLLengthLimitAttackGenerator::createBasicLengthOverflow,
-            URLLengthLimitAttackGenerator::createPathComponentOverflow,
-            URLLengthLimitAttackGenerator::createQueryParameterOverflow,
-            URLLengthLimitAttackGenerator::createFragmentOverflow,
-            URLLengthLimitAttackGenerator::createHostnameOverflow,
-            URLLengthLimitAttackGenerator::createRepeatedParameterAttack,
-            URLLengthLimitAttackGenerator::createDeepPathNesting,
-            URLLengthLimitAttackGenerator::createLongParameterNames,
-            URLLengthLimitAttackGenerator::createLongParameterValues,
-            URLLengthLimitAttackGenerator::createMixedLengthAttacks,
-            URLLengthLimitAttackGenerator::createBufferOverflowPatterns,
-            URLLengthLimitAttackGenerator::createMemoryExhaustionAttack,
-            URLLengthLimitAttackGenerator::createAlgorithmicComplexity);
+    public enum Surface {
+
+        /** A URL path component. */
+        URL_PATH(ValidationType.URL_PATH, SecurityDefaults.MAX_PATH_LENGTH_STRICT,
+            SecurityDefaults.MAX_PATH_LENGTH_DEFAULT, SecurityDefaults.MAX_PATH_LENGTH_LENIENT),
+
+        /** A query parameter name. */
+        PARAMETER_NAME(ValidationType.PARAMETER_NAME, SecurityDefaults.MAX_PARAMETER_NAME_LENGTH_STRICT,
+                SecurityDefaults.MAX_PARAMETER_NAME_LENGTH_DEFAULT, SecurityDefaults.MAX_PARAMETER_NAME_LENGTH_LENIENT),
+
+        /** A query parameter value. */
+        PARAMETER_VALUE(ValidationType.PARAMETER_VALUE, SecurityDefaults.MAX_PARAMETER_VALUE_LENGTH_STRICT,
+                SecurityDefaults.MAX_PARAMETER_VALUE_LENGTH_DEFAULT, SecurityDefaults.MAX_PARAMETER_VALUE_LENGTH_LENIENT),
+
+        /** A header field name. */
+        HEADER_NAME(ValidationType.HEADER_NAME, SecurityDefaults.MAX_HEADER_NAME_LENGTH_STRICT,
+                SecurityDefaults.MAX_HEADER_NAME_LENGTH_DEFAULT, SecurityDefaults.MAX_HEADER_NAME_LENGTH_LENIENT),
+
+        /** A header field value. */
+        HEADER_VALUE(ValidationType.HEADER_VALUE, SecurityDefaults.MAX_HEADER_VALUE_LENGTH_STRICT,
+                SecurityDefaults.MAX_HEADER_VALUE_LENGTH_DEFAULT, SecurityDefaults.MAX_HEADER_VALUE_LENGTH_LENIENT);
+
+        private final ValidationType validationType;
+        private final int strictLimit;
+        private final int defaultLimit;
+        private final int lenientLimit;
+
+        Surface(ValidationType validationType, int strictLimit, int defaultLimit, int lenientLimit) {
+            this.validationType = validationType;
+            this.strictLimit = strictLimit;
+            this.defaultLimit = defaultLimit;
+            this.lenientLimit = lenientLimit;
+        }
+
+        /**
+         * @return the validation type of the pipeline that owns this surface's length limit
+         */
+        public ValidationType validationType() {
+            return validationType;
+        }
+
+        /**
+         * @return the strict preset limit of this surface, which every generated value exceeds
+         */
+        public int strictLimit() {
+            return strictLimit;
+        }
+
+        /**
+         * @return the default preset limit of this surface
+         */
+        public int defaultLimit() {
+            return defaultLimit;
+        }
+
+        /**
+         * @return the lenient preset limit of this surface
+         */
+        public int lenientLimit() {
+            return lenientLimit;
+        }
+    }
+
+    /** The generator for {@link Surface#PARAMETER_NAME}, usable as a no-argument generator class. */
+    public static final class ForParameterName extends URLLengthLimitAttackGenerator {
+
+        /** Creates a generator that emits overlong parameter names. */
+        public ForParameterName() {
+            super(Surface.PARAMETER_NAME);
+        }
+    }
+
+    /** The generator for {@link Surface#PARAMETER_VALUE}, usable as a no-argument generator class. */
+    public static final class ForParameterValue extends URLLengthLimitAttackGenerator {
+
+        /** Creates a generator that emits overlong parameter values. */
+        public ForParameterValue() {
+            super(Surface.PARAMETER_VALUE);
+        }
+    }
+
+    /** The generator for {@link Surface#HEADER_NAME}, usable as a no-argument generator class. */
+    public static final class ForHeaderName extends URLLengthLimitAttackGenerator {
+
+        /** Creates a generator that emits overlong header names. */
+        public ForHeaderName() {
+            super(Surface.HEADER_NAME);
+        }
+    }
+
+    /** The generator for {@link Surface#HEADER_VALUE}, usable as a no-argument generator class. */
+    public static final class ForHeaderValue extends URLLengthLimitAttackGenerator {
+
+        /** Creates a generator that emits overlong header values. */
+        public ForHeaderValue() {
+            super(Surface.HEADER_VALUE);
+        }
+    }
 
     /**
-     * The number of attack families {@link #next()} selects among, derived from
-     * {@link #ATTACK_FAMILIES} rather than declared as a literal, so it cannot drift from the
-     * registered set. The contract test references this constant instead of duplicating a number.
+     * The number of arms every surface selects among. Three of them are the tier arms - just
+     * over the strict, the default and the lenient limit - so each tier is reachable on every
+     * surface.
      */
-    public static final int ATTACK_FAMILY_COUNT = ATTACK_FAMILIES.size();
+    public static final int ARM_COUNT = 8;
 
-    private static final List<String> BASE_PATTERNS = Arrays.asList(
-            "/api",
-            "/search",
-            "/data",
-            "/resource",
-            "/service",
-            "/endpoint",
-            "/handler",
-            "/process",
-            "/action",
-            "/request"
-    );
+    private final Surface surface;
+
+    /** Creates a generator that emits overlong URL paths. */
+    public URLLengthLimitAttackGenerator() {
+        this(Surface.URL_PATH);
+    }
+
+    /**
+     * Creates a generator for the given surface.
+     *
+     * @param surface the component every generated value is shaped for, must not be null
+     */
+    public URLLengthLimitAttackGenerator(Surface surface) {
+        this.surface = Objects.requireNonNull(surface, "surface");
+    }
+
+    /**
+     * Reports the component every value of this instance is shaped for.
+     *
+     * @return the target surface, never null
+     */
+    public Surface getSurface() {
+        return surface;
+    }
 
     @Override
     public String next() {
-        String basePattern = BASE_PATTERNS.get(hashBasedSelection(BASE_PATTERNS.size()));
-
-        return ATTACK_FAMILIES.get(hashBasedSelection(ATTACK_FAMILY_COUNT)).apply(this, basePattern);
-    }
-
-    /**
-     * Creates basic URL length overflow attacks exceeding standard limits.
-     */
-    private String createBasicLengthOverflow(String pattern) {
-        // Test realistic length limits: STRICT=1024, DEFAULT=4096, LENIENT=8192
-        // Generate URLs just over these limits to test actual validation logic
-        int attackType = hashBasedSelection(8);
-        return switch (attackType) {
-            case 0 -> pattern + "?" + Generators.letterStrings(1030, 1050).next(); // Just over STRICT limit
-            case 1 -> pattern + "/" + Generators.letterStrings(1025, 1040).next(); // Barely over STRICT
-            case 2 -> pattern + "?" + "param=" + Generators.letterStrings(4100, 4150).next(); // Just over DEFAULT limit
-            case 3 -> pattern + "/" + Generators.letterStrings(4097, 4120).next(); // Barely over DEFAULT
-            case 4 -> pattern + "?" + Generators.letterStrings(8200, 8250).next(); // Just over LENIENT limit
-            case 5 -> pattern + "/" + Generators.letterStrings(8193, 8210).next(); // Barely over LENIENT
-            case 6 -> pattern + "/" + Generators.letterStrings(512, 512).next() + "/" + Generators.letterStrings(512, 512).next() + "?" + Generators.letterStrings(512, 512).next(); // Distributed length
-            case 7 -> pattern + "?" + "field=" + Generators.letterStrings(2050, 2100).next(); // Medium overflow
-            default -> pattern + "?" + Generators.letterStrings(1030, 1050).next(); // Default just over STRICT
+        int arm = selection(ARM_COUNT);
+        return switch (surface) {
+            case URL_PATH -> createOverlongPath(arm);
+            case PARAMETER_NAME -> createOverlongParameterName(arm);
+            case PARAMETER_VALUE -> createOverlongParameterValue(arm);
+            case HEADER_NAME -> createOverlongHeaderName(arm);
+            case HEADER_VALUE -> createOverlongHeaderValue(arm);
         };
     }
 
     /**
-     * Creates path component overflow attacks with extremely long path segments.
+     * Creates an overlong URL path: letters, digits, {@code /} and {@code _} only.
      */
-    private String createPathComponentOverflow(String pattern) {
-        int attackType = hashBasedSelection(8);
-        return switch (attackType) {
-            case 0 -> pattern + "/" + repeat("segment/", 150, 180) + "file"; // Repeated segments to reach limits
-            case 1 -> pattern + "/" + Generators.letterStrings(1030, 1050).next() + "/normal"; // Single long segment over STRICT
-            case 2 -> pattern + "/" + "path_" + Generators.letterStrings(1030, 1050).next() + "/data"; // Long segment with prefix
-            case 3 -> "/" + Generators.letterStrings(1030, 1080).next() + pattern + "/file"; // Long prefix path
-            case 4 -> pattern + "/" + "dir_" + Generators.letterStrings(520, 560).next() + "/file_" + Generators.letterStrings(520, 560).next(); // Multiple segments
-            case 5 -> pattern + "/" + "very_long_directory_name_" + Generators.letterStrings(1000, 1030).next(); // Descriptive long segment
-            case 6 -> pattern + "/" + "component" + Generators.letterStrings(505, 530).next() + "/subdir" + Generators.letterStrings(505, 530).next() + "/file"; // Nested paths
-            case 7 -> pattern + "/" + Generators.letterStrings(4100, 4150).next() + "/end"; // Just over DEFAULT limit
-            default -> pattern + "/" + Generators.letterStrings(1030, 1050).next(); // Default just over STRICT
+    private String createOverlongPath(int arm) {
+        return switch (arm) {
+            case 0 -> "/api/" + letters(1025, 1060); // single segment just over STRICT
+            case 1 -> "/data/" + letters(4097, 4150); // single segment just over DEFAULT
+            case 2 -> "/resource/" + letters(8193, 8250); // single segment just over LENIENT
+            case 3 -> "/" + repeat("dir/", 260, 320) + "file"; // deep nesting
+            case 4 -> "/" + repeat("a/", 520, 640) + "target"; // many single-character segments
+            case 5 -> "/service/dir_" + letters(520, 560) + "/file_" + letters(520, 560); // several long segments
+            case 6 -> "/" + letters(1030, 1080) + "/endpoint/file"; // long leading segment
+            default -> "/" + repeat("folder/subfolder/", 62, 90) + "destination"; // alternating segments
         };
     }
 
     /**
-     * Creates query parameter overflow attacks with long query strings.
+     * Creates an overlong parameter name: letters, digits and {@code _} only.
      */
-    private String createQueryParameterOverflow(String pattern) {
-        int attackType = hashBasedSelection(8);
-        return switch (attackType) {
-            case 0 -> pattern + "?" + "param=" + Generators.letterStrings(1020, 1060).next(); // Parameter value over STRICT limit
-            case 1 -> pattern + "?" + "data=" + Generators.letterStrings(520, 560).next() + "&info=" + Generators.letterStrings(520, 560).next(); // Multiple parameters
-            case 2 -> pattern + "?" + "query=" + Generators.letterStrings(3800, 3900).next(); // Parameter near DEFAULT limit
-            case 3 -> pattern + "?" + "search=" + repeat("term ", 210, 260); // Repeated terms to reach limit
-            case 4 -> pattern + "?" + "content=" + Generators.letterStrings(1010, 1060).next() + "&type=json"; // Long parameter with normal
-            case 5 -> pattern + "?" + repeat("input=value123&", 70, 100); // Many small parameters
-            case 6 -> pattern + "?" + "buffer=" + Generators.letterStrings(7800, 7900).next(); // Near LENIENT limit
-            case 7 -> pattern + "?" + "payload=" + Generators.letterStrings(1030, 1080).next() + "&extra=data"; // Just over STRICT with extra
-            default -> pattern + "?" + "param=" + Generators.letterStrings(1030, 1050).next(); // Default just over STRICT
+    private String createOverlongParameterName(int arm) {
+        return switch (arm) {
+            case 0 -> letters(65, 100); // just over STRICT
+            case 1 -> letters(129, 200); // just over DEFAULT
+            case 2 -> letters(257, 300); // just over LENIENT
+            case 3 -> "param_" + letters(60, 110); // prefixed name
+            case 4 -> "field_name_" + letters(55, 100); // descriptive prefix
+            case 5 -> repeat("parameter_", 7, 12) + "name"; // repeated token
+            case 6 -> "query_string_parameter_name_" + letters(40, 80); // very descriptive name
+            default -> letters(1025, 1100); // name as long as an overlong value
         };
     }
 
     /**
-     * Creates fragment overflow attacks with long URL fragments.
+     * Creates an overlong parameter value: letters, digits, {@code _} and {@code ,} only.
      */
-    private String createFragmentOverflow(String pattern) {
-        int attackType = hashBasedSelection(8);
-        return switch (attackType) {
-            case 0 -> pattern + "#" + Generators.letterStrings(1030, 1080).next(); // Fragment just over STRICT
-            case 1 -> pattern + "?param=value#" + Generators.letterStrings(1030, 1080).next(); // Long fragment with query
-            case 2 -> pattern + "/path#" + "section" + Generators.letterStrings(1030, 1080).next(); // Named fragment
-            case 3 -> pattern + "#" + "anchor_" + Generators.letterStrings(1030, 1080).next(); // Fragment with prefix
-            case 4 -> pattern + "?data=test#" + Generators.letterStrings(1030, 1080).next(); // Long fragment over STRICT
-            case 5 -> pattern + "#" + repeat("part_", 210, 260); // Repeated fragment parts
-            case 6 -> pattern + "#" + Generators.letterStrings(3800, 3900).next(); // Fragment near DEFAULT limit
-            case 7 -> pattern + "/resource?id=123#" + "content_" + Generators.letterStrings(1030, 1080).next(); // Mixed with fragment
-            default -> pattern + "#" + Generators.letterStrings(1030, 1080).next(); // Default fragment
+    private String createOverlongParameterValue(int arm) {
+        return switch (arm) {
+            case 0 -> letters(1025, 1060); // just over STRICT
+            case 1 -> letters(2049, 2100); // just over DEFAULT
+            case 2 -> letters(8193, 8250); // just over LENIENT
+            case 3 -> "value_" + letters(1020, 1060); // prefixed value
+            case 4 -> repeat("term,", 210, 260); // repeated list entries
+            case 5 -> letters(3000, 3200); // between DEFAULT and LENIENT
+            case 6 -> repeat("chunk_" + letters(50, 100) + ",", 20, 40); // structured data
+            default -> letters(12000, 15000); // memory exhaustion
         };
     }
 
     /**
-     * Creates hostname overflow attacks with long hostname components.
+     * Creates an overlong header name: letters, digits and {@code -} only.
      */
-    private String createHostnameOverflow(String pattern) {
-        int attackType = hashBasedSelection(8);
-        return switch (attackType) {
-            case 0 -> "https://" + Generators.letterStrings(1030, 1080).next() + ".com" + pattern; // Single label far past DNS max (253)
-            case 1 -> "https://" + Generators.letterStrings(520, 560).next() + "." + Generators.letterStrings(520, 560).next() + ".com" + pattern; // Two labels each far past DNS max (63)
-            case 2 -> "https://" + repeat("subdomain.", 105, 130) + "example.com" + pattern; // Many subdomains
-            case 3 -> "https://" + Generators.letterStrings(1030, 1080).next() + ".evil.com" + pattern; // Long subdomain
-            case 4 -> "https://" + repeat("sub", 350, 420) + ".domain.com" + pattern; // Repeated subdomain parts
-            case 5 -> "https://" + Generators.letterStrings(1030, 1080).next() + ".attacker.org" + pattern; // Long subdomain
-            case 6 -> "https://" + Generators.letterStrings(1050, 1200).next() + ".malicious.net" + pattern; // Very long hostname part
-            case 7 -> "https://" + repeat("long", 265, 320) + ".test.com" + pattern; // Multiple long parts
-            default -> "https://" + Generators.letterStrings(1030, 1080).next() + ".com" + pattern; // Default long hostname
+    private String createOverlongHeaderName(int arm) {
+        return switch (arm) {
+            case 0 -> "X-" + letters(63, 100); // just over STRICT
+            case 1 -> "X-" + letters(127, 200); // just over DEFAULT
+            case 2 -> "X-" + letters(255, 300); // just over LENIENT
+            case 3 -> "X-Custom-" + letters(60, 110); // prefixed name
+            case 4 -> "X-" + repeat("Forwarded-", 7, 12) + "For"; // repeated token
+            case 5 -> letters(65, 128); // no vendor prefix
+            case 6 -> "X-Very-Long-Application-Header-Name-" + letters(40, 80); // very descriptive name
+            default -> "X-" + letters(1025, 1100); // name as long as an overlong value
         };
     }
 
     /**
-     * Creates repeated parameter attacks with many identical parameters.
+     * Creates an overlong header value: letters, digits, space, {@code ,}, {@code ;} and
+     * {@code =} only.
      */
-    private String createRepeatedParameterAttack(String pattern) {
-        int attackType = hashBasedSelection(8);
-        return switch (attackType) {
-            case 0 -> pattern + "?" + repeat("param=value&", 90, 130); // Many small parameters to reach limit
-            case 1 -> pattern + "?" + repeat("data=test&", 105, 150); // Repeated parameters
-            case 2 -> pattern + "?" + repeat("field=info&", 95, 140); // Parameter repetition
-            case 3 -> pattern + "?" + repeat("item=" + Generators.letterStrings(20, 30).next() + "&", 40, 60); // Parameters with medium values
-            case 4 -> pattern + "?" + repeat("query=search&", 80, 120); // Many search parameters
-            case 5 -> pattern + "?" + repeat("param" + Generators.letterStrings(10, 15).next() + "=value&", 47, 70); // Varied parameter names
-            case 6 -> pattern + "?" + repeat("test=data&", 105, 150); // Many test parameters
-            case 7 -> pattern + "?" + repeat("key=value" + Generators.letterStrings(5, 10).next() + "&", 70, 100); // Mixed parameters
-            default -> pattern + "?" + repeat("param=value&", 90, 130); // Default repeated parameters
-        };
-    }
-
-    /**
-     * Creates deep path nesting attacks with many directory levels.
-     */
-    private String createDeepPathNesting(String pattern) {
-        int attackType = hashBasedSelection(8);
-        return switch (attackType) {
-            case 0 -> "/" + repeat("dir/", 260, 320) + pattern.substring(1); // Many directory levels to reach limits
-            case 1 -> "/" + repeat("level/", 175, 220) + "file"; // Deep levels
-            case 2 -> pattern + "/" + repeat("sub/", 260, 320) + "resource"; // Nested levels
-            case 3 -> "/" + repeat("path/", 210, 260) + "endpoint"; // Many path segments
-            case 4 -> "/" + repeat("deep/", 110, 140) + repeat("very/", 110, 140) + "nested/" + pattern.substring(1); // Mixed depths
-            case 5 -> "/" + repeat("dir" + hashBasedSelection(100) + "/", 210, 280) + "target"; // Varied directory names
-            case 6 -> "/" + repeat("A/", 520, 640) + "final"; // Single-char directories
-            case 7 -> "/" + repeat("folder/subfolder/", 62, 90) + "destination"; // Alternating paths
-            default -> "/" + repeat("dir/", 260, 320) + pattern.substring(1); // Default deep nesting
-        };
-    }
-
-    /**
-     * Creates attacks with extremely long parameter names.
-     */
-    private String createLongParameterNames(String pattern) {
-        int attackType = hashBasedSelection(8);
-        return switch (attackType) {
-            case 0 -> pattern + "?" + Generators.letterStrings(1020, 1060).next() + "=value"; // Long parameter name over STRICT
-            case 1 -> pattern + "?" + "param_" + Generators.letterStrings(1015, 1060).next() + "=data"; // Long name with prefix
-            case 2 -> pattern + "?" + Generators.letterStrings(1010, 1060).next() + "=test&normal=ok"; // Long name with normal parameter
-            case 3 -> pattern + "?" + "field_name_" + Generators.letterStrings(1005, 1050).next() + "=content"; // Descriptive long name
-            case 4 -> pattern + "?" + Generators.letterStrings(3800, 3900).next() + "=info"; // Parameter name near DEFAULT limit
-            case 5 -> pattern + "?" + repeat("parameter_" + Generators.letterStrings(20, 30).next() + "=value&", 30, 45); // Multiple medium names
-            case 6 -> pattern + "?" + Generators.letterStrings(1030, 1080).next() + "=result"; // Just over STRICT limit
-            case 7 -> pattern + "?" + "query_string_parameter_name_" + Generators.letterStrings(990, 1040).next() + "=search"; // Very descriptive name
-            default -> pattern + "?" + Generators.letterStrings(1020, 1060).next() + "=value"; // Default long name
-        };
-    }
-
-    /**
-     * Creates attacks with extremely long parameter values.
-     */
-    private String createLongParameterValues(String pattern) {
-        int attackType = hashBasedSelection(8);
-        return switch (attackType) {
-            case 0 -> pattern + "?data=" + Generators.letterStrings(1030, 1080).next(); // Just over STRICT limit
-            case 1 -> pattern + "?content=" + Generators.letterStrings(4100, 4150).next(); // Just over DEFAULT limit
-            case 2 -> pattern + "?payload=" + Generators.letterStrings(8200, 8250).next(); // Just over LENIENT limit
-            case 3 -> pattern + "?info=" + Generators.letterStrings(2000, 2100).next(); // Medium length value
-            case 4 -> pattern + "?search=" + repeat("query ", 175, 220); // Repeated search terms
-            case 5 -> pattern + "?input=" + Generators.letterStrings(3000, 3200).next(); // Large but reasonable value
-            case 6 -> pattern + "?field=" + "value_" + Generators.letterStrings(1015, 1060).next(); // Long value with prefix
-            case 7 -> pattern + "?buffer=" + Generators.letterStrings(7800, 7900).next(); // Near LENIENT limit
-            default -> pattern + "?data=" + Generators.letterStrings(1030, 1080).next(); // Default just over STRICT
-        };
-    }
-
-    /**
-     * Creates mixed length attacks combining multiple long components.
-     */
-    private String createMixedLengthAttacks(String pattern) {
-        int attackType = hashBasedSelection(8);
-        return switch (attackType) {
-            case 0 -> "/" + Generators.letterStrings(350, 400).next() + pattern + "?" + "param=" + Generators.letterStrings(350, 400).next() + "#" + Generators.letterStrings(350, 400).next(); // Distributed length components
-            case 1 -> pattern + "/" + Generators.letterStrings(560, 610).next() + "?" + Generators.letterStrings(460, 510).next() + "=value"; // Long path segment and parameter name
-            case 2 -> "/" + repeat("path/", 15, 25) + pattern.substring(1) + "?" + "data=" + Generators.letterStrings(960, 1010).next(); // Deep path with long parameter
-            case 3 -> pattern + "/" + Generators.letterStrings(400, 450).next() + "/" + Generators.letterStrings(400, 450).next() + "?" + "query=" + Generators.letterStrings(600, 650).next(); // Multiple medium components
-            case 4 -> "/" + Generators.letterStrings(800, 850).next() + "?" + repeat("param" + Generators.letterStrings(15, 20).next() + "=" + Generators.letterStrings(15, 20).next() + "&", 8, 12); // Long path with parameters
-            case 5 -> pattern + "/" + "segment_" + Generators.letterStrings(400, 450).next() + "?" + "field_" + Generators.letterStrings(200, 250).next() + "=" + Generators.letterStrings(400, 450).next() + "#anchor_" + Generators.letterStrings(200, 250).next(); // All components reasonable
-            case 6 -> "/" + repeat("dir/", 30, 50) + "resource" + "?" + "buffer=" + Generators.letterStrings(910, 960).next(); // Deep nesting with parameter
-            case 7 -> "https://" + Generators.letterStrings(80, 100).next() + ".example.com" + pattern + "/" + Generators.letterStrings(450, 500).next() + "?" + "data=" + Generators.letterStrings(560, 610).next(); // Long hostname, path, and parameter
-            default -> pattern + "/" + Generators.letterStrings(510, 560).next() + "?" + "param=" + Generators.letterStrings(510, 560).next(); // Default mixed length
-        };
-    }
-
-    /**
-     * Creates buffer overflow patterns designed to trigger memory issues.
-     */
-    private String createBufferOverflowPatterns(String pattern) {
-        int attackType = hashBasedSelection(8);
-        return switch (attackType) {
-            case 0 -> pattern + "?" + Generators.letterStrings(8200, 8300).next(); // Just over LENIENT limit (testing buffer boundaries)
-            case 1 -> pattern + "/" + Generators.letterStrings(4100, 4200).next() + "?" + "data=" + Generators.letterStrings(4100, 4200).next(); // DEFAULT limit overflow in both components
-            case 2 -> pattern + "?" + "buffer=" + Generators.letterStrings(9000, 9500).next(); // Moderate buffer test
-            case 3 -> "/" + Generators.letterStrings(2000, 2100).next() + pattern + "?" + "payload=" + Generators.letterStrings(6000, 6500).next(); // Distributed length test
-            case 4 -> pattern + "?" + repeat("overflow" + Generators.letterStrings(20, 30).next() + "=data&", 35, 55); // Many parameters with patterns
-            case 5 -> pattern + "/" + Generators.letterStrings(8300, 8400).next(); // Path component just over LENIENT
-            case 6 -> pattern + "?" + "input=" + Generators.letterStrings(10000, 12000).next(); // Large but not extreme parameter
-            case 7 -> pattern + "#" + Generators.letterStrings(7000, 7500).next(); // Large fragment
-            default -> pattern + "?" + Generators.letterStrings(8200, 8300).next(); // Default buffer test
-        };
-    }
-
-    /**
-     * Creates memory exhaustion attacks designed to consume server memory.
-     */
-    private String createMemoryExhaustionAttack(String pattern) {
-        int attackType = hashBasedSelection(8);
-        return switch (attackType) {
-            case 0 -> pattern + "?" + "memory=" + Generators.letterStrings(12000, 15000).next(); // Large but reasonable parameter
-            case 1 -> pattern + "/" + Generators.letterStrings(4000, 4500).next() + "?" + "data=" + Generators.letterStrings(4000, 4500).next(); // Distributed large components
-            case 2 -> pattern + "?" + repeat("param" + hashBasedSelection(100) + "=" + Generators.letterStrings(20, 30).next() + "&", 100, 200); // Many parameters with varied data
-            case 3 -> pattern + "?" + "exhaustion=" + Generators.letterStrings(20000, 25000).next(); // Large parameter test
-            case 4 -> "/" + Generators.letterStrings(6000, 8000).next() + pattern; // Large path prefix
-            case 5 -> pattern + "?" + "large_data=" + repeat("chunk" + Generators.letterStrings(50, 100).next(), 50, 100); // Structured data within limits
-            case 6 -> pattern + "#" + Generators.letterStrings(10000, 15000).next(); // Large fragment
-            case 7 -> pattern + "?" + "payload=" + Generators.letterStrings(30000, 35000).next(); // Large payload test
-            default -> pattern + "?" + "memory=" + Generators.letterStrings(12000, 15000).next(); // Default memory test
-        };
-    }
-
-    /**
-     * Creates algorithmic complexity attacks causing processing slowdown.
-     */
-    private String createAlgorithmicComplexity(String pattern) {
-        int attackType = hashBasedSelection(8);
-        return switch (attackType) {
-            case 0 -> pattern + "?" + repeat("a=b&", 260, 400); // Many small parameters within reason
-            case 1 -> pattern + "/" + repeat("x/", 520, 700) + "target"; // Many small path segments
-            case 2 -> "/" + repeat("../", 350, 450) + pattern; // Path traversal attempts within limits
-            case 3 -> pattern + "?" + repeat("param" + hashBasedSelection(100) + "=value" + hashBasedSelection(100) + "&", 90, 150); // Varied parameter names
-            case 4 -> pattern + "/" + repeat("segment" + hashBasedSelection(50), 130, 200); // Varied path segments
-            case 5 -> pattern + "?" + "regex=" + repeat("(a+)+", 210, 260); // Regex complexity pattern
-            case 6 -> pattern + "/" + repeat("a" + repeat("/b", 20, 40), 26, 45); // Nested pattern complexity
-            case 7 -> pattern + "?" + repeat("key=value&", 105, 300); // Numerous but reasonable parameters
-            default -> pattern + "?" + repeat("a=b&", 260, 400); // Default complexity attack
+    private String createOverlongHeaderValue(int arm) {
+        return switch (arm) {
+            case 0 -> "Bearer " + letters(1020, 1060); // just over STRICT
+            case 1 -> "Bearer " + letters(2045, 2100); // just over DEFAULT
+            case 2 -> "Bearer " + letters(8190, 8250); // just over LENIENT
+            case 3 -> repeat("token, ", 150, 200); // repeated list entries
+            case 4 -> "session=" + letters(1020, 1060) + "; Path=x"; // cookie-like value
+            case 5 -> letters(3000, 3200); // between DEFAULT and LENIENT
+            case 6 -> repeat("key=" + letters(20, 30) + "; ", 40, 60); // structured data
+            default -> letters(12000, 15000); // memory exhaustion
         };
     }
 
@@ -387,13 +324,17 @@ public class URLLengthLimitAttackGenerator implements TypedGenerator<String> {
     /**
      * Selects a random index in {@code [0, bound)} using the cui-test-generator
      * infrastructure, making selection seed-reproducible (governed by the framework
-     * seed) instead of deriving randomness from {@code System.nanoTime()}.
+     * seed).
      *
      * @param bound exclusive upper bound (number of choices), must be positive
      * @return a pseudo-random index in {@code [0, bound)}
      */
-    private int hashBasedSelection(int bound) {
+    private int selection(int bound) {
         return Generators.integers(0, bound - 1).next();
+    }
+
+    private String letters(int minLength, int maxLength) {
+        return Generators.letterStrings(minLength, maxLength).next();
     }
 
     /**
@@ -402,7 +343,7 @@ public class URLLengthLimitAttackGenerator implements TypedGenerator<String> {
      * <p>This is deliberately <em>not</em> {@code Generators.strings(token, min, max)}: that
      * factory treats its first argument as an alphabet and draws {@code min..max}
      * <em>characters</em> from it, so a multi-character token yields a short scramble of the
-     * token's characters rather than the intended repetition. Every attack branch below that
+     * token's characters rather than the intended repetition. Every attack branch that
      * needs a repeated token uses this helper, so the produced component length is
      * {@code token.length() * count} and can be reasoned about against the length limits the
      * generator targets.</p>

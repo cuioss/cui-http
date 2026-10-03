@@ -24,8 +24,15 @@ import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.ArgumentsSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Stream;
+
+import static de.cuioss.http.security.tests.AttackNameClaims.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -42,18 +49,50 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * <h3>Test Coverage</h3>
  * <ul>
- *   <li><strong>Path Traversal</strong>: Multiple encoding variants</li>
- *   <li><strong>Directory Browsing</strong>: Directory listing attempts</li>
- *   <li><strong>Local File Inclusion</strong>: Protocol handler attacks</li>
- *   <li><strong>HTTP Splitting</strong>: CRLF injection patterns</li>
- *   <li><strong>Encoding Attacks</strong>: Unicode and mixed encoding</li>
+ *   <li><strong>Path Traversal</strong>: Plain, encoded and path-normalization variants</li>
+ *   <li><strong>Local File Inclusion</strong>: Traversal toward a local file</li>
+ *   <li><strong>HTTP Splitting</strong>: A double-encoded CR/LF pair followed by a header name</li>
+ *   <li><strong>Null Byte Injection</strong>: An encoded null byte truncating a path</li>
  * </ul>
+ *
+ * <h3>What each test verifies</h3>
+ * <p>{@link #shouldRejectZAPAttacksWithCorrectFailureTypes} verifies the pipeline verdict only.
+ * {@link #shouldCarryTheFeatureItsNameClaims} verifies, on the payload itself, that each entry
+ * carries the feature its constant name claims.</p>
  *
  * @author Claude Code Generator
  * @since 1.0
  */
 @DisplayName("OWASP ZAP Active Scan Attack Database Tests")
 class OWASPZAPAttackDatabaseTest {
+
+    /** What the words of an {@link OWASPZAPAttackDatabase} constant name claim about its payload. */
+    private static final AttackNameClaims NAME_CLAIMS = new AttackNameClaims(
+            Map.ofEntries(
+                    claim("TRAVERSAL", TRAVERSAL),
+                    claim("PATH_TRAVERSAL", TRAVERSAL),
+                    claim("BASIC", pattern("^(\\.\\./)+[^%]+$")),
+                    claim("ENCODED_DOT", literal("%2e%2e/")),
+                    claim("ENCODED_SLASH", literal("..%2f")),
+                    claim("DOUBLE_DOTS", literal("....//")),
+                    claim("BACKSLASH", literal("\\", "%5c")),
+                    claim("ABSOLUTE", pattern("^/\\.\\./")),
+                    claim("DOUBLE_SLASH", literal("//")),
+                    claim("DOT_SEGMENT", literal("/./")),
+                    claim("LFI", literal("/etc/passwd")),
+                    claim("FILE_SEGMENT", literal("/file/")),
+                    claim("RESOURCE_SEGMENT", literal("/resource/")),
+                    claim("NULL_BYTE", literal("%00")),
+                    claim("MIDSEGMENT", pattern("[^/]%00[^/.]")),
+                    claim("TRUNCATION", pattern("%00\\.[a-z]+$")),
+                    claim("MIDPATH", pattern("%00/.+")),
+                    claim("HTTP_SPLITTING", pattern("(?i)%250d%250a[a-z-]+:")),
+                    claim("ENCODED_CRLF", literal("%250d%250a")),
+                    claim("OVERLONG_UTF8", literal("%c0%ae")),
+                    claim("ENCODED_BACKSLASH", literal("%5c")),
+                    claim("PATH_PARAMETER_BYPASS", pattern(";[a-z]+=[^/]*/\\.\\./")),
+                    claim("FUZZING_LONG_PATH", pattern("(\\.\\./){50}"))),
+            Set.of("ZAP", "TO"));
 
     private URLPathValidationPipeline pipeline;
     private SecurityEventCounter eventCounter;
@@ -98,5 +137,24 @@ class OWASPZAPAttackDatabaseTest {
         // And: Security event should be recorded
         assertTrue(eventCounter.getTotalCount() > initialEventCount,
                 "Security event should be recorded for attack: %s".formatted(testCase.getCompactSummary()));
+    }
+
+    /**
+     * Structural claim of the database (ADR-0009): the payload of every entry carries the
+     * feature its constant name claims. An entry whose payload is edited to drop that feature
+     * fails here, whatever the pipeline verdict is.
+     *
+     * @param constantName the name of the database constant
+     * @param payload the attack string of that constant
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("declaredEntries")
+    @DisplayName("Each entry's payload carries the feature its name claims")
+    void shouldCarryTheFeatureItsNameClaims(String constantName, String payload) {
+        NAME_CLAIMS.assertCarriedBy(constantName, payload);
+    }
+
+    static Stream<Arguments> declaredEntries() {
+        return AttackDatabaseEntries.declaredEntries(OWASPZAPAttackDatabase.class);
     }
 }

@@ -16,6 +16,7 @@
 package de.cuioss.http.security.tests;
 
 import de.cuioss.http.security.config.SecurityConfiguration;
+import de.cuioss.http.security.config.SecurityDefaults;
 import de.cuioss.http.security.database.AttackTestCase;
 import de.cuioss.http.security.database.ProtocolHandlerAttackDatabase;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
@@ -24,7 +25,15 @@ import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.ArgumentsSource;
+import org.junit.jupiter.params.provider.MethodSource;
+
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Locale;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -32,11 +41,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * Protocol Handler Attack Database Tests using the structured attack database.
  *
  * <p><strong>CURATED PROTOCOL ATTACK DATABASE TESTING:</strong> This test class drives the
- * 24 hand-curated {@link AttackTestCase} records in {@link ProtocolHandlerAttackDatabase},
- * ensuring each documented protocol-handler attack (JavaScript injection, data URI
- * exploitation, file protocol access, custom schemes, protocol confusion, malformed
- * protocols, null-byte/control-character injection, and encoding bypass) is actually executed
- * against the validation pipeline and rejected with its declared failure type.</p>
+ * hand-curated {@link AttackTestCase} records in {@link ProtocolHandlerAttackDatabase},
+ * ensuring each documented protocol-handler attack (javascript:, vbscript:, data: and file:
+ * schemes, in raw, case-varied and percent-encoded spellings) is actually executed
+ * against the validation pipeline and rejected with its declared failure type, and that the
+ * scheme is the only property an entry can be rejected for.</p>
  *
  * <p>Complements {@link ProtocolHandlerAttackTest}, which exercises the algorithmically
  * generated patterns. This class provides deterministic coverage of the curated corpus so the
@@ -46,6 +55,12 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 @DisplayName("Protocol Handler Attack Database Tests")
 class ProtocolHandlerAttackDatabaseTest {
+
+    /**
+     * Substrings that would let a mechanism other than the scheme match reject a payload: a
+     * traversal sequence, or a character outside the path character set.
+     */
+    private static final List<String> FORBIDDEN_CO_TRIGGERS = List.of("../", "/..", "<", ">", "?", "#", " ");
 
     private URLPathValidationPipeline pipeline;
     private SecurityEventCounter eventCounter;
@@ -95,5 +110,36 @@ class ProtocolHandlerAttackDatabaseTest {
         // And: Security event should be recorded
         assertTrue(eventCounter.getTotalCount() > initialEventCount,
                 "Security event should be recorded for protocol attack: %s".formatted(testCase.getCompactSummary()));
+    }
+
+    /**
+     * Structural claim of the database (ADR-0009): every entry is a protocol-handler attack and
+     * nothing else. The payload, read the way a URL parser reads it, starts with one of the
+     * enforced {@link SecurityDefaults#PROTOCOL_HANDLER_SCHEMES}, and it carries none of the
+     * co-triggers that would let another mechanism reject it first - so the scheme match is the
+     * only property the pipeline can reject the entry for. The claim is asserted on the payload
+     * itself and holds whatever stage order a pipeline runs.
+     *
+     * @param constantName the name of the database constant
+     * @param payload the attack string of that constant
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("databaseEntries")
+    @DisplayName("Every entry carries an enforced scheme and no co-trigger")
+    void shouldCarryAnEnforcedSchemeAndNoCoTrigger(String constantName, String payload) {
+        String parserView = URLDecoder.decode(payload, StandardCharsets.UTF_8).toLowerCase(Locale.ROOT);
+
+        assertAll(constantName,
+                () -> assertTrue(SecurityDefaults.PROTOCOL_HANDLER_SCHEMES.stream().anyMatch(parserView::startsWith),
+                        () -> "Entry must start with one of " + SecurityDefaults.PROTOCOL_HANDLER_SCHEMES
+                                + " but was: " + payload),
+                () -> assertEquals(List.of(), FORBIDDEN_CO_TRIGGERS.stream().filter(payload::contains).toList(),
+                        () -> "Entry must carry no co-trigger: " + payload),
+                () -> assertTrue(payload.chars().allMatch(character -> character > 0x1F && character <= 0xFF),
+                        () -> "Entry must carry no control character, null byte or code point above 255: " + payload));
+    }
+
+    static Stream<Arguments> databaseEntries() {
+        return AttackDatabaseEntries.declaredEntries(ProtocolHandlerAttackDatabase.class);
     }
 }

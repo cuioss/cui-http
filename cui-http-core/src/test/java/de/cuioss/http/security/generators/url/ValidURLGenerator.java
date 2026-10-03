@@ -15,12 +15,15 @@
  */
 package de.cuioss.http.security.generators.url;
 
-import de.cuioss.http.security.config.SecurityDefaults;
 import de.cuioss.test.generator.Generators;
 import de.cuioss.test.generator.TypedGenerator;
 
 /**
- * Generates legitimate URLs that should pass validation.
+ * Generates legitimate URL paths that the URL path pipeline accepts.
+ *
+ * <p>Every value is a path only: none carries a query string, because {@code ?} is not a path
+ * character and a value with one is rejected by the path pipeline. Query parameters are the
+ * subject of {@link ValidURLParameterGenerator} and {@link ValidURLParameterStringGenerator}.</p>
  *
  * <p>QI-6: Converted from fixedValues() to dynamic algorithmic generation.</p>
  *
@@ -30,64 +33,20 @@ public class ValidURLGenerator implements TypedGenerator<String> {
 
     // QI-6: Dynamic generation components
     private final TypedGenerator<Integer> pathTypeGen = Generators.integers(1, 7);
-    private final TypedGenerator<Integer> sortTypeGen = Generators.integers(1, 2);
-
-
-    private final TypedGenerator<Boolean> paramGen = Generators.booleans();
+    private final TypedGenerator<Integer> idGen = Generators.integers(1, 999);
     private final TypedGenerator<Integer> pageGen = Generators.integers(1, 100);
 
     @Override
     public String next() {
-        String path = generateValidPath();
-
-        if (paramGen.next()) {
-            // Add valid parameters (check if path already has parameters)
-            if (path.contains("?")) {
-                // Path already has parameters, add with &
-                path += "&page=" + pageGen.next();
-                path += "&sort=" + generateSortOption();
-            } else {
-                // Path doesn't have parameters, add with ?
-                path += "?page=" + pageGen.next();
-                path += "&sort=" + generateSortOption();
-            }
-        }
-
-        // Ensure within SecurityDefaults.MAX_PATH_LENGTH_DEFAULT (4096)
-        if (path.length() > SecurityDefaults.MAX_PATH_LENGTH_DEFAULT) {
-            path = path.substring(0, SecurityDefaults.MAX_PATH_LENGTH_DEFAULT);
-        }
-
-        return path;
-    }
-
-    private String generateValidPath() {
         return switch (pathTypeGen.next()) {
             case 1 -> "/api/v1/users";
             case 2 -> "/static/css/style.css";
             case 3 -> "/index.html";
             case 4 -> "/docs/guide.pdf";
-            case 5 -> "/search?q=test&limit=10";
-            case 6 -> generateProductPath();
+            case 5 -> "/search/results/page/" + pageGen.next();
+            case 6 -> "/products/" + idGen.next() + "/reviews";
             case 7 -> "/admin/dashboard";
             default -> "/index.html";
-        };
-    }
-
-    private String generateProductPath() {
-        // Include the test-expected pattern frequently for test compatibility
-        boolean useTestPattern = Generators.integers(1, 2).next() == 1; // 50% chance
-        if (useTestPattern) {
-            return "/products/123/reviews";
-        }
-        return "/products/" + Generators.integers(1, 999).next() + "/reviews";
-    }
-
-    private String generateSortOption() {
-        return switch (sortTypeGen.next()) {
-            case 1 -> "asc";
-            case 2 -> "desc";
-            default -> "asc";
         };
     }
 

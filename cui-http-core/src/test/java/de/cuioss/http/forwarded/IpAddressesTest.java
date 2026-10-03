@@ -15,8 +15,12 @@
  */
 package de.cuioss.http.forwarded;
 
+import de.cuioss.test.generator.Generators;
+import de.cuioss.test.generator.TypedGenerator;
+import de.cuioss.test.generator.junit.EnableGeneratorController;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -27,7 +31,15 @@ import java.net.InetAddress;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("IP utilities")
+@EnableGeneratorController
 class IpAddressesTest {
+
+    /** Every value a dotted-quad octet may take; rendered as a decimal int, so never with a leading zero. */
+    private static final TypedGenerator<Integer> VALID_OCTETS = Generators.integers(0, 255);
+
+    private static String dottedQuad(int[] octets) {
+        return "%d.%d.%d.%d".formatted(octets[0], octets[1], octets[2], octets[3]);
+    }
 
     @Nested
     @DisplayName("IpAddresses.parseChainEntry")
@@ -89,6 +101,31 @@ class IpAddressesTest {
             assertNull(IpAddresses.parseChainEntry(entry),
                     "InetAddress.getByName treats an unparseable dotted-quad as a hostname and resolves it, "
                             + "so an out-of-range octet must be rejected by the pattern to keep parsing literal-only");
+        }
+
+        /**
+         * The rule above is a statement about every three-digit octet above 255 in every one of the
+         * four positions, which four hand-picked literals only sample. One octet of an otherwise
+         * valid dotted-quad is replaced by a drawn out-of-range value at a drawn position; the same
+         * quad without the replacement is the matched positive control, asserted to its canonical
+         * form, so the rejection is attributable to that one octet.
+         */
+        @RepeatedTest(20)
+        @DisplayName("rejects a drawn out-of-range octet at a drawn position, and accepts the same quad without it")
+        void rejectsDrawnOutOfRangeOctetAtAnyPosition() {
+            int[] octets = {VALID_OCTETS.next(), VALID_OCTETS.next(), VALID_OCTETS.next(), VALID_OCTETS.next()};
+            String valid = dottedQuad(octets);
+            octets[Generators.integers(0, 3).next()] = Generators.integers(256, 999).next();
+            String outOfRange = dottedQuad(octets);
+
+            InetAddress parsedControl = IpAddresses.parseChainEntry(valid);
+
+            assertAll("one out-of-range octet decides the verdict",
+                    () -> assertNotNull(parsedControl, () -> valid + " is a valid literal and must parse"),
+                    () -> assertEquals(valid, IpAddresses.canonical(parsedControl),
+                            () -> valid + " must name exactly the address it spells"),
+                    () -> assertNull(IpAddresses.parseChainEntry(outOfRange),
+                            () -> outOfRange + " carries an octet above 255 and must not reach getByName"));
         }
 
         /**
@@ -159,12 +196,23 @@ class IpAddressesTest {
     @DisplayName("CidrRange")
     class Cidr {
 
-        @Test
+        @RepeatedTest(20)
         @DisplayName("a bare literal matches only itself")
         void bareLiteralMatchesItself() {
-            CidrRange range = CidrRange.parse("192.168.1.1");
-            assertTrue(range.contains(IpAddresses.parse("192.168.1.1")));
-            assertFalse(range.contains(IpAddresses.parse("192.168.1.2")));
+            // The literal is drawn from the whole IPv4 space; its neighbour differs in exactly the
+            // last octet, so a mask that compared fewer than all 32 bits would admit it.
+            int[] octets = {VALID_OCTETS.next(), VALID_OCTETS.next(), VALID_OCTETS.next(), VALID_OCTETS.next()};
+            String literal = dottedQuad(octets);
+            octets[3] = (octets[3] + 1) % 256;
+            String neighbour = dottedQuad(octets);
+
+            CidrRange range = CidrRange.parse(literal);
+
+            assertAll("a prefix-less literal is a single-host range",
+                    () -> assertTrue(range.contains(IpAddresses.parse(literal)),
+                            () -> literal + " is inside its own single-host range"),
+                    () -> assertFalse(range.contains(IpAddresses.parse(neighbour)),
+                            () -> neighbour + " differs from " + literal + " in the last octet, so it is outside"));
         }
 
         @Test

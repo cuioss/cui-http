@@ -34,16 +34,19 @@ import java.util.List;
  * <h3>HTTP Protocol Layer Focus</h3>
  * <p>This database strictly adheres to HTTP protocol layer validation concerns:</p>
  * <ul>
- *   <li><strong>Included</strong>: Path traversal, URL encoding attacks, HTTP smuggling</li>
+ *   <li><strong>Included</strong>: Path traversal, URL encoding attacks, encoded CR/LF response
+ *       splitting, null byte injection</li>
  *   <li><strong>Excluded</strong>: Application-layer concerns (HTML entities, JavaScript escapes, Base64)</li>
  * </ul>
  *
  * <h3>ZAP Active Scan Rule Coverage</h3>
  * <ul>
- *   <li><strong>Path Traversal</strong>: Multiple encoding variants from ZAP's path traversal scanner</li>
- *   <li><strong>Directory Browsing</strong>: Attempts to access directory listings</li>
- *   <li><strong>File Inclusion</strong>: Local file inclusion patterns at HTTP layer</li>
- *   <li><strong>HTTP Splitting</strong>: Response splitting and smuggling attempts</li>
+ *   <li><strong>Path Traversal</strong>: Multiple encoding variants from ZAP's path traversal scanner,
+ *       including the path-normalization variants that add an empty or current-directory segment</li>
+ *   <li><strong>File Inclusion</strong>: Traversal toward a local file; no entry carries a
+ *       {@code file:} scheme or a PHP stream filter</li>
+ *   <li><strong>HTTP Splitting</strong>: A double-encoded CR/LF pair followed by a header name</li>
+ *   <li><strong>Null Byte Injection</strong>: An encoded {@code %00} truncating a path</li>
  * </ul>
  *
  * @since 1.0
@@ -93,44 +96,48 @@ public class OWASPZAPAttackDatabase implements AttackDatabase {
             "PATH_TRAVERSAL_DETECTED is expected because this uses parent directory traversal to access system paths."
     );
 
-    // ZAP Directory Browsing Detection
-    public static final AttackTestCase ZAP_DIRECTORY_BROWSING_DOUBLE_SLASH = new AttackTestCase(
+    // ZAP path-normalization variants: traversal combined with an empty or a current-directory
+    // segment. Neither payload requests a directory listing.
+    public static final AttackTestCase ZAP_TRAVERSAL_DOUBLE_SLASH = new AttackTestCase(
             "/..//etc//passwd",
             UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
             "ZAP Active Scan: Double slash with traversal attempt. This pattern tests for improper path normalization combined with directory traversal.",
             "PATH_TRAVERSAL_DETECTED is expected because this combines traversal patterns with double slashes."
     );
 
-    public static final AttackTestCase ZAP_DIRECTORY_LISTING_DOT = new AttackTestCase(
+    public static final AttackTestCase ZAP_TRAVERSAL_DOT_SEGMENT = new AttackTestCase(
             "/./../etc/passwd",
             UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
             "ZAP Active Scan: Current and parent directory reference pattern. ZAP uses this to test whether path normalization properly handles mixed directory references.",
             "PATH_TRAVERSAL_DETECTED is expected because this combines current and parent directory references for traversal."
     );
 
-    // ZAP Local File Inclusion Patterns
-    public static final AttackTestCase ZAP_LFI_FILE_PROTOCOL = new AttackTestCase(
+    // ZAP Local File Inclusion Patterns: traversal toward a local file through a path segment
+    // literally named "file" or "resource". Neither payload carries a file: scheme or a PHP
+    // stream filter.
+    public static final AttackTestCase ZAP_LFI_TRAVERSAL_TO_FILE_SEGMENT = new AttackTestCase(
             "/../file/etc/passwd",
             UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
             "ZAP Active Scan: Local file inclusion attempt via traversal. This tests whether applications properly validate and reject file access attempts.",
             "PATH_TRAVERSAL_DETECTED is expected because this uses traversal patterns to attempt file access."
     );
 
-    public static final AttackTestCase ZAP_LFI_PHP_FILTER = new AttackTestCase(
+    public static final AttackTestCase ZAP_LFI_TRAVERSAL_TO_RESOURCE_SEGMENT = new AttackTestCase(
             "/../../../resource/etc/passwd",
             UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
             "ZAP Active Scan: Resource access via traversal. This tests for local file inclusion vulnerabilities through directory traversal.",
             "PATH_TRAVERSAL_DETECTED is expected because this uses multiple parent directory references to access resources."
     );
 
-    // ZAP HTTP Response Splitting
-    public static final AttackTestCase ZAP_HTTP_SPLITTING_CRLF = new AttackTestCase(
+    // ZAP null byte inside a path segment
+    public static final AttackTestCase ZAP_NULL_BYTE_MIDSEGMENT = new AttackTestCase(
             "/test%00attack",
             UrlSecurityFailureType.NULL_BYTE_INJECTION,
             "ZAP Active Scan: Null byte injection for string termination. This tests whether applications properly handle null bytes that could terminate string processing.",
             "NULL_BYTE_INJECTION is expected because %00 represents a null byte used to terminate string processing."
     );
 
+    // ZAP HTTP Response Splitting
     public static final AttackTestCase ZAP_HTTP_SPLITTING_ENCODED_CRLF = new AttackTestCase(
             "/test%250d%250aLocation:%20http://evil.com",
             UrlSecurityFailureType.DOUBLE_ENCODING,
@@ -138,18 +145,18 @@ public class OWASPZAPAttackDatabase implements AttackDatabase {
             "DOUBLE_ENCODING is expected because %250d represents double-encoded carriage return, indicating encoding manipulation."
     );
 
-    // ZAP Unicode and Encoding Attacks
-    public static final AttackTestCase ZAP_UNICODE_NORMALIZATION = new AttackTestCase(
+    // ZAP Encoding Attacks
+    public static final AttackTestCase ZAP_OVERLONG_UTF8_TRAVERSAL = new AttackTestCase(
             "/%c0%ae%c0%ae/%c0%ae%c0%ae/%c0%ae%c0%ae/etc/passwd",
             UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
             "ZAP Active Scan: UTF-8 overlong encoding path traversal. ZAP tests for parsers that incorrectly handle overlong UTF-8 sequences, which violate UTF-8 specifications.",
             "PATH_TRAVERSAL_DETECTED is expected because overlong UTF-8 sequences (%c0%ae) decode to dots, forming traversal patterns."
     );
 
-    public static final AttackTestCase ZAP_MIXED_ENCODING = new AttackTestCase(
+    public static final AttackTestCase ZAP_ENCODED_BACKSLASH_TRAVERSAL = new AttackTestCase(
             "%2e%2e%5c%2e%2e%5c%2e%2e%5cetc%5cpasswd",
             UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
-            "ZAP Active Scan: Mixed encoding with URL-encoded backslashes. This tests for applications that decode but don't properly validate mixed forward and backslash patterns.",
+            "ZAP Active Scan: Fully URL-encoded traversal with encoded backslash separators. This tests for applications that decode but don't properly validate backslash traversal patterns.",
             "PATH_TRAVERSAL_DETECTED is expected because %5c decodes to backslash, creating Windows-style traversal patterns."
     );
 
@@ -191,14 +198,14 @@ public class OWASPZAPAttackDatabase implements AttackDatabase {
             ZAP_PATH_TRAVERSAL_DOUBLE_DOTS,
             ZAP_PATH_TRAVERSAL_BACKSLASH,
             ZAP_PATH_TRAVERSAL_ABSOLUTE,
-            ZAP_DIRECTORY_BROWSING_DOUBLE_SLASH,
-            ZAP_DIRECTORY_LISTING_DOT,
-            ZAP_LFI_FILE_PROTOCOL,
-            ZAP_LFI_PHP_FILTER,
-            ZAP_HTTP_SPLITTING_CRLF,
+            ZAP_TRAVERSAL_DOUBLE_SLASH,
+            ZAP_TRAVERSAL_DOT_SEGMENT,
+            ZAP_LFI_TRAVERSAL_TO_FILE_SEGMENT,
+            ZAP_LFI_TRAVERSAL_TO_RESOURCE_SEGMENT,
+            ZAP_NULL_BYTE_MIDSEGMENT,
             ZAP_HTTP_SPLITTING_ENCODED_CRLF,
-            ZAP_UNICODE_NORMALIZATION,
-            ZAP_MIXED_ENCODING,
+            ZAP_OVERLONG_UTF8_TRAVERSAL,
+            ZAP_ENCODED_BACKSLASH_TRAVERSAL,
             ZAP_NULL_BYTE_TRUNCATION,
             ZAP_NULL_BYTE_MIDPATH,
             ZAP_PATH_PARAMETER_BYPASS,
@@ -217,7 +224,7 @@ public class OWASPZAPAttackDatabase implements AttackDatabase {
 
     @Override
     public String getDescription() {
-        return "Comprehensive database of OWASP ZAP active scan patterns focusing on HTTP protocol layer vulnerabilities including path traversal, encoding attacks, and HTTP smuggling";
+        return "Comprehensive database of OWASP ZAP active scan patterns focusing on HTTP protocol layer vulnerabilities including path traversal, encoding attacks, encoded CR/LF response splitting, and null byte injection";
     }
 
     /**

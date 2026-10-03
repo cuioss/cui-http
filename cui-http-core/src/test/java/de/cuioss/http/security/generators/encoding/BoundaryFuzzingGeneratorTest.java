@@ -16,6 +16,7 @@
 package de.cuioss.http.security.generators.encoding;
 
 import de.cuioss.test.generator.junit.EnableGeneratorController;
+import de.cuioss.test.generator.junit.GeneratorSeed;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -41,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * pipeline rejects it" assertion would not hold.</p>
  */
 @EnableGeneratorController
+@GeneratorSeed(4711L)
 @DisplayName("BoundaryFuzzingGenerator Contract Tests")
 class BoundaryFuzzingGeneratorTest {
 

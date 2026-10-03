@@ -19,8 +19,13 @@ import de.cuioss.http.security.data.Cookie;
 import de.cuioss.test.generator.Generators;
 import de.cuioss.test.generator.TypedGenerator;
 
+import java.util.Base64;
+
 /**
  * Generates legitimate Cookie records for testing valid cookie handling.
+ *
+ * <p>Values cover the whole RFC 6265 {@code cookie-octet} set, including base64-shaped values
+ * with {@code +}, {@code /} and {@code =} padding.</p>
  *
  * <p>QI-6: Converted from fixedValues() to dynamic algorithmic generation.</p>
  *
@@ -34,6 +39,24 @@ import de.cuioss.test.generator.TypedGenerator;
  * Implements: Task G8 (Valid Cases) from HTTP verification specification
  */
 public class ValidCookieGenerator implements TypedGenerator<Cookie> {
+
+    /**
+     * RFC 6265 section 4.1.1:
+     * {@code cookie-octet = %x21 / %x23-2B / %x2D-3A / %x3C-5B / %x5D-7E}. Declared from the RFC
+     * rather than read from the production character set, so the generator states what is legal
+     * independently of what production currently accepts.
+     */
+    private static final String COOKIE_OCTETS = cookieOctets();
+
+    /**
+     * Cookie-octets that are neither a dot nor a hex digit; one of them follows every {@code .}
+     * and {@code %} of a cookie-octet value.
+     */
+    private static final String MARKER_SAFE_FOLLOWERS = "ghijklmnopqrstuvwxyz";
+
+    private final TypedGenerator<Integer> base64ByteCountGen = Generators.integers(1, 24);
+    private final TypedGenerator<Integer> byteGen = Generators.integers(0, 255);
+    private final TypedGenerator<Integer> cookieOctetLengthGen = Generators.integers(8, 24);
 
     // QI-6: Dynamic generation components - all seed-based, no internal state
     private final TypedGenerator<Integer> cookieTypeGenerator = Generators.integers(0, 3);
@@ -145,7 +168,7 @@ public class ValidCookieGenerator implements TypedGenerator<Cookie> {
     }
 
     private String generateLegitimateValue() {
-        int valueType = Generators.integers(0, 6).next();
+        int valueType = Generators.integers(0, 8).next();
         return switch (valueType) {
             case 0 -> generateSessionValue();
             case 1 -> generateBooleanValue();
@@ -154,8 +177,62 @@ public class ValidCookieGenerator implements TypedGenerator<Cookie> {
             case 4 -> generateAlphanumericValue();
             case 5 -> generateTokenValue();
             case 6 -> generateContextValue();
+            case 7 -> generateBase64Value();
+            case 8 -> generateCookieOctetValue();
             default -> generateSessionValue();
         };
+    }
+
+    /**
+     * Produces the base64 encoding of 1 to 24 random bytes, the shape of an opaque session or
+     * signature value. The standard alphabet carries {@code +} and {@code /}, and a byte count
+     * that is not a multiple of three closes the value with one or two {@code =} padding
+     * characters - all three are RFC 6265 cookie-octets.
+     */
+    private String generateBase64Value() {
+        byte[] bytes = new byte[base64ByteCountGen.next()];
+        for (int i = 0; i < bytes.length; i++) {
+            bytes[i] = byteGen.next().byteValue();
+        }
+        return Base64.getEncoder().encodeToString(bytes);
+    }
+
+    /**
+     * Produces a value drawn from the whole RFC 6265 {@code cookie-octet} set, so that every legal
+     * value character is reachable and not only the token alphabet.
+     *
+     * <p>The value stays legitimate: a {@code .} or a {@code %} is always followed by a character
+     * from {@link #MARKER_SAFE_FOLLOWERS}, so the value can form neither a dot-dot traversal
+     * segment nor a percent-escape - both are legal cookie-octet sequences, but a value carrying
+     * one is what the attack generators emit, not this one.</p>
+     */
+    private String generateCookieOctetValue() {
+        int length = cookieOctetLengthGen.next();
+        StringBuilder value = new StringBuilder(length);
+        boolean needsSafeFollower = false;
+        for (int i = 0; i < length; i++) {
+            String alphabet = needsSafeFollower ? MARKER_SAFE_FOLLOWERS : COOKIE_OCTETS;
+            char character = alphabet.charAt(Generators.integers(0, alphabet.length() - 1).next());
+            value.append(character);
+            needsSafeFollower = character == '.' || character == '%';
+        }
+        return value.toString();
+    }
+
+    private static String cookieOctets() {
+        StringBuilder octets = new StringBuilder();
+        octets.append((char) 0x21);
+        appendRange(octets, 0x23, 0x2B);
+        appendRange(octets, 0x2D, 0x3A);
+        appendRange(octets, 0x3C, 0x5B);
+        appendRange(octets, 0x5D, 0x7E);
+        return octets.toString();
+    }
+
+    private static void appendRange(StringBuilder target, int firstInclusive, int lastInclusive) {
+        for (int character = firstInclusive; character <= lastInclusive; character++) {
+            target.append((char) character);
+        }
     }
 
     private String generateSessionValue() {

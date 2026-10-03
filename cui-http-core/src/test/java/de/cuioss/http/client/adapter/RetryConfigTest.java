@@ -15,6 +15,8 @@
  */
 package de.cuioss.http.client.adapter;
 
+import de.cuioss.test.generator.Generators;
+import de.cuioss.test.generator.junit.EnableGeneratorController;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -25,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Unit tests for {@link RetryConfig}.
  */
+@EnableGeneratorController
 class RetryConfigTest {
 
     @Test
@@ -80,16 +83,23 @@ class RetryConfigTest {
     @Test
     @SuppressWarnings("java:S5778") // Validation tests intentionally use multiple method calls in lambdas
     void shouldValidateMaxAttempts() {
-        // when/then - zero not allowed
-        assertThrows(IllegalArgumentException.class,
+        // The edge (zero) and the inclusive floor (one) stay pinned; the drawn values cover the two
+        // open domains on either side, which a single -1 and no positive value above 1 left unsampled.
+        int nonPositive = Generators.integers(Integer.MIN_VALUE, -1).next();
+        int positive = Generators.integers(2, Integer.MAX_VALUE).next();
+
+        IllegalArgumentException zero = assertThrows(IllegalArgumentException.class,
                 () -> RetryConfig.builder().maxAttempts(0));
+        IllegalArgumentException negative = assertThrows(IllegalArgumentException.class,
+                () -> RetryConfig.builder().maxAttempts(nonPositive));
 
-        // when/then - negative not allowed
-        assertThrows(IllegalArgumentException.class,
-                () -> RetryConfig.builder().maxAttempts(-1));
-
-        // when/then - 1 is valid (minimum)
-        assertDoesNotThrow(() -> RetryConfig.builder().maxAttempts(1).build());
+        assertAll("maxAttempts is accepted from 1 upwards and rejected below it",
+                () -> assertEquals("maxAttempts must be >= 1, but was: 0", zero.getMessage()),
+                () -> assertEquals("maxAttempts must be >= 1, but was: " + nonPositive, negative.getMessage()),
+                () -> assertEquals(1, RetryConfig.builder().maxAttempts(1).build().maxAttempts(),
+                        "1 is the inclusive floor"),
+                () -> assertEquals(positive, RetryConfig.builder().maxAttempts(positive).build().maxAttempts(),
+                        "every value above the floor is stored as given"));
     }
 
     @Test
@@ -224,12 +234,17 @@ class RetryConfigTest {
                 .jitter(0.0)  // No jitter
                 .build();
 
-        // when - calculate delay for high attempt number
-        // Without cap: 1s * 2^9 = 512s
-        Duration delay = config.calculateDelay(10);
+        // when - calculate delay for the first capped attempt and for one drawn from far above it.
+        // Attempt 4 is the first whose uncapped delay (1s * 2^3 = 8s) exceeds the cap; the drawn
+        // attempt reaches into the range where 2^(n-1) overflows a double to infinity.
+        int farAboveTheCap = Generators.integers(5, 100_000).next();
 
-        // then - should be capped at 5s
-        assertEquals(5000, delay.toMillis());
+        // then - every attempt from the first capped one upwards yields exactly the cap
+        assertAll("the cap bounds the exponential growth however far it runs",
+                () -> assertEquals(4000, config.calculateDelay(3).toMillis(), "the last uncapped attempt"),
+                () -> assertEquals(5000, config.calculateDelay(4).toMillis(), "the first capped attempt"),
+                () -> assertEquals(5000, config.calculateDelay(farAboveTheCap).toMillis(),
+                        () -> "attempt " + farAboveTheCap + " must still yield the cap"));
     }
 
     @Test
@@ -289,11 +304,14 @@ class RetryConfigTest {
                 .jitter(0.0)
                 .build();
 
-        // when/then - all delays should be constant at 2s
-        assertEquals(2000, config.calculateDelay(1).toMillis());
-        assertEquals(2000, config.calculateDelay(2).toMillis());
-        assertEquals(2000, config.calculateDelay(3).toMillis());
-        assertEquals(2000, config.calculateDelay(10).toMillis());
+        // when/then - the delay is constant at 2s for the first attempt and for any attempt drawn
+        // from above it: a multiplier of exactly 1.0 never grows, however many attempts it is raised to
+        int laterAttempt = Generators.integers(2, 100_000).next();
+
+        assertAll("a 1.0 multiplier yields a constant delay",
+                () -> assertEquals(2000, config.calculateDelay(1).toMillis(), "the first attempt"),
+                () -> assertEquals(2000, config.calculateDelay(laterAttempt).toMillis(),
+                        () -> "attempt " + laterAttempt + " must yield the same delay as the first"));
     }
 
     @Test

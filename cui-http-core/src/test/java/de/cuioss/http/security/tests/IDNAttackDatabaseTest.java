@@ -24,8 +24,19 @@ import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.ArgumentsSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
+import java.net.IDN;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.IntPredicate;
+import java.util.function.Predicate;
+import java.util.stream.Stream;
+
+import static de.cuioss.http.security.tests.AttackNameClaims.*;
+import static java.lang.Character.UnicodeScript.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -47,11 +58,61 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li><strong>IDN Encoding Bypass</strong> - Various encoding bypass techniques</li>
  * </ul>
  *
+ * <h3>What each test verifies</h3>
+ * <p>{@link #shouldRejectIDNAttacksWithCorrectFailureTypes} verifies the pipeline verdict only.
+ * Most entries carry a code point above 255 and are rejected by character validation before any
+ * script, punycode or traversal property is looked at, so that verdict cannot tell a homograph
+ * from a bidirectional override from a zero-width insertion.
+ * {@link #shouldCarryTheFeatureItsNameClaims} supplies the distinction on the payload itself.</p>
+ *
  * @author Claude Code Generator
  * @since 1.0
  */
 @DisplayName("IDN Attack Database Tests")
 class IDNAttackDatabaseTest {
+
+    private static final int ONE_DOT_LEADER = 0x2024;
+    private static final int HYPHENATION_POINT = 0x2027;
+    private static final int LATIN_SMALL_E_WITH_ACUTE = 0x00E9;
+    private static final int COMBINING_ACUTE_ACCENT = 0x0301;
+    private static final int RIGHT_TO_LEFT_OVERRIDE = 0x202E;
+    private static final int ZERO_WIDTH_SPACE = 0x200B;
+    private static final int ZERO_WIDTH_NON_JOINER = 0x200C;
+    private static final int ZERO_WIDTH_JOINER = 0x200D;
+    private static final int ZERO_WIDTH_NO_BREAK_SPACE = 0xFEFF;
+    private static final int SOFT_HYPHEN = 0x00AD;
+
+    /**
+     * What the words of an {@link IDNAttackDatabase} constant name claim about its payload. The
+     * brand a payload imitates is a label: it names the target, not a property of the payload.
+     */
+    private static final AttackNameClaims NAME_CLAIMS = new AttackNameClaims(
+            Map.ofEntries(
+                    claim("CYRILLIC", hostLetter(letter -> scriptOf(letter) == CYRILLIC)),
+                    claim("HOMOGRAPH", hostLetter(letter -> scriptOf(letter) != LATIN)),
+                    claim("MIXED_SCRIPT", payload -> letterScriptsOf(host(payload)).size() > 1),
+                    claim("PUNYCODE", IDNAttackDatabaseTest::carriesDecodablePunycodeLabel),
+                    claim("RUSSIAN", decodedHostLetter(letter -> scriptOf(letter) == CYRILLIC)),
+                    claim("CHINESE", decodedHostLetter(letter -> scriptOf(letter) == HAN)),
+                    claim("ONE_DOT_LEADER", codePoint(ONE_DOT_LEADER)),
+                    claim("HYPHENATION_POINT", codePoint(HYPHENATION_POINT)),
+                    claim("COMPOSED_ACCENT", codePoint(LATIN_SMALL_E_WITH_ACUTE)),
+                    claim("DECOMPOSED_ACCENT", codePoint(COMBINING_ACUTE_ACCENT)),
+                    claim("RTL", codePoint(RIGHT_TO_LEFT_OVERRIDE)),
+                    claim("RTL_OVERRIDE", codePoint(RIGHT_TO_LEFT_OVERRIDE)),
+                    claim("RTL_MIDDLE", IDNAttackDatabaseTest::carriesOverrideInsideHost),
+                    claim("ZERO_WIDTH", codePoint(ZERO_WIDTH_SPACE, ZERO_WIDTH_NON_JOINER,
+                            ZERO_WIDTH_JOINER, ZERO_WIDTH_NO_BREAK_SPACE)),
+                    claim("ZERO_WIDTH_SPACE", codePoint(ZERO_WIDTH_SPACE)),
+                    claim("ZERO_WIDTH_NON_JOINER", codePoint(ZERO_WIDTH_NON_JOINER)),
+                    claim("SOFT_HYPHEN", codePoint(SOFT_HYPHEN)),
+                    claim("FULL_WIDTH", hostLetter(letter -> letter >= 0xFF01 && letter <= 0xFF5E)),
+                    claim("MATHEMATICAL_BOLD", hostLetter(namedLike("MATHEMATICAL", "BOLD"))),
+                    claim("MATHEMATICAL_ITALIC", hostLetter(namedLike("MATHEMATICAL", "ITALIC"))),
+                    claim("PORT", pattern("^[a-z]+://[^/]+:\\d+/")),
+                    claim("HTTPS", pattern("^https://")),
+                    claim("TRAVERSAL", TRAVERSAL)),
+            Set.of("APPLE", "GOOGLE", "MICROSOFT", "PAYPAL", "TWITTER", "INSTAGRAM", "CAFE", "ATTACK", "DOMAIN"));
 
     private URLPathValidationPipeline pipeline;
     private SecurityEventCounter eventCounter;
@@ -99,5 +160,69 @@ class IDNAttackDatabaseTest {
         // And: Security event should be recorded
         assertTrue(eventCounter.getTotalCount() > initialEventCount,
                 "Security event should be recorded for IDN attack: %s".formatted(testCase.getCompactSummary()));
+    }
+
+    /**
+     * Structural claim of the database (ADR-0009): the payload of every entry carries the
+     * feature its constant name claims - the script, the punycode label, the specific invisible
+     * or lookalike code point. An entry whose payload is edited to drop that feature fails here,
+     * whatever the pipeline verdict is.
+     *
+     * @param constantName the name of the database constant
+     * @param payload the attack string of that constant
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("declaredEntries")
+    @DisplayName("Each entry's payload carries the feature its name claims")
+    void shouldCarryTheFeatureItsNameClaims(String constantName, String payload) {
+        NAME_CLAIMS.assertCarriedBy(constantName, payload);
+    }
+
+    static Stream<Arguments> declaredEntries() {
+        return AttackDatabaseEntries.declaredEntries(IDNAttackDatabase.class);
+    }
+
+    /** The authority's host: everything between the scheme separator and the path, without a port. */
+    private static String host(String payload) {
+        String afterScheme = payload.substring(payload.indexOf("://") + 3);
+        String authority = afterScheme.substring(0, afterScheme.indexOf('/'));
+        return authority.replaceFirst(":\\d+$", "");
+    }
+
+    private static Character.UnicodeScript scriptOf(int codePoint) {
+        return Character.UnicodeScript.of(codePoint);
+    }
+
+    private static Set<Character.UnicodeScript> letterScriptsOf(String text) {
+        return Set.copyOf(text.codePoints().filter(Character::isLetter)
+                .mapToObj(IDNAttackDatabaseTest::scriptOf).toList());
+    }
+
+    private static Predicate<String> hostLetter(IntPredicate property) {
+        return payload -> host(payload).codePoints().filter(Character::isLetter).anyMatch(property);
+    }
+
+    /** Applies {@code property} to the letters of the host after its punycode labels are decoded. */
+    private static Predicate<String> decodedHostLetter(IntPredicate property) {
+        return payload -> IDN.toUnicode(host(payload)).codePoints().filter(Character::isLetter).anyMatch(property);
+    }
+
+    private static IntPredicate namedLike(String... nameParts) {
+        return codePoint -> {
+            String name = Character.getName(codePoint);
+            return name != null && Stream.of(nameParts).allMatch(name::contains);
+        };
+    }
+
+    /** A punycode label is an {@code xn--} label that decodes to something other than itself. */
+    private static boolean carriesDecodablePunycodeLabel(String payload) {
+        String host = host(payload);
+        return literal("xn--").test(host) && !IDN.toUnicode(host).equals(host);
+    }
+
+    private static boolean carriesOverrideInsideHost(String payload) {
+        String host = host(payload);
+        int position = host.indexOf(RIGHT_TO_LEFT_OVERRIDE);
+        return position > 0 && position < host.length() - 1;
     }
 }

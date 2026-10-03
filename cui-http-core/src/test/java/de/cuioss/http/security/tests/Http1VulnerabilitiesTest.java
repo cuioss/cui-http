@@ -25,6 +25,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.util.Locale;
+import java.util.regex.Pattern;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -34,8 +37,18 @@ import static org.junit.jupiter.api.Assertions.*;
  * This test class validates defense against HTTP/1.x protocol vulnerabilities
  * documented in the PortSwigger research "HTTP/1 Must Die". These tests provide
  * regression prevention for application-layer HTTP component validation, ensuring
- * that HTTP headers, paths, and parameters cannot be manipulated to exploit
- * infrastructure-level request smuggling vulnerabilities.
+ * that a URL path cannot carry a percent-encoded line break that an upstream parser
+ * would read as the end of the request line.
+ * </p>
+ *
+ * <h3>Payload shape and verdict</h3>
+ * <p>
+ * Every payload is a URL <em>path component</em> whose wire form consists of path characters
+ * and well-formed percent-escapes only: the smuggled header block is appended to the path with
+ * its line breaks spelled {@code %0d%0a} and its spaces spelled {@code %20}. Nothing in the wire
+ * form is inadmissible, so the verdict is reached where the attack actually lives - the decoding
+ * stage finds the decoded control character and reports
+ * {@link UrlSecurityFailureType#CONTROL_CHARACTERS}.
  * </p>
  *
  * <h3>Test Coverage</h3>
@@ -43,36 +56,24 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>CL.0 smuggling patterns - Content-Length with no Transfer-Encoding</li>
  *   <li>0.CL smuggling patterns - Zero Content-Length with body</li>
  *   <li>Expect header desync patterns - Expect: 100-continue manipulation</li>
- *   <li>Parser differential attacks - Visible-Hidden (V-H) and Hidden-Visible (H-V)</li>
- *   <li>Upstream connection reuse attack patterns</li>
- *   <li>Header folding and whitespace manipulation</li>
  *   <li>Duplicate header patterns</li>
+ *   <li>Transfer-Encoding obfuscation</li>
  *   <li>HTTP verb injection in component values</li>
+ *   <li>Header, routing-header and Host header injection</li>
+ *   <li>Whitespace and control character manipulation</li>
+ *   <li>HTTP response injection</li>
  * </ul>
  *
  * <h3>Scope and Limitations</h3>
  * <p>
  * <strong>Library Scope (Tested):</strong> Application-layer HTTP component validation
- * (headers, paths, parameters) for injection patterns.
+ * for injection patterns.
  * </p>
  * <p>
  * <strong>Infrastructure Scope (Not Tested):</strong> Full HTTP request/response parsing,
  * Content-Length vs Transfer-Encoding conflict resolution, connection reuse management,
  * protocol-level handling. These are servlet container, proxy, and load balancer responsibilities.
  * </p>
- *
- * <h3>Defense-in-Depth Strategy</h3>
- * <p>
- * Even when full request smuggling is impossible at the application layer, validating
- * HTTP components prevents:
- * </p>
- * <ul>
- *   <li>CRLF injection in headers and URLs</li>
- *   <li>Control character injection</li>
- *   <li>Embedded HTTP verbs in component values</li>
- *   <li>Header value manipulation</li>
- *   <li>Path traversal via HTTP smuggling patterns</li>
- * </ul>
  *
  * <h3>Security References</h3>
  * <ul>
@@ -90,397 +91,288 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("HTTP/1.x Protocol Vulnerability Tests")
 class Http1VulnerabilitiesTest {
 
+    private static final String CONTENT_LENGTH_NAME = "Content-Length:";
+    private static final String CONTENT_LENGTH_HEADER = CONTENT_LENGTH_NAME + "%20";
+    private static final String ZERO_CONTENT_LENGTH = CONTENT_LENGTH_HEADER + "0%0d";
+    private static final String ZERO_CONTENT_LENGTH_THEN_BODY = ZERO_CONTENT_LENGTH + "%0a%0d%0a";
+
+    /** A second request line behind the encoded line break. */
+    private static final Pattern INJECTED_REQUEST_LINE =
+            Pattern.compile("%0d%0a(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)%20/");
+
+    /** A header name and its encoded colon-space behind the encoded line break. */
+    private static final Pattern INJECTED_HEADER = Pattern.compile("%0d%0a[A-Za-z][A-Za-z0-9-]*:%20");
+
+    /** An upstream routing header behind the encoded line break. */
+    private static final Pattern INJECTED_ROUTING_HEADER =
+            Pattern.compile("%0d%0aX-(Original-URL|Rewrite-URL|Forwarded-(Host|Proto|For)):%20");
+
     private URLPathValidationPipeline pathPipeline;
     private SecurityEventCounter eventCounter;
-    private SecurityConfiguration config;
 
     @BeforeEach
     void setUp() {
-        config = SecurityConfiguration.defaults();
         eventCounter = new SecurityEventCounter();
-        pathPipeline = new URLPathValidationPipeline(config, eventCounter);
+        pathPipeline = new URLPathValidationPipeline(SecurityConfiguration.defaults(), eventCounter);
     }
 
     /**
-     * Test CL.0 smuggling patterns where Content-Length is specified but body is ignored.
-     * These patterns attempt to smuggle requests by embedding HTTP verbs in URL paths.
-     *
-     * <p>Attack Pattern: {@code /api?param=value%0d%0aContent-Length: 44%0d%0a%0d%0aGET /admin}</p>
+     * CL.0 smuggling: a Content-Length is declared but the body is ignored by one parser.
      */
     @ParameterizedTest
     @ValueSource(strings = {
-            "/api?data=test%0d%0aContent-Length: 44%0d%0a%0d%0aGET /admin HTTP/1.1",
-            "/search?q=data%0d%0aContent-Length: 30%0d%0a%0d%0aPOST /admin/users",
-            "/process?input=normal%0d%0aContent-Length: 25%0d%0a%0d%0aDELETE /users",
-            "/api/endpoint%0d%0aContent-Length: 60%0d%0a%0d%0aGET /admin/secrets HTTP/1.1%0d%0aHost: internal",
-            "/data?param=value%0d%0aContent-Length: 35%0d%0a%0d%0aPUT /admin/config"
+            "/api/test%0d%0aContent-Length:%2044%0d%0a%0d%0aGET%20/admin%20HTTP/1.1",
+            "/search/data%0d%0aContent-Length:%2030%0d%0a%0d%0aPOST%20/admin/users",
+            "/process/normal%0d%0aContent-Length:%2025%0d%0a%0d%0aDELETE%20/users",
+            "/api/endpoint%0d%0aContent-Length:%2060%0d%0a%0d%0aGET%20/admin/secrets%20HTTP/1.1%0d%0aHost:%20internal",
+            "/data/value%0d%0aContent-Length:%2035%0d%0a%0d%0aPUT%20/admin/config"
     })
-    @DisplayName("CL.0 smuggling patterns must be rejected")
+    @DisplayName("CL.0 smuggling patterns are rejected as CONTROL_CHARACTERS")
     void shouldRejectClZeroSmugglingPatterns(String clZeroPattern) {
-        // Given: A CL.0 smuggling pattern with embedded HTTP verb
-        long initialEventCount = eventCounter.getTotalCount();
+        assertTrue(clZeroPattern.contains(CONTENT_LENGTH_HEADER) && !clZeroPattern.contains(ZERO_CONTENT_LENGTH),
+                () -> "CL.0 family: payload must declare a non-zero Content-Length - " + clZeroPattern);
 
-        // When: Attempting to validate the pattern
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pathPipeline.validate(clZeroPattern),
-                "CL.0 smuggling pattern should be rejected: " + clZeroPattern);
+        var exception = assertRejected(clZeroPattern);
 
-        // Then: Validation should fail with control character or invalid character detection
-        assertNotNull(exception, "Exception should be thrown for CL.0 smuggling pattern");
-        assertTrue(isInjectionFailure(exception.getFailureType()),
-                "Failure type should be related to invalid characters or protocol violations for CRLF injection: " + exception.getFailureType());
-
-        // And: Original malicious input should be preserved
-        assertEquals(clZeroPattern, exception.getOriginalInput(),
-                "Original input should be preserved in exception");
-
-        // And: Security event should be recorded
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded for CL.0 pattern");
+        assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + clZeroPattern);
     }
 
     /**
-     * Test 0.CL smuggling patterns where Content-Length is zero but body is present.
-     * These patterns attempt to confuse parsers by declaring zero length with actual content.
-     *
-     * <p>Attack Pattern: {@code /api?param=value%0d%0aContent-Length: 0%0d%0a%0d%0aGET /admin}</p>
+     * 0.CL smuggling: Content-Length is zero but a body is present.
      */
     @ParameterizedTest
     @ValueSource(strings = {
-            "/api?data=test%0d%0aContent-Length: 0%0d%0a%0d%0aGET /admin HTTP/1.1",
-            "/search?q=data%0d%0aContent-Length: 0%0d%0a%0d%0aPOST /admin/users HTTP/1.1",
-            "/process?input=normal%0d%0aContent-Length: 0%0d%0a%0d%0aDELETE /users/victim",
-            "/api/endpoint%0d%0aContent-Length: 0%0d%0a%0d%0aGET /secrets HTTP/1.1%0d%0aHost: internal",
-            "/data?param=value%0d%0aContent-Length: 0%0d%0a%0d%0aPUT /admin/elevate HTTP/1.1"
+            "/api/test%0d%0aContent-Length:%200%0d%0a%0d%0aGET%20/admin%20HTTP/1.1",
+            "/search/data%0d%0aContent-Length:%200%0d%0a%0d%0aPOST%20/admin/users%20HTTP/1.1",
+            "/process/normal%0d%0aContent-Length:%200%0d%0a%0d%0aDELETE%20/users/victim",
+            "/api/endpoint%0d%0aContent-Length:%200%0d%0a%0d%0aGET%20/secrets%20HTTP/1.1%0d%0aHost:%20internal",
+            "/data/value%0d%0aContent-Length:%200%0d%0a%0d%0aPUT%20/admin/elevate%20HTTP/1.1"
     })
-    @DisplayName("0.CL smuggling patterns must be rejected")
+    @DisplayName("0.CL smuggling patterns are rejected as CONTROL_CHARACTERS")
     void shouldRejectZeroClSmugglingPatterns(String zeroClPattern) {
-        // Given: A 0.CL smuggling pattern with zero Content-Length but body present
-        long initialEventCount = eventCounter.getTotalCount();
+        int headerEnd = zeroClPattern.indexOf(ZERO_CONTENT_LENGTH_THEN_BODY);
+        assertTrue(headerEnd >= 0 && headerEnd + ZERO_CONTENT_LENGTH_THEN_BODY.length() < zeroClPattern.length(),
+                () -> "0.CL family: payload must carry Content-Length 0, a blank line and a body - " + zeroClPattern);
 
-        // When: Attempting to validate the pattern
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pathPipeline.validate(zeroClPattern),
-                "0.CL smuggling pattern should be rejected: " + zeroClPattern);
+        var exception = assertRejected(zeroClPattern);
 
-        // Then: Validation should fail with CRLF detection
-        assertNotNull(exception, "Exception should be thrown for 0.CL smuggling pattern");
-        assertTrue(isInjectionFailure(exception.getFailureType()),
-                "Failure type should be related to injection attempts (control characters, invalid characters, encoding issues, protocol violations, or suspicious patterns): " + exception.getFailureType());
-
-        // And: Security event should be recorded
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded for 0.CL pattern");
+        assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + zeroClPattern);
     }
 
     /**
-     * Test Expect header desync patterns.
-     * These patterns exploit differences in how servers handle Expect: 100-continue.
-     *
-     * <p>Attack Pattern: {@code /api?param=value%0d%0aExpect: 100-continue%0d%0a%0d%0aGET /admin}</p>
+     * Expect header desync: differences in how servers handle {@code Expect: 100-continue}.
      */
     @ParameterizedTest
     @ValueSource(strings = {
-            "/api?data=test%0d%0aExpect: 100-continue%0d%0aContent-Length: 44%0d%0a%0d%0aGET /admin",
-            "/search?q=data%0d%0aExpect: 100-continue%0d%0a%0d%0aPOST /admin/users HTTP/1.1",
-            "/process?input=normal%0d%0aExpect: 100-continue%0d%0aContent-Length: 30%0d%0a%0d%0aDELETE /users",
-            "/api/endpoint%0d%0aExpect: 100-continue%0d%0aTransfer-Encoding: chunked%0d%0a%0d%0a0%0d%0a%0d%0aGET /secrets"
+            "/api/test%0d%0aExpect:%20100-continue%0d%0aContent-Length:%2044%0d%0a%0d%0aGET%20/admin",
+            "/search/data%0d%0aExpect:%20100-continue%0d%0a%0d%0aPOST%20/admin/users%20HTTP/1.1",
+            "/process/normal%0d%0aExpect:%20100-continue%0d%0aContent-Length:%2030%0d%0a%0d%0aDELETE%20/users",
+            "/api/endpoint%0d%0aExpect:%20100-continue%0d%0aTransfer-Encoding:%20chunked%0d%0a%0d%0a0%0d%0a%0d%0aGET%20/secrets"
     })
-    @DisplayName("Expect header desync patterns must be rejected")
+    @DisplayName("Expect header desync patterns are rejected as CONTROL_CHARACTERS")
     void shouldRejectExpectHeaderDesyncPatterns(String expectPattern) {
-        // Given: An Expect header desync pattern
-        long initialEventCount = eventCounter.getTotalCount();
+        assertTrue(expectPattern.contains("Expect:%20100-continue"),
+                () -> "Expect desync family: payload must carry Expect: 100-continue - " + expectPattern);
 
-        // When: Attempting to validate the pattern
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pathPipeline.validate(expectPattern),
-                "Expect header desync pattern should be rejected: " + expectPattern);
+        var exception = assertRejected(expectPattern);
 
-        // Then: Validation should fail with CRLF detection
-        assertNotNull(exception, "Exception should be thrown for Expect header desync");
-        assertTrue(isInjectionFailure(exception.getFailureType()),
-                "Failure type should be related to injection attempts (control characters, invalid characters, encoding issues, protocol violations, or suspicious patterns): " + exception.getFailureType());
-
-        // And: Security event should be recorded
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded for Expect desync");
+        assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + expectPattern);
     }
 
     /**
-     * Test duplicate Content-Length header patterns (CL.CL) in URL paths.
-     * These patterns exploit parsers that use the first vs. last Content-Length header.
-     * Note: Testing in path context where URL decoding occurs.
-     *
-     * <p>Attack Pattern: {@code /api?param=value%0d%0aContent-Length: 10%0d%0aContent-Length: 20}</p>
+     * Duplicate Content-Length (CL.CL): parsers that use the first versus the last header.
      */
     @ParameterizedTest
     @ValueSource(strings = {
-            "/api?data=test%0d%0aContent-Length: 10%0d%0aContent-Length: 20",
-            "/search?q=data%0d%0aContent-Length: 0%0d%0aContent-Length: 44",
-            "/process?input=normal%0d%0aContent-Length: 5%0d%0aContent-Length: 100",
-            "/endpoint?param=value%0d%0aContent-Length: 30%0d%0aContent-Length: 60"
+            "/api/test%0d%0aContent-Length:%2010%0d%0aContent-Length:%2020",
+            "/search/data%0d%0aContent-Length:%200%0d%0aContent-Length:%2044",
+            "/process/normal%0d%0aContent-Length:%205%0d%0aContent-Length:%20100",
+            "/endpoint/value%0d%0aContent-Length:%2030%0d%0aContent-Length:%2060"
     })
-    @DisplayName("Duplicate Content-Length header patterns in paths must be rejected")
+    @DisplayName("Duplicate Content-Length header patterns are rejected as CONTROL_CHARACTERS")
     void shouldRejectDuplicateContentLengthHeadersInPaths(String pathValue) {
-        // Given: A path value with duplicate Content-Length injection
-        long initialEventCount = eventCounter.getTotalCount();
+        assertNotEquals(pathValue.indexOf(CONTENT_LENGTH_NAME), pathValue.lastIndexOf(CONTENT_LENGTH_NAME),
+                () -> "Duplicate Content-Length family: Content-Length must occur at least twice - " + pathValue);
 
-        // When: Attempting to validate the path
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pathPipeline.validate(pathValue),
-                "Duplicate Content-Length pattern should be rejected: " + pathValue);
+        var exception = assertRejected(pathValue);
 
-        // Then: Validation should fail
-        assertNotNull(exception, "Exception should be thrown for duplicate Content-Length");
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded");
+        assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + pathValue);
     }
 
     /**
-     * Test Transfer-Encoding obfuscation patterns in URL paths.
-     * These patterns exploit variations in Transfer-Encoding header parsing.
-     * Note: Testing in path context where URL decoding occurs.
-     *
-     * <p>Attack Pattern: {@code /api?param=chunked%0d%0aTransfer-Encoding: identity}</p>
+     * Transfer-Encoding obfuscation: variations in Transfer-Encoding header parsing.
      */
     @ParameterizedTest
     @ValueSource(strings = {
-            "/api?data=chunked%0d%0aTransfer-Encoding: identity",
-            "/search?q=chunked%0d%0aTransfer-encoding: chunked",
-            "/process?input=test%0d%0aTransfer-Encoding: chunked",
-            "/endpoint?param=value%0d%0aTransfer-Encoding: x"
+            "/api/chunked%0d%0aTransfer-Encoding:%20identity",
+            "/search/chunked%0d%0aTransfer-encoding:%20chunked",
+            "/process/test%0d%0aTransfer-Encoding:%20chunked",
+            "/endpoint/value%0d%0aTransfer-Encoding:%20x"
     })
-    @DisplayName("Transfer-Encoding obfuscation patterns in paths must be rejected")
+    @DisplayName("Transfer-Encoding obfuscation patterns are rejected as CONTROL_CHARACTERS")
     void shouldRejectTransferEncodingObfuscationInPaths(String pathValue) {
-        // Given: A path value with Transfer-Encoding injection
-        long initialEventCount = eventCounter.getTotalCount();
+        assertTrue(pathValue.toLowerCase(Locale.ROOT).contains("transfer-encoding:%20"),
+                () -> "Transfer-Encoding family: payload must carry a Transfer-Encoding header - " + pathValue);
 
-        // When: Attempting to validate the path
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pathPipeline.validate(pathValue),
-                "Transfer-Encoding obfuscation should be rejected: " + pathValue);
+        var exception = assertRejected(pathValue);
 
-        // Then: Validation should fail with CRLF detection
-        assertNotNull(exception, "Exception should be thrown for TE obfuscation");
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded");
+        assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + pathValue);
     }
 
     /**
-     * Test HTTP verb injection in paths.
-     * These patterns embed HTTP verbs (GET, POST, DELETE, etc.) in URL paths.
-     *
-     * <p>Attack Pattern: {@code /api%0d%0aGET /admin HTTP/1.1}</p>
+     * HTTP verb injection: a second request line behind an encoded line break.
      */
     @ParameterizedTest
     @ValueSource(strings = {
-            "/api%0d%0aGET /admin HTTP/1.1",
-            "/search%0d%0aPOST /admin/users HTTP/1.1",
-            "/process%0d%0aDELETE /users/victim HTTP/1.1",
-            "/data%0d%0aPUT /admin/config HTTP/1.1",
-            "/endpoint%0d%0aPATCH /admin/settings HTTP/1.1",
-            "/api%0d%0aHEAD /admin/secrets HTTP/1.1",
-            "/resource%0d%0aOPTIONS /admin HTTP/1.1"
+            "/api%0d%0aGET%20/admin%20HTTP/1.1",
+            "/search%0d%0aPOST%20/admin/users%20HTTP/1.1",
+            "/process%0d%0aDELETE%20/users/victim%20HTTP/1.1",
+            "/data%0d%0aPUT%20/admin/config%20HTTP/1.1",
+            "/endpoint%0d%0aPATCH%20/admin/settings%20HTTP/1.1",
+            "/api%0d%0aHEAD%20/admin/secrets%20HTTP/1.1",
+            "/resource%0d%0aOPTIONS%20/admin%20HTTP/1.1"
     })
-    @DisplayName("HTTP verb injection in paths must be rejected")
+    @DisplayName("HTTP verb injection in paths is rejected as CONTROL_CHARACTERS")
     void shouldRejectHttpVerbInjectionInPaths(String verbInjectionPath) {
-        // Given: A path with embedded HTTP verb
-        long initialEventCount = eventCounter.getTotalCount();
+        assertTrue(INJECTED_REQUEST_LINE.matcher(verbInjectionPath).find(),
+                () -> "Verb injection family: payload must carry a request line behind the encoded break - "
+                        + verbInjectionPath);
 
-        // When: Attempting to validate the path
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pathPipeline.validate(verbInjectionPath),
-                "HTTP verb injection should be rejected: " + verbInjectionPath);
+        var exception = assertRejected(verbInjectionPath);
 
-        // Then: Validation should fail with CRLF detection
-        assertNotNull(exception, "Exception should be thrown for verb injection");
-        assertTrue(isInjectionFailure(exception.getFailureType()),
-                "Failure type should be related to injection attempts (control characters, invalid characters, encoding issues, protocol violations, or suspicious patterns): " + exception.getFailureType());
-
-        // And: Security event should be recorded
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded for verb injection");
+        assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + verbInjectionPath);
     }
 
     /**
-     * Test header name injection with CRLF in URL paths.
-     * These patterns attempt to inject additional headers via CRLF in path parameters.
-     * Note: Header names themselves don't undergo URL decoding, so we test in path context.
-     *
-     * <p>Attack Pattern: {@code /api?header=X-Custom%0d%0aX-Injected: malicious}</p>
+     * Header injection: an additional header behind an encoded line break.
      */
     @ParameterizedTest
     @ValueSource(strings = {
-            "/api?header=X-Custom%0d%0aX-Injected: malicious",
-            "/search?user=Agent%0d%0aAuthorization: Bearer stolen",
-            "/process?xff=value%0d%0aX-Admin: true",
-            "/endpoint?type=json%0d%0aX-Override: admin",
-            "/data?accept=all%0d%0aCookie: session=hijacked"
+            "/api/X-Custom%0d%0aX-Injected:%20malicious",
+            "/search/Agent%0d%0aAuthorization:%20Bearer%20stolen",
+            "/process/value%0d%0aX-Admin:%20true",
+            "/endpoint/json%0d%0aX-Override:%20admin",
+            "/data/all%0d%0aCookie:%20session=hijacked"
     })
-    @DisplayName("Header injection via path parameters must be rejected")
+    @DisplayName("Header injection via the path is rejected as CONTROL_CHARACTERS")
     void shouldRejectHeaderInjectionViaPathParameters(String injectedPath) {
-        // Given: A path with header injection attempt
-        long initialEventCount = eventCounter.getTotalCount();
+        assertTrue(INJECTED_HEADER.matcher(injectedPath).find(),
+                () -> "Header injection family: payload must carry a header behind the encoded break - " + injectedPath);
 
-        // When: Attempting to validate the path
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pathPipeline.validate(injectedPath),
-                "Header injection via path should be rejected: " + injectedPath);
+        var exception = assertRejected(injectedPath);
 
-        // Then: Validation should fail with control character detection
-        assertNotNull(exception, "Exception should be thrown for header injection");
-        assertTrue(isInjectionFailure(exception.getFailureType()),
-                "Failure type should be related to injection attempts (control characters, invalid characters, encoding issues, protocol violations, or suspicious patterns): " + exception.getFailureType());
-
-        // And: Security event should be recorded
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded for header injection");
+        assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + injectedPath);
     }
 
     /**
-     * Test whitespace and control character manipulation in URL paths.
-     * These patterns exploit differences in whitespace handling between parsers.
-     * Note: Testing in path context where URL decoding occurs.
-     *
-     * <p>Attack Pattern: {@code /api?param=chunked%0d%0a}</p>
+     * Whitespace and control character manipulation: a lone encoded CR, LF or TAB.
      */
     @ParameterizedTest
     @ValueSource(strings = {
-            "/api?param=chunked%0d",
-            "/search?q=value%0a",
-            "/process?input=test%0d%0a",
-            "/endpoint?data=value%09test",
-            "/data?param=test%0d%0ainjected"
+            "/api/chunked%0d",
+            "/search/value%0a",
+            "/process/test%0d%0a",
+            "/endpoint/value%09test",
+            "/data/test%0d%0ainjected"
     })
-    @DisplayName("Whitespace and control character manipulation in paths must be rejected")
+    @DisplayName("Encoded whitespace control characters in paths are rejected as CONTROL_CHARACTERS")
     void shouldHandleWhitespaceManipulationInPaths(String pathValue) {
-        // Given: A path with whitespace and control character manipulation
-        long initialEventCount = eventCounter.getTotalCount();
+        String lowerCased = pathValue.toLowerCase(Locale.ROOT);
+        assertTrue((lowerCased.contains("%0d") || lowerCased.contains("%0a") || lowerCased.contains("%09"))
+                && !pathValue.contains(":"),
+                () -> "Whitespace/control family: payload must carry an encoded CR, LF or TAB and smuggle no header - "
+                        + pathValue);
 
-        // When: Attempting to validate the path
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pathPipeline.validate(pathValue),
-                "Whitespace/control character manipulation should be rejected: " + pathValue);
+        var exception = assertRejected(pathValue);
 
-        // Then: Validation should fail with control character detection
-        assertNotNull(exception, "Exception should be thrown for whitespace manipulation");
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded");
+        assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + pathValue);
     }
 
     /**
-     * Test HTTP response injection patterns.
-     * These patterns attempt to inject HTTP response headers or status lines.
-     *
-     * <p>Attack Pattern: {@code /api%0d%0aHTTP/1.1 200 OK%0d%0aContent-Type: text/html}</p>
+     * HTTP response injection: an injected status line and response headers.
      */
     @ParameterizedTest
     @ValueSource(strings = {
-            "/api%0d%0aHTTP/1.1 200 OK%0d%0aContent-Type: text/html",
-            "/search%0d%0aHTTP/1.1 302 Found%0d%0aLocation: http://evil.com",
-            "/process%0d%0aHTTP/1.1 401 Unauthorized%0d%0aWWW-Authenticate: Basic",
-            "/data%0d%0aHTTP/1.1 500 Internal Server Error",
-            "/endpoint%0d%0aHTTP/1.1 403 Forbidden"
+            "/api%0d%0aHTTP/1.1%20200%20OK%0d%0aContent-Type:%20text/html",
+            "/search%0d%0aHTTP/1.1%20302%20Found%0d%0aLocation:%20http://evil.com",
+            "/process%0d%0aHTTP/1.1%20401%20Unauthorized%0d%0aWWW-Authenticate:%20Basic",
+            "/data%0d%0aHTTP/1.1%20500%20Internal%20Server%20Error",
+            "/endpoint%0d%0aHTTP/1.1%20403%20Forbidden"
     })
-    @DisplayName("HTTP response injection patterns must be rejected")
+    @DisplayName("HTTP response injection patterns are rejected as CONTROL_CHARACTERS")
     void shouldRejectHttpResponseInjection(String responseInjection) {
-        // Given: A path with embedded HTTP response
-        long initialEventCount = eventCounter.getTotalCount();
+        assertTrue(responseInjection.contains("%0d%0aHTTP/1.1%20"),
+                () -> "Response injection family: payload must carry a status line behind the encoded break - "
+                        + responseInjection);
 
-        // When: Attempting to validate the path
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pathPipeline.validate(responseInjection),
-                "HTTP response injection should be rejected: " + responseInjection);
+        var exception = assertRejected(responseInjection);
 
-        // Then: Validation should fail with CRLF detection
-        assertNotNull(exception, "Exception should be thrown for response injection");
-        assertTrue(isInjectionFailure(exception.getFailureType()),
-                "Failure type should be related to injection attempts (control characters, invalid characters, encoding issues, protocol violations, or suspicious patterns): " + exception.getFailureType());
-
-        // And: Security event should be recorded
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded for response injection");
+        assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + responseInjection);
     }
 
     /**
-     * Test upstream routing header injection.
-     * These patterns inject headers used for routing (X-Forwarded-*, X-Original-URL, etc.).
-     *
-     * <p>Attack Pattern: {@code /api?param=value%0d%0aX-Original-URL: /admin}</p>
+     * Upstream routing header injection: X-Forwarded-*, X-Original-URL and their siblings.
      */
     @ParameterizedTest
     @ValueSource(strings = {
-            "/api?data=test%0d%0aX-Original-URL: /admin",
-            "/search?q=data%0d%0aX-Rewrite-URL: /admin/secrets",
-            "/process?input=normal%0d%0aX-Forwarded-Host: evil.com",
-            "/data?param=value%0d%0aX-Forwarded-Proto: https",
-            "/endpoint?test=true%0d%0aX-Forwarded-For: 127.0.0.1"
+            "/api/test%0d%0aX-Original-URL:%20/admin",
+            "/search/data%0d%0aX-Rewrite-URL:%20/admin/secrets",
+            "/process/normal%0d%0aX-Forwarded-Host:%20evil.com",
+            "/data/value%0d%0aX-Forwarded-Proto:%20https",
+            "/endpoint/true%0d%0aX-Forwarded-For:%20127.0.0.1"
     })
-    @DisplayName("Upstream routing header injection must be rejected")
+    @DisplayName("Upstream routing header injection is rejected as CONTROL_CHARACTERS")
     void shouldRejectUpstreamRoutingHeaderInjection(String routingInjection) {
-        // Given: A path with routing header injection
-        long initialEventCount = eventCounter.getTotalCount();
+        assertTrue(INJECTED_ROUTING_HEADER.matcher(routingInjection).find(),
+                () -> "Routing header family: payload must carry an upstream routing header - " + routingInjection);
 
-        // When: Attempting to validate the path
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pathPipeline.validate(routingInjection),
-                "Routing header injection should be rejected: " + routingInjection);
+        var exception = assertRejected(routingInjection);
 
-        // Then: Validation should fail with CRLF detection
-        assertNotNull(exception, "Exception should be thrown for routing injection");
-        assertTrue(isInjectionFailure(exception.getFailureType()),
-                "Failure type should be related to injection attempts (control characters, invalid characters, encoding issues, protocol violations, or suspicious patterns): " + exception.getFailureType());
-
-        // And: Security event should be recorded
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded for routing injection");
+        assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + routingInjection);
     }
 
     /**
-     * Test Host header injection.
-     * These patterns inject Host headers to cause request routing confusion.
-     *
-     * <p>Attack Pattern: {@code /api%0d%0aHost: evil.com%0d%0a%0d%0aGET /admin}</p>
+     * Host header injection: an injected Host header causing request routing confusion.
      */
     @ParameterizedTest
     @ValueSource(strings = {
-            "/api%0d%0aHost: evil.com%0d%0a%0d%0aGET /admin",
-            "/search%0d%0aHost: attacker.com%0d%0a%0d%0aPOST /admin/users",
-            "/process%0d%0aHost: malicious.net%0d%0a%0d%0aDELETE /users",
-            "/data%0d%0aHost: phishing.org%0d%0a%0d%0aPUT /admin/config"
+            "/api%0d%0aHost:%20evil.com%0d%0a%0d%0aGET%20/admin",
+            "/search%0d%0aHost:%20attacker.com%0d%0a%0d%0aPOST%20/admin/users",
+            "/process%0d%0aHost:%20malicious.net%0d%0a%0d%0aDELETE%20/users",
+            "/data%0d%0aHost:%20phishing.org%0d%0a%0d%0aPUT%20/admin/config"
     })
-    @DisplayName("Host header injection must be rejected")
+    @DisplayName("Host header injection is rejected as CONTROL_CHARACTERS")
     void shouldRejectHostHeaderInjection(String hostInjection) {
-        // Given: A path with Host header injection
-        long initialEventCount = eventCounter.getTotalCount();
+        assertTrue(hostInjection.contains("%0d%0aHost:%20"),
+                () -> "Host header family: payload must carry an injected Host header - " + hostInjection);
 
-        // When: Attempting to validate the path
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pathPipeline.validate(hostInjection),
-                "Host header injection should be rejected: " + hostInjection);
+        var exception = assertRejected(hostInjection);
 
-        // Then: Validation should fail with CRLF detection
-        assertNotNull(exception, "Exception should be thrown for Host injection");
-        assertTrue(isInjectionFailure(exception.getFailureType()),
-                "Failure type should be related to injection attempts (control characters, invalid characters, encoding issues, protocol violations, or suspicious patterns): " + exception.getFailureType());
-
-        // And: Security event should be recorded
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded for Host injection");
+        assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + hostInjection);
     }
 
     /**
-     * Helper method to check if failure type is related to injection attempts.
-     * Injection attacks like HTTP/1.x vulnerabilities can trigger various failure types
-     * including control characters, invalid characters, encoding issues, protocol violations,
-     * and suspicious pattern detection.
+     * Asserts the rejection itself, the preserved input and the single recorded event; the
+     * failure type is asserted by the caller.
      */
-    private boolean isInjectionFailure(UrlSecurityFailureType failureType) {
-        return failureType == UrlSecurityFailureType.CONTROL_CHARACTERS ||
-                failureType == UrlSecurityFailureType.INVALID_CHARACTER ||
-                failureType == UrlSecurityFailureType.PROTOCOL_VIOLATION ||
-                failureType == UrlSecurityFailureType.RFC_VIOLATION ||
-                failureType == UrlSecurityFailureType.INVALID_ENCODING ||
-                failureType == UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED;
+    private UrlSecurityException assertRejected(String path) {
+        assertEquals(PathWireForm.WIRE_CLEAN, PathWireForm.of(path),
+                () -> "The payload must reach the decoding stage, so its wire form must be clean: " + path);
+        var exception = assertThrows(UrlSecurityException.class, () -> pathPipeline.validate(path),
+                () -> "HTTP/1.x smuggling path should be rejected: " + path);
+        assertEquals(path, exception.getOriginalInput(), "Original input should be preserved in exception");
+        assertEquals(1, eventCounter.getTotalCount(), "Exactly one security event should be recorded");
+        return exception;
     }
 }

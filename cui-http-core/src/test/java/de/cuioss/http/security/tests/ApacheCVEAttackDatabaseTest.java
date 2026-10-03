@@ -24,8 +24,15 @@ import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.ArgumentsSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Stream;
+
+import static de.cuioss.http.security.tests.AttackNameClaims.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -46,11 +53,46 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li><strong>Individual Test Access</strong>: Public constants enable specific test targeting</li>
  * </ul>
  *
+ * <h3>What each test verifies</h3>
+ * <p>{@link #shouldRejectApacheCVEAttacksWithCorrectFailureTypes} verifies the pipeline verdict
+ * only. Entries that carry a query string or a request-line fragment are rejected by character
+ * validation on their first non-path character, so that verdict says nothing about the traversal,
+ * null byte or smuggled request behind it. {@link #shouldCarryTheFeatureItsNameClaims} supplies
+ * the distinction on the payload itself.</p>
+ *
  * @author Claude Code Generator
  * @since 1.0
  */
 @DisplayName("Apache CVE Attack Database Tests")
 class ApacheCVEAttackDatabaseTest {
+
+    /**
+     * What the words of an {@link ApacheCVEAttackDatabase} constant name claim about its payload.
+     * A CVE number is part of the entry's identifier and the product, module or nickname a CVE is
+     * known by is a label; the two CVEs that are defined by a wire form are claims in their own
+     * right.
+     */
+    private static final AttackNameClaims NAME_CLAIMS = new AttackNameClaims(
+            Map.ofEntries(
+                    claim("CVE_2021_41773", literal(".%2e/")),
+                    claim("CVE_2021_42013", literal("%%32%65")),
+                    claim("TRAVERSAL", TRAVERSAL),
+                    claim("PATH_TRAVERSAL", TRAVERSAL),
+                    claim("PASSWD", literal("/etc/passwd")),
+                    claim("SHADOW", literal("/etc/shadow")),
+                    claim("WINDOWS_PATH", literal("/windows/")),
+                    claim("DOUBLE_ENCODING", literal("%%32%65")),
+                    claim("ICONS_PATH", pattern("^/icons/")),
+                    claim("QUERY", literal("?")),
+                    claim("SERVER_STATUS", pattern("^/server-status")),
+                    claim("NULL_BYTE", literal("%00")),
+                    claim("HTTP_SMUGGLING",
+                            pattern("\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n[A-Z]+ ")),
+                    claim("SSRF", literal("url=http://")),
+                    claim("API", literal("/api/")),
+                    claim("WEB_INF", literal("/WEB-INF/")),
+                    claim("UTF8_BYPASS", literal("%c0%ae"))),
+            Set.of("CVE", "STRUTS", "MOD", "REWRITE", "GHOSTCAT"));
 
     private URLPathValidationPipeline pipeline;
     private SecurityEventCounter eventCounter;
@@ -95,5 +137,24 @@ class ApacheCVEAttackDatabaseTest {
         // And: Security event should be recorded
         assertTrue(eventCounter.getTotalCount() > initialEventCount,
                 "Security event should be recorded for attack: %s".formatted(testCase.getCompactSummary()));
+    }
+
+    /**
+     * Structural claim of the database (ADR-0009): the payload of every entry carries the
+     * feature its constant name claims. An entry whose payload is edited to drop that feature
+     * fails here, whatever the pipeline verdict is.
+     *
+     * @param constantName the name of the database constant
+     * @param payload the attack string of that constant
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("declaredEntries")
+    @DisplayName("Each entry's payload carries the feature its name claims")
+    void shouldCarryTheFeatureItsNameClaims(String constantName, String payload) {
+        NAME_CLAIMS.assertCarriedBy(constantName, payload);
+    }
+
+    static Stream<Arguments> declaredEntries() {
+        return AttackDatabaseEntries.declaredEntries(ApacheCVEAttackDatabase.class);
     }
 }

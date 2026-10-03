@@ -20,6 +20,7 @@ import de.cuioss.http.security.data.URLParameter;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.http.security.pipeline.URLParameterValidationPipeline;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
+import de.cuioss.test.generator.junit.GeneratorSeed;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -41,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * The aggregate test asserts that the generator's name and value vocabularies are broad.</p>
  */
 @EnableGeneratorController
+@GeneratorSeed(4711L)
 @DisplayName("ValidURLParameterGenerator Contract Tests")
 class ValidURLParameterGeneratorTest {
 

@@ -19,12 +19,12 @@ import de.cuioss.http.security.config.SecurityConfiguration;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
+import de.cuioss.test.generator.junit.GeneratorSeed;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 
-import java.text.Normalizer;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -49,8 +49,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>The attack code points are built from numeric code points rather than written as literals,
  * so that this source file stays plain ASCII and carries no invisible or direction-overriding
  * character of its own.</p>
+ *
+ * <p>That the lookalike family NFKC-folds to the ASCII traversal it encodes is asserted by the
+ * shared fold registry, {@code NfkcFoldClaimInvariantTest}, and not here.</p>
  */
 @EnableGeneratorController
+@GeneratorSeed(4711L)
 @DisplayName("UnicodeAttackGenerator Contract Tests")
 class UnicodeAttackGeneratorTest {
 
@@ -81,18 +85,6 @@ class UnicodeAttackGeneratorTest {
     /** The four code points that carry no attack signal alone and must always be embedded. */
     private static final Set<String> INVISIBLE_CODE_POINTS = Set.of(
             RIGHT_TO_LEFT_OVERRIDE, ZERO_WIDTH_SPACE, ZERO_WIDTH_NO_BREAK_SPACE, NULL_CHARACTER);
-
-    @Test
-    @DisplayName("The homoglyph lookalike family NFKC-folds to the ASCII traversal it claims to encode")
-    void shouldNfkcFoldLookalikeTraversalToAsciiTraversal() {
-        assertEquals(DECODED_DOTS_AND_SLASH,
-                Normalizer.normalize(LOOKALIKE_DOTS_AND_SLASH, Normalizer.Form.NFKC),
-                "LOOKALIKE_DOTS_AND_SLASH must NFKC-fold to '../'. The generator's Javadoc calls it "
-                        + "a complete traversal payload once NFKC folds the homoglyphs, and nothing but "
-                        + "this assertion holds that claim to account: U+2215 DIVISION SLASH carries no "
-                        + "compatibility decomposition and folds to itself, so a payload built from it "
-                        + "is never resolved to a traversal by a normalizing validator");
-    }
 
     /** Derived from the generator so a target added or renamed there cannot leave this assertion stale. */
     private static final Set<String> PATH_TARGETS = Set.copyOf(UnicodeAttackGenerator.PATH_TARGETS);

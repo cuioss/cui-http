@@ -182,20 +182,20 @@ public class ModSecurityCRSAttackDatabase implements AttackDatabase {
             "PATH_TRAVERSAL_DETECTED is expected because the leading '../' sequences are matched on the raw wire form; the 'file' segment here is an ordinary path segment and contributes nothing to the verdict."
     );
 
-    // CRS Rule 931110: PHP Wrapper Attack
-    public static final AttackTestCase CRS_931110_PHP_WRAPPER = new AttackTestCase(
+    // CRS Rule 931110: Traversal reaching a path segment literally named "input"
+    public static final AttackTestCase CRS_931110_TRAVERSAL_TO_INPUT_SEGMENT = new AttackTestCase(
             "/../../../input/data",
             UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
-            "ModSecurity CRS 931110: Input manipulation via traversal. This rule blocks attempts to access input streams through traversal.",
-            "PATH_TRAVERSAL_DETECTED is expected because this uses directory traversal patterns."
+            "ModSecurity CRS 931110: Directory traversal reaching a path segment literally named 'input'. This is ordinary parent-reference traversal, not a PHP stream-wrapper (php://input) inclusion attempt.",
+            "PATH_TRAVERSAL_DETECTED is expected because the leading '../' sequences are matched on the raw wire form; the 'input' segment is an ordinary path segment and contributes nothing to the verdict."
     );
 
-    // CRS Rule 931120: Windows UNC Path
-    public static final AttackTestCase CRS_931120_UNC_PATH = new AttackTestCase(
+    // CRS Rule 931120: Traversal across an empty path segment
+    public static final AttackTestCase CRS_931120_DOUBLE_SLASH_TRAVERSAL = new AttackTestCase(
             "/..//../server/share/file",
             UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
-            "ModSecurity CRS 931120: Network share access via traversal. CRS detects attempts to access network resources through traversal.",
-            "PATH_TRAVERSAL_DETECTED is expected because this uses traversal patterns to access network paths."
+            "ModSecurity CRS 931120: Directory traversal across an empty path segment toward a 'server/share' path. The payload carries no UNC prefix; the double slash sits between two parent references.",
+            "PATH_TRAVERSAL_DETECTED is expected because the '../' sequences are matched on the raw wire form; the empty segment between them does not mask them."
     );
 
     // CRS Rule 932100 payload, kept for its path-traversal expression only: traversal disguised
@@ -217,7 +217,7 @@ public class ModSecurityCRSAttackDatabase implements AttackDatabase {
 
     // CRS Rule 941100 payload, kept for its path-traversal expression only: traversal aimed at a
     // session-file path. The session-fixation half of that rule has no URL-path expression.
-    public static final AttackTestCase CRS_941100_DOTDOT_COOKIE = new AttackTestCase(
+    public static final AttackTestCase CRS_941100_DOTDOT_SESSION_FILE = new AttackTestCase(
             "/../../../tmp/sess_123",
             UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
             "ModSecurity CRS 941100: Session file access via path traversal. This rule blocks attempts to access session files through directory traversal.",
@@ -240,11 +240,11 @@ public class ModSecurityCRSAttackDatabase implements AttackDatabase {
             CRS_921110_API_PATH_TRAVERSAL,
             CRS_921150_REDIRECT_NULL_BYTE,
             CRS_931100_TRAVERSAL_TO_FILE_SEGMENT,
-            CRS_931110_PHP_WRAPPER,
-            CRS_931120_UNC_PATH,
+            CRS_931110_TRAVERSAL_TO_INPUT_SEGMENT,
+            CRS_931120_DOUBLE_SLASH_TRAVERSAL,
             CRS_932100_PATH_SEMICOLON,
             CRS_933100_DOT_SEGMENT,
-            CRS_941100_DOTDOT_COOKIE
+            CRS_941100_DOTDOT_SESSION_FILE
     );
 
     @Override

@@ -123,10 +123,10 @@ class UnicodeNormalizationAttackTest {
                         " (normalized: " + Normalizer.normalize(unicodeAttackPattern, Normalizer.Form.NFC) + ")");
 
         // Then: The validation should fail with appropriate security event
-        assertNotNull(exception, "Exception should be thrown for Unicode normalization attack");
-        assertTrue(isUnicodeNormalizationSpecificFailure(exception.getFailureType()),
-                "Failure type should be Unicode or security-related: " + exception.getFailureType() +
-                        " for pattern: " + unicodeAttackPattern);
+        // Every generated pattern carries a raw non-ASCII character, which the path character
+        // set does not admit; character validation decides before any normalization is computed.
+        assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
+                () -> "Unexpected verdict for pattern: " + unicodeAttackPattern);
 
         // And: Original malicious input should be preserved
         assertEquals(unicodeAttackPattern, exception.getOriginalInput(),
@@ -512,28 +512,6 @@ class UnicodeNormalizationAttackTest {
         // And: Exception should be properly formed
         assertNotNull(exception.getFailureType(),
                 "Exception should have failure type for: " + testCase);
-    }
-
-    /**
-     * QI-9: Determines if a failure type matches specific Unicode normalization attack patterns.
-     * Replaces broad OR-assertion with comprehensive security validation.
-     *
-     * @param failureType The actual failure type from validation
-     * @return true if the failure type is expected for Unicode attack patterns
-     */
-    private boolean isUnicodeNormalizationSpecificFailure(UrlSecurityFailureType failureType) {
-        // QI-9: Unicode normalization patterns can trigger multiple specific failure types
-        // Accept all Unicode-relevant failure types for comprehensive security validation
-        return failureType == UrlSecurityFailureType.UNICODE_NORMALIZATION_CHANGED ||
-                failureType == UrlSecurityFailureType.INVALID_CHARACTER ||
-                failureType == UrlSecurityFailureType.CONTROL_CHARACTERS ||
-                failureType == UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED ||
-                failureType == UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED ||
-                failureType == UrlSecurityFailureType.MALFORMED_INPUT ||
-                failureType == UrlSecurityFailureType.INVALID_STRUCTURE ||
-                failureType == UrlSecurityFailureType.KNOWN_ATTACK_SIGNATURE ||
-                failureType == UrlSecurityFailureType.INVALID_ENCODING ||
-                failureType == UrlSecurityFailureType.NULL_BYTE_INJECTION;
     }
 
     /**

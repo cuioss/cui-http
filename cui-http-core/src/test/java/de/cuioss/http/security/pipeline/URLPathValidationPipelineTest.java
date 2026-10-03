@@ -20,9 +20,9 @@ import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.generators.encoding.EncodingCombinationGenerator;
+import de.cuioss.http.security.generators.encoding.PathTraversalGenerator;
 import de.cuioss.http.security.generators.encoding.UnicodeAttackGenerator;
 import de.cuioss.http.security.generators.url.NullByteURLGenerator;
-import de.cuioss.http.security.generators.url.PathTraversalURLGenerator;
 import de.cuioss.http.security.generators.url.ValidURLPathGenerator;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
@@ -31,14 +31,31 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Optional;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 @EnableGeneratorController
 class URLPathValidationPipelineTest {
+
+    /** RFC 3986 unreserved characters and the path separator: no escape, no backslash, no Unicode. */
+    private static final Pattern UNRESERVED_AND_SLASH = Pattern.compile("[A-Za-z0-9._~/-]*");
+
+    /** The number of raw traversals {@code shouldRejectPathTraversal} asserts on. */
+    private static final int TRAVERSAL_SAMPLES = 5;
+
+    /**
+     * The most draws {@code shouldRejectPathTraversal} takes, so a generator that stops emitting raw
+     * traversals fails the test instead of hanging it. About one draw in ten qualifies, so the fifth
+     * sample is expected within roughly fifty draws.
+     */
+    private static final int TRAVERSAL_DRAW_CAP = 2000;
 
     private SecurityConfiguration config;
     private SecurityEventCounter eventCounter;
@@ -118,8 +135,12 @@ class URLPathValidationPipelineTest {
     @Nested
     class SecurityValidation {
 
+        static Stream<String> nullByteUrls() {
+            return NullByteURLGenerator.NULL_BYTE_URLS.stream();
+        }
+
         @ParameterizedTest
-        @TypeGeneratorSource(value = NullByteURLGenerator.class, count = 5)
+        @MethodSource("nullByteUrls")
         void shouldRejectNullByteInjection(String maliciousPath) {
             UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
                     pipeline.validate(maliciousPath));
@@ -129,15 +150,34 @@ class URLPathValidationPipelineTest {
             assertEquals(maliciousPath, exception.getOriginalInput());
         }
 
-        @ParameterizedTest
-        @TypeGeneratorSource(value = PathTraversalURLGenerator.class, count = 5)
-        void shouldRejectPathTraversal(String traversalPath) {
-            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
-                    pipeline.validate(traversalPath));
+        /**
+         * {@link PathTraversalGenerator} mixes families the pipeline decides by different
+         * mechanisms, so this test draws until it holds five values of the one family whose
+         * verdict is the traversal itself: raw dot-dot segments with forward slashes, made of
+         * unreserved characters and slashes only. Nothing but the pattern stage can reject those.
+         */
+        @Test
+        void shouldRejectPathTraversal() {
+            PathTraversalGenerator generator = new PathTraversalGenerator();
+            List<String> rawTraversals = Stream.generate(generator::next)
+                    .limit(TRAVERSAL_DRAW_CAP)
+                    .filter(value -> value.contains("../") && UNRESERVED_AND_SLASH.matcher(value).matches())
+                    .limit(TRAVERSAL_SAMPLES)
+                    .toList();
 
-            assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, exception.getFailureType());
-            assertEquals(ValidationType.URL_PATH, exception.getValidationType());
-            assertEquals(traversalPath, exception.getOriginalInput());
+            assertEquals(TRAVERSAL_SAMPLES, rawTraversals.size(),
+                    () -> "PathTraversalGenerator must still emit raw traversals made of unreserved characters "
+                            + "and slashes; fewer than " + TRAVERSAL_SAMPLES + " in " + TRAVERSAL_DRAW_CAP + " draws");
+
+            for (String traversalPath : rawTraversals) {
+                UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
+                        pipeline.validate(traversalPath));
+
+                assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, exception.getFailureType(),
+                        () -> "Unexpected verdict for: " + traversalPath);
+                assertEquals(ValidationType.URL_PATH, exception.getValidationType());
+                assertEquals(traversalPath, exception.getOriginalInput());
+            }
         }
 
         /**
@@ -216,15 +256,17 @@ class URLPathValidationPipelineTest {
         }
 
         @ParameterizedTest
-        @TypeGeneratorSource(value = PathTraversalURLGenerator.class, count = 5)
+        @TypeGeneratorSource(value = PathTraversalGenerator.class, count = 5)
         void shouldTrackSecurityEventsWhenRejectingAttacks(String attackPath) {
-            assertThrows(UrlSecurityException.class, () ->
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
                     pipeline.validate(attackPath));
-            assertTrue(eventCounter.getTotalCount() > 0);
+            assertEquals(1, eventCounter.getTotalCount(), "One rejection records exactly one event");
+            assertEquals(1, eventCounter.getCount(exception.getFailureType()),
+                    "The recorded event carries the failure type of the rejection");
         }
 
         @ParameterizedTest
-        @TypeGeneratorSource(value = PathTraversalURLGenerator.class, count = 5)
+        @TypeGeneratorSource(value = PathTraversalGenerator.class, count = 5)
         void shouldPreserveStageExceptionAsCause(String attackPath) {
             UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
                     pipeline.validate(attackPath));

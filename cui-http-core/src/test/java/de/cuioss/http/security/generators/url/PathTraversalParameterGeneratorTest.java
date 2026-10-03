@@ -16,31 +16,38 @@
 package de.cuioss.http.security.generators.url;
 
 import de.cuioss.http.security.config.SecurityConfiguration;
+import de.cuioss.http.security.core.UrlSecurityFailureType;
+import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.http.security.pipeline.URLParameterValidationPipeline;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
+import de.cuioss.test.generator.junit.GeneratorSeed;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
 import static de.cuioss.http.security.generators.GeneratorContractAssertions.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Contract test for {@link PathTraversalParameterGenerator}.
  *
  * <p>The defining property of this generator is that every emitted parameter value carries a
- * traversal marker and is therefore rejected by the URL parameter validation pipeline. The
- * aggregate test asserts that the literal traversal sequences of all eight documented attack
- * families are reachable; the Windows and UTF-8-overlong families each contribute two
- * sequences, because each of those branches alternates between two forms.</p>
+ * traversal marker and is rejected by the URL parameter validation pipeline with the one failure
+ * type its arm earns. The aggregate tests assert that the literal traversal sequences of all
+ * eight documented attack families are reachable - the Windows and UTF-8-overlong families each
+ * contribute two sequences, because each of those branches alternates between two forms - and
+ * that all three verdict classes are.</p>
  */
 @EnableGeneratorController
+@GeneratorSeed(4711L)
 @DisplayName("PathTraversalParameterGenerator Contract Tests")
 class PathTraversalParameterGeneratorTest {
 
@@ -58,15 +65,60 @@ class PathTraversalParameterGeneratorTest {
             "%c0%ae%c0%ae%c0%af",   // UTF-8 overlong dots-and-slash arm
             "%252e%252e%252f");     // triple encoded traversal
 
+    /** The lead byte of a two-byte UTF-8 overlong encoding, emitted only by the overlong arm. */
+    private static final String OVERLONG_LEAD_BYTE = "%c0";
+
+    /** An encoded percent sign, emitted only by the triple-encoded arm. */
+    private static final String ENCODED_PERCENT = "%25";
+
     @ParameterizedTest
     @TypeGeneratorSource(value = PathTraversalParameterGenerator.class, count = 100)
-    @DisplayName("Every generated parameter value carries a traversal marker and is rejected")
+    @DisplayName("Every generated parameter value carries a traversal marker and is rejected with its arm's failure type")
     void shouldGeneratePathTraversalParameterValue(String generatedValue) {
         assertContainsAny(generatedValue, TRAVERSAL_MARKERS, "Path traversal parameter value");
 
-        assertPipelineRejects(
-                new URLParameterValidationPipeline(SecurityConfiguration.defaults(), new SecurityEventCounter()),
-                generatedValue);
+        URLParameterValidationPipeline pipeline =
+                new URLParameterValidationPipeline(SecurityConfiguration.defaults(), new SecurityEventCounter());
+        UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                () -> pipeline.validate(generatedValue),
+                () -> "Pipeline must reject the generated value. Value: <" + preview(generatedValue) + ">");
+
+        assertEquals(expectedFailureType(generatedValue), exception.getFailureType(),
+                () -> "Unexpected verdict for: <" + preview(generatedValue) + ">");
+        assertEquals(generatedValue, exception.getOriginalInput(),
+                "Rejection must report the generated value as its original input");
+    }
+
+    @Test
+    @DisplayName("Should reach an arm of each of the three failure types")
+    void shouldReachEveryFailureType() {
+        PathTraversalParameterGenerator generator = new PathTraversalParameterGenerator();
+        Set<UrlSecurityFailureType> reached = EnumSet.noneOf(UrlSecurityFailureType.class);
+
+        for (int i = 0; i < AGGREGATE_DRAWS; i++) {
+            reached.add(expectedFailureType(generator.next()));
+        }
+
+        assertEquals(EnumSet.of(UrlSecurityFailureType.INVALID_ENCODING, UrlSecurityFailureType.DOUBLE_ENCODING,
+                        UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED), reached,
+                "Every verdict class must be reachable within " + AGGREGATE_DRAWS + " draws");
+    }
+
+    /**
+     * Names the one failure type the parameter pipeline reports for the arm that emitted the
+     * value. The parameter pipeline matches patterns only after decoding, so what the decoding
+     * stage meets first decides: the UTF-8 overlong arm is refused as invalid encoding, the
+     * triple-encoded arm as double encoding, and the six remaining arms decode cleanly to a
+     * {@code ../} or {@code ..\} sequence that the pattern stage reports as path traversal.
+     */
+    private static UrlSecurityFailureType expectedFailureType(String generatedValue) {
+        if (generatedValue.contains(OVERLONG_LEAD_BYTE)) {
+            return UrlSecurityFailureType.INVALID_ENCODING;
+        }
+        if (generatedValue.contains(ENCODED_PERCENT)) {
+            return UrlSecurityFailureType.DOUBLE_ENCODING;
+        }
+        return UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED;
     }
 
     @Test
