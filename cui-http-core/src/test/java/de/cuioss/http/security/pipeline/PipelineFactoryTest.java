@@ -205,17 +205,19 @@ class PipelineFactoryTest {
         @Test
         void shouldCreatePipelinesUsingGenericFactory() {
             HttpSecurityValidator pathPipeline = PipelineFactory.createPipeline(ValidationType.URL_PATH, config, eventCounter);
+            HttpSecurityValidator paramNamePipeline = PipelineFactory.createPipeline(ValidationType.PARAMETER_NAME, config, eventCounter);
             HttpSecurityValidator paramPipeline = PipelineFactory.createPipeline(ValidationType.PARAMETER_VALUE, config, eventCounter);
             HttpSecurityValidator headerNamePipeline = PipelineFactory.createPipeline(ValidationType.HEADER_NAME, config, eventCounter);
             HttpSecurityValidator headerValuePipeline = PipelineFactory.createPipeline(ValidationType.HEADER_VALUE, config, eventCounter);
             assertInstanceOf(URLPathValidationPipeline.class, pathPipeline);
+            assertInstanceOf(URLParameterNameValidationPipeline.class, paramNamePipeline);
             assertInstanceOf(URLParameterValidationPipeline.class, paramPipeline);
             assertInstanceOf(HTTPHeaderValidationPipeline.class, headerNamePipeline);
             assertInstanceOf(HTTPHeaderValidationPipeline.class, headerValuePipeline);
         }
 
         @ParameterizedTest
-        @TypeGeneratorSource(value = SupportedValidationTypeGenerator.class, count = 5)
+        @TypeGeneratorSource(value = SupportedValidationTypeGenerator.class, count = 25)
         void shouldHandleSupportedValidationTypes(ValidationType validationType) {
             HttpSecurityValidator pipeline = PipelineFactory.createPipeline(validationType, config, eventCounter);
             assertNotNull(pipeline);

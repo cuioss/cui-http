@@ -24,21 +24,26 @@ import de.cuioss.test.generator.TypedGenerator;
  *
  * <p>QI-6: Converted from fixedValues() to dynamic algorithmic generation.</p>
  *
- * Provides the subset of ValidationType enum values that are supported by the factory.
+ * <p>Provides every ValidationType for which {@code PipelineFactory.createPipeline} builds a
+ * pipeline: URL_PATH, PARAMETER_NAME, PARAMETER_VALUE, HEADER_NAME and HEADER_VALUE. The types
+ * the factory rejects (COOKIE_NAME, COOKIE_VALUE, BODY) are never emitted.</p>
  */
 public class SupportedValidationTypeGenerator implements TypedGenerator<ValidationType> {
 
     // QI-6: Dynamic generation components
-    private final TypedGenerator<Integer> typeSelector = Generators.integers(1, 4);
+    private final TypedGenerator<Integer> typeSelector = Generators.integers(1, 5);
 
     @Override
     public ValidationType next() {
-        return switch (typeSelector.next()) {
+        int selector = typeSelector.next();
+        return switch (selector) {
             case 1 -> ValidationType.URL_PATH;
             case 2 -> ValidationType.PARAMETER_VALUE;
             case 3 -> ValidationType.HEADER_NAME;
             case 4 -> ValidationType.HEADER_VALUE;
-            default -> ValidationType.URL_PATH;
+            case 5 -> ValidationType.PARAMETER_NAME;
+            default -> throw new IllegalStateException(
+                    "Type selector out of range 1..5: " + selector);
         };
     }
 

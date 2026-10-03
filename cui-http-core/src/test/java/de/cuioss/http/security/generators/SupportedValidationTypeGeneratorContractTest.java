@@ -15,111 +15,116 @@
  */
 package de.cuioss.http.security.generators;
 
+import de.cuioss.http.security.config.SecurityConfiguration;
 import de.cuioss.http.security.core.ValidationType;
+import de.cuioss.http.security.monitoring.SecurityEventCounter;
+import de.cuioss.http.security.pipeline.PipelineFactory;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
-import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
+import de.cuioss.test.generator.junit.GeneratorSeed;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
 
+import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Test for SupportedValidationTypeGenerator.
+ * Contract test for {@link SupportedValidationTypeGenerator}.
  *
- * <p>Validates that SupportedValidationTypeGenerator produces only the
- * supported validation types as documented in its implementation.</p>
- *
- * @author Claude Code Generator
- * @since 1.0
+ * <p>The generator's defining property is that it emits exactly the {@link ValidationType}
+ * constants for which
+ * {@link PipelineFactory#createPipeline(ValidationType, SecurityConfiguration, SecurityEventCounter)}
+ * builds a pipeline - no supported type is left out, no rejected type is emitted, and no
+ * supported type is starved. The expected set is derived by asking the factory about every
+ * constant, so the test follows the factory instead of mirroring its switch in a literal.</p>
  */
 @EnableGeneratorController
-@DisplayName("SupportedValidationTypeGenerator Tests")
+@GeneratorSeed(4711L)
+@DisplayName("SupportedValidationTypeGenerator Contract Tests")
 class SupportedValidationTypeGeneratorContractTest {
 
-    @ParameterizedTest
-    @TypeGeneratorSource(value = SupportedValidationTypeGenerator.class, count = 100)
-    @DisplayName("Generator should produce valid non-null validation types")
-    void shouldGenerateValidOutput(ValidationType generatedValue) {
-        assertNotNull(generatedValue, "Generator must not produce null values");
+    /**
+     * Far more draws than constants, so that under the pinned seed every type the generator can
+     * emit is emitted.
+     */
+    private static final int DRAWS = 500;
 
-        // Verify it's one of the supported types
-        Set<ValidationType> supportedTypes = EnumSet.of(
-                ValidationType.URL_PATH,
-                ValidationType.PARAMETER_VALUE,
-                ValidationType.HEADER_NAME,
-                ValidationType.HEADER_VALUE
-        );
+    @Test
+    @DisplayName("Should emit exactly the types the factory builds a pipeline for")
+    void shouldEmitExactlyTheFactorySupportedTypes() {
+        Set<ValidationType> supported = typesTheFactoryAccepts();
+        SupportedValidationTypeGenerator generator = new SupportedValidationTypeGenerator();
 
-        assertTrue(supportedTypes.contains(generatedValue),
-                "Generated type must be one of the supported types. Got: " + generatedValue);
+        Set<ValidationType> emitted = EnumSet.noneOf(ValidationType.class);
+        for (int i = 0; i < DRAWS; i++) {
+            emitted.add(generator.next());
+        }
+
+        assertEquals(supported, emitted,
+                "The generator must emit every type the factory supports and no type it rejects");
     }
 
     @Test
-    @DisplayName("Should generate all supported validation types")
-    void shouldGenerateAllSupportedTypes() {
+    @DisplayName("Should derive a supported set that separates accepted from rejected types")
+    void shouldDeriveADiscriminatingSupportedSet() {
+        Set<ValidationType> supported = typesTheFactoryAccepts();
+
+        assertAll("Factory-derived supported set",
+                () -> assertFalse(supported.isEmpty(),
+                        "The factory must build a pipeline for at least one type"),
+                () -> assertNotEquals(EnumSet.allOf(ValidationType.class), supported,
+                        "The factory must reject at least one type, otherwise the derivation cannot"
+                                + " tell a supported type from an unsupported one"));
+    }
+
+    @Test
+    @DisplayName("Should emit every supported type with a share no smaller than half the even share")
+    void shouldSpreadDrawsAcrossTheSupportedTypes() {
+        Set<ValidationType> supported = typesTheFactoryAccepts();
         SupportedValidationTypeGenerator generator = new SupportedValidationTypeGenerator();
 
-        Set<ValidationType> expectedTypes = EnumSet.of(
-                ValidationType.URL_PATH,
-                ValidationType.PARAMETER_VALUE,
-                ValidationType.HEADER_NAME,
-                ValidationType.HEADER_VALUE
-        );
-
-        Set<ValidationType> generatedTypes = EnumSet.noneOf(ValidationType.class);
-
-        // Generate enough values to likely cover all types
-        for (int i = 0; i < 1000; i++) {
-            ValidationType result = generator.next();
-            assertNotNull(result, "Generator should never return null");
-            generatedTypes.add(result);
+        Map<ValidationType, Integer> occurrences = new EnumMap<>(ValidationType.class);
+        for (int i = 0; i < DRAWS; i++) {
+            occurrences.merge(generator.next(), 1, Integer::sum);
         }
 
-        // Verify we generated all expected types
-        assertEquals(expectedTypes, generatedTypes,
-                "Generator should eventually produce all supported types");
+        int minimumShare = DRAWS / (2 * supported.size());
+        for (ValidationType type : supported) {
+            int count = occurrences.getOrDefault(type, 0);
+            assertTrue(count >= minimumShare,
+                    () -> type + " was drawn " + count + " times out of " + DRAWS
+                            + ", expected at least " + minimumShare);
+        }
     }
 
     @Test
     @DisplayName("Should return correct type")
     void shouldReturnCorrectType() {
-        SupportedValidationTypeGenerator generator = new SupportedValidationTypeGenerator();
-        assertEquals(ValidationType.class, generator.getType(),
+        assertEquals(ValidationType.class, new SupportedValidationTypeGenerator().getType(),
                 "Generator should return ValidationType.class");
     }
 
-    @Test
-    @DisplayName("Should provide reasonable distribution")
-    void shouldProvideReasonableDistribution() {
-        SupportedValidationTypeGenerator generator = new SupportedValidationTypeGenerator();
-
-        // Use a map to count occurrences safely
-        int urlPathCount = 0;
-        int parameterValueCount = 0;
-        int headerNameCount = 0;
-        int headerValueCount = 0;
-
-        int total = 1000;
-
-        for (int i = 0; i < total; i++) {
-            ValidationType type = generator.next();
-            switch (type) {
-                case URL_PATH -> urlPathCount++;
-                case PARAMETER_VALUE -> parameterValueCount++;
-                case HEADER_NAME -> headerNameCount++;
-                case HEADER_VALUE -> headerValueCount++;
-                default -> fail("Unexpected type: " + type);
+    private static Set<ValidationType> typesTheFactoryAccepts() {
+        SecurityConfiguration config = SecurityConfiguration.defaults();
+        SecurityEventCounter eventCounter = new SecurityEventCounter();
+        Set<ValidationType> supported = EnumSet.noneOf(ValidationType.class);
+        for (ValidationType type : ValidationType.values()) {
+            if (factoryAccepts(type, config, eventCounter)) {
+                supported.add(type);
             }
         }
+        return supported;
+    }
 
-        // Check that no single type dominates (< 75% for 4 types)
-        assertTrue(urlPathCount < 750, "URL_PATH appeared " + urlPathCount + " times (< 750 expected)");
-        assertTrue(parameterValueCount < 750, "PARAMETER_VALUE appeared " + parameterValueCount + " times (< 750 expected)");
-        assertTrue(headerNameCount < 750, "HEADER_NAME appeared " + headerNameCount + " times (< 750 expected)");
-        assertTrue(headerValueCount < 750, "HEADER_VALUE appeared " + headerValueCount + " times (< 750 expected)");
+    private static boolean factoryAccepts(ValidationType type, SecurityConfiguration config,
+            SecurityEventCounter eventCounter) {
+        try {
+            return PipelineFactory.createPipeline(type, config, eventCounter) != null;
+        } catch (IllegalArgumentException rejected) {
+            return false;
+        }
     }
 }
