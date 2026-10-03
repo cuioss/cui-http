@@ -16,53 +16,51 @@
 package de.cuioss.http.security.tests;
 
 import de.cuioss.http.security.config.SecurityConfiguration;
+import de.cuioss.http.security.config.SecurityDefaults;
+import de.cuioss.http.security.core.HttpSecurityValidator;
 import de.cuioss.http.security.core.UrlSecurityFailureType;
+import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.generators.url.URLLengthLimitAttackGenerator;
+import de.cuioss.http.security.generators.url.URLLengthLimitAttackGenerator.Surface;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
+import de.cuioss.http.security.pipeline.HTTPHeaderValidationPipeline;
+import de.cuioss.http.security.pipeline.URLParameterNameValidationPipeline;
+import de.cuioss.http.security.pipeline.URLParameterValidationPipeline;
 import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import de.cuioss.test.generator.Generators;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * T19: Test URL length limit attacks
+ * T19: Test length limit attacks
  *
  * <p>
- * This test class implements Task T19 from the HTTP security validation plan,
- * focusing on testing URL length limit attacks that attempt to exploit URL
- * length limitations to cause denial of service, buffer overflows, or bypass
- * security controls through excessive URL sizes using specialized generators
- * and comprehensive attack vectors.
+ * A length limit belongs to one HTTP component, so every length attack is validated against the
+ * pipeline whose limit it exceeds, under the strict preset limits:
  * </p>
- *
- * <h3>Test Coverage</h3>
  * <ul>
- *   <li>Basic length overflow attacks exceeding standard URL length limits</li>
- *   <li>Path component overflow attacks with extremely long path segments</li>
- *   <li>Query parameter overflow attacks with long query strings</li>
- *   <li>Fragment overflow attacks with long URL fragments</li>
- *   <li>Hostname overflow attacks with long hostname components</li>
- *   <li>Repeated parameter attacks with many identical parameters</li>
- *   <li>Deep path nesting attacks with many directory levels</li>
- *   <li>Long parameter name attacks</li>
- *   <li>Long parameter value attacks</li>
- *   <li>Mixed length attacks combining multiple long components</li>
- *   <li>Buffer overflow pattern attacks</li>
- *   <li>Memory exhaustion attacks</li>
- *   <li>Parser confusion attacks with challenging parsing scenarios</li>
- *   <li>Encoding length attacks that amplify length through encoding</li>
- *   <li>Algorithmic complexity attacks causing processing slowdown</li>
+ *   <li>an overlong path on {@link URLPathValidationPipeline} -
+ *       {@link UrlSecurityFailureType#PATH_TOO_LONG}</li>
+ *   <li>an overlong parameter name on {@link URLParameterNameValidationPipeline}, an overlong
+ *       parameter value on {@link URLParameterValidationPipeline}, and an overlong header name or
+ *       value on {@link HTTPHeaderValidationPipeline} -
+ *       {@link UrlSecurityFailureType#INPUT_TOO_LONG}</li>
  * </ul>
+ *
+ * <p>
+ * Every payload consists of characters its surface admits - a path payload in particular carries
+ * no {@code ?}, {@code #} or space - so the verdict is the length limit and nothing else.
+ * </p>
  *
  * <h3>Security Standards</h3>
  * <ul>
@@ -83,1102 +81,131 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("T19: URL Length Limit Attack Tests")
 class URLLengthLimitAttackTest {
 
-    /**
-     * Sample counters for the two guarded parameterized tests. Both tests skip samples whose path
-     * component stays within the configured limit, because {@link URLPathValidationPipeline}
-     * genuinely does not govern hostname- and fragment-family attacks. That guard is only sound
-     * while it still admits samples: if the generator ever stops producing over-limit path
-     * components, the guard would swallow every sample and both tests would pass while asserting
-     * nothing. The {@link #shouldHaveAdmittedPathBasedSamples()} check turns that silent
-     * degradation into a failure.
-     */
-    private static final AtomicInteger REJECT_TEST_SAMPLES = new AtomicInteger();
-    private static final AtomicInteger REJECT_TEST_ADMITTED = new AtomicInteger();
-    private static final AtomicInteger BLOCK_TEST_SAMPLES = new AtomicInteger();
-    private static final AtomicInteger BLOCK_TEST_ADMITTED = new AtomicInteger();
+    /** The verdict of the path pipeline's length stage. */
+    private static final UrlSecurityFailureType OVERLONG_PATH = UrlSecurityFailureType.PATH_TOO_LONG;
 
-    private URLPathValidationPipeline pipeline;
+    /** The verdict of every other pipeline's length stage. */
+    private static final UrlSecurityFailureType OVERLONG_COMPONENT = UrlSecurityFailureType.INPUT_TOO_LONG;
+
     private SecurityEventCounter eventCounter;
-
-    @AfterAll
-    static void shouldHaveAdmittedPathBasedSamples() {
-        assertAll("Guarded parameterized tests must not degrade into silent no-ops",
-                () -> assertGuardAdmittedSamples("shouldRejectPathBasedURLLengthLimitAttacks",
-                        REJECT_TEST_SAMPLES, REJECT_TEST_ADMITTED),
-                () -> assertGuardAdmittedSamples("shouldBlockBasicPathBasedLengthOverflowAttacks",
-                        BLOCK_TEST_SAMPLES, BLOCK_TEST_ADMITTED));
-    }
-
-    /**
-     * Asserts that a guarded test admitted at least one sample, but only when that test actually
-     * ran. Skipping the assertion for a test with zero samples keeps a single-method IDE run from
-     * failing on the sibling method it never executed.
-     */
-    private static void assertGuardAdmittedSamples(String testName, AtomicInteger samples, AtomicInteger admitted) {
-        if (samples.get() == 0) {
-            return;
-        }
-        assertTrue(admitted.get() > 0,
-                () -> testName + " saw " + samples.get() + " generated samples but its path-based guard "
-                        + "admitted none — the test asserted nothing this run");
-    }
+    private URLPathValidationPipeline pathPipeline;
+    private URLParameterNameValidationPipeline parameterNamePipeline;
+    private URLParameterValidationPipeline parameterValuePipeline;
+    private HTTPHeaderValidationPipeline headerNamePipeline;
+    private HTTPHeaderValidationPipeline headerValuePipeline;
 
     @BeforeEach
     void setUp() {
-        // Configure with stricter path length limits to properly detect length limit attacks
         SecurityConfiguration config = SecurityConfiguration.builder()
-                .maxPathLength(1024) // Further reduced to catch more length attacks
-                .maxParameterNameLength(64)   // Reduced from default 128
-                .maxParameterValueLength(256) // Further reduced from 512
-                .maxHeaderNameLength(64)      // Reduced from default 128
-                .maxHeaderValueLength(256)    // Further reduced from 512
-                .allowDoubleEncoding(false)
+                .maxPathLength(SecurityDefaults.MAX_PATH_LENGTH_STRICT)
+                .maxParameterNameLength(SecurityDefaults.MAX_PARAMETER_NAME_LENGTH_STRICT)
+                .maxParameterValueLength(SecurityDefaults.MAX_PARAMETER_VALUE_LENGTH_STRICT)
+                .maxHeaderNameLength(SecurityDefaults.MAX_HEADER_NAME_LENGTH_STRICT)
+                .maxHeaderValueLength(SecurityDefaults.MAX_HEADER_VALUE_LENGTH_STRICT)
                 .build();
         eventCounter = new SecurityEventCounter();
-        pipeline = new URLPathValidationPipeline(config, eventCounter);
+        pathPipeline = new URLPathValidationPipeline(config, eventCounter);
+        parameterNamePipeline = new URLParameterNameValidationPipeline(config, eventCounter);
+        parameterValuePipeline = new URLParameterValidationPipeline(config, eventCounter);
+        headerNamePipeline = new HTTPHeaderValidationPipeline(config, eventCounter, ValidationType.HEADER_NAME);
+        headerValuePipeline = new HTTPHeaderValidationPipeline(config, eventCounter, ValidationType.HEADER_VALUE);
     }
 
-    /**
-     * Test path-based URL length limit attack patterns.
-     *
-     * <p>
-     * Uses URLLengthLimitAttackGenerator to test path-based length attacks.
-     * These should always be rejected by URL path validation.
-     * </p>
-     *
-     * @param lengthAttackPattern A URL length limit attack pattern
-     */
-    @ParameterizedTest
-    @TypeGeneratorSource(value = URLLengthLimitAttackGenerator.class, count = 30)
-    @DisplayName("Path-based URL length limit attacks should be rejected")
-    void shouldRejectPathBasedURLLengthLimitAttacks(String lengthAttackPattern) {
-        // Given: A URL length limit attack pattern from the generator
-        //  Only test path-based attacks (skip hostname-based attacks for this pipeline)
-        REJECT_TEST_SAMPLES.incrementAndGet();
-        if (!isPathBasedLengthAttack(lengthAttackPattern)) {
-            return; // Skip hostname-based attacks
-        }
-        REJECT_TEST_ADMITTED.incrementAndGet();
-
-        long initialEventCount = eventCounter.getTotalCount();
-
-        // When: Attempting to validate the path-based length attack
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pipeline.validate(lengthAttackPattern),
-                "Path-based length attack should be rejected: " + lengthAttackPattern);
-
-        // Then: Exception should be length-related
-        assertNotNull(exception, "Exception should not be null");
-        assertTrue(isURLLengthLimitSpecificFailure(exception.getFailureType()),
-                "Failure type should be length limit related: " + exception.getFailureType() +
-                        " for pattern: " + lengthAttackPattern);
-
-        // And: Original malicious input should be preserved
-        assertEquals(lengthAttackPattern, exception.getOriginalInput(),
-                "Original input should be preserved in exception");
-
-        // And: Security event should be recorded
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded for: " + lengthAttackPattern);
-    }
-
-    /**
-     * Test basic path-based URL length overflow attacks.
-     *
-     * <p>
-     * Tests path-based attacks that exceed standard URL length limits.
-     * Uses generator for dynamic patterns, filtering to path-based attacks only.
-     * </p>
-     */
     @ParameterizedTest
     @TypeGeneratorSource(value = URLLengthLimitAttackGenerator.class, count = 40)
-    @DisplayName("Basic path-based length overflow attacks must be blocked")
-    void shouldBlockBasicPathBasedLengthOverflowAttacks(String basicLengthAttack) {
-        // Only test path-based attacks (skip hostname-based attacks for this pipeline)
-        BLOCK_TEST_SAMPLES.incrementAndGet();
-        if (!isPathBasedLengthAttack(basicLengthAttack)) {
-            return; // Skip hostname-based attacks
-        }
-        BLOCK_TEST_ADMITTED.incrementAndGet();
-
-        long initialEventCount = eventCounter.getTotalCount();
-
-        // When: Validating path-based length attack
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pipeline.validate(basicLengthAttack),
-                "Path-based length overflow should be rejected: " + basicLengthAttack);
-
-        // Then: Should detect length overflow
-        assertNotNull(exception);
-        assertTrue(isURLLengthLimitSpecificFailure(exception.getFailureType()),
-                "Should detect length overflow: " + exception.getFailureType() + " for: " + basicLengthAttack);
-
-        // And: Security event should be recorded
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded for length overflow");
+    @DisplayName("Overlong paths are rejected by the path pipeline as PATH_TOO_LONG")
+    void shouldRejectOverlongPath(String overlongPath) {
+        assertRejected(pathPipeline, overlongPath, OVERLONG_PATH);
     }
 
-    /**
-     * Test path component overflow attacks.
-     *
-     * <p>
-     * Tests attacks using extremely long path segments to cause
-     * buffer overflows or parsing issues.
-     * </p>
-     */
+    @ParameterizedTest
+    @TypeGeneratorSource(value = URLLengthLimitAttackGenerator.ForParameterName.class, count = 40)
+    @DisplayName("Overlong parameter names are rejected by the parameter-name pipeline as INPUT_TOO_LONG")
+    void shouldRejectOverlongParameterName(String overlongParameterName) {
+        assertRejected(parameterNamePipeline, overlongParameterName, OVERLONG_COMPONENT);
+    }
+
+    @ParameterizedTest
+    @TypeGeneratorSource(value = URLLengthLimitAttackGenerator.ForParameterValue.class, count = 40)
+    @DisplayName("Overlong parameter values are rejected by the parameter pipeline as INPUT_TOO_LONG")
+    void shouldRejectOverlongParameterValue(String overlongParameterValue) {
+        assertRejected(parameterValuePipeline, overlongParameterValue, OVERLONG_COMPONENT);
+    }
+
+    @ParameterizedTest
+    @TypeGeneratorSource(value = URLLengthLimitAttackGenerator.ForHeaderName.class, count = 40)
+    @DisplayName("Overlong header names are rejected by the header-name pipeline as INPUT_TOO_LONG")
+    void shouldRejectOverlongHeaderName(String overlongHeaderName) {
+        assertRejected(headerNamePipeline, overlongHeaderName, OVERLONG_COMPONENT);
+    }
+
+    @ParameterizedTest
+    @TypeGeneratorSource(value = URLLengthLimitAttackGenerator.ForHeaderValue.class, count = 40)
+    @DisplayName("Overlong header values are rejected by the header-value pipeline as INPUT_TOO_LONG")
+    void shouldRejectOverlongHeaderValue(String overlongHeaderValue) {
+        assertRejected(headerValuePipeline, overlongHeaderValue, OVERLONG_COMPONENT);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Surface.class)
+    @DisplayName("A value one character over the limit is rejected for its length")
+    void shouldRejectValueOneOverLimit(Surface surface) {
+        String oneOverLimit = legalValueOfLength(surface, surface.strictLimit() + 1);
+
+        assertRejected(pipelineFor(surface), oneOverLimit, expectedFailureFor(surface));
+    }
+
+    @ParameterizedTest
+    @EnumSource(Surface.class)
+    @DisplayName("A value of exactly the limit is accepted unchanged")
+    void shouldAcceptValueAtLimit(Surface surface) {
+        String atLimit = legalValueOfLength(surface, surface.strictLimit());
+
+        Optional<String> validated = assertDoesNotThrow(() -> pipelineFor(surface).validate(atLimit));
+
+        assertEquals(Optional.of(atLimit), validated, "A value at the limit is not a length attack");
+        assertEquals(0, eventCounter.getTotalCount(), "An accepted value records no security event");
+    }
+
     @Test
-    @DisplayName("Path component overflow attacks must be blocked")
-    void shouldBlockPathComponentOverflowAttacks() {
-        // Realistic path boundary tests - GUARANTEED to exceed 1024 characters
-        String[] pathOverflows = {
-                // Simple guaranteed over-limit paths
-                BoundaryTestHelper.pathJustOverLimit(), // Guaranteed 1031-1051 total
-                BoundaryTestHelper.pathWithAffixesOverLimit("/api/", ""), // Guaranteed over limit
-                BoundaryTestHelper.pathWithAffixesOverLimit("/data/", "/normal"), // Guaranteed over limit
-                BoundaryTestHelper.pathWithAffixesOverLimit("/service/path_", "/resource"), // Guaranteed over limit
+    @DisplayName("The path limit is measured on the wire form, so percent-encoding does not shorten a path")
+    void shouldMeasurePathLengthOnWireForm() {
+        String encodedPath = "/" + "%41".repeat(342);
 
-                // Multiple segments guaranteed over limit
-                BoundaryTestHelper.pathWithAffixesOverLimit("/", "/api"), // Guaranteed over limit
-                BoundaryTestHelper.pathWithAffixesOverLimit("/endpoint/dir_", "/file_end"), // Guaranteed over limit
-                BoundaryTestHelper.pathWithAffixesOverLimit("/handler/very_long_directory_name_", ""), // Guaranteed over limit
+        assertRejected(pathPipeline, encodedPath, OVERLONG_PATH);
+    }
 
-                // Nested paths guaranteed over limit
-                BoundaryTestHelper.pathWithAffixesOverLimit("/process/component", "/subdir/file"), // Guaranteed over limit
-                BoundaryTestHelper.pathWithAffixesOverLimit("/action/", "") // Guaranteed over limit
+    private HttpSecurityValidator pipelineFor(Surface surface) {
+        return switch (surface) {
+            case URL_PATH -> pathPipeline;
+            case PARAMETER_NAME -> parameterNamePipeline;
+            case PARAMETER_VALUE -> parameterValuePipeline;
+            case HEADER_NAME -> headerNamePipeline;
+            case HEADER_VALUE -> headerValuePipeline;
         };
+    }
 
-        for (String attack : pathOverflows) {
-            long initialEventCount = eventCounter.getTotalCount();
-
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(attack),
-                    "Path component overflow attack should be rejected: " + attack);
-
-            assertNotNull(exception);
-            assertTrue(isURLLengthLimitSpecificFailure(exception.getFailureType()),
-                    "Should detect path component overflow: " + exception.getFailureType());
-            assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                    "Security event should be recorded for path component overflow");
-        }
+    private static UrlSecurityFailureType expectedFailureFor(Surface surface) {
+        return surface == Surface.URL_PATH ? OVERLONG_PATH : OVERLONG_COMPONENT;
     }
 
     /**
-     * Test query parameter overflow attacks.
-     *
-     * <p>
-     * Tests attacks using extremely long query strings and parameters
-     * to cause resource exhaustion or buffer overflows.
-     * </p>
+     * Builds a value of exactly {@code length} characters that its surface admits: letters, and a
+     * leading {@code /} for a path.
      */
-    @Test
-    @DisplayName("Query parameter overflow attacks must be blocked")
-    void shouldBlockQueryParameterOverflowAttacks() {
-        // Realistic parameter boundary tests - just over maxParameterValueLength=256
-        String[] queryOverflows = {
-                // Single parameters just over limit
-                "/search?param=" + Generators.letterStrings(260, 280).next(), // Just over parameter limit
-                "/api?data=" + Generators.letterStrings(300, 350).next() + "&info=" + Generators.letterStrings(280, 300).next(), // Multiple over-limit parameters
-                "/endpoint?query=" + Generators.letterStrings(400, 500).next(), // Clear parameter overage
-
-                // Structured content tests
-                "/service?search=" + Generators.letterStrings(270, 300).next(), // Realistic search term overage
-                "/handler?content=" + Generators.letterStrings(300, 400).next() + "&type=json", // Long parameter with normal parameter
-                "/process?input=" + Generators.letterStrings(280, 320).next() + "&more=" + Generators.letterStrings(280, 320).next(), // Multiple over-limit parameters
-
-                // Edge case parameters
-                "/resource?buffer=" + Generators.letterStrings(500, 600).next(), // Moderate overage
-                "/data?payload=" + Generators.letterStrings(600, 700).next() // Clear overage
-        };
-
-        for (String attack : queryOverflows) {
-            long initialEventCount = eventCounter.getTotalCount();
-
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(attack),
-                    "Query parameter overflow attack should be rejected: " + attack);
-
-            assertNotNull(exception);
-            assertTrue(isURLLengthLimitSpecificFailure(exception.getFailureType()),
-                    "Should detect query parameter overflow: " + exception.getFailureType());
-            assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                    "Security event should be recorded for query parameter overflow");
-        }
+    private static String legalValueOfLength(Surface surface, int length) {
+        return surface == Surface.URL_PATH
+                ? "/" + Generators.letterStrings(length - 1, length - 1).next()
+                : Generators.letterStrings(length, length).next();
     }
 
-    /**
-     * Test repeated parameter attacks.
-     *
-     * <p>
-     * Tests attacks using many repeated parameters to cause parsing
-     * complexity or resource exhaustion.
-     * </p>
-     */
-    @Test
-    @DisplayName("Repeated parameter attacks must be blocked")
-    void shouldBlockRepeatedParameterAttacks() {
-        // Realistic repeated parameter tests - focus on parameter limits, not quantity
-        String[] repeatedParamAttacks = {
-                // Parameters over value limit (256)
-                "/api?param=" + BoundaryTestHelper.overParameterLimit() + "&param2=" + BoundaryTestHelper.overParameterLimit(), // Multiple over-limit parameters
-                "/search?data=" + BoundaryTestHelper.moderateParameterOverage() + "&test=normal", // Mixed normal/over-limit
-                "/endpoint?field=" + BoundaryTestHelper.clearParameterOverage(), // Single clear overage
-
-                // Parameter name length attacks (over maxParameterNameLength=64)
-                "/service?" + BoundaryTestHelper.mediumComponent() + "=value", // Long parameter name
-                "/handler?query_" + BoundaryTestHelper.shortComponent() + "=search", // Name with prefix
-
-                // Combined length attacks
-                "/process?" + BoundaryTestHelper.shortComponent() + "=" + BoundaryTestHelper.overParameterLimit(), // Both name and value over limits
-                "/resource?" + BoundaryTestHelper.multipleOverLimitParams(), // Multiple parameter overages
-                "/data?" + BoundaryTestHelper.multipleOverLimitParams() + "&extra=" + BoundaryTestHelper.clearParameterOverage() // Multiple over-limit combinations
-        };
-
-        for (String attack : repeatedParamAttacks) {
-            long initialEventCount = eventCounter.getTotalCount();
-
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(attack),
-                    "Repeated parameter attack should be rejected: " + attack);
-
-            assertNotNull(exception);
-            assertTrue(isURLLengthLimitSpecificFailure(exception.getFailureType()),
-                    "Should detect repeated parameter attack: " + exception.getFailureType());
-            assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                    "Security event should be recorded for repeated parameter attack");
-        }
-    }
-
-    /**
-     * Test deep path nesting attacks.
-     *
-     * <p>
-     * Tests attacks using many directory levels to cause stack
-     * overflow or parsing complexity issues.
-     * </p>
-     */
-    @Test
-    @DisplayName("Deep path nesting attacks must be blocked")
-    void shouldBlockDeepPathNestingAttacks() {
-        String[] deepNestingAttacks = {
-                // QI-17: Fixed to test actual security limits instead of basic input sanitation
-                // These patterns exceed the 1024-character STRICT limit to trigger length validation
-                "/" + generatePathSegments("dir/", 260) + "api", // ~1044 chars - just over STRICT limit
-                "/" + generatePathSegments("level/", 250) + "file", // ~1250 chars - exceeds STRICT limit
-                "/api/" + generatePathSegments("sub/", 300) + "resource", // ~1200+ chars - exceeds STRICT limit
-
-                // Path length that exceeds configured 1024 STRICT limit but tests realistic boundaries
-                "/" + generatePathSegments("path/", 210) + "endpoint", // ~1260 chars - exceeds STRICT, tests DEFAULT
-                "/" + generateNestedPaths() + "api", // ~1100-1300 chars - varied nesting
-
-                // Varied directory names that test just over STRICT limit
-                "/" + generateVariedPathSegments(270) + "target", // ~1080+ chars - over STRICT
-                "/" + generatePathSegments("seg/", 260) + "final", // ~1040+ chars - just over STRICT limit
-                "/" + generateComplexNesting() + "destination" // ~1050-1150 chars - realistic nesting
-        };
-
-        for (String attack : deepNestingAttacks) {
-            long initialEventCount = eventCounter.getTotalCount();
-
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(attack),
-                    "Deep path nesting attack should be rejected: " + attack);
-
-            assertNotNull(exception);
-            assertTrue(isURLLengthLimitSpecificFailure(exception.getFailureType()),
-                    "Should detect deep path nesting: " + exception.getFailureType());
-            assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                    "Security event should be recorded for deep path nesting");
-        }
-    }
-
-    /**
-     * Test long parameter name attacks.
-     *
-     * <p>
-     * Tests attacks using extremely long parameter names to cause
-     * parsing issues or buffer overflows.
-     * </p>
-     */
-    @Test
-    @DisplayName("Long parameter name attacks must be blocked")
-    void shouldBlockLongParameterNameAttacks() {
-        String[] longNameAttacks = {
-                // QI-17: Fixed to test actual security limits (maxParameterNameLength: STRICT=64, DEFAULT=128, LENIENT=256)
-                // Parameter names that exceed configured 64-byte STRICT limit
-                "/api?" + generateParameterName(80) + "=value", // 80 chars - exceeds STRICT limit
-                "/search?" + "param_" + generateParameterName(55) + "=data", // ~61 chars total - approaches STRICT limit
-                "/endpoint?" + generateParameterName(100) + "=test&normal=ok", // 100 chars - tests validation beyond STRICT
-
-                // Descriptive long names that test realistic boundaries
-                "/service?" + "field_name_" + generateParameterName(54) + "=content", // ~65 chars - just over STRICT limit
-                "/handler?" + generateParameterName(150) + "=info", // 150 chars - exceeds DEFAULT limit (128)
-
-                // Multiple long names that test parameter parsing
-                "/process?" + generateMultipleParameterNames(), // Multiple parameters testing limits
-                "/resource?" + generateParameterName(200) + "=result", // 200 chars - tests beyond DEFAULT limit
-                "/data?" + "query_string_parameter_name_" + generateParameterName(20) + "=search" // ~49 chars total - within STRICT
-        };
-
-        for (String attack : longNameAttacks) {
-            long initialEventCount = eventCounter.getTotalCount();
-
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(attack),
-                    "Long parameter name attack should be rejected: " + attack);
-
-            assertNotNull(exception);
-            assertTrue(isURLLengthLimitSpecificFailure(exception.getFailureType()),
-                    "Should detect long parameter name: " + exception.getFailureType());
-            assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                    "Security event should be recorded for long parameter name");
-        }
-    }
-
-    /**
-     * Test buffer overflow pattern attacks.
-     *
-     * <p>
-     * Tests attacks specifically designed to trigger buffer overflows
-     * or memory allocation issues.
-     * </p>
-     */
-    @Test
-    @DisplayName("Buffer overflow pattern attacks must be blocked")
-    void shouldBlockBufferOverflowPatternAttacks() {
-        String[] bufferOverflows = {
-                // QI-17: Fixed to test actual security limits instead of basic input sanitation
-                // Values that exceed configured limits: maxPathLength(STRICT=1024), maxParameterValueLength(STRICT=1024)
-                "/api?" + generateParameterValue(1100), // 1100 chars - exceeds STRICT parameter value limit
-                "/search/" + generatePath(1100) + "?data=" + generateParameterValue(1200), // Path + param both exceed STRICT
-                "/endpoint?buffer=" + generateParameterValue(1500), // 1500 chars - exceeds DEFAULT limit (2048)
-
-                // Combined overflow attempts testing realistic boundaries
-                "/" + generatePath(1200) + "/api?payload=" + generateParameterValue(1300), // Both exceed STRICT limits
-                "/service?" + generateMultipleOverflowParameters(), // Multiple parameters exceeding limits
-
-                // Large single components that test actual validation
-                "/handler/" + generatePath(1500), // 1500 chars - exceeds path STRICT, tests DEFAULT
-                "/process?input=" + generateParameterValue(2100), // 2100 chars - exceeds DEFAULT parameter limit
-                "/resource#" + generateFragment(2200) // 2200 chars - tests fragment handling
-        };
-
-        for (String attack : bufferOverflows) {
-            long initialEventCount = eventCounter.getTotalCount();
-
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(attack),
-                    "Buffer overflow pattern attack should be rejected: " + attack);
-
-            assertNotNull(exception);
-            assertTrue(isURLLengthLimitSpecificFailure(exception.getFailureType()),
-                    "Should detect buffer overflow pattern: " + exception.getFailureType());
-            assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                    "Security event should be recorded for buffer overflow pattern");
-        }
-    }
-
-    /**
-     * Test memory exhaustion attacks.
-     *
-     * <p>
-     * Tests attacks designed to consume excessive memory resources
-     * through extremely large URL components.
-     * </p>
-     */
-    @Test
-    @DisplayName("Memory exhaustion attacks must be blocked")
-    void shouldBlockMemoryExhaustionAttacks() {
-        String[] memoryAttacks = {
-                // QI-17: Fixed to test actual security limits (STRICT: 1024, DEFAULT: 2048/4096, LENIENT: 8192)
-                // Test just over limits to ensure actual security validation, not basic input rejection
-                "/api?memory=" + generateParameterValue(1200), // 1200 chars - exceeds STRICT parameter limit
-                "/search/" + generatePath(1100) + "?data=" + generateParameterValue(1300), // Both exceed STRICT limits
-
-                // Structured data testing DEFAULT limits
-                "/endpoint?" + generateStructuredParameters(), // Multiple params testing various limits
-                "/service?exhaustion=" + generateParameterValue(2100), // 2100 chars - exceeds DEFAULT param limit (2048)
-
-                // Large components testing realistic boundaries
-                "/" + generatePath(4200) + "/api", // 4200 chars - exceeds DEFAULT path limit (4096)
-                "/handler?large_data=" + generateStructuredParameterValue(), // Structured data within limits
-                "/process#" + generateFragment(8300) // 8300 chars - exceeds LENIENT limit (8192)
-        };
-
-        for (String attack : memoryAttacks) {
-            long initialEventCount = eventCounter.getTotalCount();
-
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(attack),
-                    "Memory exhaustion attack should be rejected: " + attack);
-
-            assertNotNull(exception);
-            assertTrue(isURLLengthLimitSpecificFailure(exception.getFailureType()),
-                    "Should detect memory exhaustion: " + exception.getFailureType());
-            assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                    "Security event should be recorded for memory exhaustion");
-        }
-    }
-
-    /**
-     * Test encoding length attacks.
-     *
-     * <p>
-     * Tests attacks that use URL encoding to amplify the effective
-     * length of the URL beyond normal limits.
-     * </p>
-     */
-    @Test
-    @DisplayName("Encoding length attacks must be blocked")
-    void shouldBlockEncodingLengthAttacks() {
-        String[] encodingAttacks = {
-                // QI-17: Fixed to test actual security limits with URL encoding (consider both raw and decoded lengths)
-                // URL encoding that tests realistic boundaries in raw encoded form
-                "/api?data=" + generateEncodedParameterValue(1000), // ~1000 chars in parameter (exceeds STRICT total)
-                "/search/" + generateEncodedPath(1030), // ~1030 chars in path (exceeds STRICT with prefix)
-                "/endpoint?param=" + generateEncodedParameterValue(1200), // ~1200 chars in parameter (exceeds STRICT)
-
-                // Mixed encoding patterns testing boundaries
-                "/service/" + generateMixedEncodingPath(), // Mixed patterns testing path limits
-                "/handler?query=" + generateEncodedParameterValue(1100), // ~1100 chars in parameter (exceeds STRICT)
-                "/process/" + generateEncodedTraversalPattern(), // Encoded traversal testing path limits
-
-                // Complex encoding patterns that test validation
-                "/resource?field=" + generateComplexEncodingValue(), // Complex encoding within limits
-                "/data#" + generateEncodedFragment(1200) // ~1200 chars in fragment (exceeds STRICT)
-        };
-
-        for (String attack : encodingAttacks) {
-            long initialEventCount = eventCounter.getTotalCount();
-
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(attack),
-                    "Encoding length attack should be rejected: " + attack);
-
-            assertNotNull(exception);
-            assertTrue(isURLLengthLimitSpecificFailure(exception.getFailureType()),
-                    "Should detect encoding length attack: " + exception.getFailureType());
-            assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                    "Security event should be recorded for encoding length attack");
-        }
-    }
-
-    /**
-     * Test comprehensive edge cases in URL length limit detection.
-     *
-     * <p>
-     * Tests various edge cases and corner conditions that might be
-     * exploited in URL length limit attacks.
-     * </p>
-     */
-    @Test
-    @DisplayName("URL length limit attack edge cases must be handled")
-    void shouldHandleURLLengthLimitAttackEdgeCases() {
-        String[] edgeCaseAttacks = {
-                // QI-17: Fixed algorithmic complexity attacks to test actual validation within realistic boundaries
-                // Complexity attacks that test limits without creating unrealistic massive inputs
-                "/api?" + generateManySmallParameters(), // Multiple small parameters testing count limits
-                "/search/" + generateManySegments() + "target", // Multiple segments testing path parsing
-                "/" + generateTraversalPattern() + "/api", // Traversal patterns testing security validation
-
-                // Varied patterns for complexity testing different limits
-                "/endpoint?" + generateComplexParameterString(), // Complex params testing various boundaries
-                "/service/" + generateNestedSegments(), // Nested segments testing path limits
-
-                // Complex nested patterns that test parsing within boundaries
-                "/handler?" + generateRegexPattern(), // Regex patterns testing parameter parsing
-                "/process/" + generateNestedPathPattern(), // Nested patterns within reasonable limits
-                "/resource?" + generateKeyValueParameters() // Key-value parameters testing limit validation
-        };
-
-        for (String attack : edgeCaseAttacks) {
-            long initialEventCount = eventCounter.getTotalCount();
-
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(attack),
-                    "URL length limit edge case should be rejected: " + attack);
-
-            assertNotNull(exception);
-            assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                    "Security event should be recorded for edge case");
-        }
-    }
-
-    /**
-     * Determines if a URL pattern represents a path-based length attack that should be caught by URL path validation.
-     *
-     * @param pattern The URL pattern to analyze
-     * @return true if this is a path-based attack that should be rejected, false if it's a hostname-based attack
-     */
-    private boolean isPathBasedLengthAttack(String pattern) {
-        // Extract the path component from the URL
-        String pathComponent;
-        if (pattern.startsWith("http://") || pattern.startsWith("https://")) { // NOSONAR - Testing HTTP patterns
-            // Full URL - extract path after hostname
-            int schemeEnd = pattern.indexOf("://") + 3;
-            int pathStart = pattern.indexOf('/', schemeEnd);
-            if (pathStart == -1) {
-                pathComponent = "/"; // No path, just hostname
-            } else {
-                int fragmentStart = pattern.indexOf('#', pathStart);
-                int queryStart = pattern.indexOf('?', pathStart);
-
-                int pathEnd = pattern.length();
-                if (fragmentStart != -1) pathEnd = Math.min(pathEnd, fragmentStart);
-                if (queryStart != -1) pathEnd = Math.min(pathEnd, queryStart);
-
-                pathComponent = pattern.substring(pathStart, pathEnd);
-            }
-        } else {
-            // Relative path - extract path before query/fragment
-            int fragmentStart = pattern.indexOf('#');
-            int queryStart = pattern.indexOf('?');
-
-            int pathEnd = pattern.length();
-            if (fragmentStart != -1) pathEnd = fragmentStart;
-            if (queryStart != -1) pathEnd = Math.min(pathEnd, queryStart);
-
-            pathComponent = pattern.substring(0, pathEnd);
-        }
-
-        // Return true if the path component exceeds our configured limit (1024)
-        return pathComponent.length() > 1024;
-    }
-
-    /**
-     * QI-9: Determines if a failure type matches specific URL length limit attack patterns.
-     * Replaces broad OR-assertion with comprehensive security validation.
-     *
-     * @param failureType The actual failure type from validation
-     * @return true if the failure type is expected for URL length limit patterns
-     */
-    private boolean isURLLengthLimitSpecificFailure(UrlSecurityFailureType failureType) {
-        // QI-9: URL length limit patterns can trigger multiple specific failure types
-        // Accept all URL length limit-relevant failure types for comprehensive security validation
-        return failureType == UrlSecurityFailureType.INPUT_TOO_LONG ||
-                failureType == UrlSecurityFailureType.PATH_TOO_LONG ||
-                failureType == UrlSecurityFailureType.EXCESSIVE_NESTING ||
-                failureType == UrlSecurityFailureType.MALFORMED_INPUT ||
-                failureType == UrlSecurityFailureType.INVALID_STRUCTURE ||
-                failureType == UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED ||
-                failureType == UrlSecurityFailureType.PROTOCOL_VIOLATION ||
-                failureType == UrlSecurityFailureType.RFC_VIOLATION ||
-                failureType == UrlSecurityFailureType.INVALID_CHARACTER || // Repeated chars in length attacks
-                failureType == UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED; // Long URLs with traversal patterns
-    }
-
-    /**
-     * Helper method for hash-based selection in tests.
-     */
-    private int hashBasedSelection(int bound) {
-        return Math.abs(this.hashCode()) % bound;
-    }
-
-    // QI-17: Helper methods to replace hardcoded .repeat() patterns with proper boundary testing
-
-    /**
-     * Generates path segments that test realistic security boundaries instead of massive inputs.
-     * @param segment the base segment pattern
-     * @param count number of repetitions to generate realistic length
-     * @return generated path segments
-     */
-    private String generatePathSegments(String segment, int count) {
-        return segment.repeat(count);
-    }
-
-    /**
-     * Generates nested paths with varied segment names for realistic testing.
-     * @return nested path string that tests just over STRICT limit
-     */
-    private String generateNestedPaths() {
-        StringBuilder result = new StringBuilder();
-        String[] segments = {"deep/", "very/", "nested/", "path/", "level/"};
-        int totalLength = 0;
-        int segmentIndex = 0;
-
-        // Generate until we exceed STRICT limit (1024) but stay reasonable
-        while (totalLength < 1100) {
-            String segment = segments[segmentIndex % segments.length];
-            result.append(segment);
-            totalLength += segment.length();
-            segmentIndex++;
-        }
-        return result.toString();
-    }
-
-    /**
-     * Generates varied path segments with different names for boundary testing.
-     * @param baseCount approximate number of segments
-     * @return varied path segments testing just over STRICT limit
-     */
-    @SuppressWarnings("SameParameterValue")
-    private String generateVariedPathSegments(int baseCount) {
-        StringBuilder result = new StringBuilder();
-        String[] patterns = {"dir", "folder", "segment", "part"};
-
-        for (int i = 0; i < baseCount; i++) {
-            String pattern = patterns[i % patterns.length];
-            result.append(pattern).append(hashBasedSelection(10)).append("/");
-        }
-        return result.toString();
-    }
-
-    /**
-     * Generates complex nesting patterns for realistic boundary testing.
-     * @return complex nested path that tests security validation
-     */
-    private String generateComplexNesting() {
-        StringBuilder result = new StringBuilder();
-        String[] components = {"folder", "subfolder", "subdir", "level"};
-
-        // Build path that exceeds STRICT limit (1024) - need more iterations
-        for (int i = 0; i < 100; i++) {  // Increased iterations to ensure we exceed 1024
-            String component = components[i % components.length];
-            result.append(component).append("/");
-
-            // Continue until we clearly exceed 1024 + buffer for suffix like "destination"
-            if (result.length() > 1035) break;  // 1024 + "destination" = 1035 minimum
-        }
-        return result.toString();
-    }
-
-    /**
-     * Generates parameter names that test realistic security boundaries.
-     * @param length target length for the parameter name
-     * @return generated parameter name for boundary testing
-     */
-    private String generateParameterName(int length) {
-        if (length <= 10) {
-            return Generators.letterStrings(length, length).next();
-        }
-
-        // For longer names, create more realistic parameter names
-        StringBuilder result = new StringBuilder();
-        String[] prefixes = {"param", "field", "data", "value", "query"};
-        String prefix = prefixes[Math.abs(hashCode()) % prefixes.length];
-        result.append(prefix);
-
-        // Fill remaining length with letters/numbers
-        int remaining = length - prefix.length();
-        // Always add underscore and remaining letters since we're generating longer names
-        result.append("_").append(Generators.letterStrings(remaining - 1, remaining - 1).next());
-
-        // Ensure exact length
-        String generated = result.toString();
-        if (generated.length() > length) {
-            return generated.substring(0, length);
-        } else if (generated.length() < length) {
-            return generated + generatePaddingChars(length - generated.length());
-        }
-        return generated;
-    }
-
-    /**
-     * Generates multiple parameter names for testing parameter parsing limits.
-     * @return query string with multiple parameters testing various boundaries
-     */
-    private String generateMultipleParameterNames() {
-        // Generate several parameters with different name lengths
-        return generateParameterName(30) + "=value1&" +  // Within STRICT
-                generateParameterName(70) + "=value2&" +  // Exceeds STRICT
-                generateParameterName(140) + "=value3&" + // Exceeds DEFAULT
-                generateParameterName(25) + "=value4";   // Final param, within STRICT
-    }
-
-    /**
-     * Generates parameter values that test realistic security boundaries.
-     * @param length target length for the parameter value
-     * @return generated parameter value for boundary testing
-     */
-    private String generateParameterValue(int length) {
-        // Generate realistic parameter value content
-        return Generators.letterStrings(length, length).next();
-    }
-
-    /**
-     * Generates path components that test realistic security boundaries.
-     * @param length target length for the path
-     * @return generated path for boundary testing
-     */
-    private String generatePath(int length) {
-        StringBuilder result = new StringBuilder();
-        String[] segments = {"api", "data", "service", "endpoint", "resource", "handler"};
-
-        while (result.length() < length - 20) { // Leave room for final segment
-            String segment = segments[Math.abs(result.toString().hashCode()) % segments.length];
-            result.append(segment).append("/");
-        }
-
-        // Fill remaining space
-        int remaining = length - result.length();
-        if (remaining > 0) {
-            result.append(Generators.letterStrings(remaining, remaining).next());
-        }
-
-        return result.toString();
-    }
-
-    /**
-     * Generates URL fragments that test realistic security boundaries.
-     * @param length target length for the fragment
-     * @return generated fragment for boundary testing
-     */
-    private String generateFragment(int length) {
-        // Generate realistic fragment content
-        return Generators.letterStrings(length, length).next();
-    }
-
-    /**
-     * Generates multiple parameters with overflow values for testing.
-     * @return query string with multiple parameters exceeding limits
-     */
-    private String generateMultipleOverflowParameters() {
-        return "param1=" + generateParameterValue(1200) + "&" + // Exceeds STRICT
-                "param2=" + generateParameterValue(800) + "&" +  // Within STRICT
-                "param3=" + generateParameterValue(2500) + "&" + // Exceeds DEFAULT
-                "param4=" + generateParameterValue(600);              // Final param
-    }
-
-    /**
-     * Generates structured parameters for testing various limit boundaries.
-     * @return structured parameter string testing different limits
-     */
-    private String generateStructuredParameters() {
-        // Mix of parameters at different lengths
-        return "small=" + generateParameterValue(100) + "&" +    // Within STRICT
-                "medium=" + generateParameterValue(1200) + "&" +  // Exceeds STRICT
-                "large=" + generateParameterValue(2100) + "&" +   // Exceeds DEFAULT
-                "final=" + generateParameterValue(300);                // Within STRICT
-    }
-
-    /**
-     * Generates structured parameter value with realistic content patterns.
-     * @return structured parameter value for boundary testing
-     */
-    private String generateStructuredParameterValue() {
-        StringBuilder result = new StringBuilder();
-        String[] chunks = {"chunk", "data", "segment", "block"};
-
-        // Build structured content within reasonable limits
-        for (int i = 0; i < 20; i++) {
-            String chunk = chunks[i % chunks.length];
-            result.append(chunk).append("_").append(generateParameterValue(40));
-            if (i < 19) result.append(",");
-        }
-
-        return result.toString();
-    }
-
-    /**
-     * Generates URL-encoded parameter values that test realistic security boundaries.
-     * @param decodedLength target length after decoding
-     * @return URL-encoded parameter value (typically 3x the decoded length)
-     */
-    private String generateEncodedParameterValue(int decodedLength) {
-        StringBuilder result = new StringBuilder();
-        String baseValue = generateParameterValue(decodedLength);
-
-        // Encode ~1/3 of characters to create realistic encoded content
-        for (int i = 0; i < baseValue.length(); i++) {
-            char c = baseValue.charAt(i);
-            if (i % 3 == 0) {
-                // URL encode some characters
-                result.append("%%%02X".formatted((int) c));
-            } else {
-                result.append(c);
-            }
-        }
-        return result.toString();
-    }
-
-    /**
-     * Generates URL-encoded path that tests realistic security boundaries.
-     * @param targetEncodedLength target length after decoding
-     * @return URL-encoded path
-     */
-    @SuppressWarnings("SameParameterValue")
-    private String generateEncodedPath(int targetEncodedLength) {
-        StringBuilder result = new StringBuilder();
-        String[] pathSegments = {"api", "data", "service", "endpoint", "resource", "handler"};
-
-        // Generate path that will exceed the limit in encoded form
-        while (result.length() < targetEncodedLength) {
-            String segment = pathSegments[result.length() % pathSegments.length];
-
-            // Encode each character to expand the length significantly
-            for (char c : segment.toCharArray()) {
-                result.append("%%%02X".formatted((int) c));
-            }
-            result.append("%2F"); // Encoded slash
-        }
-        return result.toString();
-    }
-
-    /**
-     * Generates mixed encoding path patterns for testing boundaries.
-     * @return mixed encoded path testing realistic limits
-     */
-    private String generateMixedEncodingPath() {
-        StringBuilder result = new StringBuilder();
-        String[] segments = {"service", "api", "data"};
-
-        // Build path with mixed encoding up to exceed maxPathLength(1024)
-        for (int i = 0; i < 100; i++) {
-            String segment = segments[i % segments.length];
-            result.append("%2F").append(segment); // Encoded slash + segment
-            if (result.length() > 1200) break; // Well over maxPathLength(1024) + prefix margin
-        }
-        return result.toString();
-    }
-
-    /**
-     * Generates encoded path traversal patterns for testing.
-     * @return encoded traversal pattern testing security validation
-     */
-    private String generateEncodedTraversalPattern() {
-        StringBuilder result = new StringBuilder();
-
-        // Generate encoded traversal patterns that test limits
-        for (int i = 0; i < 140; i++) {
-            result.append("%2E%2E%2F"); // Encoded "../"
-            if (result.length() > 1040) break; // Stop just over STRICT limit
-        }
-        return result.toString();
-    }
-
-    /**
-     * Generates complex encoding values for testing.
-     * @return complex encoded value that exceeds 1024 character limit
-     */
-    private String generateComplexEncodingValue() {
-        StringBuilder result = new StringBuilder();
-        String[] patterns = {"%41%42%43", "%44%45%46", "%47%48%49"}; // ABC, DEF, GHI encoded
-
-        for (int i = 0; i < 120; i++) { // Increased to exceed 1024 limit
-            result.append(patterns[i % patterns.length]);
-            if (result.length() > 1100) break; // Ensure we exceed STRICT limit
-        }
-        return result.toString();
-    }
-
-    /**
-     * Generates encoded fragment for testing realistic boundaries.
-     * @param decodedLength target length after decoding
-     * @return encoded fragment
-     */
-    @SuppressWarnings("SameParameterValue")
-    private String generateEncodedFragment(int decodedLength) {
-        StringBuilder result = new StringBuilder();
-
-        // Generate fragment with encoding that results in target decoded length
-        for (int i = 0; i < decodedLength; i++) {
-            if (i % 2 == 0) {
-                result.append("%23"); // Encoded '#'
-            } else {
-                result.append("x");
-            }
-        }
-        return result.toString();
-    }
-
-    /**
-     * Generates many small parameters for testing count limits.
-     * @return parameter string with many small parameters
-     */
-    private String generateManySmallParameters() {
-        StringBuilder result = new StringBuilder();
-
-        // Generate parameters that test count limits while staying within length bounds
-        for (int i = 0; i < 25; i++) { // Testing STRICT parameter count limit (20)
-            result.append("p").append(i).append("=v").append(i);
-            if (i < 24) result.append("&");
-        }
-        return result.toString();
-    }
-
-    /**
-     * Generates many path segments for testing path parsing.
-     * @return path with many segments testing parsing limits
-     */
-    private String generateManySegments() {
-        StringBuilder result = new StringBuilder();
-        String[] segments = {"a", "b", "c", "d", "e", "f"};
-
-        // Generate segments that exceed STRICT path limit (1024) with buffer for prefix/suffix
-        while (result.length() < 1200) { // Well exceed STRICT limit plus buffer for prefix/suffix
-            String segment = segments[result.length() % segments.length];
-            result.append(segment).append("/");
-        }
-        return result.toString();
-    }
-
-    /**
-     * Generates traversal pattern for testing security validation.
-     * @return traversal pattern testing path traversal detection
-     */
-    private String generateTraversalPattern() {
-        // Generate traversal patterns that test security but stay reasonable
-        return "../".repeat(150); // ~450 chars - reasonable for testing
-    }
-
-    /**
-     * Generates complex parameter string testing various boundaries.
-     * @return complex parameter string
-     */
-    private String generateComplexParameterString() {
-        StringBuilder result = new StringBuilder();
-
-        for (int i = 0; i < 10; i++) {
-            result.append("param").append(hashBasedSelection(50))
-                    .append("=value").append(hashBasedSelection(50));
-            if (i < 9) result.append("&");
-        }
-        return result.toString();
-    }
-
-    /**
-     * Generates nested segments for testing path limits.
-     * @return nested path segments
-     */
-    private String generateNestedSegments() {
-        StringBuilder result = new StringBuilder();
-
-        // Generate nested structure that exceeds STRICT path limit
-        for (int i = 0; i < 120; i++) {
-            result.append("segment").append(hashBasedSelection(20)).append("/");
-            if (result.length() > 1040) break; // Exceed STRICT limit plus buffer for prefix
-        }
-        return result.toString();
-    }
-
-    /**
-     * Generates regex pattern for testing parameter parsing.
-     * @return regex pattern within reasonable bounds
-     */
-    private String generateRegexPattern() {
-        StringBuilder result = new StringBuilder();
-        result.append("regex=");
-
-        // Generate regex patterns that test parsing without being massive
-        for (int i = 0; i < 50; i++) {
-            result.append("(a+)+");
-            if (result.length() > 400) break; // Keep reasonable
-        }
-        return result.toString();
-    }
-
-    /**
-     * Generates nested path pattern for testing.
-     * @return nested path pattern within limits
-     */
-    private String generateNestedPathPattern() {
-        StringBuilder result = new StringBuilder();
-
-        // Generate nested patterns that test validation logic
-        for (int i = 0; i < 30; i++) {
-            result.append("a/b/c/d/e/");
-            if (result.length() > 300) break; // Keep reasonable
-        }
-        return result.toString();
-    }
-
-    /**
-     * Generates key-value parameters for testing limit validation.
-     * @return key-value parameter string
-     */
-    private String generateKeyValueParameters() {
-        StringBuilder result = new StringBuilder();
-
-        // Generate parameters that approach count limits
-        for (int i = 0; i < 25; i++) { // Over STRICT count limit (20)
-            result.append("key").append(i).append("=value").append(i);
-            if (i < 24) result.append("&");
-        }
-        return result.toString();
-    }
-
-    /**
-     * Helper class for generating realistic boundary test strings.
-     * Replaces hardcoded .repeat() patterns with proper boundary testing
-     * that tests just over the actual security limits.
-     */
-    private static class BoundaryTestHelper {
-
-        /**
-         * Generate complete path just over maxPathLength limit (1024)
-         * Ensures total path length is guaranteed to be over the limit.
-         */
-        static String pathJustOverLimit() {
-            // Generate base path, then ensure total is over 1024
-            String base = Generators.letterStrings(1030, 1050).next();
-            return "/" + base; // Guaranteed 1031-1051 characters total
-        }
-
-        /**
-         * Generate complete path with prefix and suffix over limit
-         */
-        static String pathWithAffixesOverLimit(String prefix, String suffix) {
-            int affixLength = prefix.length() + suffix.length();
-            int neededLength = 1025 - affixLength; // Need at least 1025 total
-            String middle = Generators.letterStrings(neededLength, neededLength + 50).next();
-            return prefix + middle + suffix;
-        }
-
-        /**
-         * Generate parameter value just over maxParameterValueLength limit (256)
-         */
-        static String overParameterLimit() {
-            return Generators.letterStrings(260, 280).next();
-        }
-
-        /**
-         * Generate moderate parameter overage
-         */
-        static String moderateParameterOverage() {
-            return Generators.letterStrings(300, 400).next();
-        }
-
-        /**
-         * Generate clear parameter overage
-         */
-        static String clearParameterOverage() {
-            return Generators.letterStrings(400, 600).next();
-        }
-
-        /**
-         * Generate short component for building composite paths
-         */
-        static String shortComponent() {
-            return Generators.letterStrings(100, 200).next();
-        }
-
-        /**
-         * Generate medium component for building composite paths
-         */
-        static String mediumComponent() {
-            return Generators.letterStrings(300, 500).next();
-        }
-
-        /**
-         * Generate multiple parameters that together exceed limits
-         */
-        static String multipleOverLimitParams() {
-            return "param1=" + overParameterLimit() + "&param2=" + overParameterLimit();
-        }
-    }
-
-    /**
-     * QI-17: Generate realistic padding characters instead of using .repeat().
-     * Creates varied padding for parameter names and values.
-     */
-    private String generatePaddingChars(int length) {
-        if (length <= 0) return "";
-
-        StringBuilder padding = new StringBuilder();
-        String[] chars = {"x", "y", "z", "a", "b", "c", "1", "2", "3"};
-
-        for (int i = 0; i < length; i++) {
-            padding.append(chars[i % chars.length]);
-        }
-        return padding.toString();
+    private void assertRejected(HttpSecurityValidator pipeline, String attack, UrlSecurityFailureType expected) {
+        var exception = assertThrows(UrlSecurityException.class, () -> pipeline.validate(attack),
+                () -> "Length attack of " + attack.length() + " characters should be rejected");
+
+        assertEquals(expected, exception.getFailureType(),
+                () -> "Unexpected verdict for a value of " + attack.length() + " characters");
+        assertEquals(attack, exception.getOriginalInput(), "Original input should be preserved in exception");
+        assertEquals(1, eventCounter.getCount(expected), () -> "Exactly one " + expected + " event should be recorded");
     }
 }

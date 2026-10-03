@@ -16,18 +16,27 @@
 package de.cuioss.http.security.generators.injection;
 
 import de.cuioss.http.security.config.SecurityConfiguration;
-import de.cuioss.http.security.config.SecurityDefaults;
+import de.cuioss.http.security.core.HttpSecurityValidator;
+import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.generators.url.URLLengthLimitAttackGenerator;
+import de.cuioss.http.security.generators.url.URLLengthLimitAttackGenerator.Surface;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
+import de.cuioss.http.security.pipeline.HTTPHeaderValidationPipeline;
+import de.cuioss.http.security.pipeline.URLParameterNameValidationPipeline;
+import de.cuioss.http.security.pipeline.URLParameterValidationPipeline;
 import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
+import de.cuioss.http.security.validation.CharacterValidationConstants;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
+import de.cuioss.test.generator.junit.GeneratorSeed;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
-import java.util.HashSet;
+import java.util.EnumSet;
 import java.util.Set;
+import java.util.function.IntPredicate;
 
 import static de.cuioss.http.security.generators.GeneratorContractAssertions.assertPipelineRejects;
 import static de.cuioss.http.security.generators.GeneratorContractAssertions.preview;
@@ -36,122 +45,99 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Contract test for {@link URLLengthLimitAttackGenerator}.
  *
- * <p>The defining property of this generator is length: every emitted value exceeds
- * {@link SecurityDefaults#MAX_PATH_LENGTH_STRICT}, which is the limit the generator advertises
- * itself as attacking. A value that stays under that limit is not a length-limit attack, so the
- * per-value test asserts the length directly rather than a token minimum.</p>
- *
- * <p>The pipeline round-trip is asserted only for the values {@link URLPathValidationPipeline}
- * actually governs — relative path and query values. Hostname-family values (which carry their
- * length in the authority component) and fragment-family values lie outside that pipeline's
- * remit, so they carry the length property alone.</p>
+ * <p>The defining property of this generator is length on one surface: every emitted value
+ * exceeds the strict limit of the surface its generator was created for, and consists of
+ * characters that surface admits, so that length is the only reason to reject it. Both halves
+ * are asserted per value, together with the round-trip through the pipeline that owns the
+ * surface's limit.</p>
  */
 @EnableGeneratorController
+@GeneratorSeed(4711L)
 @DisplayName("URLLengthLimitAttackGenerator Contract Tests")
 class URLLengthLimitAttackGeneratorTest {
 
     /**
-     * Sized so that the rarest branch — the single traversal arm of the algorithmic-complexity
-     * family, reached on one of eight sub-cases of one family — is missed with negligible
-     * probability.
+     * Sized so that each of the {@link URLLengthLimitAttackGenerator#ARM_COUNT} arms of a surface
+     * is missed with negligible probability.
      */
-    private static final int AGGREGATE_DRAWS = 2000;
+    private static final int AGGREGATE_DRAWS = 400;
 
-    /**
-     * The number of attack families {@code next()} selects among via {@code hashBasedSelection},
-     * sourced from the generator itself so the count cannot desync when a family is added or
-     * removed.
-     */
-    private static final int ATTACK_FAMILY_COUNT = URLLengthLimitAttackGenerator.ATTACK_FAMILY_COUNT;
-
-    /**
-     * Number of freshly constructed generators whose first draw is sampled. Sized so that a family
-     * reachable on any single draw is missed across the whole sample with negligible probability
-     * ({@code (1 - 1/ATTACK_FAMILY_COUNT)} raised to this power).
-     */
-    private static final int FIRST_DRAW_INSTANCES = 200;
-
-    /**
-     * Observable shapes that are each reachable only through a distinct branch family, so that
-     * reaching all of them is evidence the generator spans its documented taxonomy rather than
-     * collapsing onto one shape.
-     */
-    private static final String HOSTNAME_SHAPE = "authority-rooted (https://)";
-    private static final String FRAGMENT_SHAPE = "carries a fragment (#)";
-    private static final String QUERY_SHAPE = "carries a query (?)";
-    private static final String PURE_PATH_SHAPE = "pure path (no query, no fragment)";
-    private static final String TRAVERSAL_SHAPE = "carries traversal segments (../)";
-    private static final String BEYOND_LENIENT_SHAPE = "exceeds the lenient limit";
-
-    private static final Set<String> ALL_SHAPES = Set.of(
-            HOSTNAME_SHAPE, FRAGMENT_SHAPE, QUERY_SHAPE,
-            PURE_PATH_SHAPE, TRAVERSAL_SHAPE, BEYOND_LENIENT_SHAPE);
+    /** The limit tiers a surface's values can exceed. */
+    private enum Tier {
+        BEYOND_STRICT_ONLY, BEYOND_DEFAULT, BEYOND_LENIENT
+    }
 
     @ParameterizedTest
     @TypeGeneratorSource(value = URLLengthLimitAttackGenerator.class, count = 100)
-    @DisplayName("Every generated value exceeds the strict path limit and is a rooted URL")
-    void shouldGenerateOverlongRootedUrl(String generatedValue) {
-        assertOverlongRootedUrl(generatedValue);
+    @DisplayName("Every path value is an overlong, rooted, path-legal value the strict path pipeline rejects")
+    void shouldGenerateOverlongPath(String generatedValue) {
+        assertTrue(generatedValue.startsWith("/"),
+                () -> "A path length attack must be rooted at '/'. Value starts: <" + preview(generatedValue) + ">");
+        assertOverlongLegalValue(Surface.URL_PATH, generatedValue);
+    }
+
+    @ParameterizedTest
+    @TypeGeneratorSource(value = URLLengthLimitAttackGenerator.ForParameterName.class, count = 100)
+    @DisplayName("Every parameter-name value is overlong, name-legal and rejected by the strict parameter-name pipeline")
+    void shouldGenerateOverlongParameterName(String generatedValue) {
+        assertOverlongLegalValue(Surface.PARAMETER_NAME, generatedValue);
+    }
+
+    @ParameterizedTest
+    @TypeGeneratorSource(value = URLLengthLimitAttackGenerator.ForParameterValue.class, count = 100)
+    @DisplayName("Every parameter-value value is overlong, value-legal and rejected by the strict parameter pipeline")
+    void shouldGenerateOverlongParameterValue(String generatedValue) {
+        assertOverlongLegalValue(Surface.PARAMETER_VALUE, generatedValue);
+    }
+
+    @ParameterizedTest
+    @TypeGeneratorSource(value = URLLengthLimitAttackGenerator.ForHeaderName.class, count = 100)
+    @DisplayName("Every header-name value is overlong, token-legal and rejected by the strict header-name pipeline")
+    void shouldGenerateOverlongHeaderName(String generatedValue) {
+        assertOverlongLegalValue(Surface.HEADER_NAME, generatedValue);
+    }
+
+    @ParameterizedTest
+    @TypeGeneratorSource(value = URLLengthLimitAttackGenerator.ForHeaderValue.class, count = 100)
+    @DisplayName("Every header-value value is overlong, value-legal and rejected by the strict header-value pipeline")
+    void shouldGenerateOverlongHeaderValue(String generatedValue) {
+        assertOverlongLegalValue(Surface.HEADER_VALUE, generatedValue);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Surface.class)
+    @DisplayName("Every surface reaches a value beyond its strict, its default and its lenient limit")
+    void shouldReachEveryLimitTier(Surface surface) {
+        URLLengthLimitAttackGenerator generator = new URLLengthLimitAttackGenerator(surface);
+        Set<Tier> reached = EnumSet.noneOf(Tier.class);
+
+        for (int draw = 0; draw < AGGREGATE_DRAWS; draw++) {
+            reached.add(tierOf(surface, generator.next()));
+        }
+
+        assertEquals(EnumSet.allOf(Tier.class), reached,
+                "Every limit tier must be reachable within " + AGGREGATE_DRAWS + " draws for " + surface);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Surface.class)
+    @DisplayName("Each surface generator reports the surface it was created for")
+    void shouldReportSurface(Surface surface) {
+        assertEquals(surface, new URLLengthLimitAttackGenerator(surface).getSurface());
     }
 
     @Test
-    @DisplayName("The path-pipeline-governed form is reachable and the strict pipeline rejects it")
-    void shouldRejectEveryPathPipelineGovernedValue() {
-        URLLengthLimitAttackGenerator generator = new URLLengthLimitAttackGenerator();
-        URLPathValidationPipeline pipeline = strictPathPipeline();
-        boolean governedFormReached = false;
-
-        for (int draw = 0; draw < AGGREGATE_DRAWS; draw++) {
-            String value = generator.next();
-            if (isGovernedByPathPipeline(value)) {
-                governedFormReached = true;
-                assertPipelineRejects(pipeline, value);
-            }
-        }
-
-        assertTrue(governedFormReached,
-                "A value the URL path pipeline governs must be reachable within " + AGGREGATE_DRAWS
-                        + " draws, otherwise the rejection assertion above never fires");
-    }
-
-    @Test
-    @DisplayName("Every draw is an overlong rooted URL and the attack family is selected by seed")
-    void shouldSelectAttackFamilyBySeed() {
-        URLLengthLimitAttackGenerator generator = new URLLengthLimitAttackGenerator();
-        for (int draw = 0; draw < AGGREGATE_DRAWS; draw++) {
-            assertOverlongRootedUrl(generator.next());
-        }
-
-        Set<String> firstDrawShapes = new HashSet<>();
-        for (int instance = 0; instance < FIRST_DRAW_INSTANCES; instance++) {
-            firstDrawShapes.addAll(shapesOf(new URLLengthLimitAttackGenerator().next()));
-        }
-
-        assertAll("A fresh generator's first draw must be seed-selected, not pinned to one family",
-                () -> assertTrue(firstDrawShapes.contains(FRAGMENT_SHAPE),
-                        () -> "No fragment-shaped value appeared among the first draws of "
-                                + FIRST_DRAW_INSTANCES + " fresh generators, so the first draw is not "
-                                + "seed-selected across all " + ATTACK_FAMILY_COUNT
-                                + " families. Reached shapes: " + firstDrawShapes),
-                () -> assertTrue(firstDrawShapes.contains(HOSTNAME_SHAPE),
-                        () -> "No authority-rooted value appeared among the first draws of "
-                                + FIRST_DRAW_INSTANCES + " fresh generators, so the first draw is not "
-                                + "seed-selected across all " + ATTACK_FAMILY_COUNT
-                                + " families. Reached shapes: " + firstDrawShapes));
-    }
-
-    @Test
-    @DisplayName("Should span every documented URL shape, including one beyond the lenient limit")
-    void shouldSpanAllDocumentedShapes() {
-        URLLengthLimitAttackGenerator generator = new URLLengthLimitAttackGenerator();
-        Set<String> reached = new HashSet<>();
-
-        for (int draw = 0; draw < AGGREGATE_DRAWS; draw++) {
-            reached.addAll(shapesOf(generator.next()));
-        }
-
-        assertEquals(ALL_SHAPES, reached,
-                "Every documented URL shape must be reachable within " + AGGREGATE_DRAWS + " draws");
+    @DisplayName("The no-argument generators are bound to their documented surfaces")
+    void shouldBindNoArgumentGeneratorsToSurfaces() {
+        assertAll(
+                () -> assertEquals(Surface.URL_PATH, new URLLengthLimitAttackGenerator().getSurface()),
+                () -> assertEquals(Surface.PARAMETER_NAME,
+                        new URLLengthLimitAttackGenerator.ForParameterName().getSurface()),
+                () -> assertEquals(Surface.PARAMETER_VALUE,
+                        new URLLengthLimitAttackGenerator.ForParameterValue().getSurface()),
+                () -> assertEquals(Surface.HEADER_NAME, new URLLengthLimitAttackGenerator.ForHeaderName().getSurface()),
+                () -> assertEquals(Surface.HEADER_VALUE,
+                        new URLLengthLimitAttackGenerator.ForHeaderValue().getSurface()));
     }
 
     @Test
@@ -161,61 +147,46 @@ class URLLengthLimitAttackGeneratorTest {
                 "Generator should return String.class");
     }
 
-    private void assertOverlongRootedUrl(String value) {
+    private static void assertOverlongLegalValue(Surface surface, String value) {
         assertNotNull(value, "Generator must not produce null values");
-        assertTrue(value.length() > SecurityDefaults.MAX_PATH_LENGTH_STRICT,
-                () -> "A length-limit attack must exceed the strict limit of "
-                        + SecurityDefaults.MAX_PATH_LENGTH_STRICT + " characters, but was "
-                        + value.length() + ". Value starts: <" + preview(value) + ">");
-        assertTrue(isRooted(value),
-                () -> "A URL length attack must be rooted at '/' or carry an http(s) scheme. Value starts: <"
-                        + preview(value) + ">");
+        assertTrue(value.length() > surface.strictLimit(),
+                () -> "A length-limit attack on " + surface + " must exceed the strict limit of "
+                        + surface.strictLimit() + " characters, but was " + value.length()
+                        + ". Value starts: <" + preview(value) + ">");
+
+        IntPredicate legalCharacters = CharacterValidationConstants.getCharacterSet(surface.validationType());
+        assertTrue(value.chars().allMatch(legalCharacters),
+                () -> "A length-limit attack on " + surface + " must consist of characters the surface admits, "
+                        + "so that length is the only reason to reject it. Value starts: <" + preview(value) + ">");
+
+        assertPipelineRejects(strictPipelineFor(surface), value);
     }
 
-    private Set<String> shapesOf(String value) {
-        Set<String> shapes = new HashSet<>();
-        if (value.startsWith("https://") || value.startsWith("http://")) { // NOSONAR - test URL patterns
-            shapes.add(HOSTNAME_SHAPE);
+    private static Tier tierOf(Surface surface, String value) {
+        if (value.length() > surface.lenientLimit()) {
+            return Tier.BEYOND_LENIENT;
         }
-        if (value.indexOf('#') >= 0) {
-            shapes.add(FRAGMENT_SHAPE);
+        if (value.length() > surface.defaultLimit()) {
+            return Tier.BEYOND_DEFAULT;
         }
-        if (value.indexOf('?') >= 0) {
-            shapes.add(QUERY_SHAPE);
-        }
-        if (isRelative(value) && value.indexOf('?') < 0 && value.indexOf('#') < 0) {
-            shapes.add(PURE_PATH_SHAPE);
-        }
-        if (value.contains("../")) {
-            shapes.add(TRAVERSAL_SHAPE);
-        }
-        if (value.length() > SecurityDefaults.MAX_PATH_LENGTH_LENIENT) {
-            shapes.add(BEYOND_LENIENT_SHAPE);
-        }
-        return shapes;
+        return Tier.BEYOND_STRICT_ONLY;
     }
 
-    /**
-     * Determines whether the URL path pipeline governs the value. Authority-rooted values carry
-     * their length in the hostname and fragment-bearing values carry it after the {@code #}, so
-     * neither is this pipeline's concern; everything else is a path or query the pipeline owns.
-     */
-    private boolean isGovernedByPathPipeline(String value) {
-        return isRelative(value) && value.indexOf('#') < 0;
-    }
-
-    private boolean isRooted(String value) {
-        return isRelative(value) || value.startsWith("http://") || value.startsWith("https://"); // NOSONAR - test URL patterns
-    }
-
-    private boolean isRelative(String value) {
-        return value.startsWith("/");
-    }
-
-    private URLPathValidationPipeline strictPathPipeline() {
+    private static HttpSecurityValidator strictPipelineFor(Surface surface) {
         SecurityConfiguration config = SecurityConfiguration.builder()
-                .maxPathLength(SecurityDefaults.MAX_PATH_LENGTH_STRICT)
+                .maxPathLength(Surface.URL_PATH.strictLimit())
+                .maxParameterNameLength(Surface.PARAMETER_NAME.strictLimit())
+                .maxParameterValueLength(Surface.PARAMETER_VALUE.strictLimit())
+                .maxHeaderNameLength(Surface.HEADER_NAME.strictLimit())
+                .maxHeaderValueLength(Surface.HEADER_VALUE.strictLimit())
                 .build();
-        return new URLPathValidationPipeline(config, new SecurityEventCounter());
+        SecurityEventCounter eventCounter = new SecurityEventCounter();
+        return switch (surface) {
+            case URL_PATH -> new URLPathValidationPipeline(config, eventCounter);
+            case PARAMETER_NAME -> new URLParameterNameValidationPipeline(config, eventCounter);
+            case PARAMETER_VALUE -> new URLParameterValidationPipeline(config, eventCounter);
+            case HEADER_NAME -> new HTTPHeaderValidationPipeline(config, eventCounter, ValidationType.HEADER_NAME);
+            case HEADER_VALUE -> new HTTPHeaderValidationPipeline(config, eventCounter, ValidationType.HEADER_VALUE);
+        };
     }
 }

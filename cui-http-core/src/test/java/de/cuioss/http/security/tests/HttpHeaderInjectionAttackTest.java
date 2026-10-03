@@ -16,17 +16,23 @@
 package de.cuioss.http.security.tests;
 
 import de.cuioss.http.security.config.SecurityConfiguration;
+import de.cuioss.http.security.core.HttpSecurityValidator;
 import de.cuioss.http.security.core.UrlSecurityFailureType;
+import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.generators.header.HttpHeaderInjectionAttackGenerator;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
-import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
+import de.cuioss.http.security.pipeline.HTTPHeaderValidationPipeline;
+import de.cuioss.http.security.pipeline.URLParameterValidationPipeline;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -34,36 +40,24 @@ import static org.junit.jupiter.api.Assertions.*;
  * T15: Test HTTP header injection patterns
  *
  * <p>
- * This test class implements Task T15 from the HTTP security validation plan,
- * focusing on testing HTTP header injection attacks that attempt to manipulate
- * HTTP headers through web application inputs. HTTP header injection represents
- * a critical vulnerability that can lead to response splitting, cache poisoning,
- * cross-site scripting, session hijacking, and other security issues.
+ * A header injection payload ends the header the application meant to write with a line break and
+ * continues with attacker-chosen header lines. The payload reaches the application as the content
+ * of one HTTP component, and this class validates each spelling on the surface that receives it:
  * </p>
- *
- * <h3>Test Coverage</h3>
  * <ul>
- *   <li>CRLF Injection - Carriage Return Line Feed character injection</li>
- *   <li>HTTP Response Splitting - Complete HTTP response manipulation</li>
- *   <li>Header Injection via URL Parameters - Parameter-based header injection</li>
- *   <li>Cookie Injection Attacks - Malicious cookie header manipulation</li>
- *   <li>Location Header Injection - Redirect header manipulation</li>
- *   <li>Content-Type Header Injection - MIME type manipulation attacks</li>
- *   <li>Cache Poisoning Attacks - Cache-Control header manipulation</li>
- *   <li>Session Hijacking Headers - Session-related header injection</li>
- *   <li>XSS via Header Injection - Script injection through headers</li>
- *   <li>Authentication Header Bypass - Authorization header manipulation</li>
- *   <li>CORS Header Manipulation - Cross-origin header injection attacks</li>
- *   <li>Security Header Bypass - Security policy header manipulation</li>
- *   <li>Custom Header Injection - Application-specific header attacks</li>
- *   <li>Multi-line Header Injection - Complex multi-header attacks</li>
- *   <li>Encoded Header Injection - URL/Base64 encoded header attacks</li>
+ *   <li><strong>Raw line breaks in a header value</strong> are validated by
+ *       {@link HTTPHeaderValidationPipeline} for {@link ValidationType#HEADER_VALUE}. That
+ *       pipeline does not decode, and its character stage rejects a raw CR or LF as
+ *       {@link UrlSecurityFailureType#INVALID_CHARACTER}.</li>
+ *   <li><strong>Percent-encoded line breaks in a parameter value</strong> are validated by
+ *       {@link URLParameterValidationPipeline}. A decoded CR or LF is legitimate form data under
+ *       the default configuration, so the pipeline under test closes that carve-out with
+ *       {@code allowLineBreaksInParameterValues(false)} - the setting of a deployment that
+ *       reflects parameter values into response headers - and its decoding stage then rejects the
+ *       decoded line break as {@link UrlSecurityFailureType#CONTROL_CHARACTERS}.</li>
  * </ul>
  *
  * <h3>Security Standards Compliance</h3>
- * <p>
- * This test ensures compliance with:
- * </p>
  * <ul>
  *   <li>OWASP Top 10: A03:2021 – Injection</li>
  *   <li>CWE-113: Improper Neutralization of CRLF Sequences in HTTP Headers</li>
@@ -72,15 +66,9 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>NIST SP 800-53: SI-10 Information Input Validation</li>
  * </ul>
  *
- * <h3>Performance Requirements</h3>
- * <p>
- * Each validation must complete within 8ms to ensure production feasibility.
- * HTTP header injection detection should not introduce significant latency to
- * web application response processing.
- * </p>
- *
  * @see HttpHeaderInjectionAttackGenerator
- * @see URLPathValidationPipeline
+ * @see HTTPHeaderValidationPipeline
+ * @see URLParameterValidationPipeline
  * @author Generated for HTTP Security Validation (T15)
  * @version 1.0.0
  */
@@ -88,264 +76,182 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("T15: HTTP Header Injection Attack Validation Tests")
 class HttpHeaderInjectionAttackTest {
 
-    private URLPathValidationPipeline pipeline;
+    /** The verdict of the header-value pipeline for a raw CR or LF. */
+    private static final UrlSecurityFailureType RAW_LINE_BREAK_IN_HEADER_VALUE =
+            UrlSecurityFailureType.INVALID_CHARACTER;
+
+    /** The verdict of the line-break-rejecting parameter pipeline for a decoded CR or LF. */
+    private static final UrlSecurityFailureType DECODED_LINE_BREAK_IN_PARAMETER_VALUE =
+            UrlSecurityFailureType.CONTROL_CHARACTERS;
+
+    private HTTPHeaderValidationPipeline headerValuePipeline;
+    private URLParameterValidationPipeline parameterValuePipeline;
     private SecurityEventCounter eventCounter;
-    private SecurityConfiguration config;
 
     @BeforeEach
     void setUp() {
-        config = SecurityConfiguration.defaults();
         eventCounter = new SecurityEventCounter();
-        pipeline = new URLPathValidationPipeline(config, eventCounter);
+        headerValuePipeline = new HTTPHeaderValidationPipeline(SecurityConfiguration.defaults(), eventCounter,
+                ValidationType.HEADER_VALUE);
+        parameterValuePipeline = new URLParameterValidationPipeline(
+                SecurityConfiguration.builder().allowLineBreaksInParameterValues(false).build(), eventCounter);
     }
 
     @ParameterizedTest
     @TypeGeneratorSource(value = HttpHeaderInjectionAttackGenerator.class, count = 150)
-    @DisplayName("All HTTP header injection attacks should be rejected")
-    void shouldRejectAllHttpHeaderInjectionAttacks(String headerAttackPattern) {
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pipeline.validate(headerAttackPattern),
-                "HTTP header injection attack should be rejected: " + sanitizeForDisplay(headerAttackPattern));
+    @DisplayName("Every generated raw header injection is rejected by the header-value pipeline")
+    void shouldRejectAllRawHeaderInjectionAttacks(String headerValue) {
+        assertRejected(headerValuePipeline, headerValue, RAW_LINE_BREAK_IN_HEADER_VALUE);
+    }
 
-        assertTrue(
-                exception.getFailureType() == UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED ||
-                        exception.getFailureType() == UrlSecurityFailureType.INVALID_CHARACTER ||
-                        exception.getFailureType() == UrlSecurityFailureType.CONTROL_CHARACTERS ||
-                        exception.getFailureType() == UrlSecurityFailureType.MALFORMED_INPUT,
-                "HTTP header injection should be detected with appropriate failure type, got: " + exception.getFailureType()
-        );
+    @ParameterizedTest
+    @TypeGeneratorSource(value = HttpHeaderInjectionAttackGenerator.ForParameterValue.class, count = 150)
+    @DisplayName("Every generated encoded header injection is rejected by the parameter pipeline")
+    void shouldRejectAllEncodedHeaderInjectionAttacks(String parameterValue) {
+        assertRejected(parameterValuePipeline, parameterValue, DECODED_LINE_BREAK_IN_PARAMETER_VALUE);
+    }
 
-        assertTrue(eventCounter.getCount(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED) +
-                eventCounter.getCount(UrlSecurityFailureType.INVALID_CHARACTER) +
-                eventCounter.getCount(UrlSecurityFailureType.CONTROL_CHARACTERS) +
-                eventCounter.getCount(UrlSecurityFailureType.MALFORMED_INPUT) > 0,
-                "Security event counter should track HTTP header injection detection");
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "normal\r\nX-Injected: malicious",
+            "test\r\nLocation: http://evil.com",
+            "data\nSet-Cookie: admin=true",
+            "data\rX-Injected: header",
+            "safe.com\r\nLocation: http://evil.com",
+            "admin\r\nAuthorization: Bearer hijacked-token",
+            "normal\r\nAccess-Control-Allow-Origin: *",
+            "test\r\nX-XSS-Protection: 0",
+            "normal\r\nCache-Control: public, max-age=31536000",
+            "test\r\nSet-Cookie: JSESSIONID=hijacked"
+    })
+    @DisplayName("Known raw header injections are rejected by the header-value pipeline")
+    void shouldRejectKnownRawHeaderInjectionAttacks(String headerValue) {
+        assertRejected(headerValuePipeline, headerValue, RAW_LINE_BREAK_IN_HEADER_VALUE);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "normal%0d%0aX-Injected:%20malicious",
+            "normal%0D%0AX-Injected:%20malicious",
+            "input%0AContent-Type:%20text/html",
+            "data%0a%0dX-Reversed:%20crlf",
+            "test%0d%20%0aX-Space:%20value",
+            "test%0d%0a%20X-Header:%20injected",
+            "input%0d%0a%09X-Tab:%20header",
+            "user%0d%0aSet-Cookie:%20role=administrator",
+            "safe.com%0d%0aLocation:%20http://evil.com",
+            "admin%0d%0aAuthorization:%20Bearer%20hijacked-token"
+    })
+    @DisplayName("Known percent-encoded header injections are rejected by the parameter pipeline")
+    void shouldRejectKnownEncodedHeaderInjectionAttacks(String parameterValue) {
+        assertRejected(parameterValuePipeline, parameterValue, DECODED_LINE_BREAK_IN_PARAMETER_VALUE);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "test\r\n\r\n<html><body><h1>Hacked</h1></body></html>",
+            "normal\r\n\r\n<script>document.location='http://evil.com'</script>",
+            "value\r\nContent-Length: 0\r\n\r\nHTTP/1.1 200 OK",
+            "input\n\nHTTP/1.1 302 Found\nLocation: javascript:alert('XSS')",
+            "test\r\nSet-Cookie: session=hijacked\r\n\r\n<html>Controlled</html>",
+            "normal\r\n\r\nHTTP/1.1 301 Moved\r\nLocation: http://evil.com"
+    })
+    @DisplayName("Raw response splitting is rejected by the header-value pipeline")
+    void shouldRejectRawResponseSplitting(String headerValue) {
+        assertRejected(headerValuePipeline, headerValue, RAW_LINE_BREAK_IN_HEADER_VALUE);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "test%0d%0a%0d%0a%3Chtml%3E%3Cbody%3E%3Ch1%3EHacked%3C/h1%3E%3C/body%3E%3C/html%3E",
+            "value%0d%0aContent-Length:%200%0d%0a%0d%0aHTTP/1.1%20200%20OK",
+            "test%0d%0aSet-Cookie:%20session=hijacked%0d%0a%0d%0a%3Chtml%3EControlled%3C/html%3E",
+            "normal%0d%0a%0d%0aHTTP/1.1%20301%20Moved%0d%0aLocation:%20http://evil.com"
+    })
+    @DisplayName("Percent-encoded response splitting is rejected by the parameter pipeline")
+    void shouldRejectEncodedResponseSplitting(String parameterValue) {
+        assertRejected(parameterValuePipeline, parameterValue, DECODED_LINE_BREAK_IN_PARAMETER_VALUE);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "test\r\nX-First: value1\r\nX-Second: value2\r\nX-Third: value3",
+            "normal\r\nLocation: http://evil.com\r\nSet-Cookie: admin=true\r\nX-Injected: success",
+            "input\nContent-Type: text/html\nCache-Control: no-cache\nX-Custom: injected",
+            "test\r\nAuthorization: Bearer token\r\nX-Role: admin",
+            "multi\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Credentials: true"
+    })
+    @DisplayName("Raw multi-line header injections are rejected by the header-value pipeline")
+    void shouldRejectRawMultiLineHeaderInjections(String headerValue) {
+        assertRejected(headerValuePipeline, headerValue, RAW_LINE_BREAK_IN_HEADER_VALUE);
     }
 
     @Test
-    @DisplayName("Known dangerous HTTP header injection patterns should be rejected")
-    void shouldRejectKnownHttpHeaderInjectionAttacks() {
-        String[] knownAttacks = {
-                "http://example.com/redirect?url=normal%0d%0aX-Injected: malicious",
-                "https://site.org/login?redirect=test\r\nLocation: http://evil.com",
-                "http://app.com/header?value=data\nSet-Cookie: admin=true",
-                "https://api.com/response?param=input%0AContent-Type: text/html",
-                "http://test.com/cookie?name=user%0d%0aSet-Cookie: role=administrator",
-                "https://secure.com/redirect?url=safe.com%0d%0aLocation: http://evil.com",
-                "http://domain.com/page?content=test%0d%0a%0d%0a<html><script>alert('XSS')</script></html>",
-                "https://web.org/login?user=admin%0d%0aAuthorization: Bearer hijacked-token",
-                "http://site.com/api?origin=normal%0d%0aAccess-Control-Allow-Origin: *",
-                "https://app.org/header?security=test%0d%0aX-XSS-Protection: 0",
-                "http://example.org/multi?param=test%0d%0aX-First: value1%0d%0aX-Second: value2",
-                "https://test.com/encoded?value=test%250d%250aX-Injected: value",
-                "http://app.com/cache?param=normal%0d%0aCache-Control: public, max-age=31536000",
-                "https://site.org/session?user=test%0d%0aSet-Cookie: JSESSIONID=hijacked",
-                "http://domain.com/cors?data=input%0d%0aAccess-Control-Allow-Credentials: true"
-        };
-
-        for (String attack : knownAttacks) {
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(attack),
-                    "Known HTTP header injection attack should be rejected: " + sanitizeForDisplay(attack));
-
-            assertTrue(
-                    exception.getFailureType() == UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED ||
-                            exception.getFailureType() == UrlSecurityFailureType.INVALID_CHARACTER ||
-                            exception.getFailureType() == UrlSecurityFailureType.CONTROL_CHARACTERS ||
-                            exception.getFailureType() == UrlSecurityFailureType.MALFORMED_INPUT,
-                    "HTTP header injection should be properly categorized for: " + sanitizeForDisplay(attack)
-            );
-        }
+    @DisplayName("A double-encoded CRLF is rejected by the parameter pipeline as double encoding")
+    void shouldRejectDoubleEncodedLineBreak() {
+        assertRejected(parameterValuePipeline, "test%250d%250aX-Injected:%20value",
+                UrlSecurityFailureType.DOUBLE_ENCODING);
     }
 
     @Test
-    @DisplayName("HTTP header injection detection should handle CRLF edge cases")
-    void shouldHandleCrlfEdgeCasesInHttpHeaderInjection() {
-        String[] crlfEdgeCases = {
-                "http://example.com/test?param=normal%0D%0AX-Injected: malicious",    // Uppercase hex
-                "https://site.org/page?value=test%0d%0a%20X-Header: injected",        // Space after CRLF
-                "http://app.com/api?data=input%0d%0a%09X-Tab: header",                // Tab after CRLF
-                "https://secure.com/redirect?url=test%0d%20%0aX-Space: value",        // Space in CRLF
-                "http://domain.com/header?param=data%0a%0dX-Reversed: crlf",          // Reversed CRLF
-                "https://test.org/login?user=admin%0d%0aLocation: http://evil.com",   // URL encoded CRLF
-                "http://site.com/cookie?name=test%0d%0aSet-Cookie: admin=true", // Standard CRLF
-                "https://app.org/page?content=input%c0%aaX-Overlong: utf8",           // Overlong UTF-8
-                "http://web.com/api?param=test%e5%98%8a%e5%98%8dX-Unicode: header",   // Unicode variants
-                "https://domain.org/header?value=data%85X-NEL: nextline"           // Unicode NEL encoded
-        };
-
-        for (String edgeCase : crlfEdgeCases) {
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(edgeCase),
-                    "CRLF edge case should be detected: " + sanitizeForDisplay(edgeCase));
-
-            assertNotNull(exception.getFailureType(),
-                    "Edge case should have proper failure type classification");
-        }
+    @DisplayName("An overlong UTF-8 line feed is rejected by the parameter pipeline as invalid encoding")
+    void shouldRejectOverlongEncodedLineFeed() {
+        assertRejected(parameterValuePipeline, "normal%c0%8aLocation:%20http://evil.com",
+                UrlSecurityFailureType.INVALID_ENCODING);
     }
 
     @Test
-    @DisplayName("Should validate HTTP response splitting attacks are blocked")
-    void shouldValidateHttpResponseSplittingBlocking() {
-        String[] responseSplittingAttacks = {
-                "http://example.com/page?param=test%0d%0a%0d%0a<html><body><h1>Hacked</h1></body></html>",
-                "https://site.org/redirect?url=normal\r\n\r\n<script>document.location='http://evil.com'</script>",
-                "http://app.com/response?data=value%0d%0aContent-Length: 0%0d%0a%0d%0aHTTP/1.1 200 OK",
-                "https://secure.com/api?param=input\n\nHTTP/1.1 302 Found\nLocation: javascript:alert('XSS')",
-                "http://domain.com/page?content=data%0d%0a%0d%0a<html><script>document.cookie='admin=true'</script>",
-                "https://test.org/header?value=input\\r\\n\\r\\n<iframe src='http://attacker.com'></iframe>",
-                "http://site.com/cookie?name=test%0d%0aSet-Cookie: session=hijacked%0d%0a%0d%0a<html>Controlled</html>",
-                "https://app.org/response?param=normal%0d%0a%0d%0aHTTP/1.1 301 Moved%0d%0aLocation: http://evil.com"
-        };
-
-        for (String attack : responseSplittingAttacks) {
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(attack),
-                    "HTTP response splitting attack should be blocked: " + sanitizeForDisplay(attack));
-
-            assertTrue(
-                    exception.getFailureType() == UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED ||
-                            exception.getFailureType() == UrlSecurityFailureType.INVALID_CHARACTER ||
-                            exception.getFailureType() == UrlSecurityFailureType.CONTROL_CHARACTERS ||
-                            exception.getFailureType() == UrlSecurityFailureType.MALFORMED_INPUT,
-                    "Response splitting should be properly classified as dangerous"
-            );
-        }
+    @DisplayName("A lone NEL byte is rejected by the parameter pipeline as invalid encoding")
+    void shouldRejectLoneNextLineByte() {
+        assertRejected(parameterValuePipeline, "data%85X-NEL:%20nextline", UrlSecurityFailureType.INVALID_ENCODING);
     }
 
     @Test
-    @DisplayName("Should handle cookie and session header injection attacks")
-    void shouldHandleCookieSessionHeaderInjectionAttacks() {
-        String[] cookieSessionAttacks = {
-                "http://example.com/login?name=normal%0d%0aSet-Cookie: admin=true; Path=/",
-                "https://site.org/auth?user=test\r\nSet-Cookie: session=ABC123; HttpOnly; Secure",
-                "http://app.com/cookie?value=data\nSet-Cookie: role=administrator",
-                "https://secure.com/session?param=input%0ASet-Cookie: auth=bypassed; Domain=.evil.com",
-                "http://domain.com/login?user=admin%0d%0aSet-Cookie: JSESSIONID=hijacked",
-                "https://test.org/auth?session=test\r\nSet-Cookie: PHPSESSID=attacker-controlled",
-                "http://site.com/cookie?name=user%0d%0aSet-Cookie: csrf_token=disabled",
-                "https://app.org/session?value=normal\nSet-Cookie: login_state=authenticated"
-        };
-
-        for (String attack : cookieSessionAttacks) {
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(attack),
-                    "Cookie/session header injection should be detected: " + sanitizeForDisplay(attack));
-
-            assertNotNull(exception.getFailureType(),
-                    "Cookie attack should be properly classified");
-        }
+    @DisplayName("A UTF-8 encoded NEL is rejected by the parameter pipeline as a control character")
+    void shouldRejectEncodedNextLineCharacter() {
+        assertRejected(parameterValuePipeline, "data%c2%85X-NEL:%20nextline",
+                UrlSecurityFailureType.CONTROL_CHARACTERS);
     }
 
     @Test
-    @DisplayName("Should properly track HTTP header injection security events")
-    void shouldTrackHttpHeaderInjectionEvents() {
-        long initialCount = eventCounter.getCount(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED) +
-                eventCounter.getCount(UrlSecurityFailureType.INVALID_CHARACTER) +
-                eventCounter.getCount(UrlSecurityFailureType.CONTROL_CHARACTERS) +
-                eventCounter.getCount(UrlSecurityFailureType.MALFORMED_INPUT);
-
-        String testAttack = "http://example.com/test?param=normal%0d%0aX-Injected: malicious";
-
-        assertThrows(UrlSecurityException.class,
-                () -> pipeline.validate(testAttack));
-
-        long finalCount = eventCounter.getCount(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED) +
-                eventCounter.getCount(UrlSecurityFailureType.INVALID_CHARACTER) +
-                eventCounter.getCount(UrlSecurityFailureType.CONTROL_CHARACTERS) +
-                eventCounter.getCount(UrlSecurityFailureType.MALFORMED_INPUT);
-
-        assertTrue(finalCount > initialCount,
-                "HTTP header injection detection should increment security event counter");
+    @DisplayName("An encoded byte-order mark is rejected by the parameter pipeline as an invalid character")
+    void shouldRejectEncodedByteOrderMark() {
+        assertRejected(parameterValuePipeline, "input%ef%bb%bfX-BOM:%20header",
+                UrlSecurityFailureType.INVALID_CHARACTER);
     }
 
     @Test
-    @DisplayName("Should maintain consistent detection across similar header patterns")
-    void shouldConsistentlyDetectSimilarHeaderPatterns() {
-        String[] similarPatterns = {
-                "http://example.com/test?param=data%0d%0aX-Injected: header",
-                "http://example.com/test?param=data\r\nX-Injected: header",
-                "http://example.com/test?param=data\nX-Injected: header",
-                "http://example.com/test?param=data%0AX-Injected: header",
-                "http://example.com/test?param=data\\r\\nX-Injected: header"
-        };
-
-        int detectionCount = 0;
-        for (String pattern : similarPatterns) {
-            try {
-                pipeline.validate(pattern);
-            } catch (UrlSecurityException e) {
-                detectionCount++;
-                assertTrue(
-                        e.getFailureType() == UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED ||
-                                e.getFailureType() == UrlSecurityFailureType.INVALID_CHARACTER ||
-                                e.getFailureType() == UrlSecurityFailureType.CONTROL_CHARACTERS ||
-                                e.getFailureType() == UrlSecurityFailureType.MALFORMED_INPUT,
-                        "Similar pattern should have consistent detection: " + pattern
-                );
-            }
-        }
-
-        assertEquals(similarPatterns.length, detectionCount,
-                "All similar HTTP header injection patterns should be consistently detected");
+    @DisplayName("A UTF-16 spelled CRLF is rejected by the parameter pipeline for its encoded null byte")
+    void shouldRejectUtf16SpelledLineBreak() {
+        assertRejected(parameterValuePipeline, "encoded%0d%00%0a%00X-Wide:%20value",
+                UrlSecurityFailureType.NULL_BYTE_INJECTION);
     }
 
     @Test
-    @DisplayName("Should detect security and CORS header manipulation attacks")
-    void shouldDetectSecurityCorsHeaderManipulation() {
-        String[] securityCorsAttacks = {
-                "http://example.com/api?param=test%0d%0aStrict-Transport-Security: max-age=0",
-                "https://site.org/cors?origin=normal\r\nAccess-Control-Allow-Origin: *",
-                "http://app.com/security?value=data\nX-Content-Type-Options: ",
-                "https://secure.com/header?param=input%0AX-Frame-Options: ALLOWALL",
-                "http://domain.com/csp?content=test%0d%0aContent-Security-Policy: default-src *",
-                "https://test.org/xss?param=data\r\nX-XSS-Protection: 0",
-                "http://site.com/cors?origin=input%0d%0aAccess-Control-Allow-Credentials: true",
-                "https://app.org/security?value=normal\nReferrer-Policy: no-referrer-when-downgrade"
-        };
+    @DisplayName("A literal backslash escape is not a line break: the header-value pipeline accepts it unchanged")
+    void shouldAcceptLiteralBackslashEscapeInHeaderValue() {
+        String headerValue = "data\\r\\nX-Injected: header";
 
-        for (String attack : securityCorsAttacks) {
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(attack),
-                    "Security/CORS header manipulation should be detected: " + sanitizeForDisplay(attack));
+        Optional<String> validated = assertDoesNotThrow(() -> headerValuePipeline.validate(headerValue));
 
-            assertTrue(
-                    exception.getFailureType() == UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED ||
-                            exception.getFailureType() == UrlSecurityFailureType.INVALID_CHARACTER ||
-                            exception.getFailureType() == UrlSecurityFailureType.CONTROL_CHARACTERS ||
-                            exception.getFailureType() == UrlSecurityFailureType.MALFORMED_INPUT,
-                    "Security header manipulation should be properly classified"
-            );
-        }
+        assertEquals(Optional.of(headerValue), validated,
+                "Backslash-r backslash-n is four visible characters and no line break");
+        assertEquals(0, eventCounter.getTotalCount(), "An accepted value records no security event");
     }
 
     @Test
-    @DisplayName("Should handle multi-line and complex header injection attacks")
-    void shouldHandleMultiLineComplexHeaderInjections() {
-        String[] complexAttacks = {
-                "http://example.com/multi?param=test%0d%0aX-First: value1%0d%0aX-Second: value2%0d%0aX-Third: value3",
-                "https://site.org/complex?data=normal\r\nLocation: http://evil.com\r\nSet-Cookie: admin=true\r\nX-Injected: success",
-                "http://app.com/headers?value=input\nContent-Type: text/html\nCache-Control: no-cache\nX-Custom: injected",
-                "https://secure.com/multi?param=data%0ASet-Cookie: session=hijacked%0ALocation: javascript:alert('XSS')",
-                "http://domain.com/complex?input=test%0d%0aAuthorization: Bearer token%0d%0aX-Role: admin",
-                "https://test.org/headers?value=normal%0d%0aX-Frame-Options: DENY%0d%0aContent-Security-Policy: none",
-                "http://site.com/cors?param=multi%0d%0aAccess-Control-Allow-Origin: *%0d%0aAccess-Control-Allow-Credentials: true",
-                "https://app.org/injection?data=complex%0d%0aCache-Control: no-store%0d%0aExpires: Thu, 01 Jan 1970 00:00:00 GMT"
-        };
-
-        for (String attack : complexAttacks) {
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(attack),
-                    "Complex multi-line header injection should be detected: " + sanitizeForDisplay(attack));
-
-            assertNotNull(exception.getFailureType(),
-                    "Complex attack should be properly classified");
-        }
+    @DisplayName("A literal backslash escape is rejected by the parameter pipeline for the backslash itself")
+    void shouldRejectLiteralBackslashEscapeInParameterValue() {
+        assertRejected(parameterValuePipeline, "data\\r\\nX-Injected:header",
+                UrlSecurityFailureType.INVALID_CHARACTER);
     }
 
-    private String sanitizeForDisplay(String input) {
-        if (input == null) return "null";
-        return input.length() > 100 ?
-                input.substring(0, 100) + "..." : input;
+    private void assertRejected(HttpSecurityValidator pipeline, String attack, UrlSecurityFailureType expected) {
+        var exception = assertThrows(UrlSecurityException.class, () -> pipeline.validate(attack),
+                () -> "Header injection attack should be rejected: " + attack);
+
+        assertEquals(expected, exception.getFailureType(), () -> "Unexpected verdict for: " + attack);
+        assertEquals(attack, exception.getOriginalInput(), "Original input should be preserved in exception");
+        assertEquals(1, eventCounter.getCount(expected), () -> "Exactly one " + expected + " event should be recorded");
     }
 }

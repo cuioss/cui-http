@@ -16,14 +16,21 @@
 package de.cuioss.http.security.generators.injection;
 
 import de.cuioss.http.security.config.SecurityConfiguration;
+import de.cuioss.http.security.core.ValidationType;
+import de.cuioss.http.security.generators.header.HttpHeaderInjectionAttackGenerator.Surface;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
-import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
+import de.cuioss.http.security.pipeline.HTTPHeaderValidationPipeline;
+import de.cuioss.http.security.pipeline.URLParameterValidationPipeline;
+import de.cuioss.http.security.validation.CharacterValidationConstants;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
+import de.cuioss.test.generator.junit.GeneratorSeed;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -35,10 +42,12 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Contract test for {@link HttpRequestSmugglingAttackGenerator}.
  *
- * <p>The defining property of this generator is that every emitted value is an absolute HTTP URL
- * whose query smuggles a second request across an encoded CRLF, and is therefore rejected by the
- * URL path validation pipeline. The aggregate test asserts that all fifteen documented smuggling
- * families are reachable.</p>
+ * <p>The defining property of this generator is that every emitted value is the content of one
+ * HTTP component that smuggles a second request across a line break: a header-shaped value
+ * carries the line break raw and is rejected by the header-value pipeline, a query-shaped value
+ * carries it percent-encoded and is rejected by the parameter pipeline once the line-break
+ * carve-out for parameter values is closed. The aggregate test asserts that all fifteen
+ * documented smuggling families are reachable.</p>
  *
  * <p>Family attribution is first-match-wins over the ordered classifier below, because several
  * families legitimately share a header: the header-manipulation family, for instance, emits one
@@ -46,21 +55,23 @@ import static org.junit.jupiter.api.Assertions.*;
  * first. Every family still fills from the patterns that are unambiguously its own.</p>
  */
 @EnableGeneratorController
+@GeneratorSeed(4711L)
 @DisplayName("HttpRequestSmugglingAttackGenerator Contract Tests")
 class HttpRequestSmugglingAttackGeneratorTest {
 
     private static final int AGGREGATE_DRAWS = 600;
+    private static final String RAW_CRLF = "\r\n";
     private static final String ENCODED_CRLF = "%0d%0a";
 
     private static final Pattern RESPONSE_STATUS_LINE = Pattern.compile("HTTP/1\\.1 \\d{3}");
     private static final Pattern DUPLICATE_TRANSFER_ENCODING =
-            Pattern.compile("Transfer-[Ee]ncoding:.*?%0d%0aTransfer-[Ee]ncoding:");
+            Pattern.compile("Transfer-[Ee]ncoding:.*?\\r\\nTransfer-[Ee]ncoding:");
     private static final Pattern DUPLICATE_CONTENT_LENGTH =
-            Pattern.compile("Content-Length: \\d+%0d%0aContent-Length: \\d+");
+            Pattern.compile("Content-Length: \\d+\\r\\nContent-Length: \\d+");
     private static final Pattern CONTENT_LENGTH_THEN_TRANSFER_ENCODING =
-            Pattern.compile("Content-Length: \\d+%0d%0aTransfer-Encoding: chunked");
+            Pattern.compile("Content-Length: \\d+\\r\\nTransfer-Encoding: chunked");
     private static final Pattern TRANSFER_ENCODING_THEN_CONTENT_LENGTH =
-            Pattern.compile("Transfer-Encoding: chunked%0d%0aContent-Length: \\d+");
+            Pattern.compile("Transfer-Encoding: chunked\\r\\nContent-Length: \\d+");
 
     private static final List<String> HTTP2_MARKERS = List.of("HTTP2-Settings", "PRI * HTTP/2.0");
     private static final List<String> WEBSOCKET_MARKERS = List.of("Upgrade: websocket", "Sec-WebSocket");
@@ -76,29 +87,62 @@ class HttpRequestSmugglingAttackGeneratorTest {
     private static final List<String> AUTH_BYPASS_MARKERS = List.of(
             "Authorization: Bearer hijacked", "X-Forwarded-User", "X-Remote-User",
             "Cookie: session=admin-session", "X-Forwarded-For: 127.0.0.1", "X-User-Role",
-            "X-Original-URL: /admin%0d%0a");
+            "X-Original-URL: /admin\r\n");
     private static final List<String> HEADER_MANIPULATION_MARKERS = List.of(
             "X-Forwarded-Proto", "Host: evil.com", "X-Forwarded-Host", "X-Original-IP",
             "Referer: http://admin.internal", "User-Agent: AdminBot");
 
-    private static final Set<String> DOCUMENTED_FAMILIES = Set.of(
+    private static final Set<String> HEADER_SHAPED_FAMILIES = Set.of(
             "cl.te", "te.cl", "te.te", "cl.cl", "http2-downgrade", "pipeline-poisoning",
-            "cache-deception", "auth-bypass", "header-manipulation", "method-override",
-            "url-rewriting", "request-hijacking", "response-queue-poisoning",
-            "websocket-upgrade", "chunked-bypass");
+            "cache-deception", "websocket-upgrade", "chunked-bypass");
+
+    private static final Set<String> QUERY_SHAPED_FAMILIES = Set.of(
+            "auth-bypass", "header-manipulation", "method-override", "url-rewriting",
+            "request-hijacking", "response-queue-poisoning");
+
+    @ParameterizedTest
+    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.HeaderShaped.class, count = 100)
+    @DisplayName("Every header-shaped value carries a raw CRLF and is rejected by the header-value pipeline")
+    void shouldGenerateHeaderShapedSmugglingValue(String generatedValue) {
+        assertTrue(generatedValue.contains(RAW_CRLF),
+                () -> "Header-shaped smuggling payloads carry a raw CRLF. Value: <" + generatedValue + ">");
+        assertEquals(Surface.HEADER_VALUE, HttpRequestSmugglingAttackGenerator.surfaceOf(generatedValue),
+                "A value carrying a raw line break targets the header-value surface");
+        assertTrue(HEADER_SHAPED_FAMILIES.contains(classify(generatedValue)),
+                () -> "HeaderShaped must emit header-shaped families only. Value: <" + generatedValue + ">");
+
+        assertPipelineRejects(
+                new HTTPHeaderValidationPipeline(SecurityConfiguration.defaults(), new SecurityEventCounter(),
+                        ValidationType.HEADER_VALUE),
+                generatedValue);
+    }
+
+    @ParameterizedTest
+    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.QueryShaped.class, count = 100)
+    @DisplayName("Every query-shaped value carries an encoded CRLF, only query characters, and is rejected by the parameter pipeline")
+    void shouldGenerateQueryShapedSmugglingValue(String generatedValue) {
+        assertTrue(generatedValue.contains(ENCODED_CRLF),
+                () -> "Query-shaped smuggling payloads carry an encoded CRLF. Value: <" + generatedValue + ">");
+        assertEquals(Surface.PARAMETER_VALUE, HttpRequestSmugglingAttackGenerator.surfaceOf(generatedValue),
+                "A value without a raw line break targets the parameter-value surface");
+        assertTrue(generatedValue.chars().allMatch(
+                        character -> character == '%' || CharacterValidationConstants.RFC3986_QUERY_CHARS.test(character)),
+                () -> "Query-shaped payloads consist of query characters and percent-escapes only. Value: <"
+                        + generatedValue + ">");
+        assertTrue(QUERY_SHAPED_FAMILIES.contains(classify(generatedValue)),
+                () -> "QueryShaped must emit query-shaped families only. Value: <" + generatedValue + ">");
+
+        assertPipelineRejects(
+                new URLParameterValidationPipeline(lineBreakRejectingConfiguration(), new SecurityEventCounter()),
+                generatedValue);
+    }
 
     @ParameterizedTest
     @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.class, count = 100)
-    @DisplayName("Every generated value is an absolute URL smuggling a request across an encoded CRLF")
-    void shouldGenerateSmugglingUrl(String generatedValue) {
-        assertTrue(generatedValue.startsWith("http://") || generatedValue.startsWith("https://"),
-                () -> "Smuggling payloads are absolute HTTP URLs. Value: <" + generatedValue + ">");
-        assertTrue(generatedValue.contains(ENCODED_CRLF),
-                () -> "Smuggling payloads carry an encoded CRLF. Value: <" + generatedValue + ">");
-
-        assertPipelineRejects(
-                new URLPathValidationPipeline(SecurityConfiguration.defaults(), new SecurityEventCounter()),
-                generatedValue);
+    @DisplayName("No generated value is an absolute URL")
+    void shouldGenerateComponentShapedValue(String generatedValue) {
+        assertFalse(generatedValue.startsWith("http://") || generatedValue.startsWith("https://"), // NOSONAR - test URL patterns
+                () -> "Smuggling payloads are component values, not absolute URLs. Value: <" + generatedValue + ">");
     }
 
     @Test
@@ -111,7 +155,9 @@ class HttpRequestSmugglingAttackGeneratorTest {
             families.add(classify(generator.next()));
         }
 
-        assertEquals(DOCUMENTED_FAMILIES, families,
+        Set<String> documentedFamilies = new HashSet<>(HEADER_SHAPED_FAMILIES);
+        documentedFamilies.addAll(QUERY_SHAPED_FAMILIES);
+        assertEquals(documentedFamilies, families,
                 "Every documented smuggling family must be reachable within " + AGGREGATE_DRAWS + " draws");
     }
 
@@ -122,7 +168,18 @@ class HttpRequestSmugglingAttackGeneratorTest {
                 "Generator should return String.class");
     }
 
-    private static String classify(String value) {
+    private static SecurityConfiguration lineBreakRejectingConfiguration() {
+        return SecurityConfiguration.builder().allowLineBreaksInParameterValues(false).build();
+    }
+
+    /**
+     * Attributes a generated value to its smuggling family. A query-shaped value is decoded
+     * first, so both shapes are classified on the same raw header block.
+     */
+    private static String classify(String generatedValue) {
+        String value = HttpRequestSmugglingAttackGenerator.surfaceOf(generatedValue) == Surface.PARAMETER_VALUE
+                ? URLDecoder.decode(generatedValue, StandardCharsets.UTF_8)
+                : generatedValue;
         if (containsAny(value, HTTP2_MARKERS)) {
             return "http2-downgrade";
         }

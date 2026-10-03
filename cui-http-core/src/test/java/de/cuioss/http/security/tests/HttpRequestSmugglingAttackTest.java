@@ -16,11 +16,15 @@
 package de.cuioss.http.security.tests;
 
 import de.cuioss.http.security.config.SecurityConfiguration;
+import de.cuioss.http.security.core.HttpSecurityValidator;
 import de.cuioss.http.security.core.UrlSecurityFailureType;
+import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
+import de.cuioss.http.security.generators.header.HttpHeaderInjectionAttackGenerator.Surface;
 import de.cuioss.http.security.generators.injection.HttpRequestSmugglingAttackGenerator;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
-import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
+import de.cuioss.http.security.pipeline.HTTPHeaderValidationPipeline;
+import de.cuioss.http.security.pipeline.URLParameterValidationPipeline;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.AfterAll;
@@ -29,6 +33,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -37,29 +42,22 @@ import static org.junit.jupiter.api.Assertions.*;
  * T16: Test HTTP request smuggling patterns
  *
  * <p>
- * This test class implements Task T16 from the HTTP security validation plan,
- * focusing on testing HTTP request smuggling attacks that attempt to bypass
- * security controls through HTTP protocol manipulation using specialized
- * generators and comprehensive attack vectors.
+ * HTTP request smuggling exploits a disagreement between a front-end and a back-end server about
+ * where one request ends. Every payload reaches the application as the content of one HTTP
+ * component, and this class validates it on the surface that receives it:
  * </p>
- *
- * <h3>Test Coverage</h3>
  * <ul>
- *   <li>Content-Length/Transfer-Encoding (CL.TE) smuggling attacks</li>
- *   <li>Transfer-Encoding/Content-Length (TE.CL) smuggling attacks</li>
- *   <li>Transfer-Encoding/Transfer-Encoding (TE.TE) smuggling attacks</li>
- *   <li>HTTP pipeline poisoning attacks</li>
- *   <li>Cache deception through request manipulation</li>
- *   <li>HTTP response queue poisoning</li>
- *   <li>Authentication bypass through smuggling</li>
- *   <li>Backend server confusion attacks</li>
- *   <li>Content-Length manipulation attacks</li>
- *   <li>Transfer-Encoding obfuscation patterns</li>
- *   <li>HTTP/1.1 vs HTTP/2 downgrade smuggling</li>
- *   <li>Chunk encoding manipulation</li>
- *   <li>Double Content-Length header attacks</li>
- *   <li>Mixed HTTP method smuggling</li>
- *   <li>Header parsing differential attacks</li>
+ *   <li><strong>Header-shaped families</strong> (CL.TE, TE.CL, TE.TE, CL.CL, HTTP/2 downgrade,
+ *       pipeline poisoning, cache deception, WebSocket upgrade, chunked-encoding bypass) inject a
+ *       header block behind a header value across raw line breaks. They are validated by
+ *       {@link HTTPHeaderValidationPipeline} for {@link ValidationType#HEADER_VALUE}, whose
+ *       character stage rejects a raw CR or LF as {@link UrlSecurityFailureType#INVALID_CHARACTER}.</li>
+ *   <li><strong>Query-shaped families</strong> (authentication bypass, header manipulation, method
+ *       override, URL rewriting, request hijacking, response queue poisoning) carry the line
+ *       breaks percent-encoded in a parameter value. They are validated by
+ *       {@link URLParameterValidationPipeline} configured to reject line breaks in parameter
+ *       values, whose decoding stage rejects the decoded CR as
+ *       {@link UrlSecurityFailureType#CONTROL_CHARACTERS}.</li>
  * </ul>
  *
  * <h3>Security Standards</h3>
@@ -81,14 +79,22 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("T16: HTTP Request Smuggling Attack Tests")
 class HttpRequestSmugglingAttackTest {
 
+    /** The verdict of the header-value pipeline for a raw CR or LF. */
+    private static final UrlSecurityFailureType RAW_LINE_BREAK_IN_HEADER_VALUE =
+            UrlSecurityFailureType.INVALID_CHARACTER;
+
+    /** The verdict of the line-break-rejecting parameter pipeline for a decoded CR or LF. */
+    private static final UrlSecurityFailureType DECODED_LINE_BREAK_IN_PARAMETER_VALUE =
+            UrlSecurityFailureType.CONTROL_CHARACTERS;
+
     /**
      * Sample counters for the six guarded parameterized tests. Each of those tests opens with an
      * early-return filter that keeps only the attack shape it is about, because the shared
-     * {@link HttpRequestSmugglingAttackGenerator} emits every smuggling family. That filter is only
-     * sound while it still admits samples: if the generator ever stops producing the filtered
-     * shape, the guard would swallow every sample and the test would pass while asserting nothing.
-     * The {@link #shouldHaveAdmittedFilteredSamples()} check turns that silent degradation into a
-     * failure.
+     * {@link HttpRequestSmugglingAttackGenerator.HeaderShaped} generator emits every header-shaped
+     * smuggling family. That filter is only sound while it still admits samples: if the generator
+     * ever stops producing the filtered shape, the guard would swallow every sample and the test
+     * would pass while asserting nothing. The {@link #shouldHaveAdmittedFilteredSamples()} check
+     * turns that silent degradation into a failure.
      */
     private static final AtomicInteger CL_TE_SAMPLES = new AtomicInteger();
     private static final AtomicInteger CL_TE_ADMITTED = new AtomicInteger();
@@ -110,16 +116,16 @@ class HttpRequestSmugglingAttackTest {
      * (e.g. a CL.TE payload, which also contains both header names) cannot be admitted by a
      * differently-named guard.
      */
-    private static final Pattern CL_THEN_TE = Pattern.compile("Content-Length: \\d+%0d%0aTransfer-Encoding: chunked");
-    private static final Pattern TE_THEN_CL = Pattern.compile("Transfer-Encoding: chunked%0d%0aContent-Length: \\d+");
+    private static final Pattern CL_THEN_TE = Pattern.compile("Content-Length: \\d+\\r\\nTransfer-Encoding: chunked");
+    private static final Pattern TE_THEN_CL = Pattern.compile("Transfer-Encoding: chunked\\r\\nContent-Length: \\d+");
     private static final Pattern DOUBLE_TRANSFER_ENCODING =
-            Pattern.compile("(?i)transfer-encoding:.*?%0d%0atransfer-encoding:");
+            Pattern.compile("(?i)transfer-encoding:.*?\\r\\ntransfer-encoding:");
     private static final Pattern DOUBLE_CONTENT_LENGTH =
-            Pattern.compile("Content-Length: \\d+%0d%0aContent-Length: \\d+");
+            Pattern.compile("Content-Length: \\d+\\r\\nContent-Length: \\d+");
     private static final Pattern PIPELINE_CONNECTION_KEEPALIVE =
-            Pattern.compile("Connection: keep-alive%0d%0aContent-Length: \\d+");
+            Pattern.compile("Connection: keep-alive\\r\\nContent-Length: \\d+");
     private static final Pattern CACHE_HEADER_THEN_CONTENT_LENGTH =
-            Pattern.compile("(?:Cache-Control|Vary|Expires): .*?%0d%0aContent-Length: \\d+");
+            Pattern.compile("(?:Cache-Control|Vary|Expires): .*?\\r\\nContent-Length: \\d+");
 
     /**
      * CL.TE family: exactly the header order the front-end/back-end desync relies on -
@@ -176,9 +182,9 @@ class HttpRequestSmugglingAttackTest {
         return DOUBLE_CONTENT_LENGTH.matcher(attack).find() && !attack.contains("Transfer-Encoding:");
     }
 
-    private URLPathValidationPipeline pipeline;
+    private HTTPHeaderValidationPipeline headerValuePipeline;
+    private URLParameterValidationPipeline parameterValuePipeline;
     private SecurityEventCounter eventCounter;
-    private SecurityConfiguration config;
 
     @AfterAll
     static void shouldHaveAdmittedFilteredSamples() {
@@ -213,291 +219,106 @@ class HttpRequestSmugglingAttackTest {
 
     @BeforeEach
     void setUp() {
-        config = SecurityConfiguration.defaults();
         eventCounter = new SecurityEventCounter();
-        pipeline = new URLPathValidationPipeline(config, eventCounter);
+        headerValuePipeline = new HTTPHeaderValidationPipeline(SecurityConfiguration.defaults(), eventCounter,
+                ValidationType.HEADER_VALUE);
+        parameterValuePipeline = new URLParameterValidationPipeline(
+                SecurityConfiguration.builder().allowLineBreaksInParameterValues(false).build(), eventCounter);
     }
 
-    /**
-     * Test comprehensive HTTP request smuggling attack patterns.
-     *
-     * <p>
-     * Uses HttpRequestSmugglingAttackGenerator which provides 15 different types
-     * of request smuggling attacks including CL.TE, TE.CL, TE.TE, pipeline
-     * poisoning, cache deception, and other HTTP protocol manipulation attacks.
-     * </p>
-     *
-     * @param smugglingAttackPattern A request smuggling attack pattern
-     */
     @ParameterizedTest
-    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.class, count = 200)
-    @DisplayName("All HTTP request smuggling attacks should be rejected")
-    void shouldRejectAllHttpRequestSmugglingAttacks(String smugglingAttackPattern) {
-        // Given: A request smuggling attack pattern from the generator
-        long initialEventCount = eventCounter.getTotalCount();
-
-        // When: Attempting to validate the smuggling attack
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pipeline.validate(smugglingAttackPattern),
-                "Request smuggling attack should be rejected: " + smugglingAttackPattern);
-
-        // Then: The validation should fail with appropriate security event
-        assertNotNull(exception, "Exception should be thrown for request smuggling attack");
-        assertTrue(isSpecificRequestSmugglingFailure(exception.getFailureType()),
-                "Failure type should be specific request smuggling related: " + exception.getFailureType() +
-                        " for pattern: " + smugglingAttackPattern);
-
-        // And: Original malicious input should be preserved
-        assertEquals(smugglingAttackPattern, exception.getOriginalInput(),
-                "Original input should be preserved in exception");
-
-        // And: Security event should be recorded
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded for: " + smugglingAttackPattern);
+    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.HeaderShaped.class, count = 200)
+    @DisplayName("Every header-shaped smuggling attack is rejected for its raw line break")
+    void shouldRejectAllHeaderShapedSmugglingAttacks(String smugglingAttack) {
+        assertRejected(headerValuePipeline, smugglingAttack, RAW_LINE_BREAK_IN_HEADER_VALUE);
     }
 
-    /**
-     * Test specific CL.TE (Content-Length/Transfer-Encoding) smuggling attacks.
-     *
-     * <p>
-     * Tests attacks where the front-end server processes the Content-Length
-     * header while the back-end server processes the Transfer-Encoding header,
-     * creating desynchronization opportunities. Uses generator for dynamic patterns.
-     * </p>
-     */
     @ParameterizedTest
-    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.class, count = 200)
+    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.QueryShaped.class, count = 200)
+    @DisplayName("Every query-shaped smuggling attack is rejected for its decoded line break")
+    void shouldRejectAllQueryShapedSmugglingAttacks(String smugglingAttack) {
+        assertRejected(parameterValuePipeline, smugglingAttack, DECODED_LINE_BREAK_IN_PARAMETER_VALUE);
+    }
+
+    @ParameterizedTest
+    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.HeaderShaped.class, count = 200)
     @DisplayName("CL.TE smuggling attacks must be blocked")
     void shouldBlockClTeSmuggling(String clTeAttack) {
-        // Filter to test only CL.TE patterns: Content-Length immediately followed by Transfer-Encoding
-        CL_TE_SAMPLES.incrementAndGet();
-        if (!isClTeFamily(clTeAttack)) {
-            return; // Skip non-CL.TE-order patterns
-        }
-        CL_TE_ADMITTED.incrementAndGet();
-
-        long initialEventCount = eventCounter.getTotalCount();
-
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pipeline.validate(clTeAttack),
-                "CL.TE smuggling attack should be rejected: " + clTeAttack);
-
-        assertNotNull(exception);
-        assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
-                "CL.TE smuggling should trigger INVALID_CHARACTER detection for: " + clTeAttack);
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded for CL.TE attack");
+        assertHeaderShapedFamilyRejected(clTeAttack, HttpRequestSmugglingAttackTest::isClTeFamily,
+                CL_TE_SAMPLES, CL_TE_ADMITTED);
     }
 
-    /**
-     * Test specific TE.CL (Transfer-Encoding/Content-Length) smuggling attacks.
-     *
-     * <p>
-     * Tests attacks where the front-end server processes the Transfer-Encoding
-     * header while the back-end server processes the Content-Length header.
-     * Uses generator for dynamic patterns.
-     * </p>
-     */
     @ParameterizedTest
-    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.class, count = 200)
+    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.HeaderShaped.class, count = 200)
     @DisplayName("TE.CL smuggling attacks must be blocked")
     void shouldBlockTeClSmuggling(String teClAttack) {
-        // Filter to test only TE.CL patterns: Transfer-Encoding immediately followed by Content-Length
-        TE_CL_SAMPLES.incrementAndGet();
-        if (!isTeClFamily(teClAttack)) {
-            return; // Skip non-TE.CL-order patterns
-        }
-        TE_CL_ADMITTED.incrementAndGet();
-
-        long initialEventCount = eventCounter.getTotalCount();
-
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pipeline.validate(teClAttack),
-                "TE.CL smuggling attack should be rejected: " + teClAttack);
-
-        assertNotNull(exception);
-        assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
-                "TE.CL smuggling should trigger INVALID_CHARACTER detection for: " + teClAttack);
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded for TE.CL attack");
+        assertHeaderShapedFamilyRejected(teClAttack, HttpRequestSmugglingAttackTest::isTeClFamily,
+                TE_CL_SAMPLES, TE_CL_ADMITTED);
     }
 
-    /**
-     * Test specific TE.TE (Transfer-Encoding/Transfer-Encoding) smuggling attacks.
-     *
-     * <p>
-     * Tests attacks using Transfer-Encoding header obfuscation to create
-     * parsing differences between front-end and back-end servers.
-     * Uses generator for dynamic patterns.
-     * </p>
-     */
     @ParameterizedTest
-    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.class, count = 200)
+    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.HeaderShaped.class, count = 200)
     @DisplayName("TE.TE smuggling attacks must be blocked")
     void shouldBlockTeTeSmuggling(String teTeAttack) {
-        // Filter to test only TE.TE patterns: two Transfer-Encoding headers, no Content-Length
-        TE_TE_SAMPLES.incrementAndGet();
-        if (!isTeTeFamily(teTeAttack)) {
-            return; // Skip patterns without duplicated Transfer-Encoding headers
-        }
-        TE_TE_ADMITTED.incrementAndGet();
-
-        long initialEventCount = eventCounter.getTotalCount();
-
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pipeline.validate(teTeAttack),
-                "TE.TE smuggling attack should be rejected: " + teTeAttack);
-
-        assertNotNull(exception);
-        assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
-                "TE.TE smuggling should trigger INVALID_CHARACTER detection for: " + teTeAttack);
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded for TE.TE attack");
+        assertHeaderShapedFamilyRejected(teTeAttack, HttpRequestSmugglingAttackTest::isTeTeFamily,
+                TE_TE_SAMPLES, TE_TE_ADMITTED);
     }
 
-    /**
-     * Test HTTP pipeline poisoning attacks.
-     *
-     * <p>
-     * Tests attacks that attempt to poison HTTP connection pipelines
-     * to affect subsequent requests from other users. Uses generator for dynamic patterns.
-     * </p>
-     */
     @ParameterizedTest
-    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.class, count = 200)
+    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.HeaderShaped.class, count = 200)
     @DisplayName("HTTP pipeline poisoning attacks must be blocked")
     void shouldBlockPipelinePoisoning(String pipelinePoisoningAttack) {
-        // Filter to test only pipeline-poisoning patterns: Connection: keep-alive then Content-Length
-        PIPELINE_SAMPLES.incrementAndGet();
-        if (!isPipelinePoisoningFamily(pipelinePoisoningAttack)) {
-            return; // Skip patterns without the keep-alive pipeline signature
-        }
-        PIPELINE_ADMITTED.incrementAndGet();
-
-        long initialEventCount = eventCounter.getTotalCount();
-
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pipeline.validate(pipelinePoisoningAttack),
-                "Pipeline poisoning attack should be rejected: " + pipelinePoisoningAttack);
-
-        assertNotNull(exception);
-        assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
-                "Pipeline poisoning should trigger INVALID_CHARACTER detection for: " + pipelinePoisoningAttack);
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded for pipeline poisoning");
+        assertHeaderShapedFamilyRejected(pipelinePoisoningAttack,
+                HttpRequestSmugglingAttackTest::isPipelinePoisoningFamily, PIPELINE_SAMPLES, PIPELINE_ADMITTED);
     }
 
-    /**
-     * Test cache deception through request smuggling.
-     *
-     * <p>
-     * Tests attacks that use request smuggling to manipulate caching
-     * behavior and serve malicious content to other users. Uses generator for dynamic patterns.
-     * </p>
-     */
     @ParameterizedTest
-    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.class, count = 200)
+    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.HeaderShaped.class, count = 200)
     @DisplayName("Cache deception attacks must be blocked")
     void shouldBlockCacheDeception(String cacheDeceptionAttack) {
-        // Filter to test only cache-deception patterns: a cache header then Content-Length
-        CACHE_SAMPLES.incrementAndGet();
-        if (!isCacheDeceptionFamily(cacheDeceptionAttack)) {
-            return; // Skip patterns without the cache-header + Content-Length signature
-        }
-        CACHE_ADMITTED.incrementAndGet();
-
-        long initialEventCount = eventCounter.getTotalCount();
-
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pipeline.validate(cacheDeceptionAttack),
-                "Cache deception attack should be rejected: " + cacheDeceptionAttack);
-
-        assertNotNull(exception);
-        assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
-                "Cache deception should trigger INVALID_CHARACTER detection for: " + cacheDeceptionAttack);
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded for cache deception");
+        assertHeaderShapedFamilyRejected(cacheDeceptionAttack,
+                HttpRequestSmugglingAttackTest::isCacheDeceptionFamily, CACHE_SAMPLES, CACHE_ADMITTED);
     }
 
-    /**
-     * Test double Content-Length header attacks.
-     *
-     * <p>
-     * Tests attacks using multiple Content-Length headers to create
-     * parsing inconsistencies between servers. Uses generator for dynamic patterns.
-     * </p>
-     */
     @ParameterizedTest
-    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.class, count = 200)
+    @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.HeaderShaped.class, count = 200)
     @DisplayName("Double Content-Length header attacks must be blocked")
     void shouldBlockDoubleContentLength(String doubleContentLengthAttack) {
-        // Filter to test only CL.CL patterns: two adjacent Content-Length headers, no Transfer-Encoding
-        DOUBLE_CL_SAMPLES.incrementAndGet();
-        if (!isDoubleContentLengthFamily(doubleContentLengthAttack)) {
-            return; // Skip patterns without duplicated adjacent Content-Length headers
-        }
-        DOUBLE_CL_ADMITTED.incrementAndGet();
-
-        long initialEventCount = eventCounter.getTotalCount();
-
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pipeline.validate(doubleContentLengthAttack),
-                "Double Content-Length attack should be rejected: " + doubleContentLengthAttack);
-
-        assertNotNull(exception);
-        assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
-                "Double Content-Length should trigger INVALID_CHARACTER detection for: " + doubleContentLengthAttack);
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded for double Content-Length");
+        assertHeaderShapedFamilyRejected(doubleContentLengthAttack,
+                HttpRequestSmugglingAttackTest::isDoubleContentLengthFamily, DOUBLE_CL_SAMPLES, DOUBLE_CL_ADMITTED);
     }
 
-    /**
-     * Test comprehensive edge cases in request smuggling detection.
-     *
-     * <p>
-     * Tests various edge cases and corner conditions that might be
-     * exploited in request smuggling attacks. Uses generator for dynamic patterns.
-     * </p>
-     */
     @ParameterizedTest
     @TypeGeneratorSource(value = HttpRequestSmugglingAttackGenerator.class, count = 35)
-    @DisplayName("Request smuggling edge cases must be handled")
-    void shouldHandleRequestSmugglingEdgeCases(String edgeCaseAttack) {
-        // Test all generator patterns as potential edge cases
-        long initialEventCount = eventCounter.getTotalCount();
-
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pipeline.validate(edgeCaseAttack),
-                "Request smuggling edge case should be rejected: " + edgeCaseAttack);
-
-        assertNotNull(exception);
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded for edge case");
+    @DisplayName("Every smuggling family is rejected on the surface the generator shapes it for")
+    void shouldRejectEverySmugglingFamilyOnItsOwnSurface(String smugglingAttack) {
+        if (HttpRequestSmugglingAttackGenerator.surfaceOf(smugglingAttack) == Surface.HEADER_VALUE) {
+            assertRejected(headerValuePipeline, smugglingAttack, RAW_LINE_BREAK_IN_HEADER_VALUE);
+        } else {
+            assertRejected(parameterValuePipeline, smugglingAttack, DECODED_LINE_BREAK_IN_PARAMETER_VALUE);
+        }
     }
 
     /**
-     * Determines if a failure type is specifically appropriate for the given request smuggling attack pattern.
-     * Most HTTP request smuggling attacks use CRLF injection (%0d%0a) which should trigger CONTROL_CHARACTERS.
-     *
-     * @param failureType The failure type to check
-     * @return true if the failure type is specifically appropriate for the pattern
+     * Counts the sample, drops it unless it belongs to the family under test, and otherwise
+     * asserts the header-value verdict.
      */
-    private boolean isSpecificRequestSmugglingFailure(UrlSecurityFailureType failureType) {
-        // HTTP Request Smuggling patterns can trigger multiple specific failure types:
-        // - CRLF injection (%0d%0a, %0a) → CONTROL_CHARACTERS or INVALID_CHARACTER
-        // - Malformed chunk encoding → INVALID_ENCODING
-        // - HTTP protocol violations → PROTOCOL_VIOLATION
-        // - RFC violations → RFC_VIOLATION
-        // - General malformed input → MALFORMED_INPUT
-
-        // Accept these specific failure types as valid for request smuggling patterns
-        return failureType == UrlSecurityFailureType.CONTROL_CHARACTERS ||
-                failureType == UrlSecurityFailureType.INVALID_CHARACTER ||
-                failureType == UrlSecurityFailureType.PROTOCOL_VIOLATION ||
-                failureType == UrlSecurityFailureType.RFC_VIOLATION ||
-                failureType == UrlSecurityFailureType.INVALID_ENCODING ||
-                failureType == UrlSecurityFailureType.MALFORMED_INPUT ||
-                failureType == UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED;
+    private void assertHeaderShapedFamilyRejected(String attack, Predicate<String> family,
+            AtomicInteger samples, AtomicInteger admitted) {
+        samples.incrementAndGet();
+        if (!family.test(attack)) {
+            return;
+        }
+        admitted.incrementAndGet();
+        assertRejected(headerValuePipeline, attack, RAW_LINE_BREAK_IN_HEADER_VALUE);
     }
 
+    private void assertRejected(HttpSecurityValidator pipeline, String attack, UrlSecurityFailureType expected) {
+        var exception = assertThrows(UrlSecurityException.class, () -> pipeline.validate(attack),
+                () -> "Request smuggling attack should be rejected: " + attack);
+
+        assertEquals(expected, exception.getFailureType(), () -> "Unexpected verdict for: " + attack);
+        assertEquals(attack, exception.getOriginalInput(), "Original input should be preserved in exception");
+        assertEquals(1, eventCounter.getCount(expected), () -> "Exactly one " + expected + " event should be recorded");
+    }
 }
