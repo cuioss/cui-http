@@ -49,10 +49,18 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import java.io.File;
+import java.io.IOException;
+import java.lang.reflect.Modifier;
+import java.net.URISyntaxException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
@@ -91,16 +99,26 @@ import static org.junit.jupiter.api.Assertions.*;
  * verdict only for the families that are unambiguous; the round-trip test requires every
  * registration to make at least one claim, so none of them is left unchecked.</p>
  *
- * <p>The registry is the place a new generator class has to be added to;
- * {@link #shouldRegisterEveryGeneratorClassOnce()} pins its size.</p>
+ * <p>The registry is the place a new generator class has to be added to.
+ * {@link #shouldRegisterEveryGeneratorClassOnce()} derives the set of generator classes from the
+ * compiled test tree and requires the registry to hold exactly that set, so a generator nobody
+ * registered fails the test by name. A generator class is every concrete, named class under
+ * {@code de/cuioss/http} that implements {@link TypedGenerator} - nested member classes such as
+ * {@link HttpRequestSmugglingAttackGenerator.HeaderShaped} included, because each is a generator
+ * a test can instantiate on its own. Anonymous and local classes are not counted: they have no
+ * name a registry entry could refer to. The one generator class that does not implement
+ * {@link TypedGenerator} is added by name in {@link #LISTED_GENERATOR_CLASSES}.</p>
  */
 @EnableGeneratorController
 @GeneratorSeed(4711L)
 @DisplayName("All Generators Integration Tests")
 class AllGeneratorsIntegrationTest {
 
-    /** The number of generator classes in the module's test tree. */
-    private static final int GENERATOR_CLASS_COUNT = 33;
+    /** The package tree, relative to the compiled test-classes root, that is scanned for generators. */
+    private static final String SCANNED_PACKAGE_PATH = "de/cuioss/http";
+
+    /** Generator classes the type scan cannot find: they publish a fixed list instead of implementing TypedGenerator. */
+    private static final Set<Class<?>> LISTED_GENERATOR_CLASSES = Set.of(ForwardedHostGenerator.class);
 
     private static final int DRAWS = 400;
 
@@ -255,6 +273,13 @@ class AllGeneratorsIntegrationTest {
                                 "bare-line-feed", value -> value.contains("\n") && !value.contains("\r"),
                                 "bare-carriage-return", value -> value.contains("\r") && !value.contains("\n")),
                         always(Verdict.REJECTED), through(AllGeneratorsIntegrationTest::headerValuePipeline)),
+                strings(HttpHeaderInjectionAttackGenerator.ForParameterValue.class,
+                        HttpHeaderInjectionAttackGenerator.ForParameterValue::new, DRAWS,
+                        Map.of("encoded-crlf", value -> value.contains("%0d%0a"),
+                                "encoded-bare-line-feed", value -> value.contains("%0a") && !value.contains("%0d"),
+                                "encoded-bare-carriage-return", value -> value.contains("%0d") && !value.contains("%0a")),
+                        always(Verdict.REJECTED),
+                        through(AllGeneratorsIntegrationTest::lineBreakRejectingParameterPipeline)),
                 strings(InvalidHTTPHeaderNameGenerator.class, InvalidHTTPHeaderNameGenerator::new, DRAWS,
                         Map.of("crlf", value -> value.contains("\r\n"),
                                 "bare-line-feed", value -> value.contains("\n") && !value.contains("\r"),
@@ -276,6 +301,15 @@ class AllGeneratorsIntegrationTest {
                         always(Verdict.REJECTED),
                         value -> verdictOf(carriesRawLineBreak(value) ? headerValuePipeline()
                                 : lineBreakRejectingParameterPipeline(), value)),
+                strings(HttpRequestSmugglingAttackGenerator.HeaderShaped.class,
+                        HttpRequestSmugglingAttackGenerator.HeaderShaped::new, DRAWS,
+                        Map.of("header-shaped", AllGeneratorsIntegrationTest::carriesRawLineBreak),
+                        always(Verdict.REJECTED), through(AllGeneratorsIntegrationTest::headerValuePipeline)),
+                strings(HttpRequestSmugglingAttackGenerator.QueryShaped.class,
+                        HttpRequestSmugglingAttackGenerator.QueryShaped::new, DRAWS,
+                        Map.of("query-shaped", value -> !carriesRawLineBreak(value) && value.contains("%0d%0a")),
+                        always(Verdict.REJECTED),
+                        through(AllGeneratorsIntegrationTest::lineBreakRejectingParameterPipeline)),
                 strings(ProtocolHandlerAttackGenerator.class, ProtocolHandlerAttackGenerator::new, DRAWS,
                         Map.of("javascript", value -> value.startsWith("javascript:"),
                                 "vbscript", value -> value.startsWith("vbscript:"),
@@ -316,15 +350,15 @@ class AllGeneratorsIntegrationTest {
                                 "triple-encoded", value -> value.contains("%252e"),
                                 "encoded-separator", value -> value.contains("..%2F")),
                         always(Verdict.REJECTED), through(AllGeneratorsIntegrationTest::parameterPipeline)),
-                strings(URLLengthLimitAttackGenerator.class, URLLengthLimitAttackGenerator::new, DRAWS,
-                        Map.of("beyond-strict-only", value -> value.length() <= Surface.URL_PATH.defaultLimit(),
-                                "beyond-default", value -> value.length() > Surface.URL_PATH.defaultLimit()
-                                        && value.length() <= Surface.URL_PATH.lenientLimit(),
-                                "beyond-lenient", value -> value.length() > Surface.URL_PATH.lenientLimit()),
-                        always(Verdict.REJECTED),
-                        through(() -> new URLPathValidationPipeline(
-                                SecurityConfiguration.builder().maxPathLength(Surface.URL_PATH.strictLimit()).build(),
-                                new SecurityEventCounter()))),
+                overlong(URLLengthLimitAttackGenerator.class, URLLengthLimitAttackGenerator::new, Surface.URL_PATH),
+                overlong(URLLengthLimitAttackGenerator.ForParameterName.class,
+                        URLLengthLimitAttackGenerator.ForParameterName::new, Surface.PARAMETER_NAME),
+                overlong(URLLengthLimitAttackGenerator.ForParameterValue.class,
+                        URLLengthLimitAttackGenerator.ForParameterValue::new, Surface.PARAMETER_VALUE),
+                overlong(URLLengthLimitAttackGenerator.ForHeaderName.class,
+                        URLLengthLimitAttackGenerator.ForHeaderName::new, Surface.HEADER_NAME),
+                overlong(URLLengthLimitAttackGenerator.ForHeaderValue.class,
+                        URLLengthLimitAttackGenerator.ForHeaderValue::new, Surface.HEADER_VALUE),
                 strings(ValidURLGenerator.class, ValidURLGenerator::new, DRAWS, 20, Map.of(),
                         always(Verdict.ACCEPTED), through(AllGeneratorsIntegrationTest::pathPipeline)),
                 generated(ValidURLParameterGenerator.class, ValidURLParameterGenerator::new, URLParameter.class,
@@ -373,14 +407,66 @@ class AllGeneratorsIntegrationTest {
 
     @Test
     @DisplayName("Should register every generator class exactly once")
-    void shouldRegisterEveryGeneratorClassOnce() {
+    void shouldRegisterEveryGeneratorClassOnce() throws Exception {
         List<Class<?>> registered = registry().stream().<Class<?>>map(Registration::generatorClass).toList();
+        Set<String> expected = classNames(generatorClassesOfTheTestTree());
+        Set<String> actual = classNames(registered);
 
         assertAll("Registry",
-                () -> assertEquals(GENERATOR_CLASS_COUNT, registered.size(),
-                        "Every generator class of the module must be registered"),
+                () -> assertEquals(expected, actual,
+                        () -> "The registry must hold exactly the generator classes of the test tree. Missing: "
+                                + difference(expected, actual) + ", unexpected: " + difference(actual, expected)),
                 () -> assertEquals(registered.size(), new HashSet<>(registered).size(),
                         "No generator class may be registered twice"));
+    }
+
+    /**
+     * Walks the compiled test-classes root and returns every generator class found there, plus
+     * {@link #LISTED_GENERATOR_CLASSES}. Classes are loaded without being initialized.
+     */
+    private static Set<Class<?>> generatorClassesOfTheTestTree() throws IOException, URISyntaxException {
+        Path root = Path.of(AllGeneratorsIntegrationTest.class.getProtectionDomain().getCodeSource().getLocation()
+                .toURI());
+        ClassLoader loader = AllGeneratorsIntegrationTest.class.getClassLoader();
+        Set<Class<?>> generators = new HashSet<>(LISTED_GENERATOR_CLASSES);
+        try (Stream<Path> files = Files.walk(root.resolve(SCANNED_PACKAGE_PATH))) {
+            files.map(root::relativize)
+                    .map(Path::toString)
+                    .filter(file -> file.endsWith(".class") && !file.endsWith("package-info.class"))
+                    .map(file -> file.substring(0, file.length() - ".class".length())
+                            .replace(File.separatorChar, '.'))
+                    .map(name -> loadUninitialized(name, loader))
+                    .filter(AllGeneratorsIntegrationTest::isGeneratorClass)
+                    .forEach(generators::add);
+        }
+        return generators;
+    }
+
+    /** A concrete, named {@link TypedGenerator} implementation; anonymous and local classes have no registrable name. */
+    private static boolean isGeneratorClass(Class<?> type) {
+        return TypedGenerator.class.isAssignableFrom(type)
+                && !type.isInterface()
+                && !Modifier.isAbstract(type.getModifiers())
+                && !type.isAnonymousClass()
+                && !type.isLocalClass();
+    }
+
+    private static Class<?> loadUninitialized(String name, ClassLoader loader) {
+        try {
+            return Class.forName(name, false, loader);
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException("A compiled test class could not be loaded: " + name, e);
+        }
+    }
+
+    private static Set<String> classNames(Collection<Class<?>> classes) {
+        return classes.stream().map(Class::getName).collect(Collectors.toCollection(TreeSet::new));
+    }
+
+    private static Set<String> difference(Set<String> minuend, Set<String> subtrahend) {
+        Set<String> difference = new TreeSet<>(minuend);
+        difference.removeAll(subtrahend);
+        return difference;
     }
 
     @ParameterizedTest
@@ -471,7 +557,7 @@ class AllGeneratorsIntegrationTest {
         }
 
         assertEquals(CONCURRENT_WORKERS * DRAWS_PER_WORKER,
-                collected.stream().filter(value -> value != null).count(),
+                collected.stream().filter(Objects::nonNull).count(),
                 registration + " must hand out a value for every concurrent draw");
     }
 
@@ -494,6 +580,33 @@ class AllGeneratorsIntegrationTest {
             Function<String, Verdict> roundTrip) {
         return new Registration<>(generatorClass, generator, String.class, () -> draw(generator.get(), draws), arms,
                 minimumDistinct, claim, roundTrip);
+    }
+
+    /**
+     * A length-limit generator for one surface: the draws reach a value beyond each preset limit
+     * of the surface, and every value is rejected by the surface's pipeline configured with the
+     * strict limit of that surface alone.
+     */
+    private static Registration<String> overlong(Class<? extends TypedGenerator<String>> generatorClass,
+            Supplier<TypedGenerator<String>> generator, Surface surface) {
+        return strings(generatorClass, generator, DRAWS,
+                Map.of("beyond-strict-only", value -> value.length() <= surface.defaultLimit(),
+                        "beyond-default", value -> value.length() > surface.defaultLimit()
+                                && value.length() <= surface.lenientLimit(),
+                        "beyond-lenient", value -> value.length() > surface.lenientLimit()),
+                always(Verdict.REJECTED),
+                through(() -> PipelineFactory.createPipeline(surface.validationType(), strictLengthLimitOf(surface),
+                        new SecurityEventCounter())));
+    }
+
+    private static SecurityConfiguration strictLengthLimitOf(Surface surface) {
+        return switch (surface) {
+            case URL_PATH -> SecurityConfiguration.builder().maxPathLength(surface.strictLimit()).build();
+            case PARAMETER_NAME -> SecurityConfiguration.builder().maxParameterNameLength(surface.strictLimit()).build();
+            case PARAMETER_VALUE -> SecurityConfiguration.builder().maxParameterValueLength(surface.strictLimit()).build();
+            case HEADER_NAME -> SecurityConfiguration.builder().maxHeaderNameLength(surface.strictLimit()).build();
+            case HEADER_VALUE -> SecurityConfiguration.builder().maxHeaderValueLength(surface.strictLimit()).build();
+        };
     }
 
     private static <T> Registration<T> listed(Class<?> generatorClass, Supplier<List<T>> values,

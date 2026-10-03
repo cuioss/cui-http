@@ -22,7 +22,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
+
+import java.util.EnumSet;
+import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -32,38 +37,48 @@ import static org.junit.jupiter.api.Assertions.*;
 @EnableGeneratorController
 class HttpStatusFamilyTest {
 
+    /** The first and last status code of a family, stated independently of the enum under test. */
+    private record StatusRange(int first, int last) {
+    }
+
+    /**
+     * The expected boundaries of every family except {@link HttpStatusFamily#UNKNOWN}. The ranges
+     * are written out here rather than read back from the enum, so the tests state the mapping
+     * instead of echoing it.
+     */
+    private static final Map<HttpStatusFamily, StatusRange> EXPECTED_RANGES = Map.of(
+            HttpStatusFamily.INFORMATIONAL, new StatusRange(100, 199),
+            HttpStatusFamily.SUCCESS, new StatusRange(200, 299),
+            HttpStatusFamily.REDIRECTION, new StatusRange(300, 399),
+            HttpStatusFamily.CLIENT_ERROR, new StatusRange(400, 499),
+            HttpStatusFamily.SERVER_ERROR, new StatusRange(500, 599));
+
+    @Test
+    @DisplayName("Every mapped family has its boundaries stated in the expectation table")
+    void shouldStateBoundariesForEveryMappedFamily() {
+        Set<HttpStatusFamily> mappedFamilies = EnumSet.complementOf(EnumSet.of(HttpStatusFamily.UNKNOWN));
+
+        assertEquals(mappedFamilies, EXPECTED_RANGES.keySet(),
+                "A new HttpStatusFamily constant needs its first and last code in EXPECTED_RANGES");
+    }
+
+    private static StatusRange expectedRangeOf(HttpStatusFamily family) {
+        assertTrue(EXPECTED_RANGES.containsKey(family),
+                () -> family + " has no expected boundaries in EXPECTED_RANGES");
+        return EXPECTED_RANGES.get(family);
+    }
+
     @Nested
     @DisplayName("fromStatusCode Tests")
     class FromStatusCodeTests {
 
-        @Test
-        @DisplayName("Should return INFORMATIONAL for 1xx codes")
-        void shouldReturnInformationalFor1xxCodes() {
-            assertWholeRangeMapsTo(HttpStatusFamily.INFORMATIONAL, 100, 199);
-        }
+        @ParameterizedTest
+        @EnumSource(value = HttpStatusFamily.class, names = "UNKNOWN", mode = EnumSource.Mode.EXCLUDE)
+        @DisplayName("Should map the whole range of every family to that family")
+        void shouldMapWholeRangeToFamily(HttpStatusFamily family) {
+            StatusRange range = expectedRangeOf(family);
 
-        @Test
-        @DisplayName("Should return SUCCESS for 2xx codes")
-        void shouldReturnSuccessFor2xxCodes() {
-            assertWholeRangeMapsTo(HttpStatusFamily.SUCCESS, 200, 299);
-        }
-
-        @Test
-        @DisplayName("Should return REDIRECTION for 3xx codes")
-        void shouldReturnRedirectionFor3xxCodes() {
-            assertWholeRangeMapsTo(HttpStatusFamily.REDIRECTION, 300, 399);
-        }
-
-        @Test
-        @DisplayName("Should return CLIENT_ERROR for 4xx codes")
-        void shouldReturnClientErrorFor4xxCodes() {
-            assertWholeRangeMapsTo(HttpStatusFamily.CLIENT_ERROR, 400, 499);
-        }
-
-        @Test
-        @DisplayName("Should return SERVER_ERROR for 5xx codes")
-        void shouldReturnServerErrorFor5xxCodes() {
-            assertWholeRangeMapsTo(HttpStatusFamily.SERVER_ERROR, 500, 599);
+            assertWholeRangeMapsTo(family, range.first(), range.last());
         }
 
         @Test
@@ -102,54 +117,23 @@ class HttpStatusFamilyTest {
     @DisplayName("contains Tests")
     class ContainsTests {
 
-        @Test
-        @DisplayName("INFORMATIONAL should contain 1xx codes")
-        void informationalShouldContain1xxCodes() {
-            assertTrue(HttpStatusFamily.INFORMATIONAL.contains(100));
-            assertTrue(HttpStatusFamily.INFORMATIONAL.contains(101));
-            assertTrue(HttpStatusFamily.INFORMATIONAL.contains(199));
-            assertFalse(HttpStatusFamily.INFORMATIONAL.contains(99));
-            assertFalse(HttpStatusFamily.INFORMATIONAL.contains(200));
-        }
+        /**
+         * Probes both edges of the family's range, a code drawn from inside it, and the codes
+         * directly below and above it.
+         */
+        @ParameterizedTest
+        @EnumSource(value = HttpStatusFamily.class, names = "UNKNOWN", mode = EnumSource.Mode.EXCLUDE)
+        @DisplayName("Every family contains exactly the codes of its range")
+        void shouldContainExactlyItsRange(HttpStatusFamily family) {
+            StatusRange range = expectedRangeOf(family);
+            int drawn = Generators.integers(range.first(), range.last()).next();
 
-        @Test
-        @DisplayName("SUCCESS should contain 2xx codes")
-        void successShouldContain2xxCodes() {
-            assertTrue(HttpStatusFamily.SUCCESS.contains(200));
-            assertTrue(HttpStatusFamily.SUCCESS.contains(201));
-            assertTrue(HttpStatusFamily.SUCCESS.contains(299));
-            assertFalse(HttpStatusFamily.SUCCESS.contains(199));
-            assertFalse(HttpStatusFamily.SUCCESS.contains(300));
-        }
-
-        @Test
-        @DisplayName("REDIRECTION should contain 3xx codes")
-        void redirectionShouldContain3xxCodes() {
-            assertTrue(HttpStatusFamily.REDIRECTION.contains(300));
-            assertTrue(HttpStatusFamily.REDIRECTION.contains(301));
-            assertTrue(HttpStatusFamily.REDIRECTION.contains(399));
-            assertFalse(HttpStatusFamily.REDIRECTION.contains(299));
-            assertFalse(HttpStatusFamily.REDIRECTION.contains(400));
-        }
-
-        @Test
-        @DisplayName("CLIENT_ERROR should contain 4xx codes")
-        void clientErrorShouldContain4xxCodes() {
-            assertTrue(HttpStatusFamily.CLIENT_ERROR.contains(400));
-            assertTrue(HttpStatusFamily.CLIENT_ERROR.contains(404));
-            assertTrue(HttpStatusFamily.CLIENT_ERROR.contains(499));
-            assertFalse(HttpStatusFamily.CLIENT_ERROR.contains(399));
-            assertFalse(HttpStatusFamily.CLIENT_ERROR.contains(500));
-        }
-
-        @Test
-        @DisplayName("SERVER_ERROR should contain 5xx codes")
-        void serverErrorShouldContain5xxCodes() {
-            assertTrue(HttpStatusFamily.SERVER_ERROR.contains(500));
-            assertTrue(HttpStatusFamily.SERVER_ERROR.contains(503));
-            assertTrue(HttpStatusFamily.SERVER_ERROR.contains(599));
-            assertFalse(HttpStatusFamily.SERVER_ERROR.contains(499));
-            assertFalse(HttpStatusFamily.SERVER_ERROR.contains(600));
+            assertAll(family + " contains " + range.first() + ".." + range.last(),
+                    () -> assertTrue(family.contains(range.first()), "the first code of the range"),
+                    () -> assertTrue(family.contains(range.last()), "the last code of the range"),
+                    () -> assertTrue(family.contains(drawn), () -> drawn + " lies inside the range"),
+                    () -> assertFalse(family.contains(range.first() - 1), "the code below the range"),
+                    () -> assertFalse(family.contains(range.last() + 1), "the code above the range"));
         }
 
         @Test

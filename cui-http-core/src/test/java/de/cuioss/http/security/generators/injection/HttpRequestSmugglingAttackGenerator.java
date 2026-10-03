@@ -21,6 +21,7 @@ import de.cuioss.test.generator.Generators;
 import de.cuioss.test.generator.TypedGenerator;
 
 import java.util.Arrays;
+import java.util.stream.IntStream;
 
 /**
  * T16: HTTP Request Smuggling Attack Generator
@@ -110,10 +111,14 @@ public class HttpRequestSmugglingAttackGenerator implements TypedGenerator<Strin
         }
     }
 
-    private static final int FAMILY_COUNT = 15;
-    private static final int[] ALL_FAMILIES = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14};
     private static final int[] HEADER_SHAPED_FAMILIES = {0, 1, 2, 3, 4, 5, 6, 13, 14};
     private static final int[] QUERY_SHAPED_FAMILIES = {7, 8, 9, 10, 11, 12};
+
+    /** Every family, derived from the two shaped sets; declared after them, as a static initializer reads them. */
+    private static final int[] ALL_FAMILIES =
+            IntStream.concat(Arrays.stream(HEADER_SHAPED_FAMILIES), Arrays.stream(QUERY_SHAPED_FAMILIES))
+                    .sorted().toArray();
+    private static final int FAMILY_COUNT = ALL_FAMILIES.length;
 
     private final int[] families;
 

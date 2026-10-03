@@ -108,7 +108,7 @@ class CookieNameUnicodeWhitespaceGeneratorTest {
 
     /** The decoration is the first character unless the value starts with the name itself. */
     private static int whitespaceOf(String value) {
-        return value.charAt(0) != '_' ? value.charAt(0) : value.charAt(value.length() - 1);
+        return value.charAt(value.charAt(0) != '_' ? 0 : value.length() - 1);
     }
 
     private static String undecorated(String value, int whitespace) {
