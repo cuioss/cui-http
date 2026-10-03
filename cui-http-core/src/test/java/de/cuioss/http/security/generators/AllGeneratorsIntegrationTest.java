@@ -532,8 +532,9 @@ class AllGeneratorsIntegrationTest {
 
     /**
      * Shares one generator instance between several workers. {@link Future#get()} re-throws
-     * whatever a worker threw, so a data race that surfaces as an exception fails the test, and
-     * the exact count detects a draw that was lost.
+     * whatever a worker threw, so a data race that surfaces as an exception fails the test. The
+     * non-null count detects a draw that yielded no value; it does not detect a duplicated value
+     * caused by a lost state update.
      */
     private static <T> void assertConcurrentDraws(Registration<T> registration) throws Exception {
         TypedGenerator<T> generator = registration.generator().get();
@@ -590,7 +591,8 @@ class AllGeneratorsIntegrationTest {
     private static Registration<String> overlong(Class<? extends TypedGenerator<String>> generatorClass,
             Supplier<TypedGenerator<String>> generator, Surface surface) {
         return strings(generatorClass, generator, DRAWS,
-                Map.of("beyond-strict-only", value -> value.length() <= surface.defaultLimit(),
+                Map.of("beyond-strict-only", value -> value.length() > surface.strictLimit()
+                                && value.length() <= surface.defaultLimit(),
                         "beyond-default", value -> value.length() > surface.defaultLimit()
                                 && value.length() <= surface.lenientLimit(),
                         "beyond-lenient", value -> value.length() > surface.lenientLimit()),

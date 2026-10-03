@@ -16,6 +16,7 @@
 package de.cuioss.http.security.tests;
 
 import de.cuioss.http.security.config.SecurityConfiguration;
+import de.cuioss.http.security.config.SecurityDefaults;
 import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.generators.injection.ProtocolHandlerAttackGenerator;
@@ -77,8 +78,8 @@ class ProtocolHandlerAttackTest {
     private static final String DATA = "data:";
     private static final String FILE = "file:";
 
-    /** The four schemes the pattern stage rejects at the start of a value, lower-cased. */
-    private static final List<String> SCHEMES = List.of(JAVASCRIPT, VBSCRIPT, DATA, FILE);
+    /** The enforced scheme set the pattern stage rejects at the start of a value, lower-cased. */
+    private static final List<String> SCHEMES = List.copyOf(SecurityDefaults.PROTOCOL_HANDLER_SCHEMES);
 
     private URLPathValidationPipeline pipeline;
     private SecurityEventCounter eventCounter;
