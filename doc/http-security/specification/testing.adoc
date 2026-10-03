@@ -97,18 +97,20 @@ public class PathTraversalAttackTest {
     }
     
     @ParameterizedTest(name = "T1: Path traversal [{index}]: {0}")
-    @TypeGeneratorSource(value = PathTraversalURLGenerator.class, count = 100)
+    @TypeGeneratorSource(value = PathTraversalGenerator.class, count = 100)
     void testBasicPathTraversal_T1(String attack) {
         // T1: Basic path traversal patterns from generator
         UrlSecurityException exception = assertThrows(
-            UrlSecurityException.class, 
+            UrlSecurityException.class,
             () -> validator.validate(attack),
             "Failed to detect path traversal: " + attack
         );
-        
+
         // Verify appropriate failure type
         assertTrue(
             exception.getFailureType() == UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED ||
+            exception.getFailureType() == UrlSecurityFailureType.NULL_BYTE_INJECTION ||
+            exception.getFailureType() == UrlSecurityFailureType.INVALID_ENCODING ||
             exception.getFailureType() == UrlSecurityFailureType.INVALID_CHARACTER,
             "Unexpected failure type: " + exception.getFailureType()
         );
@@ -337,14 +339,18 @@ class SecurityValidationTest {
     }
 
     @ParameterizedTest(name = "Path traversal [{index}]: {0}")
-    @TypeGeneratorSource(value = PathTraversalURLGenerator.class, count = 5)
+    @TypeGeneratorSource(value = PathTraversalGenerator.class, count = 5)
     void shouldRejectPathTraversal(String attack) {
         UrlSecurityException exception = assertThrows(
             UrlSecurityException.class,
             () -> pathValidator.validate(attack)
         );
-        assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
-            exception.getFailureType());
+        assertTrue(
+            exception.getFailureType() == UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED ||
+            exception.getFailureType() == UrlSecurityFailureType.NULL_BYTE_INJECTION ||
+            exception.getFailureType() == UrlSecurityFailureType.INVALID_ENCODING ||
+            exception.getFailureType() == UrlSecurityFailureType.INVALID_CHARACTER,
+            "Unexpected failure type: " + exception.getFailureType());
     }
 }
 ----
@@ -434,7 +440,7 @@ class ComprehensiveSecurityTest {
         PipelineFactory.createHeaderValuePipeline(config, counter);
 
     @ParameterizedTest(name = "Attack detection [{index}]: {0}")
-    @TypeGeneratorSource(value = PathTraversalURLGenerator.class, count = 50)
+    @TypeGeneratorSource(value = PathTraversalGenerator.class, count = 50)
     void shouldRejectPathTraversal(String attack) {
         UrlSecurityException exception = assertThrows(
             UrlSecurityException.class,

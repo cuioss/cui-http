@@ -20,9 +20,9 @@ import de.cuioss.http.security.core.HttpSecurityValidator;
 import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
 import de.cuioss.http.security.generators.SupportedValidationTypeGenerator;
+import de.cuioss.http.security.generators.encoding.PathTraversalGenerator;
 import de.cuioss.http.security.generators.header.ValidHTTPHeaderNameGenerator;
 import de.cuioss.http.security.generators.header.ValidHTTPHeaderValueGenerator;
-import de.cuioss.http.security.generators.url.PathTraversalURLGenerator;
 import de.cuioss.http.security.generators.url.ValidURLParameterStringGenerator;
 import de.cuioss.http.security.generators.url.ValidURLPathGenerator;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
@@ -328,10 +328,12 @@ class PipelineFactoryTest {
         }
 
         @ParameterizedTest
-        @TypeGeneratorSource(value = PathTraversalURLGenerator.class, count = 5)
+        @TypeGeneratorSource(value = PathTraversalGenerator.class, count = 5)
         void shouldRejectMaliciousInputs(String maliciousInput) {
             HttpSecurityValidator pipeline = PipelineFactory.createUrlPathPipeline(config, eventCounter);
-            assertThrows(UrlSecurityException.class, () -> pipeline.validate(maliciousInput));
+            UrlSecurityException exception = assertThrows(UrlSecurityException.class,
+                    () -> pipeline.validate(maliciousInput));
+            assertEquals(maliciousInput, exception.getOriginalInput());
         }
 
 

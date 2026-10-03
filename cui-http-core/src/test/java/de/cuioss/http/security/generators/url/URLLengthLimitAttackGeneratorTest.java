@@ -13,12 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package de.cuioss.http.security.generators.injection;
+package de.cuioss.http.security.generators.url;
 
 import de.cuioss.http.security.config.SecurityConfiguration;
 import de.cuioss.http.security.core.HttpSecurityValidator;
 import de.cuioss.http.security.core.ValidationType;
-import de.cuioss.http.security.generators.url.URLLengthLimitAttackGenerator;
 import de.cuioss.http.security.generators.url.URLLengthLimitAttackGenerator.Surface;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.http.security.pipeline.HTTPHeaderValidationPipeline;

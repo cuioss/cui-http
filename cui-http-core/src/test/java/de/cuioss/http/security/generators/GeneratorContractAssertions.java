@@ -74,6 +74,7 @@ public final class GeneratorContractAssertions {
             "%2E%2E",
             "%252e%252e",
             "%252E%252E",
+            "%%32%65",
             "..%2f",
             "..%2F",
             "..%5c",

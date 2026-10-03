@@ -18,8 +18,8 @@ package de.cuioss.http.security.tests;
 import de.cuioss.http.security.config.SecurityConfiguration;
 import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
-import de.cuioss.http.security.generators.encoding.DoubleEncodingAttackGenerator;
 import de.cuioss.http.security.generators.encoding.EncodingCombinationGenerator;
+import de.cuioss.http.security.generators.encoding.PathTraversalGenerator;
 import de.cuioss.http.security.generators.url.ValidURLPathGenerator;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
@@ -49,6 +49,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * The two generators mix families that the path pipeline decides by different mechanisms, so
  * every generator-driven method selects one family by its structural fingerprint
  * ({@link PathWireForm}) and asserts that family's exact failure type:
+ * </p>
+ * <p>
+ * The nested-percent and the double-encoded traversal family are drawn from
+ * {@link PathTraversalGenerator}, the remaining ones from {@link EncodingCombinationGenerator}.
+ * The triple-encoded family has one source, {@code EncodingCombinationGenerator}, and therefore
+ * one test.
  * </p>
  * <ul>
  *   <li>a nested percent sign ({@code %%32%65}) is a malformed escape -
@@ -81,14 +87,13 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("T5: Double Encoding Attack Tests")
 class DoubleEncodingAttackTest {
 
+    private static final String ENCODED_PERCENT = "%25";
+
     private static final AttackFamilyGuard NESTED_PERCENT = new AttackFamilyGuard(
             "shouldRejectNestedPercentAsInvalidEncoding", PathWireForm.MALFORMED_ESCAPE::isFormOf);
     private static final AttackFamilyGuard LISTED_DOUBLE_ENCODED_TRAVERSAL = new AttackFamilyGuard(
             "shouldRejectListedDoubleEncodedTraversalAsPathTraversal",
-            DoubleEncodingAttackTest::isWireCleanListedTraversal);
-    private static final AttackFamilyGuard UNLISTED_DOUBLE_ENCODING = new AttackFamilyGuard(
-            "shouldRejectUnlistedDoubleEncodingAsDoubleEncoding",
-            DoubleEncodingAttackTest::isWireCleanUnlistedEncoding);
+            DoubleEncodingAttackTest::isWireCleanListedDoubleEncodedTraversal);
     private static final AttackFamilyGuard COMBINATION_RAW_BACKSLASH = new AttackFamilyGuard(
             "shouldRejectEncodingCombinationWithRawBackslashAsInvalidCharacter",
             PathWireForm.RAW_NON_PATH_CHARACTER::isFormOf);
@@ -106,6 +111,10 @@ class DoubleEncodingAttackTest {
         return PathWireForm.WIRE_CLEAN.isFormOf(payload) && PathWireForm.carriesListedTraversalSpelling(payload);
     }
 
+    private static boolean isWireCleanListedDoubleEncodedTraversal(String payload) {
+        return isWireCleanListedTraversal(payload) && payload.contains(ENCODED_PERCENT);
+    }
+
     private static boolean isWireCleanUnlistedEncoding(String payload) {
         return PathWireForm.WIRE_CLEAN.isFormOf(payload) && !PathWireForm.carriesListedTraversalSpelling(payload);
     }
@@ -113,8 +122,7 @@ class DoubleEncodingAttackTest {
     @AfterAll
     static void shouldHaveAdmittedFilteredSamples() {
         AttackFamilyGuard.assertAllAdmittedSamples(NESTED_PERCENT, LISTED_DOUBLE_ENCODED_TRAVERSAL,
-                UNLISTED_DOUBLE_ENCODING, COMBINATION_RAW_BACKSLASH, COMBINATION_LISTED_TRAVERSAL,
-                COMBINATION_UNLISTED_ENCODING);
+                COMBINATION_RAW_BACKSLASH, COMBINATION_LISTED_TRAVERSAL, COMBINATION_UNLISTED_ENCODING);
     }
 
     @BeforeEach
@@ -124,7 +132,7 @@ class DoubleEncodingAttackTest {
     }
 
     @ParameterizedTest
-    @TypeGeneratorSource(value = DoubleEncodingAttackGenerator.class, count = 100)
+    @TypeGeneratorSource(value = PathTraversalGenerator.class, count = 300)
     @DisplayName("A nested percent sign is rejected as INVALID_ENCODING")
     void shouldRejectNestedPercentAsInvalidEncoding(String doubleEncodingPattern) {
         if (!NESTED_PERCENT.admits(doubleEncodingPattern)) {
@@ -138,7 +146,7 @@ class DoubleEncodingAttackTest {
     }
 
     @ParameterizedTest
-    @TypeGeneratorSource(value = DoubleEncodingAttackGenerator.class, count = 100)
+    @TypeGeneratorSource(value = PathTraversalGenerator.class, count = 150)
     @DisplayName("A listed double-encoded traversal sequence is rejected as PATH_TRAVERSAL_DETECTED")
     void shouldRejectListedDoubleEncodedTraversalAsPathTraversal(String doubleEncodingPattern) {
         if (!LISTED_DOUBLE_ENCODED_TRAVERSAL.admits(doubleEncodingPattern)) {
@@ -149,20 +157,6 @@ class DoubleEncodingAttackTest {
         assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, exception.getFailureType(),
                 () -> "Unexpected verdict for: " + doubleEncodingPattern);
         assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED));
-    }
-
-    @ParameterizedTest
-    @TypeGeneratorSource(value = DoubleEncodingAttackGenerator.class, count = 100)
-    @DisplayName("A double encoding the pattern stage does not list is rejected as DOUBLE_ENCODING")
-    void shouldRejectUnlistedDoubleEncodingAsDoubleEncoding(String doubleEncodingPattern) {
-        if (!UNLISTED_DOUBLE_ENCODING.admits(doubleEncodingPattern)) {
-            return;
-        }
-        var exception = assertRejected(doubleEncodingPattern);
-
-        assertEquals(UrlSecurityFailureType.DOUBLE_ENCODING, exception.getFailureType(),
-                () -> "Unexpected verdict for: " + doubleEncodingPattern);
-        assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.DOUBLE_ENCODING));
     }
 
     @ParameterizedTest

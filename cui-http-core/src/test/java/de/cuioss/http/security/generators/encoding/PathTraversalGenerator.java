@@ -26,6 +26,8 @@ import de.cuioss.test.generator.TypedGenerator;
  * This generator creates various path traversal patterns including:
  * - Basic traversal sequences (../, ..\\)
  * - Encoded variants (%2e%2e%2f, %252e%252e%252f)
+ * - Two further double-encoding forms: a dot escaped inside an escape (%%32%65, the Apache
+ *   CVE-2021-42013 shape) and a single-encoded dot followed by a double-encoded one (%2e%252e)
  * - Unicode lookalike variants (U+2024 ONE DOT LEADER, U+FF0F FULLWIDTH SOLIDUS,
  *   U+FF3C FULLWIDTH REVERSE SOLIDUS), which NFKC-normalize to the ASCII traversal
  * - Mixed encoding attempts
@@ -63,6 +65,7 @@ public class PathTraversalGenerator implements TypedGenerator<String> {
     // QI-6: Dynamic generation components
     private final TypedGenerator<Integer> depthGenerator = Generators.integers(1, 8);
     private final TypedGenerator<Integer> attackTypeGenerator = Generators.integers(0, 6);
+    private final TypedGenerator<Integer> doubleEncodingFormGenerator = Generators.integers(0, 2);
     private final TypedGenerator<Boolean> contextSelector = Generators.booleans();
 
     @Override
@@ -182,6 +185,14 @@ public class PathTraversalGenerator implements TypedGenerator<String> {
     }
 
     private String generateDoubleEncodedTraversal() {
+        return switch (doubleEncodingFormGenerator.next()) {
+            case 1 -> generateNestedPercentTraversal();
+            case 2 -> generateMixedSingleDoubleEncodedTraversal();
+            default -> generateFullyDoubleEncodedTraversal();
+        };
+    }
+
+    private String generateFullyDoubleEncodedTraversal() {
         int depth = depthGenerator.next();
         boolean useBackslash = "\\".equals(generateSeparator());
         StringBuilder pattern = new StringBuilder();
@@ -194,6 +205,22 @@ public class PathTraversalGenerator implements TypedGenerator<String> {
         }
 
         return pattern.toString();
+    }
+
+    /**
+     * The Apache CVE-2021-42013 shape: the hex digits of {@code %2e} are themselves
+     * percent-encoded, which leaves a percent sign followed by a percent sign on the wire.
+     */
+    private String generateNestedPercentTraversal() {
+        String target = generateTargetFile();
+        return contextSelector.next()
+                ? "/icons%%32%65%%32%65/" + target
+                : "/cgi-bin/.%%32%65/%%32%65%%32%65/" + target;
+    }
+
+    /** A single-encoded dot followed by a double-encoded one, ahead of a raw traversal segment. */
+    private String generateMixedSingleDoubleEncodedTraversal() {
+        return "%2e%252e%2f../" + generateTargetFile();
     }
 
     private String generateUnicodeTraversal() {

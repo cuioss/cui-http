@@ -19,6 +19,7 @@ import de.cuioss.http.security.config.SecurityConfiguration;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
+import de.cuioss.test.generator.junit.GeneratorSeed;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -49,6 +50,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * that produced it.</p>
  */
 @EnableGeneratorController
+@GeneratorSeed(4711L)
 @DisplayName("PathTraversalGenerator Contract Tests")
 class PathTraversalGeneratorTest {
 
@@ -57,6 +59,12 @@ class PathTraversalGeneratorTest {
     private static final List<String> BASIC_SIGNATURES = List.of("../", "..\\");
     private static final List<String> ENCODED_SIGNATURES = List.of("%2e%2e%2f", "%2e%2e%5c");
     private static final List<String> DOUBLE_ENCODED_SIGNATURES = List.of("%252e%252e");
+    /**
+     * The two forms only the double-encoded arm emits besides the plain {@code %252e%252e}
+     * spelling: a dot escaped inside an escape ({@code %%32%65}, the Apache CVE-2021-42013 shape),
+     * and a single-encoded dot followed by a double-encoded one.
+     */
+    private static final List<String> RELOCATED_DOUBLE_ENCODING_FORMS = List.of("%%32%65", "%2e%252e");
     /** Homoglyph dots with a homoglyph separator, emitted only by {@code generateUnicodeTraversal}. */
     private static final List<String> UNICODE_SIGNATURES = List.of(
             fromCodePoints(0x2024, 0x2024, 0xFF0F),
@@ -104,6 +112,21 @@ class PathTraversalGeneratorTest {
         assertEquals(Set.of("basic", "encoded", "double-encoded", "unicode",
                         "mixed", "null-byte", "advanced"), attackTypes,
                 "Every documented attack type must be reachable within " + AGGREGATE_DRAWS + " draws");
+    }
+
+    @Test
+    @DisplayName("Should reach the nested-percent and the mixed single/double encoding form")
+    void shouldReachRelocatedDoubleEncodingForms() {
+        PathTraversalGenerator generator = new PathTraversalGenerator();
+        Set<String> reached = new HashSet<>();
+
+        for (int i = 0; i < AGGREGATE_DRAWS; i++) {
+            String value = generator.next();
+            RELOCATED_DOUBLE_ENCODING_FORMS.stream().filter(value::contains).forEach(reached::add);
+        }
+
+        assertEquals(Set.copyOf(RELOCATED_DOUBLE_ENCODING_FORMS), reached,
+                "Both double-encoding forms must be reachable within " + AGGREGATE_DRAWS + " draws");
     }
 
     @Test
