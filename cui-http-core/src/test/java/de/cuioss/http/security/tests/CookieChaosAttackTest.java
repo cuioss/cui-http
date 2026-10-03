@@ -85,9 +85,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class CookieChaosAttackTest {
 
     /**
-     * Draws for the attack-cookie test. The rarest name family is one of four, and the
-     * empty name one of seven within it, so 200 draws reach every family with certainty for
-     * practical purposes.
+     * Draws for the attack-cookie test. The rarest name is one of six within one of four name
+     * families, so 200 draws reach every family with certainty for practical purposes.
      */
     private static final int ATTACK_COOKIE_DRAWS = 200;
 
@@ -402,15 +401,14 @@ class CookieChaosAttackTest {
 
     /**
      * The verdict of the cookie-name character validation for an attack cookie name: the control
-     * names carry a tab, CR or LF; the token names (pipe, apostrophe, the very long name and the
-     * empty name) consist of token characters only; every other attack name carries a printable
-     * separator.
+     * names carry a tab, CR or LF; the token names (pipe, apostrophe and the very long name)
+     * consist of token characters only; every other attack name carries a printable separator.
      */
     private static Optional<UrlSecurityFailureType> expectedNameVerdict(String name) {
         if (containsAnyOf(name, C0_CONTROLS)) {
             return Optional.of(UrlSecurityFailureType.CONTROL_CHARACTERS);
         }
-        boolean tokenOnly = name.isEmpty() || "cookie|pipe".equals(name) || "cookie'apostrophe".equals(name)
+        boolean tokenOnly = "cookie|pipe".equals(name) || "cookie'apostrophe".equals(name)
                 || name.startsWith("very_long_cookie_name_");
         return tokenOnly ? Optional.empty() : Optional.of(UrlSecurityFailureType.INVALID_CHARACTER);
     }

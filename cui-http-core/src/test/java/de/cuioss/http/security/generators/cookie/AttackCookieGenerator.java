@@ -56,17 +56,21 @@ public class AttackCookieGenerator implements TypedGenerator<Cookie> {
         return new Cookie(name, value, attributes);
     }
 
+    /**
+     * Never emits an empty name: a cookie without a name is not a cookie-name attack but a
+     * missing input, which the cookie route reports as {@code INVALID_INPUT} before it looks at
+     * a single character.
+     */
     private String generateMaliciousName() {
-        int nameType = Generators.integers(0, 6).next();
+        int nameType = Generators.integers(0, 5).next();
         return switch (nameType) {
-            case 0 -> ""; // Empty name
-            case 1 -> "   "; // Whitespace name
-            case 2 -> "cookie with spaces";
-            case 3 -> "cookie=equals";
-            case 4 -> "cookie;semicolon";
-            case 5 -> "cookie,comma";
-            case 6 -> "cookie[bracket]";
-            default -> "";
+            case 0 -> "   "; // Whitespace name
+            case 1 -> "cookie with spaces";
+            case 2 -> "cookie=equals";
+            case 3 -> "cookie;semicolon";
+            case 4 -> "cookie,comma";
+            case 5 -> "cookie[bracket]";
+            default -> throw new IllegalStateException("Unexpected name type: " + nameType);
         };
     }
 

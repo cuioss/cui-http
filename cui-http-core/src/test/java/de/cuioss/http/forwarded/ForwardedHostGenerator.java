@@ -26,7 +26,7 @@ import java.util.List;
  * {@link #hostileHosts()} — for an exhaustive parameterized run, so every named case is covered on
  * every execution.</p>
  */
-final class ForwardedHostGenerator {
+public final class ForwardedHostGenerator {
 
     /**
      * Each entry states a distinct way a host value can carry meaning the composed URL authority
@@ -49,7 +49,7 @@ final class ForwardedHostGenerator {
     /**
      * @return the full hostile population, for an exhaustive parameterized run (never empty)
      */
-    static List<String> hostileHosts() {
+    public static List<String> hostileHosts() {
         return HOSTILE_HOSTS;
     }
 }

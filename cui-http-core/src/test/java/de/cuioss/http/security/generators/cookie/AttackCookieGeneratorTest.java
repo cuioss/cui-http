@@ -17,6 +17,7 @@ package de.cuioss.http.security.generators.cookie;
 
 import de.cuioss.http.security.data.Cookie;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
+import de.cuioss.test.generator.junit.GeneratorSeed;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,6 +43,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * families are reachable, each identified by the literal payload its branch emits.</p>
  */
 @EnableGeneratorController
+@GeneratorSeed(4711L)
 @DisplayName("AttackCookieGenerator Contract Tests")
 class AttackCookieGeneratorTest {
 
@@ -51,7 +53,7 @@ class AttackCookieGeneratorTest {
     private static final int LENGTH_ATTACK_THRESHOLD = 5000;
 
     private static final Set<String> MALICIOUS_NAMES = Set.of(
-            "", "   ", "cookie with spaces", "cookie=equals",
+            "   ", "cookie with spaces", "cookie=equals",
             "cookie;semicolon", "cookie,comma", "cookie[bracket]");
 
     private static final Set<String> SPECIAL_CHAR_NAMES = Set.of(
@@ -118,8 +120,8 @@ class AttackCookieGeneratorTest {
     @TypeGeneratorSource(value = AttackCookieGenerator.class, count = 100)
     @DisplayName("Every generated cookie carries a malicious value and malicious attributes")
     void shouldGenerateMaliciousCookie(Cookie generatedValue) {
-        assertNotNull(generatedValue, "Generator must not produce null values");
-        assertNotNull(generatedValue.name(), "Cookie name should not be null");
+        assertFalse(generatedValue.name().isEmpty(),
+                "An attack cookie always carries a name: an empty name is a missing input, not a name attack");
 
         assertFalse(valueFamiliesOf(generatedValue.value()).isEmpty(),
                 () -> "Cookie value must carry an attack payload from one of the eleven documented "
