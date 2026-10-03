@@ -48,10 +48,10 @@ In the other direction, most attack "generators" wrap a fixed literal list and h
 `FixedValuesGenerator`, whose `next()` draws a non-reproducible random index with no
 `@GeneratorSeed` anywhere in the tree — so a 15-entry list drawn N times skips entries on most
 runs; and the "valid" generators stay inside the smallest accept set, so `ValidCookieGenerator`
-emits only `[A-Za-z0-9_]` and a production false positive on an RFC-legal base64 cookie value is
-invisible to the suite. Eleven generators have no contract test, five traversal generators
+emits only `[A-Za-z0-9_]` and the RFC-legal base64 cookie values production now accepts (PLAN-02
+moved `COOKIE_VALUE` to RFC 6265 `cookie-octet`) are never exercised by the suite. Eleven generators have no contract test, five traversal generators
 overlap, one test file sits under the wrong directory, and `AllGeneratorsIntegrationTest` exercises
-10 of the 34 generators with tautological assertions. **This plan changes no production code.**
+10 of the 35 generators with tautological assertions. **This plan changes no production code.**
 Every change is driven by a test that is first seen to fail — here that means seeing the
 *corrected* test fail against the mechanism it now actually reaches, or the *widened* generator
 fail against the pipeline it is now valid for.
@@ -97,8 +97,9 @@ fail against the pipeline it is now valid for.
    `@GeneratorSeed` so a failure is reproducible.
 7. **Valid generators widen to the full legal set (F-E-6).** `ValidCookieGenerator.generateAlphanumericValue`
    uses `letterStrings(...).toUpperCase()` and emits only `[A-Za-z0-9_]`, while
-   `getCharacterSet(COOKIE_VALUE)` maps to `RFC3986_UNRESERVED` — so an RFC 6265 `cookie-octet`
-   value is unreachable and the resulting production false positive is undetectable. Widen it, and
+   `getCharacterSet(COOKIE_VALUE)` maps to `RFC6265_COOKIE_OCTET` (re-scoped at `c10ffa9`: PLAN-02
+   #217 fixed the former `RFC3986_UNRESERVED` false positive) — so the `+`, `/`, `=` values
+   production now accepts are never generated and that fix is uncovered. Widen it, and
    fix the two generators that are not valid for any pipeline: `ValidURLGenerator` appends
    `?page=..&sort=..` query strings to values fed to a path pipeline, and
    `ValidHTTPHeaderValueGenerator` emits Fetch request-modes (`same-origin`, `cors`, `no-cors`) as
@@ -114,7 +115,7 @@ fail against the pipeline it is now valid for.
    `URL_PATH`, `PARAMETER_VALUE`, `HEADER_NAME` and `HEADER_VALUE` via an `integers(1,4)` switch,
    omitting `PARAMETER_NAME`, which `PipelineFactory.createPipeline` explicitly supports.
 10. **`AllGeneratorsIntegrationTest` becomes a real integration test (F-E-14, F-E-12, F-E-16).** It
-    instantiates 10 of the 34 generator files and asserts tautologies —
+    instantiates 10 of the 35 generator files and asserts tautologies —
     `anyMatch(s -> !s.isEmpty())` for "has Unicode attack", `length() > 100 || isEmpty()` for a
     length claim. Cover every generator and assert real properties. Remove
     `AttackCookieGenerator`'s empty-name arm, which no validator can reject because
@@ -151,7 +152,7 @@ parent version and `.plan/marshal.json`, none of which is on this plan's declare
   contains neither `?`, `#`, nor space — read at
   `cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationConstants.java`
   (lines 167-175).
-  - verdict: corroborated | checked_at: d385aa3 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at d385aa3; unchanged since the ca74911 re-read. Carried forward from the redistributed PLAN-10.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: URLPathValidationPipeline.createStages L128-133 runs Length, Character (129), Pattern, Decoding (131); RFC3986_PATH_CHARS L203-210 has no ? # or space
 - OBSERVED: every branch of `HttpHeaderInjectionAttackGenerator.next()` appends `"?…=" + attack`
   to an absolute base URL — read at
   `cui-http-core/src/test/java/de/cuioss/http/security/generators/header/HttpHeaderInjectionAttackGenerator.java`
@@ -159,13 +160,13 @@ parent version and `.plan/marshal.json`, none of which is on this plan's declare
   `URLPathValidationPipeline` — read at
   `cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java`
   (lines 102-159).
-  - verdict: corroborated | checked_at: d385aa3 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at d385aa3; the cited artifact is byte-identical to the ca74911 reading. Carried forward from the redistributed PLAN-10.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: HttpHeaderInjectionAttackGenerator: all 15 create* branches return pattern + ?x= + attack on absolute BASE_URLS (L77-83, 109-317); HttpHeaderInjectionAttackTest L99 uses URLPathValidationPipeline
 - OBSERVED: all seven cited vacuous-test locations read verbatim as the report quotes them,
   including the aggregate-only `assertAll` — read at
   `cui-http-core/src/test/java/de/cuioss/http/security/tests/` §
   `EncodedPathTraversalAttackTest`, `DoubleEncodingAttackTest`, `NullBytePathTraversalAttackTest`,
   `CookieChaosAttackTest` (lines 246-289).
-  - verdict: corroborated | checked_at: d385aa3 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at d385aa3; unchanged. Carried forward from the redistributed PLAN-10.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: All still present: EncodedPath shouldHandleLegitimateEncodedCharacters L137-153 empty catch; DoubleEncoding try/catch L218-224, 263-269; NullByte L103-113; CookieChaos test 8 L362-396 aggregate, tests 5/6 L246-289, 305-325 only check the Cookie record
 - OBSERVED (re-scoped at the prior cleanup, `ca74911`): `CookiePrefixValidationStage.validateCookie`
   (line **325**) reaches prefix validation through a private `SecurityPrefix` enum (**193**) and
   one `validatePrefix` method (**391**), refuting the "not yet implemented" Javadoc on
@@ -174,19 +175,19 @@ parent version and `.plan/marshal.json`, none of which is on this plan's declare
   The original claim cited `validateHostPrefix` and `validateSecurePrefix` at lines 197/256/301;
   PLAN-05 (#231) deleted both methods and replaced them with the enum. The substance held, the
   symbols did not; deliverable 2 above already cites the corrected symbols.
-  - verdict: contradicted | checked_at: d385aa3 | by: quality-report-remediation/cleanup | rescoped: yes | evidence: Re-confirmed at d385aa3: still refers to the corrected symbols (validateCookie 325, validatePrefix 391); no further movement since ca74911.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: CookiePrefixValidationStage: enum SecurityPrefix L193, validateCookie L325 dispatches via SecurityPrefix.match L377 to validatePrefix L391; CookieChaos Javadoc L60-66/240-244/300-303 still says not implemented
 - OBSERVED: `isURLLengthLimitSpecificFailure` accepts exactly ten enum constants —
   `INPUT_TOO_LONG`, `PATH_TOO_LONG`, `EXCESSIVE_NESTING`, `MALFORMED_INPUT`, `INVALID_STRUCTURE`,
   `SUSPICIOUS_PATTERN_DETECTED`, `PROTOCOL_VIOLATION`, `RFC_VIOLATION`, `INVALID_CHARACTER`,
   `PATH_TRAVERSAL_DETECTED` — with the `INVALID_CHARACTER` comment at line 665 — read at
   `cui-http-core/src/test/java/de/cuioss/http/security/tests/URLLengthLimitAttackTest.java`
   (lines 654-667).
-  - verdict: corroborated | checked_at: d385aa3 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at d385aa3; unchanged. Carried forward from the redistributed PLAN-10.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: URLLengthLimitAttackTest.java L654-667 lists exactly the ten constants; INVALID_CHARACTER comment at L665
 - OBSERVED (derived count, corrected): `UrlSecurityFailureType` declares **25** constants, not the
   24 that both the original report and its adversarial verification state — read at
   `cui-http-core/src/main/java/de/cuioss/http/security/core/UrlSecurityFailureType.java`. This
   does not change any verdict; it corrects F-E-3's framing.
-  - verdict: corroborated | checked_at: d385aa3 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at d385aa3; unchanged. Carried forward from the redistributed PLAN-10.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: UrlSecurityFailureType.java L50-141 declares 25 constants incl. INVALID_IPV6_FORMAT L124, TOO_MANY_ELEMENTS L89, COOKIE_PREFIX_VIOLATION L138, INVALID_INPUT L141
 - OBSERVED (derived count, re-derived): `ProtocolHandlerAttackDatabase`'s 24 entries break down as
   16 `PATH_TRAVERSAL_DETECTED`, 5 `INVALID_CHARACTER`, 1 `NULL_BYTE_INJECTION`, 1
   `CONTROL_CHARACTERS`, 1 `SUSPICIOUS_PATTERN_DETECTED` — read at
@@ -195,30 +196,30 @@ parent version and `.plan/marshal.json`, none of which is on this plan's declare
   or `/..` — read at
   `cui-http-core/src/test/java/de/cuioss/http/security/generators/injection/ProtocolHandlerAttackGenerator.java`
   (lines 339-348).
-  - verdict: corroborated | checked_at: d385aa3 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at d385aa3; unchanged. Carried forward from the redistributed PLAN-10.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: ProtocolHandlerAttackDatabase.java L59-234: 24 cases = 16 PATH_TRAVERSAL, 5 INVALID_CHARACTER, 1 each NULL_BYTE/CONTROL_CHARACTERS/SUSPICIOUS_PATTERN; ProtocolHandlerAttackGenerator.generatePath L339-348 every arm carries ../ or /..
 - OBSERVED: `CharacterValidationStage.isCharacterAllowed` always returns false for codepoints
   above 255 on `URL_PATH` via `supportsUnicodeCharacters()` (line 482 as of the `ca74911` re-read,
   originally cited 371-380 — the cited window now holds the null-byte and C0 branches PLAN-02
   added) — so `IDNAttackDatabase`'s `CYRILLIC_APPLE_HOMOGRAPH` rationale at line 54 names the
   wrong cause; `ApacheCVEAttackDatabase`'s `CVE_2020_1927_MOD_REWRITE` payload contains a literal
   `?` rejected first — read at `.../database/ApacheCVEAttackDatabase.java` (lines 119-125).
-  - verdict: corroborated | checked_at: d385aa3 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at d385aa3; unchanged since the ca74911 anchor correction. Carried forward from the redistributed PLAN-10.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: CharacterValidationStage.java L443 and L482-486 return false for URL_PATH; IDNAttackDatabase L54 rationale still credits traversal; ApacheCVE CVE_2020_1927 L120 payload has a literal ?
 - OBSERVED: the local NFKC-fold assertion survives in
   `cui-http-core/src/test/java/de/cuioss/http/security/generators/encoding/UnicodeAttackGeneratorTest.java`
   (lines 85-95) despite ADR-0010 line 31 stating it was to be removed; `doc/adr/0009-*.adoc` and
   `doc/adr/0010-*.adoc` both read `Status: Proposed` at line 15.
-  - verdict: corroborated | checked_at: d385aa3 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at d385aa3; unchanged. Carried forward from the redistributed PLAN-10.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: UnicodeAttackGeneratorTest.java L85-95 shouldNfkcFoldLookalikeTraversalToAsciiTraversal still present; ADR-0010 L31 says it was removed; ADR-0009 and 0010 Status still Proposed
 - HYPOTHESIS: several of this plan's corrected tests will fail against production code that WS-01
   and WS-02 are simultaneously changing — a header-injection payload correctly routed to
   `HTTPHeaderValidationPipeline` exercises the very C0-control rule PLAN-02 is rewriting.
   Confirm/refute by re-reading `HTTPHeaderValidationPipeline.createStages` and
   `CharacterValidationStage.isCharacterAllowed` at the HEAD this plan starts from (verify-at-outline).
-  - verdict: unverifiable | checked_at: 2e9e8e0fa8b6dc7058205d3be973c55dafbe0e7f | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Still unverifiable via static inspection at 2e9e8e0, and the population has grown further: WS-01 through WS-04 are now ALL fully landed (PLAN-01 #210, PLAN-02 #217, PLAN-03 #222, PLAN-15 #229, PLAN-04 #227, PLAN-05 #231, PLAN-06 #214, PLAN-07 #237, PLAN-08 #240), plus the new WS-01 addendum PLAN-16 (#239, DecodingStage CR/LF option). PLAN-16 in particular touched DecodingStageTest.java, which sits inside this plan's own declared test/.../validation/ directory - re-read it explicitly at outline, not just the WS-01/WS-02 files this claim originally named. The outline-time re-read is now mandatory across a strictly larger set than when this claim was last written.
+  - verdict: unverifiable | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Predicts outcomes of corrected tests against production code; needs a test run, not checkable by reading source. WS-01/WS-02 have landed so the simultaneous-change premise is moot
 - Verify-first clause: before scoping deliverable 2, re-read every `CookieChaosAttackTest` method
   this plan is to fix at the then-current HEAD. PLAN-05 changed cookie prefix matching to
   case-insensitive and added value validation. A refutation — the method's premise is already
   gone — means the test is rewritten from scratch, not repaired.
-  - verdict: unverifiable | checked_at: d385aa3 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Still unverifiable at d385aa3; unchanged in kind.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: SecurityPrefix.match uses startsWithAsciiIgnoreCase L225-250; validateCookie L353-354 validates cookie.value() via the COOKIE_VALUE stage; the tests 5/6 not-implemented premise is refuted as the clause anticipates
 
 **From the former PLAN-11 (generator determinism and coverage):**
 
@@ -229,17 +230,19 @@ parent version and `.plan/marshal.json`, none of which is on this plan's declare
   An example fixed list is the 15-literal `nullByteURLs` field — read at
   `cui-http-core/src/test/java/de/cuioss/http/security/generators/url/NullByteURLGenerator.java`
   (lines 63-79).
-  - verdict: corroborated | checked_at: d385aa3 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at d385aa3; the generator, database or test file this claim cites is byte-identical since ca74911. Carried forward from the redistributed PLAN-11.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: cui-test-generator-3.0.2 FixedValuesGenerator.next = values.get(random().nextInt(size)); no GeneratorSeed anywhere in src; NullByteURLGenerator L63-79 holds 15 literals
 - OBSERVED: `ValidCookieGenerator.generateAlphanumericValue` emits only `[A-Za-z0-9_]` — read at
   `cui-http-core/src/test/java/de/cuioss/http/security/generators/cookie/ValidCookieGenerator.java`
-  (lines 228-231) — while `getCharacterSet(COOKIE_VALUE)` maps to `RFC3986_UNRESERVED`, which
-  excludes `+`, `/` and `=`.
-  - verdict: corroborated | checked_at: d385aa3 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at d385aa3; unchanged. Carried forward from the redistributed PLAN-11.
+  (lines 228-231) — while `getCharacterSet(COOKIE_VALUE)` maps to `RFC6265_COOKIE_OCTET`
+  (`CharacterValidationConstants.java` line 320), which admits `+`, `/` and `=`. RE-SCOPED at the
+  2026-10-03 cleanup (`c10ffa9`): the earlier `RFC3986_UNRESERVED` mapping, and the production
+  false positive it caused, were removed by PLAN-02 (#217); the generator half still holds.
+  - verdict: contradicted | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: yes | evidence: Generator half holds (ValidCookieGenerator L228-231 letters only) but CharacterValidationConstants.getCharacterSet L320 maps COOKIE_VALUE to RFC6265_COOKIE_OCTET (admits + / =), not RFC3986_UNRESERVED. Claim, objective and deliverable 7 re-scoped in place: the false positive is fixed (PLAN-02 #217); remaining work is widening the generator
 - OBSERVED: `ValidURLGenerator` appends `?page=..&sort=..` and emits `/search?q=test&limit=10`
   directly — read at `.../generators/url/ValidURLGenerator.java` (lines 43-70);
   `ValidHTTPHeaderValueGenerator` emits `same-origin` / `cors` / `no-cors` as `Origin` values —
   read at `.../generators/header/ValidHTTPHeaderValueGenerator.java` (lines 245-252).
-  - verdict: corroborated | checked_at: d385aa3 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at d385aa3; unchanged. Carried forward from the redistributed PLAN-11.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: ValidURLGenerator L43-53 appends ?page= and &sort=, L70 emits /search?q=test&limit=10; ValidHTTPHeaderValueGenerator L247-250 emits same-origin/cors/no-cors as Origin values
 - OBSERVED: `URLLengthLimitAttackGeneratorTest.java` sits under `generators/injection/` while
   `URLLengthLimitAttackGenerator.java` sits under `generators/url/`, confirmed by direct file
   listing; `doc/test-framework-structure.adoc`:33 mis-describes `generators/injection` as holding
@@ -247,36 +250,38 @@ parent version and `.plan/marshal.json`, none of which is on this plan's declare
   `URLParameterValidationPipeline` at lines 26-27 while
   `EncodedPathTraversalAttackTest.shouldBlockUTF8OverlongPatterns` feeds it through
   `URLPathValidationPipeline` at lines 102-111.
-  - verdict: corroborated | checked_at: d385aa3 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at d385aa3; unchanged. Carried forward from the redistributed PLAN-11.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: URLLengthLimitAttackGeneratorTest sits in generators/injection/ while the generator is in generators/url/; PathTraversalParameterGenerator Javadoc names URLParameterValidationPipeline while EncodedPathTraversalAttackTest L102-111 uses URLPathValidationPipeline
 - OBSERVED: `SupportedValidationTypeGenerator` emits four types via an `integers(1,4)` switch and
   omits `PARAMETER_NAME` — read at
   `cui-http-core/src/test/java/de/cuioss/http/security/generators/SupportedValidationTypeGenerator.java`
   (lines 36-42) — while `PipelineFactory.createPipeline` carries an explicit
   `case PARAMETER_NAME` at line 252.
-  - verdict: corroborated | checked_at: d385aa3 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at d385aa3; unchanged. Carried forward from the redistributed PLAN-11.
-- OBSERVED (derived count, re-derived at the prior cleanup, `ca74911`): **34** `*Generator.java`
-  files under `cui-http-core/src/test`, not the 32 originally stated — read by `find`.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: SupportedValidationTypeGenerator.java L32-42 integers(1,4) over four types, no PARAMETER_NAME; PipelineFactory.java case PARAMETER_NAME now at L282 (was 252)
+- OBSERVED (derived count, re-derived by `find` at the 2026-10-03 cleanup, `c10ffa9`): **35**
+  `*Generator.java` files under `cui-http-core/src/test` — 32 under `security/generators/` plus
+  `forwarded/ForwardedHostGenerator.java` and `client/result/HttpResult{Success,Failure}Generator.java`
+  — not the 34 recorded at `ca74911` nor the 32 originally stated.
   `AllGeneratorsIntegrationTest` instantiates 10 of them; its `hasUnicodeAttack = …anyMatch(s ->
   !s.isEmpty())` is at line 158 and the `length() > 100 || isEmpty()` claim at line 159 — read at
   `cui-http-core/src/test/java/de/cuioss/http/security/generators/AllGeneratorsIntegrationTest.java`
   (lines 52-90, 158-159). ⛔ **Re-derive again at outline** — any plan's test authoring moves this
   count, and this cleanup pass did not re-run `find` since no generator file moved on this plan's
   declared surface between `ca74911` and `d385aa3` (confirmed via `git diff --stat`).
-  - verdict: contradicted | checked_at: d385aa3 | by: quality-report-remediation/cleanup | rescoped: yes | evidence: The count was already re-scoped to 34 at ca74911 (from the original report's 32); re-confirmed unmoved at d385aa3 since no *Generator.java file changed in that range. Still mandatory to re-derive at outline per the field's own rule for derived counts.
+  - verdict: contradicted | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: yes | evidence: find at c10ffa9 returns 35 *Generator.java under cui-http-core/src/test (32 under security/generators plus forwarded/ForwardedHostGenerator and client/result/HttpResult{Success,Failure}Generator), not 34. Count re-scoped to 35 in the claim, objective, deliverable 10 and Expected Surface. AllGeneratorsIntegrationTest still instantiates 10 (L52-61), tautologies at L158-159
 - OBSERVED: `AttackCookieGenerator`'s empty-name arm is at line 62, and
   `CharacterValidationStage.validate` returns `Optional.of(value)` immediately for an empty string
   without running `validateCharacters` (lines 180-181), so an empty cookie name is trivially
   accepted — read at
   `cui-http-core/src/test/java/de/cuioss/http/security/generators/cookie/AttackCookieGenerator.java`
   (lines 59-99) and `CharacterValidationStage.java`.
-  - verdict: corroborated | checked_at: d385aa3 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at d385aa3; unchanged. Carried forward from the redistributed PLAN-11.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: AttackCookieGenerator.java L62 empty-name arm; CharacterValidationStage.validate L211-213 returns Optional.of(value) for empty input before validateCharacters (was 180-181)
 - OBSERVED: `Math.abs(this.hashCode()) % bound` appears at lines 672-674 and again at line 757 —
   read at `cui-http-core/src/test/java/de/cuioss/http/security/tests/URLLengthLimitAttackTest.java`.
-  - verdict: corroborated | checked_at: d385aa3 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at d385aa3; unchanged. Carried forward from the redistributed PLAN-11.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: URLLengthLimitAttackTest.java L673 Math.abs(this.hashCode()) % bound and L757 Math.abs(hashCode()) % prefixes.length
 - OBSERVED (derived, re-derived by file-existence check): all eleven named generators have no
   sibling `*Test.java`; `DoubleEncodingAttackGeneratorTest` (lines 31-48) asserts substring
   presence only, with no family-reachability or pipeline round-trip.
-  - verdict: corroborated | checked_at: d385aa3 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at d385aa3; unchanged. Carried forward from the redistributed PLAN-11.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: No *Test.java exists for any of the eleven named generators under cui-http-core/src/test; DoubleEncodingAttackGeneratorTest L25-48 asserts only notNull/non-empty/substring/length
 - OBSERVED (re-scoped at the prior cleanup, `ca74911`): `EncodingCombinationGenerator.applyMixedCase`
   no longer uppercases only the literal `%2e` / `%2f` escapes. PLAN-04 (#227) rewrote it (now line
   118) to randomise the case of every hex digit of every `%XX` escape from the seeded source — its
@@ -285,25 +290,25 @@ parent version and `.plan/marshal.json`, none of which is on this plan's declare
   deliverable above rests on the original framing; this claim is retained as background context
   for the outline-time re-read of `EncodingCombinationGenerator.java` that deliverable 8's overlap
   note requires, and needs no further action from this cleanup pass.
-  - verdict: contradicted | checked_at: d385aa3 | by: quality-report-remediation/cleanup | rescoped: yes | evidence: Re-confirmed at d385aa3: EncodingCombinationGenerator.java has not moved since PLAN-04 (#227) landed; the fix stands and no deliverable rests on the retired framing.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: EncodingCombinationGenerator.applyMixedCase L118-137 randomises the case of both hex digits of every %XX; the old two-replacement defect is already fixed, as the re-scoped claim states
 - HYPOTHESIS: deliverable 6's conversion from sampling to iteration multiplies the executed test
   count and may push the suite past its acceptable runtime. Confirm/refute by reading the current
   `@TypeGeneratorSource(count = N)` values across `security/tests` and computing the new total
   before converting (verify-at-outline). If the total is unacceptable, the fix is a pinned seed
   plus a nightly exhaustive profile rather than unconditional iteration.
-  - verdict: unverifiable | checked_at: d385aa3 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Still unverifiable at d385aa3: the executed-test-count multiplication cannot be measured without running the converted suite.
+  - verdict: unverifiable | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Predicts the post-conversion executed test count and runtime; cannot be measured without running the converted suite
 - Verify-first clause: before scoping deliverable 7, re-read
   `CharacterValidationConstants.getCharacterSet` at the then-current HEAD. WS-01 PLAN-02 widened
   the cookie character set to RFC 6265 `cookie-octet`; since it has landed, the false positive
   this deliverable exists to expose is already gone and the deliverable narrows to widening the
   generator so the *fix* is covered.
-  - verdict: unverifiable | checked_at: d385aa3 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Still unverifiable via static inspection alone at d385aa3, though PLAN-02 (#217) is confirmed landed — the outline-time re-read remains mandatory to confirm the narrowed scope.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: CharacterValidationConstants.getCharacterSet L320 COOKIE_VALUE -> RFC6265_COOKIE_OCTET (L226-234 admits + / =); the false positive is gone and ValidCookieGenerator L228-231 is still letters-only, so the deliverable narrows to widening the generator
 
 ## Expected Surface
 
 - OBSERVED: `cui-http-core/src/test/java/de/cuioss/http/security/tests/` — the whole integration-test package, in particular `HttpHeaderInjectionAttackTest.java`, `HttpRequestSmugglingAttackTest.java`, `URLLengthLimitAttackTest.java`, `EncodedPathTraversalAttackTest.java`, `DoubleEncodingAttackTest.java`, `NullBytePathTraversalAttackTest.java`, `CookieChaosAttackTest.java`
 - OBSERVED: `cui-http-core/src/test/java/de/cuioss/http/security/database/` — `ProtocolHandlerAttackDatabase.java`, `IDNAttackDatabase.java`, `ApacheCVEAttackDatabase.java` and the fixed-list databases the generators draw from
-- OBSERVED: `cui-http-core/src/test/java/de/cuioss/http/security/generators/` — the whole generator tree (34 generator files and their contract tests, re-derive at outline)
+- OBSERVED: `cui-http-core/src/test/java/de/cuioss/http/security/generators/` — the whole generator tree (32 generator files here, 35 across `src/test`, and their contract tests — re-derive at outline)
 - OBSERVED: `cui-http-core/src/test/java/de/cuioss/http/security/generators/injection/ProtocolHandlerAttackGenerator.java`
 - OBSERVED: `cui-http-core/src/test/java/de/cuioss/http/security/generators/header/HttpHeaderInjectionAttackGenerator.java`
 - OBSERVED: `cui-http-core/src/test/java/de/cuioss/http/security/generators/encoding/UnicodeAttackGeneratorTest.java`

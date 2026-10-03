@@ -83,69 +83,69 @@ corroborated and 1 unverifiable, with 0 contradicted.
   `adapter/package-info.java` (lines 226-330), `client/package-info.java` (lines 296-317) and the
   three named classes. The report's original citations (import at 464, checklist at 583) were
   stale; the corrected locations are 284 and 434.
-  - verdict: corroborated | checked_at: 2e9e8e0fa8b6dc7058205d3be973c55dafbe0e7f | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-read at 2e9e8e0: PLAN-08 (#240) touched adapter/package-info.java (rewrote the token-refresh example to the safe pattern, now Example 5 at ~lines 115-129) but did NOT fix the no-arg-constructor / wrong-package-import defect this claim cites - the wrong-package import (de.cuioss.http.security.UrlSecurityException) is now at line 290 (was 284) and the no-arg HTTPHeaderValidationPipeline()/URLParameterValidationPipeline() calls are now at lines 292/321/380/381. Substance fully holds; citations shifted ~6 lines. Re-derive exact lines at outline.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: client/package-info.java:305,310 and adapter/package-info.java:292,321,380,381 call no-arg ctors; real ctors are 3-arg (HTTPHeaderValidationPipeline:121) and 2-arg (URLParameterValidationPipeline:107); wrong import at adapter/package-info:290; UrlSecurityException ctor private at :132
 - OBSERVED: `HttpSecurityValidator`'s Javadoc states `validate()` returns `Optional.empty()` only
   for null input, so the samples' `.orElseThrow()` / `isEmpty()` branches never fire on a real
   attack — read at
   `cui-http-core/src/main/java/de/cuioss/http/security/core/HttpSecurityValidator.java`
   (lines 109, 119).
-  - verdict: corroborated | checked_at: ca74911 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at ca74911: the Javadoc site this claim cites is byte-identical across 73afd22..ca74911 - none of the three files PLAN-02/03/04 touched on this plan's surface moved this claim's lines.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: HttpSecurityValidator.java:109,119 say Optional.empty() only for null input; adapter/package-info.java:301,328,402 still use isEmpty() as the attack signal
 - OBSERVED: `HTTPHeaderValidationPipeline`'s class Javadoc example at line 67 calls a two-argument
   constructor while the only constructor at line 121 takes three and throws for a non-header type
   — read at that file.
-  - verdict: corroborated | checked_at: ca74911 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at ca74911: the Javadoc site this claim cites is byte-identical across 73afd22..ca74911 - none of the three files PLAN-02/03/04 touched on this plan's surface moved this claim's lines.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: HTTPHeaderValidationPipeline.java:67 sample calls a 2-arg ctor; the only ctor at :121 takes (config, eventCounter, validationType)
 - OBSERVED: `URLParameterValidationPipeline`'s example at line 61 calls
   `pipeline.validate("user_id=123")` and `pipeline/package-info.java`:70 calls
   `paramValidator.validate("search=test&page=1")`; `RFC3986_QUERY_CHARS` (built at
   `CharacterValidationConstants.java` lines 177-185) includes `=` and `&`, so both pass — read at
   those files. `URLParameterNameValidationPipeline`'s Javadoc (lines 31-38) states that only its
   own `DecodingStage` forbids the decoded delimiters.
-  - verdict: corroborated | checked_at: ca74911 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at ca74911: the Javadoc site this claim cites is byte-identical across 73afd22..ca74911 - none of the three files PLAN-02/03/04 touched on this plan's surface moved this claim's lines.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: URLParameterValidationPipeline.java:61 validate(user_id=123); pipeline/package-info.java:71 validate(search=test&page=1); CharacterValidationConstants.java:218-219 allows & and = in RFC3986_QUERY_CHARS
 - OBSERVED: `loadConfig`, `loadWithETag` and `JsonResponseConverter` appear only inside
   `package-info` Javadoc comments and nowhere in main sources —
   `result/package-info.java`:30, :42, :65 and `client/package-info.java`:111;
   `client/handler/package-info.java`'s component list at lines 21-23 names only `HttpHandler`,
   `HttpStatusFamily` and `SecureSSLContextProvider` — read at those files.
-  - verdict: corroborated | checked_at: 2e9e8e0fa8b6dc7058205d3be973c55dafbe0e7f | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at 2e9e8e0: client/package-info.java was touched by PLAN-08 (#240) but this claim's cited JsonResponseConverter reference at line 111 is unmoved. result/package-info.java (loadConfig/loadWithETag) was not touched by any landing since ca74911. Substance and citations both hold.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: loadWithETag (result/package-info.java:42), loadConfig (:65), JsonResponseConverter (client/package-info.java:111) exist only in Javadoc samples; handler/package-info.java:21-23 omits RedirectPolicy and RedirectNotAllowedException, which exist
 - OBSERVED: `UrlSecurityException`'s example at lines 53-54 shows `.sanitizedInput(…)` with a
   "Removed script tags and special characters" detail, and `exceptions/package-info.java`:58 shows
   `case INVALID_CHARACTER -> sanitizeAndRetry();`; `doc/http-security/security-requirements.adoc`:105
   says "Must not attempt to \"fix\" invalid input" and
   `doc/http-security/owasp-best-practices.adoc`:103 says "input is never stripped or repaired" —
   read at all four.
-  - verdict: corroborated | checked_at: ca74911 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-read at ca74911: UrlSecurityException's class-Javadoc example still shows .sanitizedInput("userscripttest1script") at line 53, unmoved despite PLAN-03 (#222) rewriting the class's redaction behaviour. ⛔ Note the claim gains force rather than losing it: PLAN-03 made messages emit (input: <redacted, length=N>) while getSanitizedInput() keeps returning raw as a documented opt-in, so a Javadoc example advertising sanitizedInput now sits beside a redaction contract it does not explain.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: UrlSecurityException.java:53-54 sanitizedInput/detail sample; exceptions/package-info.java:58 sanitizeAndRetry(); security-requirements.adoc:105 forbids fixing input; OWASP quote now at doc/http-security/analysis/owasp-best-practices.adoc:103 (path differs from spec)
 - OBSERVED: `monitoring/package-info.java`:47 shows the manual increment, while
   `AbstractValidationPipeline` already increments at lines 93-95 — read at both. The report cited
   lines 17-31; the actual call resolves to line 47.
-  - verdict: corroborated | checked_at: ca74911 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at ca74911: the Javadoc site this claim cites is byte-identical across 73afd22..ca74911 - none of the three files PLAN-02/03/04 touched on this plan's surface moved this claim's lines.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: monitoring/package-info.java:47 manual eventCounter.increment in catch; AbstractValidationPipeline.java:130 already increments before rethrow (spec cited ~93-95, shifted)
 - OBSERVED: `validation/package-info.java`:25 attributes depth validation to
   `LengthValidationStage`, which contains no depth logic; `EXCESSIVE_NESTING`,
   `MAX_PATH_SEGMENTS` (line 182) and `MAX_DIRECTORY_DEPTH` (line 188) are thrown only from
   `NormalizationStage` (lines 395-400, 450-455); the stage list omits three public types present
   in the same package directory — read at those files.
-  - verdict: corroborated | checked_at: ca74911 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at ca74911: the Javadoc site this claim cites is byte-identical across 73afd22..ca74911 - none of the three files PLAN-02/03/04 touched on this plan's surface moved this claim's lines.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: validation/package-info.java:25 attributes depth validation to LengthValidationStage; EXCESSIVE_NESTING/MAX_PATH_SEGMENTS/MAX_DIRECTORY_DEPTH occur only in NormalizationStage; stage list omits AllowBlockListStage, CookiePrefixValidationStage, RequestCollectionValidator
 - OBSERVED: `config/package-info.java`:33 and :35 advertise "Character Sets" and "Custom attack
   pattern definitions" as configurable, while `SecurityConfigurationBuilder` exposes only boolean
   toggles (lines 279-320) plus `blockedPathPatterns` / `blockedParameterNames`, and the character
   sets are `static final IntPredicate`s in `CharacterValidationConstants` — read at those files.
-  - verdict: corroborated | checked_at: ca74911 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-read at ca74911: config/package-info.java still advertises 'Character Sets' at line 33 and 'Pattern Configuration - Custom attack pattern definitions' at line 35, unmoved despite PLAN-02 (#217) touching the file. ⛔ But the referent moved underneath: PLAN-15 (#229) DELETED eleven unenforced constants from this package, so 'Custom attack pattern definitions' now advertises less than it did. Re-read the package contents, not just these two lines, at outline.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: config/package-info.java:33,35 advertise Character Sets and Pattern Configuration; SecurityConfigurationBuilder has only int/boolean/Set setters; char sets are static IntPredicates in CharacterValidationConstants
 - OBSERVED (derived count, re-derived by the verification pass): exactly **18** files under
   `cui-http-core/src/main` carry the phrase "HTTP verification specification"; a search for that
   phrase or a `Task [A-Z][0-9]` pattern across `doc/`, `README.adoc` and `CLAUDE.md` returns zero
   matches — no such document exists.
-  - verdict: corroborated | checked_at: ca74911 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at ca74911: the Javadoc site this claim cites is byte-identical across 73afd22..ca74911 - none of the three files PLAN-02/03/04 touched on this plan's surface moved this claim's lines.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: grep -l 'HTTP verification specification' under cui-http-core/src/main returns exactly 18 files; no hit for the phrase in doc/, README.adoc or CLAUDE.md
 - OBSERVED: neither `SecureSSLContextProvider` nor `StringContentConverter` carries a `<pre>`
   block — only inline `{@code}` tokens — so neither has a worked usage example. This was
   spot-checked on the two classes the report's recommendation names; the full 72-class sweep is
   part of this plan's own deliverable 6.
-  - verdict: corroborated | checked_at: 2e9e8e0fa8b6dc7058205d3be973c55dafbe0e7f | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Re-checked at 2e9e8e0: StringContentConverter.java was touched by PLAN-08 (#240, charset-parsing fix) but still carries no <pre> block - only inline {@code} tokens. Claim substance holds unchanged despite the file being edited for an unrelated deliverable.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: no <pre> block in client/handler/SecureSSLContextProvider.java or client/converter/StringContentConverter.java; only inline {@code} tokens
 - Verify-first clause: before scoping any deliverable, re-read every sample at the then-current
   HEAD. WS-01 through WS-04 land first and change the APIs these samples demonstrate — PLAN-04
   in particular decides whether `PipelineFactory` still promises XSS detection, and PLAN-08
   rewrites the token-refresh guidance in `CacheKeyHeaderFilter` and `adapter/package-info.java`.
   A sample already corrected by an earlier plan is removed from this plan's scope rather than
   rewritten twice.
-  - verdict: corroborated | checked_at: 2e9e8e0fa8b6dc7058205d3be973c55dafbe0e7f | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: Confirmed at 2e9e8e0: PLAN-08 (#240) rewrote both CacheKeyHeaderFilter.java's Javadoc (the 'fine-grained control'/'maintaining security'/'Solves token' phrases are gone) and adapter/package-info.java's token-refresh sample (now Example 5, safe pattern). The premise held. No PLAN-12 deliverable targets this sample directly (it was only a verify-first caveat, never a numbered deliverable here), so nothing in this plan's scope needs removing - the clause is discharged with no scope change.
+  - verdict: corroborated | checked_at: c10ffa9 | by: quality-report-remediation/cleanup | rescoped: n/a | evidence: CacheKeyHeaderFilter.java carries none of the retired phrases; adapter/package-info.java:115 Example 5 is now the safe pattern; the no-arg-ctor samples remain, so the premise holds and no scope is removed
 
 ## Expected Surface
 
@@ -163,7 +163,27 @@ corroborated and 1 unverifiable, with 0 contradicted.
 - OBSERVED: `cui-http-core/src/main/java/de/cuioss/http/security/exceptions/UrlSecurityException.java` — class Javadoc only
 - OBSERVED: `cui-http-core/src/main/java/de/cuioss/http/client/handler/SecureSSLContextProvider.java` — class Javadoc only
 - OBSERVED: `cui-http-core/src/main/java/de/cuioss/http/client/converter/StringContentConverter.java` — class Javadoc only
-- OBSERVED: the 18 files under `cui-http-core/src/main` carrying "HTTP verification specification" — Javadoc only
+- OBSERVED: `cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityConfigurationBuilder.java` — Javadoc only ("HTTP verification specification" carrier)
+- OBSERVED: `cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java` — Javadoc only ("HTTP verification specification" carrier)
+- OBSERVED: `cui-http-core/src/main/java/de/cuioss/http/security/core/HttpSecurityValidator.java` — Javadoc only ("HTTP verification specification" carrier)
+- OBSERVED: `cui-http-core/src/main/java/de/cuioss/http/security/core/UrlSecurityFailureType.java` — Javadoc only ("HTTP verification specification" carrier)
+- OBSERVED: `cui-http-core/src/main/java/de/cuioss/http/security/core/ValidationType.java` — Javadoc only ("HTTP verification specification" carrier)
+- OBSERVED: `cui-http-core/src/main/java/de/cuioss/http/security/data/Cookie.java` — Javadoc only ("HTTP verification specification" carrier)
+- OBSERVED: `cui-http-core/src/main/java/de/cuioss/http/security/data/HTTPBody.java` — Javadoc only ("HTTP verification specification" carrier)
+- OBSERVED: `cui-http-core/src/main/java/de/cuioss/http/security/data/URLParameter.java` — Javadoc only ("HTTP verification specification" carrier)
+- OBSERVED: `cui-http-core/src/main/java/de/cuioss/http/security/monitoring/SecurityEventCounter.java` — Javadoc only ("HTTP verification specification" carrier)
+- OBSERVED: `cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java` — Javadoc only ("HTTP verification specification" carrier)
+- OBSERVED: `cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationConstants.java` — Javadoc only ("HTTP verification specification" carrier)
+- OBSERVED: `cui-http-core/src/main/java/de/cuioss/http/security/validation/DecodingStage.java` — Javadoc only ("HTTP verification specification" carrier)
+- OBSERVED: `cui-http-core/src/main/java/de/cuioss/http/security/validation/LengthValidationStage.java` — Javadoc only ("HTTP verification specification" carrier)
+- OBSERVED: `cui-http-core/src/main/java/de/cuioss/http/security/validation/NormalizationStage.java` — Javadoc only ("HTTP verification specification" carrier)
+- OBSERVED: `cui-http-core/src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java` — Javadoc only ("HTTP verification specification" carrier)
+
+The fifteen entries above plus `UrlSecurityException.java`, `HTTPHeaderValidationPipeline.java` and
+`URLParameterValidationPipeline.java` (already declared) are the 18 main-source files carrying
+"HTTP verification specification" at `c10ffa9` — enumerated by the 2026-10-03 cleanup pass in
+place of the former bare-directory entry, which resolved to a non-existent file path at the
+disjointness gate. Re-derive the set at outline.
 
 ⛔ This plan edits **Javadoc comments only**. It changes no executable statement, no signature and
 no annotation. If a sample cannot be made to compile without an API change, that is a

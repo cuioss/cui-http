@@ -2,7 +2,7 @@
   "id": "PLAN-11",
   "slug": "PLAN-11-generator-determinism-and-coverage",
   "workstream": "WS-05-test-framework-quality",
-  "status": "parked",
+  "status": "superseded",
   "plan_marshall_plan_id": "",
   "pr": "",
   "landing": "",
