@@ -19,13 +19,18 @@ import de.cuioss.http.security.config.SecurityConfiguration;
 import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
+import de.cuioss.http.security.generators.encoding.PathTraversalGenerator;
+import de.cuioss.test.generator.junit.EnableGeneratorController;
+import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.util.EnumSet;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -35,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>This test class validates RFC 3986 compliance, security protections,
  * and edge case handling for path normalization operations.</p>
  */
+@EnableGeneratorController
 class NormalizationStageTest {
 
     private NormalizationStage stage;
@@ -334,18 +340,24 @@ class NormalizationStageTest {
      * such as {@code a/b/../c} is opaque application data and must not be rewritten or rejected
      * here; downstream pattern matching handles traversal-style patterns in those contexts.
      */
-    @Test
-    void validate_nonPathType_passesThroughUnchanged() {
+    @ParameterizedTest
+    @TypeGeneratorSource(value = PathTraversalGenerator.class, count = 40)
+    void validate_nonPathType_passesThroughUnchanged(String traversalPayload) {
+        // The payloads are the ones this stage exists to reject on a path - raw, encoded, Unicode
+        // and mixed traversal spellings - so passing every one of them through is the strongest
+        // statement that a non-path type is never normalized or judged here.
+        Set<ValidationType> nonPathTypesReached = EnumSet.noneOf(ValidationType.class);
         for (ValidationType type : ValidationType.values()) {
             if (type.isPath()) {
                 continue;
             }
+            nonPathTypesReached.add(type);
             NormalizationStage nonPathStage = new NormalizationStage(config, type);
-            assertEquals(Optional.of("a/b/../c"), nonPathStage.validate("a/b/../c"),
-                    "Non-path type " + type + " must pass input through unchanged");
-            assertEquals(Optional.of("../escape"), nonPathStage.validate("../escape"),
-                    "Non-path type " + type + " must not reject traversal-style input");
+            assertEquals(Optional.of(traversalPayload), nonPathStage.validate(traversalPayload),
+                    "Non-path type " + type + " must pass traversal-style input through unchanged");
         }
+        assertEquals(EnumSet.complementOf(EnumSet.of(ValidationType.URL_PATH)), nonPathTypesReached,
+                "the pass-through assertion must have been reached for every non-path type");
     }
 
     /**

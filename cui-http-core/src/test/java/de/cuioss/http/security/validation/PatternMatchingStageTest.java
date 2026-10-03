@@ -21,6 +21,9 @@ import de.cuioss.http.security.core.HttpSecurityValidator;
 import de.cuioss.http.security.core.UrlSecurityFailureType;
 import de.cuioss.http.security.core.ValidationType;
 import de.cuioss.http.security.exceptions.UrlSecurityException;
+import de.cuioss.http.security.generators.url.ValidURLPathGenerator;
+import de.cuioss.test.generator.junit.EnableGeneratorController;
+import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -35,21 +38,19 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>Tests cover pattern detection for various attack types including:
  * path traversal, SQL injection, XSS, command injection, and suspicious patterns.</p>
  */
+@EnableGeneratorController
 class PatternMatchingStageTest {
 
     // ========== Basic Functionality Tests ==========
 
-    @Test
-    void shouldReturnInputWhenNoPatternMatches() {
+    @ParameterizedTest
+    @TypeGeneratorSource(value = ValidURLPathGenerator.class, count = 40)
+    void shouldReturnInputWhenNoPatternMatches(String legitimatePath) {
         SecurityConfiguration config = SecurityConfiguration.defaults();
         PatternMatchingStage stage = new PatternMatchingStage(config, ValidationType.URL_PATH);
 
-        String input = "/api/users/123";
-        Optional<String> result = stage.validate(input);
-        assertTrue(result.isPresent());
-        String resultString = result.get();
-
-        assertEquals(input, resultString, "Pattern matching stage should return input unchanged when no patterns match");
+        assertEquals(Optional.of(legitimatePath), stage.validate(legitimatePath),
+                "Pattern matching stage should return a legitimate path unchanged when no pattern matches");
     }
 
     @Test

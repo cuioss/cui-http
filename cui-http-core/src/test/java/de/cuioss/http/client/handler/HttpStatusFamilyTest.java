@@ -16,6 +16,8 @@
 package de.cuioss.http.client.handler;
 
 import de.cuioss.http.client.result.HttpErrorCategory;
+import de.cuioss.test.generator.Generators;
+import de.cuioss.test.generator.junit.EnableGeneratorController;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -27,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Tests for {@link HttpStatusFamily}.
  */
+@EnableGeneratorController
 class HttpStatusFamilyTest {
 
     @Nested
@@ -36,56 +39,62 @@ class HttpStatusFamilyTest {
         @Test
         @DisplayName("Should return INFORMATIONAL for 1xx codes")
         void shouldReturnInformationalFor1xxCodes() {
-            assertEquals(HttpStatusFamily.INFORMATIONAL, HttpStatusFamily.fromStatusCode(100));
-            assertEquals(HttpStatusFamily.INFORMATIONAL, HttpStatusFamily.fromStatusCode(101));
-            assertEquals(HttpStatusFamily.INFORMATIONAL, HttpStatusFamily.fromStatusCode(199));
+            assertWholeRangeMapsTo(HttpStatusFamily.INFORMATIONAL, 100, 199);
         }
 
         @Test
         @DisplayName("Should return SUCCESS for 2xx codes")
         void shouldReturnSuccessFor2xxCodes() {
-            assertEquals(HttpStatusFamily.SUCCESS, HttpStatusFamily.fromStatusCode(200));
-            assertEquals(HttpStatusFamily.SUCCESS, HttpStatusFamily.fromStatusCode(201));
-            assertEquals(HttpStatusFamily.SUCCESS, HttpStatusFamily.fromStatusCode(204));
-            assertEquals(HttpStatusFamily.SUCCESS, HttpStatusFamily.fromStatusCode(299));
+            assertWholeRangeMapsTo(HttpStatusFamily.SUCCESS, 200, 299);
         }
 
         @Test
         @DisplayName("Should return REDIRECTION for 3xx codes")
         void shouldReturnRedirectionFor3xxCodes() {
-            assertEquals(HttpStatusFamily.REDIRECTION, HttpStatusFamily.fromStatusCode(300));
-            assertEquals(HttpStatusFamily.REDIRECTION, HttpStatusFamily.fromStatusCode(301));
-            assertEquals(HttpStatusFamily.REDIRECTION, HttpStatusFamily.fromStatusCode(302));
-            assertEquals(HttpStatusFamily.REDIRECTION, HttpStatusFamily.fromStatusCode(304));
-            assertEquals(HttpStatusFamily.REDIRECTION, HttpStatusFamily.fromStatusCode(399));
+            assertWholeRangeMapsTo(HttpStatusFamily.REDIRECTION, 300, 399);
         }
 
         @Test
         @DisplayName("Should return CLIENT_ERROR for 4xx codes")
         void shouldReturnClientErrorFor4xxCodes() {
-            assertEquals(HttpStatusFamily.CLIENT_ERROR, HttpStatusFamily.fromStatusCode(400));
-            assertEquals(HttpStatusFamily.CLIENT_ERROR, HttpStatusFamily.fromStatusCode(401));
-            assertEquals(HttpStatusFamily.CLIENT_ERROR, HttpStatusFamily.fromStatusCode(404));
-            assertEquals(HttpStatusFamily.CLIENT_ERROR, HttpStatusFamily.fromStatusCode(499));
+            assertWholeRangeMapsTo(HttpStatusFamily.CLIENT_ERROR, 400, 499);
         }
 
         @Test
         @DisplayName("Should return SERVER_ERROR for 5xx codes")
         void shouldReturnServerErrorFor5xxCodes() {
-            assertEquals(HttpStatusFamily.SERVER_ERROR, HttpStatusFamily.fromStatusCode(500));
-            assertEquals(HttpStatusFamily.SERVER_ERROR, HttpStatusFamily.fromStatusCode(501));
-            assertEquals(HttpStatusFamily.SERVER_ERROR, HttpStatusFamily.fromStatusCode(503));
-            assertEquals(HttpStatusFamily.SERVER_ERROR, HttpStatusFamily.fromStatusCode(599));
+            assertWholeRangeMapsTo(HttpStatusFamily.SERVER_ERROR, 500, 599);
         }
 
         @Test
         @DisplayName("Should return UNKNOWN for invalid codes")
         void shouldReturnUnknownForInvalidCodes() {
-            assertEquals(HttpStatusFamily.UNKNOWN, HttpStatusFamily.fromStatusCode(-1));
-            assertEquals(HttpStatusFamily.UNKNOWN, HttpStatusFamily.fromStatusCode(0));
-            assertEquals(HttpStatusFamily.UNKNOWN, HttpStatusFamily.fromStatusCode(99));
-            assertEquals(HttpStatusFamily.UNKNOWN, HttpStatusFamily.fromStatusCode(600));
-            assertEquals(HttpStatusFamily.UNKNOWN, HttpStatusFamily.fromStatusCode(1000));
+            // The two edges adjoining the valid range stay pinned; the drawn values cover the two
+            // open domains on either side of it, which five hand-picked literals only sampled.
+            int belowRange = Generators.integers(Integer.MIN_VALUE, 99).next();
+            int aboveRange = Generators.integers(600, Integer.MAX_VALUE).next();
+
+            assertAll("every code outside 100..599 is UNKNOWN",
+                    () -> assertEquals(HttpStatusFamily.UNKNOWN, HttpStatusFamily.fromStatusCode(99)),
+                    () -> assertEquals(HttpStatusFamily.UNKNOWN, HttpStatusFamily.fromStatusCode(600)),
+                    () -> assertEquals(HttpStatusFamily.UNKNOWN, HttpStatusFamily.fromStatusCode(belowRange),
+                            () -> belowRange + " is below the valid range"),
+                    () -> assertEquals(HttpStatusFamily.UNKNOWN, HttpStatusFamily.fromStatusCode(aboveRange),
+                            () -> aboveRange + " is above the valid range"));
+        }
+
+        /**
+         * Asserts the family for both edges of its range and for a code drawn from anywhere inside
+         * it, so the mapping is stated for the range rather than for a few well-known codes.
+         */
+        private void assertWholeRangeMapsTo(HttpStatusFamily expected, int first, int last) {
+            int drawn = Generators.integers(first, last).next();
+
+            assertAll(expected + " covers " + first + ".." + last,
+                    () -> assertEquals(expected, HttpStatusFamily.fromStatusCode(first), "the first code of the range"),
+                    () -> assertEquals(expected, HttpStatusFamily.fromStatusCode(last), "the last code of the range"),
+                    () -> assertEquals(expected, HttpStatusFamily.fromStatusCode(drawn),
+                            () -> drawn + " lies inside the range"));
         }
     }
 
