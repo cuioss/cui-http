@@ -23,10 +23,12 @@ import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -76,6 +78,18 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("T10: Unicode Control Character Attack Tests")
 class UnicodeControlCharacterAttackTest {
 
+    private static final AttackFamilyGuard RAW_C0_CONTROL = new AttackFamilyGuard(
+            "shouldRejectRawC0ControlAsControlCharacters", PathWireForm.RAW_CONTROL_CHARACTER::isFormOf);
+    private static final AttackFamilyGuard NULL_BYTE = new AttackFamilyGuard(
+            "shouldRejectNullByteAsNullByteInjection", PathWireForm.NULL_BYTE::isFormOf);
+    private static final AttackFamilyGuard NON_ASCII_CONTROL = new AttackFamilyGuard(
+            "shouldRejectNonAsciiControlAsInvalidCharacter", PathWireForm.RAW_NON_PATH_CHARACTER::isFormOf);
+
+    @AfterAll
+    static void shouldHaveAdmittedFilteredSamples() {
+        AttackFamilyGuard.assertAllAdmittedSamples(RAW_C0_CONTROL, NULL_BYTE, NON_ASCII_CONTROL);
+    }
+
     private URLPathValidationPipeline pipeline;
     private SecurityEventCounter eventCounter;
     private SecurityConfiguration config;
@@ -92,93 +106,112 @@ class UnicodeControlCharacterAttackTest {
     }
 
     /**
-     * Test comprehensive Unicode control character attack patterns.
+     * Generated patterns whose first injected character is a raw C0 control other than the null
+     * byte (LF, CR, VT, FF, ...).
      *
-     * <p>
-     * Uses UnicodeControlCharacterAttackGenerator which creates 12 different
-     * types of control character attacks that should be detected and blocked
-     * by the security pipeline.
-     * </p>
+     * @param controlCharacterAttackPattern A Unicode control character attack pattern
+     */
+    @ParameterizedTest
+    @TypeGeneratorSource(value = UnicodeControlCharacterAttackGenerator.class, count = 200)
+    @DisplayName("Patterns injecting a raw C0 control are rejected as CONTROL_CHARACTERS")
+    void shouldRejectRawC0ControlAsControlCharacters(String controlCharacterAttackPattern) {
+        if (!RAW_C0_CONTROL.admits(controlCharacterAttackPattern)) {
+            return;
+        }
+        var exception = assertRejected(controlCharacterAttackPattern);
+
+        assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + getDisplayableString(controlCharacterAttackPattern));
+        assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.CONTROL_CHARACTERS));
+    }
+
+    /**
+     * Generated patterns whose first injected character is a raw or percent-encoded null byte.
      *
      * @param controlCharacterAttackPattern A Unicode control character attack pattern
      */
     @ParameterizedTest
     @TypeGeneratorSource(value = UnicodeControlCharacterAttackGenerator.class, count = 120)
-    @DisplayName("All Unicode control character attacks should be rejected")
-    void shouldRejectAllUnicodeControlCharacterAttacks(String controlCharacterAttackPattern) {
-        // Given: A control character attack pattern from the generator
-        long initialEventCount = eventCounter.getTotalCount();
+    @DisplayName("Patterns injecting a null byte are rejected as NULL_BYTE_INJECTION")
+    void shouldRejectNullByteAsNullByteInjection(String controlCharacterAttackPattern) {
+        if (!NULL_BYTE.admits(controlCharacterAttackPattern)) {
+            return;
+        }
+        var exception = assertRejected(controlCharacterAttackPattern);
 
-        // When: Attempting to validate the control character attack
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pipeline.validate(controlCharacterAttackPattern),
-                "Control character attack should be rejected: " + getDisplayableString(controlCharacterAttackPattern));
-
-        // Then: The validation should fail with appropriate security event
-        assertNotNull(exception, "Exception should be thrown for control character attack");
-        assertTrue(isUnicodeControlCharacterSpecificFailure(exception.getFailureType()),
-                "Failure type should be control character related: " + exception.getFailureType() +
-                        " for pattern: " + getDisplayableString(controlCharacterAttackPattern));
-
-        // And: Original malicious input should be preserved
-        assertEquals(controlCharacterAttackPattern, exception.getOriginalInput(),
-                "Original input should be preserved in exception");
-
-        // And: Security event should be recorded
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded for: " + getDisplayableString(controlCharacterAttackPattern));
+        assertEquals(UrlSecurityFailureType.NULL_BYTE_INJECTION, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + getDisplayableString(controlCharacterAttackPattern));
+        assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.NULL_BYTE_INJECTION));
     }
 
     /**
-     * Test specific C0 control character attacks (0x00-0x1F).
+     * Generated patterns whose first injected character lies outside the path character set
+     * without being a C0 control: C1 controls, bidi and zero-width format characters, separators,
+     * private-use characters, lone surrogates, variation selectors and combining marks.
+     *
+     * @param controlCharacterAttackPattern A Unicode control character attack pattern
+     */
+    @ParameterizedTest
+    @TypeGeneratorSource(value = UnicodeControlCharacterAttackGenerator.class, count = 120)
+    @DisplayName("Patterns injecting a non-ASCII control or format character are rejected as INVALID_CHARACTER")
+    void shouldRejectNonAsciiControlAsInvalidCharacter(String controlCharacterAttackPattern) {
+        if (!NON_ASCII_CONTROL.admits(controlCharacterAttackPattern)) {
+            return;
+        }
+        var exception = assertRejected(controlCharacterAttackPattern);
+
+        assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + getDisplayableString(controlCharacterAttackPattern));
+        assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.INVALID_CHARACTER));
+    }
+
+    /**
+     * Test specific C0 control character attacks (0x01-0x1F).
      *
      * <p>
      * These are ASCII control characters that can cause significant
-     * security issues when injected into URLs or file paths.
+     * security issues when injected into URLs or file paths. The control character precedes
+     * every traversal sequence in these payloads, so it is the verdict.
      * </p>
+     *
+     * @param attack a payload carrying a raw C0 control other than the null byte
      */
-    @Test
-    @DisplayName("C0 control character attacks must be blocked")
-    void shouldBlockC0ControlCharacterAttacks() {
-        String[] c0ControlAttacks = {
-                // Null byte attacks
-                "/etc/passwd\u0000.txt",
-                "../config\u0000.backup",
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "admin\u0008\u0008\u0008guest",
+            "/secure\u0008\u0008\u0008public/data",
+            "/path\n../etc/passwd",
+            "/data\r\n../config",
+            "\u001B[2J../etc/passwd",
+            "/clear\u001B[H\u001B[J../config",
+            "data\u001F../etc/passwd",
+            "/files\u001F\u001F../config",
+            "../\u0009/etc/passwd",
+            "config\u0009=\u0009../../../etc/shadow"
+    })
+    @DisplayName("C0 control character attacks are rejected as CONTROL_CHARACTERS")
+    void shouldBlockC0ControlCharacterAttacks(String attack) {
+        var exception = assertRejected(attack);
 
-                // Backspace manipulation
-                "admin\u0008\u0008\u0008guest",
-                "/secure\u0008\u0008\u0008public/data",
+        assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + getDisplayableString(attack));
+        assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.CONTROL_CHARACTERS));
+    }
 
-                // Tab injection
-                "../\u0009/etc/passwd",
-                "config\u0009=\u0009../../../etc/shadow",
+    /**
+     * Test raw null byte attacks.
+     *
+     * @param attack a payload carrying a raw null byte
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"/etc/passwd\0.txt", "../config\0.backup"})
+    @DisplayName("Raw null byte attacks are rejected as NULL_BYTE_INJECTION")
+    void shouldBlockRawNullByteAttacks(String attack) {
+        var exception = assertRejected(attack);
 
-                // Line feed/carriage return injection
-                "/path\n../etc/passwd",
-                "/data\r\n../config",
-
-                // Escape sequence injection
-                "\u001B[2J../etc/passwd",
-                "/clear\u001B[H\u001B[J../config",
-
-                // Unit separator manipulation
-                "data\u001F../etc/passwd",
-                "/files\u001F\u001F../config"
-        };
-
-        for (String attack : c0ControlAttacks) {
-            long initialEventCount = eventCounter.getTotalCount();
-
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(attack),
-                    "C0 control attack should be rejected: " + getDisplayableString(attack));
-
-            assertNotNull(exception);
-            assertTrue(isUnicodeControlCharacterSpecificFailure(exception.getFailureType()),
-                    "Should detect C0 control character: " + exception.getFailureType() +
-                            " for: " + getDisplayableString(attack));
-            assertTrue(eventCounter.getTotalCount() > initialEventCount);
-        }
+        assertEquals(UrlSecurityFailureType.NULL_BYTE_INJECTION, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + getDisplayableString(attack));
+        assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.NULL_BYTE_INJECTION));
     }
 
     /**
@@ -530,22 +563,11 @@ class UnicodeControlCharacterAttackTest {
         assertFalse(generator.containsControlCharacters(""));
     }
 
-    /**
-     * QI-9: Determines if a failure type matches specific Unicode control character attack patterns.
-     * Replaces broad OR-assertion with comprehensive security validation.
-     *
-     * @param failureType The actual failure type from validation
-     * @return true if the failure type is expected for Unicode control character patterns
-     */
-    private boolean isUnicodeControlCharacterSpecificFailure(UrlSecurityFailureType failureType) {
-        // QI-9: Unicode control character patterns can trigger multiple specific failure types
-        // Accept all Unicode control character-relevant failure types for comprehensive security validation
-        return failureType == UrlSecurityFailureType.CONTROL_CHARACTERS ||
-                failureType == UrlSecurityFailureType.INVALID_CHARACTER ||
-                failureType == UrlSecurityFailureType.NULL_BYTE_INJECTION ||
-                failureType == UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED ||
-                failureType == UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED ||
-                failureType == UrlSecurityFailureType.INVALID_ENCODING;
+    private UrlSecurityException assertRejected(String attack) {
+        var exception = assertThrows(UrlSecurityException.class, () -> pipeline.validate(attack),
+                () -> "Control character attack should be rejected: " + getDisplayableString(attack));
+        assertEquals(attack, exception.getOriginalInput(), "Original input should be preserved in exception");
+        return exception;
     }
 
     /**

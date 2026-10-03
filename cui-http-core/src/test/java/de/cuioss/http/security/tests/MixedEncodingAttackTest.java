@@ -25,8 +25,8 @@ import de.cuioss.test.generator.junit.EnableGeneratorController;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -95,68 +95,78 @@ class MixedEncodingAttackTest {
     }
 
     /**
-     * Test mixed encoding attack patterns that combine encodings to bypass security controls.
+     * Percent-encoded traversal in the spellings the pattern stage lists: single-encoded in any
+     * hex case, with either separator, and the fully double-encoded form.
      *
-     * <p>
-     * Tests specific mixed encoding attack patterns that are definitively malicious
-     * and use combinations of encoding schemes to bypass security controls that might
-     * only validate against single encoding types.
-     * </p>
+     * @param attack a traversal spelled with listed percent-encoding
      */
-    @Test
-    @DisplayName("Mixed encoding attack patterns should be rejected")
-    void shouldRejectMixedEncodingAttacks() {
-        // HTTP protocol-layer mixed encoding attack patterns (HTML/JS patterns removed - app layer responsibility)
-        String[] mixedEncodingAttacks = {
-                // Path traversal with different URL encoding variations
-                "%2e%2e%2f",                              // ../ (standard URL encoding)
-                "%2E%2E%2F",                              // ../ (uppercase URL encoding)
-                "%2e%2E%2f",                              // ../ (mixed case URL encoding)
-                "%c0%ae%c0%ae%2f",                        // ../ (UTF-8 overlong encoding)
-                "%c0%AE%c0%AE%2F",                        // ../ (UTF-8 overlong mixed case)
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "%2e%2e%2f",
+            "%2E%2E%2F",
+            "%2e%2E%2f",
+            "%2e%2e%2f%2e%2e%2f%65%74%63",
+            "%2E%2E%2F%65%74%63%2F%70%61%73%73%77%64",
+            "%252E%252E%252F",
+            "%2e%2e%5c",
+            "%2e%2e%2f%2e%2e%5c"
+    })
+    @DisplayName("Listed percent-encoded traversal is rejected as PATH_TRAVERSAL_DETECTED")
+    void shouldRejectEncodedTraversalAsPathTraversal(String attack) {
+        var exception = assertRejected(attack);
 
-                // Complex path traversal with mixed encoding variations
-                "%2e%2e%2f%2e%2e%2f%65%74%63",            // ../../etc (URL encoded)
-                "%c0%ae%c0%ae%2f%c0%ae%c0%ae%2f",         // ../../ (UTF-8 overlong)
-                "%2E%2E%2F%65%74%63%2F%70%61%73%73%77%64", // ../etc/passwd (mixed case)
+        assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + attack);
+        assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED));
+    }
 
-                // Double URL encoding patterns
-                "%252e%252e%2f",                          // %2e%2e/ (double URL encoded)
-                "%252E%252E%252F",                        // %2E%2E%2F (double URL encoded uppercase)
-                "%25%32%65%25%32%65%25%32%66",            // %2e%2e%2f (each char double encoded)
+    /**
+     * UTF-8 overlong dots, alone or mixed with standard encoding. An overlong sequence is not
+     * well-formed UTF-8, so the decoding stage refuses it.
+     *
+     * @param attack a traversal spelled with an overlong UTF-8 sequence
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "%c0%ae%c0%ae%2f",
+            "%c0%AE%c0%AE%2F",
+            "%c0%ae%c0%ae%2f%c0%ae%c0%ae%2f",
+            "%c0%ae%2e%2f",
+            "%2e%c0%ae%2f",
+            "%c0%ae%c0%ae%2F"
+    })
+    @DisplayName("UTF-8 overlong traversal is rejected as INVALID_ENCODING")
+    void shouldRejectOverlongTraversalAsInvalidEncoding(String attack) {
+        var exception = assertRejected(attack);
 
-                // Mixed separator encoding
-                "%2e%2e%5c",                              // ..\ (URL encoded backslash)
-                "%2e%2e%2f%2e%2e%5c",                     // ../..\ (mixed forward/back slash)
+        assertEquals(UrlSecurityFailureType.INVALID_ENCODING, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + attack);
+        assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.INVALID_ENCODING));
+    }
 
-                // UTF-8 overlong combined with standard encoding
-                "%c0%ae%2e%2f",                           // ../ (overlong + standard)
-                "%2e%c0%ae%2f",                           // ../ (standard + overlong)
-                "%c0%ae%c0%ae%2F",                        // ../ (overlong + standard case)
-        };
+    /**
+     * Double encoding in a spelling the pattern stage does not list: a double-encoded dot pair
+     * before a single-encoded separator, and the form in which every character of the encoded
+     * sequence is itself encoded.
+     *
+     * @param attack a traversal spelled with unlisted double encoding
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"%252e%252e%2f", "%25%32%65%25%32%65%25%32%66"})
+    @DisplayName("Unlisted double-encoded traversal is rejected as DOUBLE_ENCODING")
+    void shouldRejectUnlistedDoubleEncodedTraversalAsDoubleEncoding(String attack) {
+        var exception = assertRejected(attack);
 
-        for (String attack : mixedEncodingAttacks) {
-            long initialEventCount = eventCounter.getTotalCount();
+        assertEquals(UrlSecurityFailureType.DOUBLE_ENCODING, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + attack);
+        assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.DOUBLE_ENCODING));
+    }
 
-            // When: Attempting to validate the mixed encoding attack
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(attack),
-                    "Mixed encoding attack pattern should be rejected: " + attack);
-
-            // Then: The validation should fail with appropriate security event
-            assertNotNull(exception, "Exception should be thrown for mixed encoding attack: " + attack);
-            assertTrue(isMixedEncodingSpecificFailure(exception.getFailureType()),
-                    "Failure type should be security-related: " + exception.getFailureType() +
-                            " for pattern: " + attack);
-
-            // And: Original malicious input should be preserved
-            assertEquals(attack, exception.getOriginalInput(),
-                    "Original input should be preserved in exception for: " + attack);
-
-            // And: Security event should be recorded
-            assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                    "Security event should be recorded for attack: " + attack);
-        }
+    private UrlSecurityException assertRejected(String attack) {
+        var exception = assertThrows(UrlSecurityException.class, () -> pipeline.validate(attack),
+                () -> "Mixed encoding attack pattern should be rejected: " + attack);
+        assertEquals(attack, exception.getOriginalInput(), "Original input should be preserved in exception");
+        return exception;
     }
 
 
@@ -215,26 +225,5 @@ class MixedEncodingAttackTest {
         // And: No security events should be recorded for valid paths
         assertEquals(initialEventCount, eventCounter.getTotalCount(),
                 "No security events should be recorded for valid path: " + validPath);
-    }
-
-    /**
-     * QI-9: Determines if a failure type matches specific mixed encoding attack patterns.
-     * Replaces broad OR-assertion with comprehensive security validation.
-     *
-     * @param failureType The actual failure type from validation
-     * @return true if the failure type is expected for mixed encoding patterns
-     */
-    private boolean isMixedEncodingSpecificFailure(UrlSecurityFailureType failureType) {
-        // QI-9: Mixed encoding patterns can trigger multiple specific failure types
-        // Accept all mixed encoding-relevant failure types for comprehensive security validation
-        return failureType == UrlSecurityFailureType.DOUBLE_ENCODING ||
-                failureType == UrlSecurityFailureType.INVALID_ENCODING ||
-                failureType == UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED ||
-                failureType == UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED ||
-                failureType == UrlSecurityFailureType.INVALID_CHARACTER ||
-                failureType == UrlSecurityFailureType.UNICODE_NORMALIZATION_CHANGED ||
-                failureType == UrlSecurityFailureType.NULL_BYTE_INJECTION ||
-                failureType == UrlSecurityFailureType.KNOWN_ATTACK_SIGNATURE ||
-                failureType == UrlSecurityFailureType.CONTROL_CHARACTERS;
     }
 }

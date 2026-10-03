@@ -25,6 +25,7 @@ import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -43,16 +44,22 @@ import static org.junit.jupiter.api.Assertions.*;
  * bypass security controls through nested URL encoding patterns.
  * </p>
  *
- * <h3>Test Coverage</h3>
+ * <h3>One verdict per family</h3>
+ * <p>
+ * The two generators mix families that the path pipeline decides by different mechanisms, so
+ * every generator-driven method selects one family by its structural fingerprint
+ * ({@link PathWireForm}) and asserts that family's exact failure type:
+ * </p>
  * <ul>
- *   <li>Double URL encoding attacks (%252e%252e%252f)</li>
- *   <li>Triple and higher-level encoding patterns</li>
- *   <li>Mixed single and double encoding combinations</li>
- *   <li>Case variation attacks (%2E vs %2e)</li>
- *   <li>Complex encoding bypass attempts</li>
- *   <li>UTF-8 overlong encoding combined with standard encoding</li>
- *   <li>Windows and Unix path separator encoding mixtures</li>
- *   <li>CVE-specific double encoding patterns</li>
+ *   <li>a nested percent sign ({@code %%32%65}) is a malformed escape -
+ *       {@link UrlSecurityFailureType#INVALID_ENCODING}</li>
+ *   <li>a raw backslash is outside the path character set -
+ *       {@link UrlSecurityFailureType#INVALID_CHARACTER}</li>
+ *   <li>a double-encoded traversal sequence the pattern stage lists
+ *       ({@code %252e%252e%252f}) is recognised before decoding -
+ *       {@link UrlSecurityFailureType#PATH_TRAVERSAL_DETECTED}</li>
+ *   <li>every other {@code %25XX} spelling, notably the triple-encoded ones, is caught by the
+ *       decoding stage - {@link UrlSecurityFailureType#DOUBLE_ENCODING}</li>
  * </ul>
  *
  * <h3>Security Standards</h3>
@@ -74,119 +81,130 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("T5: Double Encoding Attack Tests")
 class DoubleEncodingAttackTest {
 
+    private static final AttackFamilyGuard NESTED_PERCENT = new AttackFamilyGuard(
+            "shouldRejectNestedPercentAsInvalidEncoding", PathWireForm.MALFORMED_ESCAPE::isFormOf);
+    private static final AttackFamilyGuard LISTED_DOUBLE_ENCODED_TRAVERSAL = new AttackFamilyGuard(
+            "shouldRejectListedDoubleEncodedTraversalAsPathTraversal",
+            DoubleEncodingAttackTest::isWireCleanListedTraversal);
+    private static final AttackFamilyGuard UNLISTED_DOUBLE_ENCODING = new AttackFamilyGuard(
+            "shouldRejectUnlistedDoubleEncodingAsDoubleEncoding",
+            DoubleEncodingAttackTest::isWireCleanUnlistedEncoding);
+    private static final AttackFamilyGuard COMBINATION_RAW_BACKSLASH = new AttackFamilyGuard(
+            "shouldRejectEncodingCombinationWithRawBackslashAsInvalidCharacter",
+            PathWireForm.RAW_NON_PATH_CHARACTER::isFormOf);
+    private static final AttackFamilyGuard COMBINATION_LISTED_TRAVERSAL = new AttackFamilyGuard(
+            "shouldRejectListedEncodingCombinationAsPathTraversal",
+            DoubleEncodingAttackTest::isWireCleanListedTraversal);
+    private static final AttackFamilyGuard COMBINATION_UNLISTED_ENCODING = new AttackFamilyGuard(
+            "shouldRejectUnlistedEncodingCombinationAsDoubleEncoding",
+            DoubleEncodingAttackTest::isWireCleanUnlistedEncoding);
+
     private URLPathValidationPipeline pipeline;
     private SecurityEventCounter eventCounter;
-    private SecurityConfiguration config;
+
+    private static boolean isWireCleanListedTraversal(String payload) {
+        return PathWireForm.WIRE_CLEAN.isFormOf(payload) && PathWireForm.carriesListedTraversalSpelling(payload);
+    }
+
+    private static boolean isWireCleanUnlistedEncoding(String payload) {
+        return PathWireForm.WIRE_CLEAN.isFormOf(payload) && !PathWireForm.carriesListedTraversalSpelling(payload);
+    }
+
+    @AfterAll
+    static void shouldHaveAdmittedFilteredSamples() {
+        AttackFamilyGuard.assertAllAdmittedSamples(NESTED_PERCENT, LISTED_DOUBLE_ENCODED_TRAVERSAL,
+                UNLISTED_DOUBLE_ENCODING, COMBINATION_RAW_BACKSLASH, COMBINATION_LISTED_TRAVERSAL,
+                COMBINATION_UNLISTED_ENCODING);
+    }
 
     @BeforeEach
     void setUp() {
-        config = SecurityConfiguration.defaults();
         eventCounter = new SecurityEventCounter();
-        pipeline = new URLPathValidationPipeline(config, eventCounter);
+        pipeline = new URLPathValidationPipeline(SecurityConfiguration.defaults(), eventCounter);
     }
 
-    /**
-     * Test double encoding attack patterns.
-     *
-     * <p>
-     * Uses DoubleEncodingAttackGenerator which creates focused double encoding
-     * attack patterns including CVE-specific patterns and various bypass attempts.
-     * </p>
-     *
-     * @param doubleEncodingPattern A double encoding attack pattern
-     */
     @ParameterizedTest
-    @TypeGeneratorSource(value = DoubleEncodingAttackGenerator.class, count = 50)
-    @DisplayName("Double encoding attack patterns should be rejected")
-    void shouldRejectDoubleEncodingAttacks(String doubleEncodingPattern) {
-        // Given: A double encoding attack pattern from the generator
-        long initialEventCount = eventCounter.getTotalCount();
+    @TypeGeneratorSource(value = DoubleEncodingAttackGenerator.class, count = 100)
+    @DisplayName("A nested percent sign is rejected as INVALID_ENCODING")
+    void shouldRejectNestedPercentAsInvalidEncoding(String doubleEncodingPattern) {
+        if (!NESTED_PERCENT.admits(doubleEncodingPattern)) {
+            return;
+        }
+        var exception = assertRejected(doubleEncodingPattern);
 
-        // When: Attempting to validate the double encoding attack
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pipeline.validate(doubleEncodingPattern),
-                "Double encoding attack pattern should be rejected: " + doubleEncodingPattern);
-
-        // Then: The validation should fail with appropriate security event
-        assertNotNull(exception, "Exception should be thrown for double encoding attack");
-        assertTrue(isDoubleEncodingSpecificFailure(exception.getFailureType()),
-                "Failure type should be double encoding specific: " + exception.getFailureType() +
-                        " for pattern: " + doubleEncodingPattern);
-
-        // And: Original malicious input should be preserved
-        assertEquals(doubleEncodingPattern, exception.getOriginalInput(),
-                "Original input should be preserved in exception");
-
-        // And: Security event should be recorded
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded");
+        assertEquals(UrlSecurityFailureType.INVALID_ENCODING, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + doubleEncodingPattern);
+        assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.INVALID_ENCODING));
     }
 
-    /**
-     * Test standard encoding combination patterns.
-     *
-     * <p>
-     * Uses EncodingCombinationGenerator which creates 1-3 levels of encoding
-     * with mixed case variations to test various bypass attempts.
-     * </p>
-     *
-     * @param encodingAttackPattern An encoding combination attack pattern
-     */
     @ParameterizedTest
-    @TypeGeneratorSource(value = EncodingCombinationGenerator.class, count = 30)
-    @DisplayName("Encoding combination attacks should be rejected")
-    void shouldRejectEncodingCombinationAttacks(String encodingAttackPattern) {
-        // Given: An encoding attack pattern from the generator
-        long initialEventCount = eventCounter.getTotalCount();
+    @TypeGeneratorSource(value = DoubleEncodingAttackGenerator.class, count = 100)
+    @DisplayName("A listed double-encoded traversal sequence is rejected as PATH_TRAVERSAL_DETECTED")
+    void shouldRejectListedDoubleEncodedTraversalAsPathTraversal(String doubleEncodingPattern) {
+        if (!LISTED_DOUBLE_ENCODED_TRAVERSAL.admits(doubleEncodingPattern)) {
+            return;
+        }
+        var exception = assertRejected(doubleEncodingPattern);
 
-        // When: Attempting to validate the encoding attack
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pipeline.validate(encodingAttackPattern),
-                "Encoding attack pattern should be rejected: " + encodingAttackPattern);
-
-        // Then: The validation should fail with appropriate security event
-        assertNotNull(exception, "Exception should be thrown for encoding attack");
-        assertTrue(isDoubleEncodingSpecificFailure(exception.getFailureType()),
-                "Failure type should be double encoding specific: " + exception.getFailureType() +
-                        " for pattern: " + encodingAttackPattern);
-
-        // And: Security event should be recorded
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded");
+        assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + doubleEncodingPattern);
+        assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED));
     }
 
-    /**
-     * Test complex encoding combination patterns.
-     *
-     * <p>
-     * Uses EncodingCombinationGenerator which provides HTTP protocol-layer
-     * encoding patterns including URL encoding combinations and various
-     * bypass techniques used in real-world attacks.
-     * </p>
-     *
-     * @param complexEncodingPattern A complex encoding attack pattern
-     */
     @ParameterizedTest
-    @TypeGeneratorSource(value = EncodingCombinationGenerator.class, count = 20)
-    @DisplayName("Complex encoding attacks should be rejected")
-    void shouldRejectComplexEncodingAttacks(String complexEncodingPattern) {
-        // Given: A complex encoding pattern from the generator
-        long initialEventCount = eventCounter.getTotalCount();
+    @TypeGeneratorSource(value = DoubleEncodingAttackGenerator.class, count = 100)
+    @DisplayName("A double encoding the pattern stage does not list is rejected as DOUBLE_ENCODING")
+    void shouldRejectUnlistedDoubleEncodingAsDoubleEncoding(String doubleEncodingPattern) {
+        if (!UNLISTED_DOUBLE_ENCODING.admits(doubleEncodingPattern)) {
+            return;
+        }
+        var exception = assertRejected(doubleEncodingPattern);
 
-        // When: Attempting to validate the complex encoding attack
-        var exception = assertThrows(UrlSecurityException.class,
-                () -> pipeline.validate(complexEncodingPattern),
-                "Complex encoding pattern should be rejected: " + complexEncodingPattern);
+        assertEquals(UrlSecurityFailureType.DOUBLE_ENCODING, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + doubleEncodingPattern);
+        assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.DOUBLE_ENCODING));
+    }
 
-        // Then: The validation should fail with appropriate security event
-        assertNotNull(exception, "Exception should be thrown for complex encoding attack");
-        assertTrue(isDoubleEncodingSpecificFailure(exception.getFailureType()),
-                "Failure type should be double encoding specific: " + exception.getFailureType() +
-                        " for pattern: " + complexEncodingPattern);
+    @ParameterizedTest
+    @TypeGeneratorSource(value = EncodingCombinationGenerator.class, count = 60)
+    @DisplayName("An encoding combination with a raw backslash is rejected as INVALID_CHARACTER")
+    void shouldRejectEncodingCombinationWithRawBackslashAsInvalidCharacter(String encodingAttackPattern) {
+        if (!COMBINATION_RAW_BACKSLASH.admits(encodingAttackPattern)) {
+            return;
+        }
+        var exception = assertRejected(encodingAttackPattern);
 
-        // And: Security event should be recorded
-        assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                "Security event should be recorded");
+        assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + encodingAttackPattern);
+        assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.INVALID_CHARACTER));
+    }
+
+    @ParameterizedTest
+    @TypeGeneratorSource(value = EncodingCombinationGenerator.class, count = 60)
+    @DisplayName("A listed encoded traversal combination is rejected as PATH_TRAVERSAL_DETECTED")
+    void shouldRejectListedEncodingCombinationAsPathTraversal(String encodingAttackPattern) {
+        if (!COMBINATION_LISTED_TRAVERSAL.admits(encodingAttackPattern)) {
+            return;
+        }
+        var exception = assertRejected(encodingAttackPattern);
+
+        assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + encodingAttackPattern);
+        assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED));
+    }
+
+    @ParameterizedTest
+    @TypeGeneratorSource(value = EncodingCombinationGenerator.class, count = 100)
+    @DisplayName("A triple-encoded combination is rejected as DOUBLE_ENCODING")
+    void shouldRejectUnlistedEncodingCombinationAsDoubleEncoding(String encodingAttackPattern) {
+        if (!COMBINATION_UNLISTED_ENCODING.admits(encodingAttackPattern)) {
+            return;
+        }
+        var exception = assertRejected(encodingAttackPattern);
+
+        assertEquals(UrlSecurityFailureType.DOUBLE_ENCODING, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + encodingAttackPattern);
+        assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.DOUBLE_ENCODING));
     }
 
     /**
@@ -234,8 +252,7 @@ class DoubleEncodingAttackTest {
             """)
     @DisplayName("Malformed and double-encoded edge cases are rejected with their exact failure type")
     void shouldRejectEncodingEdgeCases(String edgeCase, UrlSecurityFailureType expected) {
-        var exception = assertThrows(UrlSecurityException.class, () -> pipeline.validate(edgeCase),
-                () -> "Edge case should be rejected: " + edgeCase);
+        var exception = assertRejected(edgeCase);
 
         assertEquals(expected, exception.getFailureType(), () -> "Unexpected verdict for: " + edgeCase);
         assertEquals(1, eventCounter.getCount(expected), () -> "Exactly one " + expected + " event should be recorded");
@@ -271,24 +288,10 @@ class DoubleEncodingAttackTest {
         assertEquals(0, eventCounter.getTotalCount(), "An accepted path records no security event");
     }
 
-    /**
-     * QI-9: Determines if a failure type matches specific double encoding attack patterns.
-     * Replaces broad OR-assertion with comprehensive security validation.
-     *
-     * @param failureType The actual failure type from validation
-     * @return true if the failure type is expected for double encoding patterns
-     */
-    private boolean isDoubleEncodingSpecificFailure(UrlSecurityFailureType failureType) {
-        // QI-9: Double encoding patterns can trigger multiple specific failure types
-        // Accept all double encoding-relevant failure types for comprehensive security validation
-        return failureType == UrlSecurityFailureType.DOUBLE_ENCODING ||
-                failureType == UrlSecurityFailureType.INVALID_ENCODING ||
-                failureType == UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED ||
-                failureType == UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED ||
-                failureType == UrlSecurityFailureType.INVALID_CHARACTER ||
-                failureType == UrlSecurityFailureType.UNICODE_NORMALIZATION_CHANGED ||
-                failureType == UrlSecurityFailureType.KNOWN_ATTACK_SIGNATURE ||
-                failureType == UrlSecurityFailureType.CONTROL_CHARACTERS ||
-                failureType == UrlSecurityFailureType.NULL_BYTE_INJECTION;
+    private UrlSecurityException assertRejected(String attack) {
+        var exception = assertThrows(UrlSecurityException.class, () -> pipeline.validate(attack),
+                () -> "Encoding attack should be rejected: " + attack);
+        assertEquals(attack, exception.getOriginalInput(), "Original input should be preserved in exception");
+        return exception;
     }
 }

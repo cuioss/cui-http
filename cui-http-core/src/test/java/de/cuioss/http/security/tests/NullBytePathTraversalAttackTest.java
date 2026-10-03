@@ -223,9 +223,8 @@ class NullBytePathTraversalAttackTest {
                 "Null byte pattern must be rejected: " + nullBytePattern);
 
         // And: Exception should have proper details
-        assertNotNull(exception);
-        assertTrue(isNullBytePathTraversalSpecificFailure(exception.getFailureType()),
-                "Should detect null byte attack: " + exception.getFailureType() + " for pattern: " + nullBytePattern);
+        assertEquals(UrlSecurityFailureType.NULL_BYTE_INJECTION, exception.getFailureType(),
+                () -> "Unexpected verdict for pattern: " + nullBytePattern);
 
         // And: Security event should be recorded
         assertTrue(eventCounter.getTotalCount() > initialEventCount,
@@ -255,9 +254,8 @@ class NullBytePathTraversalAttackTest {
                 "Null byte attack pattern should be rejected: " + nullByteAttackPattern);
 
         // Then: The validation should fail with appropriate security event
-        assertNotNull(exception, "Exception should be thrown for null byte attack");
-        assertTrue(isNullBytePathTraversalSpecificFailure(exception.getFailureType()),
-                "Failure type should be null byte related: " + exception.getFailureType());
+        assertEquals(UrlSecurityFailureType.NULL_BYTE_INJECTION, exception.getFailureType(),
+                () -> "Unexpected verdict for pattern: " + nullByteAttackPattern);
 
         // And: Original malicious input should be preserved
         assertEquals(nullByteAttackPattern, exception.getOriginalInput(),
@@ -289,8 +287,8 @@ class NullBytePathTraversalAttackTest {
                 "High-risk null byte pattern should be rejected: " + nullBytePathTraversalPattern);
 
         // And: Exception should be properly formed
-        assertNotNull(exception);
-        assertTrue(isNullBytePathTraversalSpecificFailure(exception.getFailureType()));
+        assertEquals(UrlSecurityFailureType.NULL_BYTE_INJECTION, exception.getFailureType(),
+                () -> "Unexpected verdict for pattern: " + nullBytePathTraversalPattern);
 
         // And: Security event should be recorded
         assertTrue(eventCounter.getTotalCount() > initialEventCount);
@@ -316,8 +314,8 @@ class NullBytePathTraversalAttackTest {
                 () -> pipeline.validate(nullByteEncodingPattern),
                 "Null byte encoding variation should be rejected: " + nullByteEncodingPattern);
 
-        // And: Exception should be properly formed
-        assertNotNull(exception);
+        // And: The null byte is the verdict
+        assertEquals(UrlSecurityFailureType.NULL_BYTE_INJECTION, exception.getFailureType());
 
         // And: Security event should be recorded
         assertTrue(eventCounter.getTotalCount() > initialEventCount);
@@ -343,32 +341,10 @@ class NullBytePathTraversalAttackTest {
                 () -> pipeline.validate(extensionBypassPattern),
                 "Extension bypass attack should be rejected: " + extensionBypassPattern);
 
-        // And: Exception should be properly formed
-        assertNotNull(exception);
+        // And: The null byte is the verdict
+        assertEquals(UrlSecurityFailureType.NULL_BYTE_INJECTION, exception.getFailureType());
 
         // And: Security event should be recorded
         assertTrue(eventCounter.getTotalCount() > initialEventCount);
-    }
-
-    /**
-     * QI-9: Determines if a failure type matches specific null byte path traversal attack patterns.
-     * Replaces broad OR-assertion with comprehensive security validation.
-     *
-     * @param failureType The actual failure type from validation
-     * @return true if the failure type is expected for null byte path traversal patterns
-     */
-    private boolean isNullBytePathTraversalSpecificFailure(UrlSecurityFailureType failureType) {
-        // QI-9: Null byte path traversal patterns can trigger multiple specific failure types
-        // Accept all null byte path traversal-relevant failure types for comprehensive security validation
-        return failureType == UrlSecurityFailureType.NULL_BYTE_INJECTION ||
-                failureType == UrlSecurityFailureType.INVALID_CHARACTER ||
-                failureType == UrlSecurityFailureType.CONTROL_CHARACTERS ||
-                failureType == UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED ||
-                failureType == UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED ||
-                failureType == UrlSecurityFailureType.PATH_TOO_LONG ||
-                failureType == UrlSecurityFailureType.INPUT_TOO_LONG ||
-                failureType == UrlSecurityFailureType.EXCESSIVE_NESTING ||
-                failureType == UrlSecurityFailureType.DOUBLE_ENCODING ||
-                failureType == UrlSecurityFailureType.INVALID_ENCODING;
     }
 }
