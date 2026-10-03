@@ -31,9 +31,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.EnumSet;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -118,8 +120,12 @@ class URLPathValidationPipelineTest {
     @Nested
     class SecurityValidation {
 
+        static Stream<String> nullByteUrls() {
+            return NullByteURLGenerator.NULL_BYTE_URLS.stream();
+        }
+
         @ParameterizedTest
-        @TypeGeneratorSource(value = NullByteURLGenerator.class, count = 5)
+        @MethodSource("nullByteUrls")
         void shouldRejectNullByteInjection(String maliciousPath) {
             UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
                     pipeline.validate(maliciousPath));

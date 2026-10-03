@@ -16,6 +16,7 @@
 package de.cuioss.http.security.generators.header;
 
 import de.cuioss.test.generator.junit.EnableGeneratorController;
+import de.cuioss.test.generator.junit.GeneratorSeed;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -40,6 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * fragments rather than URLs, so it has no single pipeline that consumes every emitted value.</p>
  */
 @EnableGeneratorController
+@GeneratorSeed(4711L)
 @DisplayName("HTTPHeaderInjectionGenerator Contract Tests")
 class HTTPHeaderInjectionGeneratorTest {
 

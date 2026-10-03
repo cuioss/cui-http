@@ -19,65 +19,113 @@ import de.cuioss.http.security.config.SecurityConfiguration;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
-import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
+import de.cuioss.test.generator.junit.GeneratorSeed;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
-import java.util.HashSet;
-import java.util.Set;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static de.cuioss.http.security.generators.GeneratorContractAssertions.*;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Contract test for {@link NullByteURLGenerator}.
  *
- * <p>The defining property of this generator is that every emitted value is an API path
- * carrying a null byte — raw or percent-encoded — and is therefore rejected by the URL path
- * validation pipeline. The aggregate test asserts that both null-byte encodings are
- * reachable.</p>
+ * <p>The generator's values are a fixed list. Its defining properties are that every entry of
+ * that list is an API path carrying a null byte - raw or percent-encoded - that the URL path
+ * pipeline rejects, and that {@link NullByteURLGenerator#next()} walks the list in order, so a
+ * consumer drawing from it covers every entry instead of a random subset.</p>
  */
 @EnableGeneratorController
+@GeneratorSeed(4711L)
 @DisplayName("NullByteURLGenerator Contract Tests")
 class NullByteURLGeneratorTest {
 
-    private static final int AGGREGATE_DRAWS = 400;
     private static final String RAW_NULL_BYTE = "\0";
     private static final String ENCODED_NULL_BYTE = "%00";
+    private static final int THREADS = 8;
+    private static final int PASSES_PER_THREAD = 50;
+
+    static Stream<String> nullByteUrls() {
+        return NullByteURLGenerator.NULL_BYTE_URLS.stream();
+    }
 
     @ParameterizedTest
-    @TypeGeneratorSource(value = NullByteURLGenerator.class, count = 100)
-    @DisplayName("Every generated URL carries a null byte and is rejected by the pipeline")
-    void shouldGenerateNullByteInjection(String generatedValue) {
-        assertTrue(generatedValue.startsWith("/api"),
-                () -> "Null byte URLs are rooted at '/api'. Value: <" + generatedValue + ">");
-        assertContainsAny(generatedValue, NULL_BYTE_MARKERS, "Null byte injection URL");
+    @MethodSource("nullByteUrls")
+    @DisplayName("Every listed URL carries a null byte and is rejected by the pipeline")
+    void shouldListNullByteInjection(String listedValue) {
+        assertTrue(listedValue.startsWith("/api"),
+                () -> "Null byte URLs are rooted at '/api'. Value: <" + listedValue + ">");
+        assertContainsAny(listedValue, NULL_BYTE_MARKERS, "Null byte injection URL");
 
         assertPipelineRejects(
                 new URLPathValidationPipeline(SecurityConfiguration.defaults(), new SecurityEventCounter()),
-                generatedValue);
+                listedValue);
     }
 
     @Test
-    @DisplayName("Should reach both the raw and the percent-encoded null-byte form")
-    void shouldReachBothNullByteEncodings() {
+    @DisplayName("Should emit the whole list in declaration order and then start over")
+    void shouldWalkTheListInOrder() {
         NullByteURLGenerator generator = new NullByteURLGenerator();
-        Set<String> forms = new HashSet<>();
+        int size = NullByteURLGenerator.NULL_BYTE_URLS.size();
 
-        for (int i = 0; i < AGGREGATE_DRAWS; i++) {
-            String value = generator.next();
-            if (value.contains(RAW_NULL_BYTE)) {
-                forms.add("raw");
+        List<String> firstPass = draw(generator, size);
+        List<String> secondPass = draw(generator, size);
+
+        assertAll("Consecutive passes",
+                () -> assertEquals(NullByteURLGenerator.NULL_BYTE_URLS, firstPass,
+                        "The first pass must emit every listed URL once, in declaration order"),
+                () -> assertEquals(NullByteURLGenerator.NULL_BYTE_URLS, secondPass,
+                        "After the last entry the generator must start over at the first"));
+    }
+
+    @Test
+    @DisplayName("Should list both the raw and the percent-encoded null-byte form")
+    void shouldListBothNullByteEncodings() {
+        List<String> urls = NullByteURLGenerator.NULL_BYTE_URLS;
+
+        assertAll("Null-byte encodings",
+                () -> assertTrue(urls.stream().anyMatch(url -> url.contains(RAW_NULL_BYTE)),
+                        "The list must contain a raw null byte"),
+                () -> assertTrue(urls.stream().anyMatch(url -> url.contains(ENCODED_NULL_BYTE)),
+                        "The list must contain a percent-encoded null byte"));
+    }
+
+    @Test
+    @DisplayName("Should hand every list entry out equally often when one instance is shared by threads")
+    void shouldWalkTheListThreadSafely() throws Exception {
+        NullByteURLGenerator generator = new NullByteURLGenerator();
+        int size = NullByteURLGenerator.NULL_BYTE_URLS.size();
+        Callable<List<String>> drawer = () -> draw(generator, size * PASSES_PER_THREAD);
+
+        List<String> drawn = new ArrayList<>();
+        try (ExecutorService executor = Executors.newFixedThreadPool(THREADS)) {
+            List<Future<List<String>>> futures = new ArrayList<>();
+            for (int thread = 0; thread < THREADS; thread++) {
+                futures.add(executor.submit(drawer));
             }
-            if (value.contains(ENCODED_NULL_BYTE)) {
-                forms.add("encoded");
+            for (Future<List<String>> future : futures) {
+                drawn.addAll(future.get());
             }
         }
 
-        assertEquals(Set.of("raw", "encoded"), forms,
-                "Both null-byte encodings must be reachable within " + AGGREGATE_DRAWS + " draws");
+        Map<String, Long> occurrences = drawn.stream()
+                .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
+        Map<String, Long> expected = NullByteURLGenerator.NULL_BYTE_URLS.stream()
+                .collect(Collectors.toMap(Function.identity(), url -> (long) THREADS * PASSES_PER_THREAD));
+        assertEquals(expected, occurrences,
+                "A shared counter that lost or repeated an update would skew the per-entry counts");
     }
 
     @Test
@@ -85,5 +133,13 @@ class NullByteURLGeneratorTest {
     void shouldReturnCorrectType() {
         assertEquals(String.class, new NullByteURLGenerator().getType(),
                 "Generator should return String.class");
+    }
+
+    private static List<String> draw(NullByteURLGenerator generator, int count) {
+        List<String> values = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            values.add(generator.next());
+        }
+        return values;
     }
 }

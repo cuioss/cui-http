@@ -19,6 +19,7 @@ import de.cuioss.http.security.config.SecurityConfiguration;
 import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
+import de.cuioss.test.generator.junit.GeneratorSeed;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -40,6 +41,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * reachable.</p>
  */
 @EnableGeneratorController
+@GeneratorSeed(4711L)
 @DisplayName("ValidURLPathGenerator Contract Tests")
 class ValidURLPathGeneratorTest {
 

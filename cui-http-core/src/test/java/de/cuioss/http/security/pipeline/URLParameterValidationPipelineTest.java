@@ -31,12 +31,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
 import java.util.EnumSet;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -130,8 +132,12 @@ class URLParameterValidationPipelineTest {
                     "Parameter variation should be returned in its decoded, NFC-canonical form");
         }
 
+        static Stream<String> nullByteParameters() {
+            return NullByteInjectionParameterGenerator.NULL_BYTE_PARAMETERS.stream();
+        }
+
         @ParameterizedTest
-        @TypeGeneratorSource(value = NullByteInjectionParameterGenerator.class, count = 5)
+        @MethodSource("nullByteParameters")
         void shouldRejectNullByteInjection(String maliciousParam) {
             UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
                     pipeline.validate(maliciousParam));

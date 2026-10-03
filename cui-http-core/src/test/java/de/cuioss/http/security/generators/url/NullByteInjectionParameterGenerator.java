@@ -15,16 +15,26 @@
  */
 package de.cuioss.http.security.generators.url;
 
-import de.cuioss.test.generator.Generators;
 import de.cuioss.test.generator.TypedGenerator;
+
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Generator for URL parameters containing null byte injection attacks.
- * Provides parameter strings with various null byte patterns.
+ *
+ * <p>The attack patterns are a fixed list, {@link #NULL_BYTE_PARAMETERS}. {@link #next()} walks
+ * that list in declaration order and starts over after the last entry, so a generator instance
+ * emits every pattern once per {@code NULL_BYTE_PARAMETERS.size()} calls, independent of any
+ * seed. A test that must cover the whole list iterates {@link #NULL_BYTE_PARAMETERS} directly.</p>
+ *
+ * <p>Thread-safe: the position is an atomic counter, so concurrent callers of one instance each
+ * receive a list entry and no entry is skipped.</p>
  */
 public class NullByteInjectionParameterGenerator implements TypedGenerator<String> {
 
-    private final TypedGenerator<String> nullByteParameters = Generators.fixedValues(
+    /** Every null byte parameter pattern this generator emits, in emission order. */
+    public static final List<String> NULL_BYTE_PARAMETERS = List.of(
             "param=value\0admin",
             "data=%00admin",
             "file=config\0",
@@ -41,9 +51,12 @@ public class NullByteInjectionParameterGenerator implements TypedGenerator<Strin
             "resource=public.css\0private.cfg"
     );
 
+    private final AtomicInteger position = new AtomicInteger();
+
     @Override
     public String next() {
-        return nullByteParameters.next();
+        return NULL_BYTE_PARAMETERS.get(
+                Math.floorMod(position.getAndIncrement(), NULL_BYTE_PARAMETERS.size()));
     }
 
     @Override

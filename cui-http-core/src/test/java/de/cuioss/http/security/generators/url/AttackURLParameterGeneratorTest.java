@@ -17,6 +17,7 @@ package de.cuioss.http.security.generators.url;
 
 import de.cuioss.http.security.data.URLParameter;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
+import de.cuioss.test.generator.junit.GeneratorSeed;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -43,6 +44,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * contract suite over the generator's nine value families.</p>
  */
 @EnableGeneratorController
+@GeneratorSeed(4711L)
 @DisplayName("AttackURLParameterGenerator Contract Tests")
 class AttackURLParameterGeneratorTest {
 
