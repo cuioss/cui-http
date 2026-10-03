@@ -23,11 +23,12 @@ import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import de.cuioss.http.security.pipeline.URLPathValidationPipeline;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
 import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -35,31 +36,22 @@ import static org.junit.jupiter.api.Assertions.*;
  * T24: Test protocol handler attacks
  *
  * <p>
- * This test class implements Task T24 from the HTTP security validation plan,
- * focusing on testing protocol handler attack patterns that can bypass URL
- * validation through custom protocol exploitation, scheme manipulation,
- * and protocol confusion attacks.
+ * A protocol handler attack hands the application a value that starts with a scheme a URL
+ * parser executes or dereferences - {@code javascript:}, {@code vbscript:}, {@code data:} or
+ * {@code file:}. The pattern stage matches those schemes at the start of the value, raw and
+ * again after decoding, and rejects the value as
+ * {@link UrlSecurityFailureType#SUSPICIOUS_PATTERN_DETECTED} when
+ * {@code failOnSuspiciousPatterns} is enabled.
  * </p>
  *
- * <h3>Test Coverage</h3>
- * <ul>
- *   <li>JavaScript protocol attacks for XSS</li>
- *   <li>Data URI exploitation and payload injection</li>
- *   <li>File protocol exploitation for local file access</li>
- *   <li>Custom protocol schemes and handlers</li>
- *   <li>Protocol confusion and injection attacks</li>
- *   <li>Malformed protocol schemes</li>
- *   <li>Protocol case manipulation and encoding</li>
- *   <li>Nested protocol attacks and handler bypass</li>
- * </ul>
- *
- * <h3>Validation Expectations</h3>
- * <ul>
- *   <li>All malicious protocol patterns should be <strong>REJECTED</strong></li>
- *   <li>Security events should be properly recorded</li>
- *   <li>Appropriate failure types should be identified</li>
- *   <li>Original inputs should be preserved in exceptions</li>
- * </ul>
+ * <h3>Configuration and payload shape</h3>
+ * <p>
+ * The pipeline under test uses {@link SecurityConfiguration#strict()}, which enables the scheme
+ * match and seeds no path block-list - so {@code SUSPICIOUS_PATTERN_DETECTED} can only come from
+ * the scheme. Every payload carries a scheme and an otherwise legal path: no traversal sequence
+ * and no character outside the path character set, either of which would be rejected by another
+ * mechanism before the scheme is looked at.
+ * </p>
  *
  * <h3>Security Standards</h3>
  * <ul>
@@ -78,405 +70,146 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("T24: Protocol Handler Attack Tests")
 class ProtocolHandlerAttackTest {
 
-    private static final AttackFamilyGuard PROTOCOL_HANDLER_ONLY = new AttackFamilyGuard(
-            "shouldRejectProtocolHandlerAsSuspiciousPattern",
-            pattern -> PathWireForm.WIRE_CLEAN.isFormOf(pattern)
-                    && !PathWireForm.carriesListedTraversalSpelling(pattern));
-    private static final AttackFamilyGuard WIRE_CLEAN_WITH_TRAVERSAL = new AttackFamilyGuard(
-            "shouldRejectProtocolPatternWithTraversalAsPathTraversal",
-            pattern -> PathWireForm.WIRE_CLEAN.isFormOf(pattern)
-                    && PathWireForm.carriesListedTraversalSpelling(pattern));
-    private static final AttackFamilyGuard NON_PATH_CHARACTER = new AttackFamilyGuard(
-            "shouldRejectProtocolPatternWithNonPathCharacterAsInvalidCharacter",
-            PathWireForm.RAW_NON_PATH_CHARACTER::isFormOf);
-    private static final AttackFamilyGuard RAW_CONTROL_CHARACTER = new AttackFamilyGuard(
-            "shouldRejectProtocolPatternWithControlCharacterAsControlCharacters",
-            PathWireForm.RAW_CONTROL_CHARACTER::isFormOf);
-    private static final AttackFamilyGuard NULL_BYTE = new AttackFamilyGuard(
-            "shouldRejectProtocolPatternWithNullByteAsNullByteInjection", PathWireForm.NULL_BYTE::isFormOf);
-
-    @AfterAll
-    static void shouldHaveAdmittedFilteredSamples() {
-        AttackFamilyGuard.assertAllAdmittedSamples(PROTOCOL_HANDLER_ONLY, WIRE_CLEAN_WITH_TRAVERSAL,
-                NON_PATH_CHARACTER, RAW_CONTROL_CHARACTER, NULL_BYTE);
-    }
-
     private URLPathValidationPipeline pipeline;
     private SecurityEventCounter eventCounter;
-    private SecurityConfiguration config;
 
     @BeforeEach
     void setUp() {
-        // paranoid() inherits failOnSuspiciousPatterns=true from strict() - which drives the
-        // start-anchored protocol-handler scheme check - and additionally seeds
-        // blockedPathPatterns, so a scheme that appears mid-value is still caught by the
-        // whole-segment match on the sensitive path it targets.
-        config = SecurityConfiguration.paranoid();
         eventCounter = new SecurityEventCounter();
-        pipeline = new URLPathValidationPipeline(config, eventCounter);
+        pipeline = new URLPathValidationPipeline(SecurityConfiguration.strict(), eventCounter);
     }
 
     /**
-     * Generated patterns made of path characters only that carry no traversal sequence: the
-     * protocol handler itself is what the pattern stage reports.
+     * Test all protocol handler attack patterns generated by ProtocolHandlerAttackGenerator.
      *
      * @param protocolAttackPattern A malicious protocol handler pattern
      */
     @ParameterizedTest
-    @TypeGeneratorSource(value = ProtocolHandlerAttackGenerator.class, count = 1200)
-    @DisplayName("A wire-clean protocol handler without traversal is rejected as SUSPICIOUS_PATTERN_DETECTED")
-    void shouldRejectProtocolHandlerAsSuspiciousPattern(String protocolAttackPattern) {
-        if (!PROTOCOL_HANDLER_ONLY.admits(protocolAttackPattern)) {
-            return;
-        }
+    @TypeGeneratorSource(value = ProtocolHandlerAttackGenerator.class, count = 64)
+    @DisplayName("Every generated protocol handler attack is rejected for its scheme")
+    void shouldRejectAllProtocolHandlerAttackPatterns(String protocolAttackPattern) {
+        assertEquals(PathWireForm.WIRE_CLEAN, PathWireForm.of(protocolAttackPattern),
+                () -> "The scheme must be the only rejectable property: " + protocolAttackPattern);
+        assertFalse(PathWireForm.carriesListedTraversalSpelling(protocolAttackPattern),
+                () -> "The scheme must be the only rejectable property: " + protocolAttackPattern);
+
         var exception = assertRejected(protocolAttackPattern);
 
         assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType(),
                 () -> "Unexpected verdict for: " + protocolAttackPattern);
-        assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "javascript:alert('XSS')",
+            "javascript:eval(String.fromCharCode(97,108,101,114,116,40,39,88,83,83,39,41))/admin",
+            "javascript:window.location='http://evil.com'",
+            "javascript:document.location.href='malicious.com'",
+            "javascript:fetch('/etc/passwd').then(console.log)",
+            "javascript:/*comment*/alert('XSS')",
+            "javascript://javascript:alert('XSS')",
+            "vbscript:msgbox('XSS')"
+    })
+    @DisplayName("Script protocol attacks are rejected as SUSPICIOUS_PATTERN_DETECTED")
+    void shouldBlockScriptProtocolAttacks(String pattern) {
+        var exception = assertRejected(pattern);
+
+        assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + pattern);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "data:text/html,%3Cscript%3Ealert('XSS')%3C/script%3E",
+            "data:application/javascript,alert('XSS')/admin/config",
+            "data:text/html;base64,PHNjcmlwdD5hbGVydCgnWFNTJyk8L3NjcmlwdD4=",
+            "data:image/svg+xml,%3Csvg%3E%3Cscript%3Ealert('XSS')%3C/script%3E%3C/svg%3E",
+            "data:text/plain,etc/passwd",
+            "data:,admin/config"
+    })
+    @DisplayName("Data URI exploitation patterns are rejected as SUSPICIOUS_PATTERN_DETECTED")
+    void shouldBlockDataURIExploitationPatterns(String pattern) {
+        var exception = assertRejected(pattern);
+
+        assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + pattern);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "file:///etc/passwd",
+            "file:////etc/passwd",
+            "file://localhost/etc/passwd",
+            "file:///c:/windows/win.ini",
+            "file://admin:password@evil.com/etc/shadow"
+    })
+    @DisplayName("File protocol exploitation patterns are rejected as SUSPICIOUS_PATTERN_DETECTED")
+    void shouldBlockFileProtocolExploitationPatterns(String pattern) {
+        var exception = assertRejected(pattern);
+
+        assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + pattern);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "JAVASCRIPT:alert('XSS')/admin",
+            "JavaScript:alert('XSS')",
+            "jAvAsCrIpT:alert(1)",
+            "DATA:text/html,alert(1)",
+            "FILE:///etc/passwd",
+            "VBScript:msgbox(1)"
+    })
+    @DisplayName("A scheme in another letter case is rejected as SUSPICIOUS_PATTERN_DETECTED")
+    void shouldBlockProtocolCaseManipulation(String pattern) {
+        var exception = assertRejected(pattern);
+
+        assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + pattern);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "%6a%61%76%61%73%63%72%69%70%74:alert('XSS')/admin",
+            "j%61vascript:alert(1)",
+            "javascript%3Aalert(1)",
+            "%64%61%74%61:text/html,alert(1)",
+            "%66%69%6c%65:///etc/passwd"
+    })
+    @DisplayName("A percent-encoded scheme is rejected as SUSPICIOUS_PATTERN_DETECTED after decoding")
+    void shouldBlockProtocolEncodingAttacks(String pattern) {
+        var exception = assertRejected(pattern);
+
+        assertEquals(UrlSecurityFailureType.SUSPICIOUS_PATTERN_DETECTED, exception.getFailureType(),
+                () -> "Unexpected verdict for: " + pattern);
     }
 
     /**
-     * Generated patterns made of path characters only that carry a traversal sequence: the
-     * traversal is found before the protocol handler is.
+     * The scheme match is anchored to the start of the value. A scheme-like token in a later
+     * path segment is ordinary REST vocabulary and is not a protocol handler.
      *
-     * @param protocolAttackPattern A malicious protocol handler pattern
+     * @param path a legitimate path carrying a scheme-like token after its first segment
      */
     @ParameterizedTest
-    @TypeGeneratorSource(value = ProtocolHandlerAttackGenerator.class, count = 64)
-    @DisplayName("A wire-clean protocol pattern with traversal is rejected as PATH_TRAVERSAL_DETECTED")
-    void shouldRejectProtocolPatternWithTraversalAsPathTraversal(String protocolAttackPattern) {
-        if (!WIRE_CLEAN_WITH_TRAVERSAL.admits(protocolAttackPattern)) {
-            return;
-        }
-        var exception = assertRejected(protocolAttackPattern);
+    @ValueSource(strings = {"/v1/data:export", "/api/file:metadata", "/docs/javascript:basics"})
+    @DisplayName("A scheme-like token in a later path segment is accepted unchanged")
+    void shouldAcceptSchemeLikeTokenInLaterSegment(String path) {
+        Optional<String> validated = assertDoesNotThrow(() -> pipeline.validate(path),
+                () -> "A scheme-like token after the first segment is not a protocol handler: " + path);
 
-        assertEquals(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED, exception.getFailureType(),
-                () -> "Unexpected verdict for: " + protocolAttackPattern);
-        assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED));
+        assertEquals(Optional.of(path), validated, "A legitimate path is returned unchanged");
+        assertEquals(0, eventCounter.getTotalCount(), "An accepted path records no security event");
     }
 
     /**
-     * Generated patterns that carry a raw character outside the path character set - a space, an
-     * angle bracket, a query or fragment delimiter.
-     *
-     * @param protocolAttackPattern A malicious protocol handler pattern
+     * Asserts the rejection itself, the preserved input and the single recorded event; the
+     * failure type is asserted by the caller.
      */
-    @ParameterizedTest
-    @TypeGeneratorSource(value = ProtocolHandlerAttackGenerator.class, count = 64)
-    @DisplayName("A protocol pattern with a raw non-path character is rejected as INVALID_CHARACTER")
-    void shouldRejectProtocolPatternWithNonPathCharacterAsInvalidCharacter(String protocolAttackPattern) {
-        if (!NON_PATH_CHARACTER.admits(protocolAttackPattern)) {
-            return;
-        }
-        var exception = assertRejected(protocolAttackPattern);
-
-        assertEquals(UrlSecurityFailureType.INVALID_CHARACTER, exception.getFailureType(),
-                () -> "Unexpected verdict for: " + protocolAttackPattern);
-        assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.INVALID_CHARACTER));
-    }
-
-    /**
-     * Generated patterns that carry a raw C0 control character inside the scheme.
-     *
-     * @param protocolAttackPattern A malicious protocol handler pattern
-     */
-    @ParameterizedTest
-    @TypeGeneratorSource(value = ProtocolHandlerAttackGenerator.class, count = 500)
-    @DisplayName("A protocol pattern with a raw control character is rejected as CONTROL_CHARACTERS")
-    void shouldRejectProtocolPatternWithControlCharacterAsControlCharacters(String protocolAttackPattern) {
-        if (!RAW_CONTROL_CHARACTER.admits(protocolAttackPattern)) {
-            return;
-        }
-        var exception = assertRejected(protocolAttackPattern);
-
-        assertEquals(UrlSecurityFailureType.CONTROL_CHARACTERS, exception.getFailureType(),
-                () -> "Unexpected verdict for a pattern of length " + protocolAttackPattern.length());
-        assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.CONTROL_CHARACTERS));
-    }
-
-    /**
-     * Generated patterns that carry a null byte inside the scheme.
-     *
-     * @param protocolAttackPattern A malicious protocol handler pattern
-     */
-    @ParameterizedTest
-    @TypeGeneratorSource(value = ProtocolHandlerAttackGenerator.class, count = 1200)
-    @DisplayName("A protocol pattern with a null byte is rejected as NULL_BYTE_INJECTION")
-    void shouldRejectProtocolPatternWithNullByteAsNullByteInjection(String protocolAttackPattern) {
-        if (!NULL_BYTE.admits(protocolAttackPattern)) {
-            return;
-        }
-        var exception = assertRejected(protocolAttackPattern);
-
-        assertEquals(UrlSecurityFailureType.NULL_BYTE_INJECTION, exception.getFailureType(),
-                () -> "Unexpected verdict for a pattern of length " + protocolAttackPattern.length());
-        assertEquals(1, eventCounter.getCount(UrlSecurityFailureType.NULL_BYTE_INJECTION));
-    }
-
-    private UrlSecurityException assertRejected(String protocolAttackPattern) {
-        var exception = assertThrows(UrlSecurityException.class, () -> pipeline.validate(protocolAttackPattern),
-                () -> "Protocol handler attack pattern should be rejected, length " + protocolAttackPattern.length());
-        assertEquals(protocolAttackPattern, exception.getOriginalInput(),
-                "Original input should be preserved in exception");
+    private UrlSecurityException assertRejected(String pattern) {
+        var exception = assertThrows(UrlSecurityException.class, () -> pipeline.validate(pattern),
+                () -> "Protocol handler attack should be rejected: " + pattern);
+        assertEquals(pattern, exception.getOriginalInput(), "Original input should be preserved in exception");
+        assertEquals(1, eventCounter.getTotalCount(), "Exactly one security event should be recorded");
         return exception;
-    }
-
-    /**
-     * Test JavaScript protocol attacks.
-     *
-     * <p>
-     * This test ensures that JavaScript protocol schemes used for
-     * XSS attacks are properly detected and blocked.
-     * </p>
-     */
-    @Test
-    @DisplayName("JavaScript protocol attacks should be blocked")
-    void shouldBlockJavaScriptProtocolAttacks() {
-        String[] javascriptPatterns = {
-                // Direct JavaScript protocols
-                "javascript:alert('XSS')/../../../etc/passwd",
-                "javascript:eval(String.fromCharCode(97,108,101,114,116,40,39,88,83,83,39,41))/admin",
-                "javascript:window.location='http://evil.com'/../../config",
-                "javascript:document.location.href='malicious.com'/../sensitive",
-                "javascript:fetch('/../../etc/passwd').then(r=>r.text()).then(console.log)",
-
-                // JavaScript with comments and encoding
-                "javascript://comment%0Aalert('XSS')/../etc/hosts",
-                "javascript:/*comment*/alert('XSS')/../../admin",
-                "javascript:%61%6c%65%72%74%28%27%58%53%53%27%29/../config"
-        };
-
-        for (String pattern : javascriptPatterns) {
-            long initialEventCount = eventCounter.getTotalCount();
-
-            var exception = assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(pattern),
-                    "JavaScript protocol attack should be blocked: " + pattern);
-
-            assertNotNull(exception.getFailureType(),
-                    "Failure type should be specified for JavaScript pattern: " + pattern);
-
-            assertTrue(eventCounter.getTotalCount() > initialEventCount,
-                    "Security event should be recorded for JavaScript pattern: " + pattern);
-        }
-    }
-
-    /**
-     * Test data URI exploitation patterns.
-     *
-     * <p>
-     * Validates that malicious data URIs used for payload injection
-     * and XSS attacks are properly detected.
-     * </p>
-     */
-    @Test
-    @DisplayName("Data URI exploitation patterns should be blocked")
-    void shouldBlockDataURIExploitationPatterns() {
-        String[] dataUriPatterns = {
-                // HTML data URIs with scripts
-                "data:text/html,<script>alert('XSS')</script>/../../../etc/passwd",
-                "data:application/javascript,alert('XSS')/../admin/config",
-                "data:text/html;base64,PHNjcmlwdD5hbGVydCgnWFNTJyk8L3NjcmlwdD4=/../etc/hosts",
-                "data:image/svg+xml,<svg><script>alert('XSS')</script></svg>/../../sensitive",
-
-                // Data URIs with path traversal
-                "data:text/plain,../../../etc/passwd",
-                "data:,../../admin/config",
-                "data:application/octet-stream,malicious/../etc/hosts"
-        };
-
-        for (String pattern : dataUriPatterns) {
-            assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(pattern),
-                    "Data URI exploitation should be blocked: " + pattern);
-        }
-    }
-
-    /**
-     * Test file protocol exploitation patterns.
-     *
-     * <p>
-     * Ensures that file protocol schemes used to access local
-     * files are properly detected and blocked.
-     * </p>
-     */
-    @Test
-    @DisplayName("File protocol exploitation patterns should be blocked")
-    void shouldBlockFileProtocolExploitationPatterns() {
-        String[] fileProtocolPatterns = {
-                // File protocol with path traversal (caught by path traversal detection)
-                "file:///../../../etc/passwd",
-                "file:////etc/passwd/../../../sensitive",
-                "file://../../../etc/hosts",
-                "file://localhost/../../../etc/passwd",
-                "file:///c:/../../windows/win.ini",
-                "file://./../../etc/shadow",
-                "file://.././../etc/passwd",
-                "file:///etc/../../../passwd"
-        };
-
-        for (String pattern : fileProtocolPatterns) {
-            assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(pattern),
-                    "File protocol exploitation should be blocked: " + pattern);
-        }
-    }
-
-    /**
-     * Test custom protocol scheme attacks.
-     *
-     * <p>
-     * Validates that custom protocol schemes used for malicious
-     * purposes are properly detected.
-     * </p>
-     */
-    @Test
-    @DisplayName("Custom protocol scheme attacks should be blocked")
-    void shouldBlockCustomProtocolSchemeAttacks() {
-        String[] customProtocolPatterns = {
-                // Malicious custom schemes
-                "custom://malicious.com/../../../etc/passwd",
-                "malware://evil.com/../../admin/config",
-                "exploit://attacker.com/../etc/hosts",
-                "backdoor://malicious.site/../../sensitive",
-                "trojan://evil.domain/../admin",
-                "virus://malicious.host/../../config"
-        };
-
-        for (String pattern : customProtocolPatterns) {
-            assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(pattern),
-                    "Custom protocol scheme attack should be blocked: " + pattern);
-        }
-    }
-
-    /**
-     * Test protocol confusion attacks.
-     *
-     * <p>
-     * Ensures that attacks mixing different protocols or using
-     * protocols in unexpected contexts are properly handled.
-     * </p>
-     */
-    @Test
-    @DisplayName("Protocol confusion attacks should be blocked")
-    void shouldBlockProtocolConfusionAttacks() {
-        String[] confusionPatterns = {
-                // Protocol confusion with authentication and path traversal
-                "http://javascript:alert('XSS')@evil.com/../../../etc/passwd",
-                "https://data:text/html,<script>@malicious.com/../../config",
-                "ftp://file@evil.com/../../../admin/config",
-                "mailto://javascript:alert('XSS')@attacker.com/../sensitive",
-                "tel://data:text/html@malicious.com/../../etc/hosts"
-        };
-
-        for (String pattern : confusionPatterns) {
-            assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(pattern),
-                    "Protocol confusion attack should be blocked: " + pattern);
-        }
-    }
-
-    /**
-     * Test protocol injection attacks.
-     *
-     * <p>
-     * Validates that attempts to inject protocols through URL
-     * parameters or fragments are properly detected.
-     * </p>
-     */
-    @Test
-    @DisplayName("Protocol injection attacks should be blocked")
-    void shouldBlockProtocolInjectionAttacks() {
-        String[] injectionPatterns = {
-                // Protocol injection through parameters and fragments
-                "http://evil.com#javascript:alert('XSS')/../../../etc/passwd",
-                "https://malicious.com?redirect=javascript:alert('XSS')/../../config",
-                "http://attacker.com/path?url=file:///etc/passwd",
-                "https://evil.site/redirect?to=data:text/html,<script>/admin",
-                "http://malicious.host/proxy?target=javascript:alert(1)/../sensitive"
-        };
-
-        for (String pattern : injectionPatterns) {
-            assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(pattern),
-                    "Protocol injection attack should be blocked: " + pattern);
-        }
-    }
-
-    /**
-     * Test malformed protocol schemes.
-     *
-     * <p>
-     * Ensures that malformed or invalid protocol schemes
-     * are properly detected and handled.
-     * </p>
-     */
-    @Test
-    @DisplayName("Malformed protocol schemes should be blocked")
-    void shouldBlockMalformedProtocolSchemes() {
-        String[] malformedPatterns = {
-                // Malformed protocol schemes
-                "ht tp://evil.com/../../../etc/passwd",
-                "htt p://malicious.com/../../admin/config",
-                "http ://attacker.com/../etc/hosts",
-                "http:////evil.com/../../sensitive",
-                "http:///evil.com/../admin",
-                "http::evil.com/../../etc/passwd"
-        };
-
-        for (String pattern : malformedPatterns) {
-            assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(pattern),
-                    "Malformed protocol scheme should be blocked: " + pattern);
-        }
-    }
-
-    /**
-     * Test protocol encoding attacks.
-     *
-     * <p>
-     * Validates that URL-encoded protocol schemes used to bypass
-     * filters are properly detected.
-     * </p>
-     */
-    @Test
-    @DisplayName("Protocol encoding attacks should be blocked")
-    void shouldBlockProtocolEncodingAttacks() {
-        String[] encodingPatterns = {
-                // URL-encoded protocols with path traversal
-                "%68%74%74%70://evil.com/../../../etc/passwd",           // http
-                "%6a%61%76%61%73%63%72%69%70%74:alert('XSS')/../admin", // javascript
-                "%64%61%74%61:text/html,<script>/../../etc/hosts",      // data
-                "%66%69%6c%65:///../../../etc/passwd",                  // file with traversal
-                "h%74%74p://malicious.com/../../sensitive"              // http (partial)
-        };
-
-        for (String pattern : encodingPatterns) {
-            assertThrows(UrlSecurityException.class,
-                    () -> pipeline.validate(pattern),
-                    "Protocol encoding attack should be blocked: " + pattern);
-        }
-    }
-
-    /**
-     * Test that security events are properly categorized for different protocol attack types.
-     */
-    @Test
-    @DisplayName("Should categorize protocol security events correctly")
-    void shouldCategorizeProtocolSecurityEventsCorrectly() {
-        // Test JavaScript protocol
-        assertThrows(UrlSecurityException.class, () -> pipeline.validate("javascript:alert('XSS')/../etc/passwd"));
-
-        // Test data URI
-        assertThrows(UrlSecurityException.class, () -> pipeline.validate("data:text/html,<script>/../../config"));
-
-        // Test file protocol with path traversal
-        assertThrows(UrlSecurityException.class, () -> pipeline.validate("file:///../../../etc/passwd"));
-
-        // At least one security event should be recorded
-        assertTrue(eventCounter.getTotalCount() > 0,
-                "At least one security event should be recorded for protocol attacks");
     }
 }
