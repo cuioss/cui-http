@@ -82,7 +82,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Integration test over every generator class of this module.
  *
  * <p>The per-generator contract tests each look at one generator in depth. This test looks at all
- * of them at once, through one explicit {@link #registry() registry}, and asserts three things
+ * of them at once, through one explicit {@link #registry() registry}, and asserts four things
  * of every registered generator:</p>
  * <ul>
  *   <li><strong>Reach</strong> - under the pinned seed, the draws hit every named arm of the
@@ -92,6 +92,8 @@ import static org.junit.jupiter.api.Assertions.*;
  *       through the production route that consumes it and earns exactly the claimed verdict:
  *       attack values are rejected, valid values are accepted.</li>
  *   <li><strong>Type</strong> - a {@link TypedGenerator} reports the type its values have.</li>
+ *   <li><strong>Concurrency</strong> - one instance shared between several workers hands out a
+ *       value for every draw without throwing.</li>
  * </ul>
  *
  * <p>Most registrations claim one verdict for every value. Four generators deliberately mix
