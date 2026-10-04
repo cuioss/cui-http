@@ -132,6 +132,10 @@ workstream order. Actual emission order is set here, and is re-derived after eve
   — but only 1 of 2 slots fills this round: PLAN-08 collides with PLAN-10 (client test
   directories), PLAN-12 (`package-info.java` + `StringContentConverter.java`), and PLAN-13 (the
   `doc/adr/` HYPOTHESIS-group rule below), so none of the three can join it. Shortfall on slot 2.
+- **PLAN-10** — PR #256, `f81a554`, `landings/PLAN-10.md` (2026-10-04 drain). 12/12
+  deliverables, no production code. Twelfth under-declaration (4 undeclared files, incl. the
+  `doc/…/testing.adoc` boundary crossing). 5 finalize rounds (2 over the ceiling), ~8.8M tokens.
+  WS-05 fully closed. 9 candidate lessons promoted (2026-10-04-06-001..009).
 - **PLAN-08** — PR #240, `2e9e8e0`, `landings/PLAN-08.md` (2026-09-16). 13/13 deliverables (12 code
   + ADR-0023 added during execution). The epic's WORST under-declaration since the gate was rebuilt
   (eleventh watch occurrence) — 6 undeclared files, including a real spec-boundary violation
@@ -340,6 +344,27 @@ it verbatim and never regenerates it.}
 {Known defects surfaced by landings or observations that are not yet owned by a staged
 plan. When a defect is folded into a plan spec, move it out of this list and note the
 owning PLAN-NN.}
+
+- **NEW 2026-10-04 (PLAN-10 landing, unverified lead) — low-byte CRLF homograph accepted.**
+  PLAN-10 reports `URLParameterValidationPipeline` accepts `%e5%98%8a%e5%98%8d` (U+560A U+560D,
+  whose low bytes are 0x0A / 0x0D) even with line breaks disallowed. Only exploitable where a
+  downstream component truncates code points to bytes. Not owned by any staged plan (WS-01 is
+  closed) — candidate for a new WS-01 plan after verification at `URLParameterValidationPipeline`
+  § `createStages`.
+- **NEW 2026-10-04 (PLAN-10 landing, unverified lead) — no scheme rejection on URL path.** No
+  preset rejects `http:`/`https:`/`ftp:`/`gopher:`/`ldap:` or custom schemes on the URL path
+  pipeline. Possibly by design (the pipeline validates a path component, not a URL); decide
+  before staging.
+- **NEW 2026-10-04 — PLAN-10 crossed its write-boundary into `doc/`.** It edited
+  `doc/http-security/specification/testing.adoc`, which its spec reserved for PLAN-13. Owned by
+  PLAN-13: re-read `testing.adoc` at outline before rewriting it.
+- **NEW 2026-10-04 — breaking change to the published `generators` test artifact.** PLAN-10
+  removed `PathTraversalURLGenerator` and `DoubleEncodingAttackGenerator`. Owned by PLAN-13 for
+  `doc/test-generators-readme.adoc`; must also be called out in the next release notes.
+- **NEW 2026-10-04 — PLAN-10 test-side residue.** Set-membership assertion in
+  `URLPathValidationPipelineTest`, a raw NUL in the `HttpHeaderInjectionAttackGenerator` Javadoc,
+  raw characters in `IDNAttackDatabase` (same class as lesson 2026-10-04-06-001). WS-05 is now
+  closed; unowned.
 
 - ⛔ **PLAN-08 (landed #240, 2026-09-16) edited two `doc/` files its own spec explicitly excluded.**
   `doc/client-handlers-readme.adoc` and `doc/http-result-pattern.adoc` were both touched (6 lines
