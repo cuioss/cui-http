@@ -2,9 +2,9 @@
   "id": "PLAN-10",
   "slug": "PLAN-10-attack-test-mechanism-correctness",
   "workstream": "WS-05-test-framework-quality",
-  "status": "staged",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "plan-10-attack-test-mechanism-correctness",
+  "pr": "#256",
+  "landing": "landings/PLAN-10.md",
   "seq": 11
 }
