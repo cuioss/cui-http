@@ -246,7 +246,11 @@ For implementation details, see the JavaDoc of each monitoring class.
 
 == Verification Tests
 
-The following test suites verify the implementation meets this specification:
+The following test suites verify the implementation meets this specification. The lists are
+*representative, not exhaustive*: they name at least every test class the
+xref:pipeline-architecture-standards.adoc[Pipeline Architecture Standards] matrix cites, and the
+test tree is the authoritative inventory — browse the `pipeline`, `validation` and `tests`
+packages under `cui-http-core/src/test/java/de/cuioss/http/security/` for the current set.
 
 === Unit Tests
 
@@ -265,8 +269,11 @@ The following test suites verify the implementation meets this specification:
 === Pipeline Tests
 
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/URLPathValidationPipelineTest.java[URLPathValidationPipelineTest] - Path pipeline tests
-* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/URLParameterValidationPipelineTest.java[URLParameterValidationPipelineTest] - Parameter pipeline tests
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/URLParameterValidationPipelineTest.java[URLParameterValidationPipelineTest] - Parameter value pipeline tests
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/URLParameterNameValidationPipelineBehaviorTest.java[URLParameterNameValidationPipelineBehaviorTest] - Parameter name pipeline tests
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipelineTest.java[HTTPHeaderValidationPipelineTest] - Header pipeline tests
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/ContentTypeValidationPipelineTest.java[ContentTypeValidationPipelineTest] - Content-Type pipeline tests
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/HeaderAndContentTypeEnforcementRegressionTest.java[HeaderAndContentTypeEnforcementRegressionTest] - Header-name and content-type allow/block-list enforcement
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/PipelineFactoryTest.java[PipelineFactoryTest] - Factory tests
 
 === Attack Database Tests
@@ -274,6 +281,10 @@ The following test suites verify the implementation meets this specification:
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/OWASPZAPAttackDatabaseTest.java[OWASPZAPAttackDatabaseTest] - OWASP ZAP attack patterns
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/ApacheCVEAttackDatabaseTest.java[ApacheCVEAttackDatabaseTest] - Apache CVE tests
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/IISCVEAttackDatabaseTest.java[IISCVEAttackDatabaseTest] - IIS CVE tests
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/NginxCVEAttackDatabaseTest.java[NginxCVEAttackDatabaseTest] - Nginx CVE tests
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest] - OWASP Top 10 attack patterns
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HomographAttackDatabaseTest.java[HomographAttackDatabaseTest] - Homograph attack tests
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/IPv6AttackDatabaseTest.java[IPv6AttackDatabaseTest] - IPv6-shaped payloads against the path pipeline
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/UnicodePathTraversalAttackTest.java[UnicodePathTraversalAttackTest] - Unicode attack tests
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java[HttpHeaderInjectionAttackTest] - Header injection tests
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] - Request smuggling tests
