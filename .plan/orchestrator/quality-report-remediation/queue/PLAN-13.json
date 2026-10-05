@@ -2,8 +2,8 @@
   "id": "PLAN-13",
   "slug": "PLAN-13-asciidoc-specs-requirements-adrs",
   "workstream": "WS-06-documentation-set",
-  "status": "staged",
-  "plan_marshall_plan_id": "",
+  "status": "launched",
+  "plan_marshall_plan_id": "plan-13-asciidoc-specs-requirements-adrs",
   "pr": "",
   "landing": "",
   "seq": 14
