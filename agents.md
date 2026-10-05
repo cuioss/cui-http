@@ -7,7 +7,7 @@ This file provides guidance to AI coding agents when working with the CUI-HTTP p
 CUI-HTTP is a security-focused HTTP utilities library providing secure validation pipelines, SSL/TLS context management, and HTTP client handlers. The library emphasizes security validation of HTTP components (paths, parameters, headers, bodies) with comprehensive attack pattern detection.
 
 - **Language**: Java 21 with JPMS module system (`module de.cuioss.http`)
-- **Build System**: Maven — invoked via the canonical build-executor commands documented in `CLAUDE.md` (Build Commands). Never hard-code `./mvnw` or `mvn`.
+- **Build System**: Maven — invoked via the canonical build-executor commands documented in `CLAUDE.md` (Build Commands), for example `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify"`. Do not hard-code `./mvnw` or `mvn` while that executor is available; without plan-marshall, use the `./mvnw` equivalents listed in the same section.
 - **Testing**: JUnit 5 (no Mockito, PowerMock, or Hamcrest)
 - **Code Quality**: SonarCloud integration with a mandatory pre-commit run (auto-fixes: it rewrites files in place)
 
@@ -15,10 +15,15 @@ CUI-HTTP is a security-focused HTTP utilities library providing secure validatio
 
 ### Build and Run Commands
 
-Never hard-code build tool commands (`./mvnw`, `mvn`). Invoke all builds via the canonical
-build-executor commands documented in the "Build Commands" section of `CLAUDE.md` (compile,
-quality gate / pre-commit, full verify, coverage, and the module-scoped test and benchmark
-commands).
+Invoke all builds via the canonical build-executor commands documented in the "Build Commands"
+section of `CLAUDE.md` (compile, quality gate / pre-commit, full verify, coverage, and the
+module-scoped test and benchmark commands). Each has the form
+`python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "<args>"`, and
+while that executor is present, do not hard-code build tool commands (`./mvnw`, `mvn`).
+
+`.plan/execute-script.py` is generated per machine by plan-marshall and is gitignored. In an
+environment without plan-marshall it does not exist; there, run `./mvnw <args>` with the same
+argument string — `CLAUDE.md` lists the `./mvnw` equivalent of every executor command.
 
 ### Architecture, Pipeline Selection, and Test Organization
 
@@ -40,8 +45,9 @@ to avoid drift; they are intentionally not duplicated here.
 ### Test Execution
 
 Run tests via the canonical build-executor commands in the "Build Commands" section of
-`CLAUDE.md` (the module-scoped test command and the coverage command). Never hard-code
-`./mvnw`/`mvn`.
+`CLAUDE.md` (the module-scoped test command and the coverage command). Do not hard-code
+`./mvnw`/`mvn` while the executor is available; without plan-marshall, run the `./mvnw`
+equivalents listed there (`./mvnw test -pl cui-http-core -am`, `./mvnw verify -Pcoverage`).
 
 ### Test Requirements
 
@@ -125,8 +131,9 @@ Validators are thread-safe, composable, and fail-secure (throw `UrlSecurityExcep
 ### Before Committing
 
 1. **Run the pre-commit auto-fix** (MANDATORY): run the quality-gate command from the "Build Commands"
-   section of `CLAUDE.md` (the canonical `verify -Ppre-commit` build-executor invocation; never
-   hard-code `./mvnw`/`mvn`).
+   section of `CLAUDE.md` (the canonical `verify -Ppre-commit` build-executor invocation; do not
+   hard-code `./mvnw`/`mvn` while the executor is available — without plan-marshall, run
+   `./mvnw verify -Ppre-commit`).
    - This REWRITES your files in place: `license:format` updates license headers and
      `rewrite:run` applies every configured OpenRewrite recipe -- modernization, not only
      formatting, so a recipe can make semantic source changes. Review every resulting diff
