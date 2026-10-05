@@ -31,6 +31,10 @@ import java.util.Objects;
 /**
  * Sequential validation pipeline specifically for URL path components.
  *
+ * <p>The input is a path component such as {@code /api/users/123}, not an absolute URL, so no
+ * preset rejects a scheme such as {@code http:}, {@code ftp:}, {@code gopher:} or {@code ldap:}.
+ * Extracting the path and deciding which schemes are acceptable is the caller's responsibility.</p>
+ *
  * <h3>Validation Sequence</h3>
  * <p>Six stages run in this order; {@code PatternMatchingStage} appears twice:</p>
  * <ol>

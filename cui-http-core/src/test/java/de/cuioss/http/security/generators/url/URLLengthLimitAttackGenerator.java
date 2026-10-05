@@ -81,7 +81,6 @@ import java.util.Objects;
  * }
  * </pre>
  *
- * Implements: Task T19 from HTTP verification specification
  *
  * @author Claude Code Generator
  * @since 1.0

@@ -22,8 +22,6 @@ import de.cuioss.test.generator.TypedGenerator;
  * Generates various encoding combinations for bypass attempts.
  *
  * <p>QI-6: Converted from fixedValues() to dynamic algorithmic generation.</p>
- *
- * Implements: Task G2 from HTTP verification specification
  */
 public class EncodingCombinationGenerator implements TypedGenerator<String> {
 

@@ -33,8 +33,6 @@ import de.cuioss.test.generator.TypedGenerator;
  * <p>
  * FRAMEWORK COMPLIANT: Uses seed-based generation without call-counter anti-pattern.
  * Reproducibility = f(seed), not f(internal_state).
- * <p>
- * Implements: Task G7 (Valid Cases) from HTTP verification specification
  */
 public class ValidURLParameterGenerator implements TypedGenerator<URLParameter> {
 

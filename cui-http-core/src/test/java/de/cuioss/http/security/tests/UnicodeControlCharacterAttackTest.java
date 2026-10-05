@@ -69,8 +69,6 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>RFC 3629 - UTF-8 Character Encoding</li>
  * </ul>
  *
- * Implements: Task T10 from HTTP verification specification
- *
  * @author Claude Code Generator
  * @since 1.0
  */

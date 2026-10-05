@@ -45,8 +45,6 @@ import static org.junit.jupiter.api.Assertions.*;
  * Comprehensive test suite for encoded path traversal attacks using advanced generator patterns.
  * This test validates that all forms of URL-encoded, double-encoded, mixed-case encoded,
  * and multi-level encoded path traversal patterns are properly detected and blocked.
- * <p>
- * Implements: Task T2 from HTTP verification specification
  *
  * @since 1.0
  */

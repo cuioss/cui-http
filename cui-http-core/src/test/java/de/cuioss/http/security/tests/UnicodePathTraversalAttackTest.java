@@ -64,8 +64,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
  *   <li>CVE-2019-11358, CVE-2020-5398 (Unicode variants)</li>
  * </ul>
  *
- * Implements: Task T3 from HTTP verification specification
- *
  * @author Claude Code Generator
  * @since 1.0
  */

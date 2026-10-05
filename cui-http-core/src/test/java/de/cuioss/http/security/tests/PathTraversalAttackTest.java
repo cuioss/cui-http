@@ -66,8 +66,6 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>CVE-2019-5418, CVE-2018-1000671, CVE-2020-5398</li>
  * </ul>
  *
- * Implements: Task T1 from HTTP verification specification
- *
  * @author Claude Code Generator
  * @since 1.0
  */

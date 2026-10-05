@@ -58,8 +58,6 @@ import static de.cuioss.http.security.generators.GeneratorContractAssertions.fro
  *   <li>Unicode Normalization Forms (UAX #15)</li>
  * </ul>
  *
- * Implements: Generator for Task T8 from HTTP verification specification
- *
  * @author Claude Code Generator
  * @since 1.0
  */

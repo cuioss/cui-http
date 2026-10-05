@@ -39,8 +39,6 @@ import de.cuioss.test.generator.TypedGenerator;
  * value hostile. The two overlong branches therefore pad a real payload up to their length band
  * rather than emitting benign filler that is an attack only when a caller pairs it with a
  * hostile name.</p>
- * <p>
- * Implements: Task G7 (Attack Cases) from HTTP verification specification
  */
 public class AttackURLParameterGenerator implements TypedGenerator<URLParameter> {
 

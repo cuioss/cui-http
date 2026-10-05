@@ -31,10 +31,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
-import java.util.EnumSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -130,6 +131,19 @@ class URLPathValidationPipelineTest {
             assertTrue(result.isPresent());
             assertEquals("", result.get());
         }
+
+        /**
+         * Regression guard for ADR-0011: the "Unicode above 255 is rejected" rule of
+         * {@code CharacterValidationStage} governs the wire form only, so a percent-encoded code
+         * point above 255 is accepted at the default configuration. {@code %e5%98%8a%e5%98%8d}
+         * decodes to U+560A U+560D, whose low bytes are LF and CR; the pipeline must return the
+         * full code points and never a truncated line break.
+         */
+        @ParameterizedTest
+        @CsvSource({"/api/%e5%98%8a%e5%98%8d, /api/\u560A\u560D", "/search/%e4%b8%ad, /search/\u4E2D"})
+        void shouldAcceptDecodedCodePointAbove255(String encodedPath, String expected) {
+            assertEquals(Optional.of(expected), pipeline.validate(encodedPath));
+        }
     }
 
     @Nested
@@ -183,11 +197,8 @@ class URLPathValidationPipelineTest {
         /**
          * Every value this generator emits is a traversal pattern wrapped in one to three
          * percent-encoding layers, optionally with a backslash separator. Which stage rejects it
-         * therefore depends on the sample: a raw or singly-encoded backslash form is stopped by the
-         * character set, a singly- or doubly-encoded forward-slash form matches a traversal pattern,
-         * and a triply-encoded form is caught as double encoding. The verdict is asserted as
-         * membership in that explicit set rather than a single value, because the generator
-         * legitimately spans all three.
+         * depends on the sample, so the expected verdict is derived from the sample itself (see
+         * {@link #expectedEncodingBypassVerdict(String)}) and asserted exactly.
          */
         @ParameterizedTest
         @TypeGeneratorSource(value = EncodingCombinationGenerator.class, count = 5)
@@ -195,22 +206,16 @@ class URLPathValidationPipelineTest {
             UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
                     pipeline.validate(encodedPath));
 
-            EnumSet<UrlSecurityFailureType> expected = EnumSet.of(
-                    UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED,
-                    UrlSecurityFailureType.INVALID_CHARACTER,
-                    UrlSecurityFailureType.DOUBLE_ENCODING);
-            assertTrue(expected.contains(exception.getFailureType()),
-                    "Encoding-bypass attack %s produced unexpected failure type %s, expected one of %s"
-                            .formatted(encodedPath, exception.getFailureType(), expected));
+            assertEquals(expectedEncodingBypassVerdict(encodedPath), exception.getFailureType(),
+                    "Encoding-bypass attack %s produced unexpected failure type".formatted(encodedPath));
             assertEquals(ValidationType.URL_PATH, exception.getValidationType());
             assertEquals(encodedPath, exception.getOriginalInput());
         }
 
         /**
-         * The Unicode attack generator mixes non-ASCII homoglyphs, encoded null bytes and encoded
-         * traversal sequences, so it spans three verdicts: a non-ASCII code point is rejected by the
-         * character set, an encoded null byte as a null-byte injection, and an encoded traversal
-         * sequence as traversal. Membership in that explicit set is asserted for the same reason.
+         * The Unicode attack generator mixes raw non-ASCII homoglyphs and invisible characters, raw
+         * null bytes and plain traversal sequences, so the expected verdict is derived from the
+         * sample itself (see {@link #expectedUnicodeAttackVerdict(String)}) and asserted exactly.
          */
         @ParameterizedTest
         @TypeGeneratorSource(value = UnicodeAttackGenerator.class, count = 5)
@@ -218,13 +223,8 @@ class URLPathValidationPipelineTest {
             UrlSecurityException exception = assertThrows(UrlSecurityException.class, () ->
                     pipeline.validate(unicodePath));
 
-            EnumSet<UrlSecurityFailureType> expected = EnumSet.of(
-                    UrlSecurityFailureType.INVALID_CHARACTER,
-                    UrlSecurityFailureType.NULL_BYTE_INJECTION,
-                    UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED);
-            assertTrue(expected.contains(exception.getFailureType()),
-                    "Unicode attack %s produced unexpected failure type %s, expected one of %s"
-                            .formatted(unicodePath, exception.getFailureType(), expected));
+            assertEquals(expectedUnicodeAttackVerdict(unicodePath), exception.getFailureType(),
+                    "Unicode attack %s produced unexpected failure type".formatted(unicodePath));
             assertEquals(ValidationType.URL_PATH, exception.getValidationType());
             assertEquals(unicodePath, exception.getOriginalInput());
         }
@@ -389,5 +389,39 @@ class URLPathValidationPipelineTest {
             }
         }
         return result.toString();
+    }
+
+    /**
+     * Derives the verdict an {@code EncodingCombinationGenerator} sample must receive. The
+     * generator never encodes a backslash, so a backslash variant reaches
+     * {@code CharacterValidationStage} raw and is rejected there. A forward-slash variant with three
+     * encoding layers carries {@code %2525}, which no traversal pattern matches, so
+     * {@code DecodingStage} rejects it as double encoding. One or two layers match a traversal
+     * pattern.
+     */
+    private static UrlSecurityFailureType expectedEncodingBypassVerdict(String encodedPath) {
+        if (encodedPath.indexOf('\\') >= 0) {
+            return UrlSecurityFailureType.INVALID_CHARACTER;
+        }
+        if (encodedPath.toLowerCase(Locale.ROOT).contains("%2525")) {
+            return UrlSecurityFailureType.DOUBLE_ENCODING;
+        }
+        return UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED;
+    }
+
+    /**
+     * Derives the verdict a {@code UnicodeAttackGenerator} sample must receive. Every sample is
+     * raw, so {@code CharacterValidationStage} sees it first: a null byte is a null-byte injection,
+     * any other non-ASCII code point is an invalid character, and a pure-ASCII sample is a plain
+     * traversal that the pattern stage detects.
+     */
+    private static UrlSecurityFailureType expectedUnicodeAttackVerdict(String unicodePath) {
+        if (unicodePath.indexOf('\0') >= 0) {
+            return UrlSecurityFailureType.NULL_BYTE_INJECTION;
+        }
+        if (unicodePath.chars().anyMatch(ch -> ch > 127)) {
+            return UrlSecurityFailureType.INVALID_CHARACTER;
+        }
+        return UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED;
     }
 }

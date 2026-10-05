@@ -26,8 +26,6 @@ import de.cuioss.test.generator.TypedGenerator;
  * subject of {@link ValidURLParameterGenerator} and {@link ValidURLParameterStringGenerator}.</p>
  *
  * <p>QI-6: Converted from fixedValues() to dynamic algorithmic generation.</p>
- *
- * Implements: Task G5 from HTTP verification specification
  */
 public class ValidURLGenerator implements TypedGenerator<String> {
 

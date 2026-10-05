@@ -20,7 +20,6 @@ import de.cuioss.test.generator.TypedGenerator;
 
 /**
  * Generates boundary condition test cases.
- * Implements: Task G4 from HTTP verification specification
  */
 public class BoundaryFuzzingGenerator implements TypedGenerator<String> {
 

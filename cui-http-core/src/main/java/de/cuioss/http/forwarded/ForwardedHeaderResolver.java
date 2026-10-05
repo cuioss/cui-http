@@ -163,22 +163,23 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  * {@code X-Forwarded-Port} / {@code X-ProxyPort} header never depends on this rule at all — it
  * supersedes the host-token port outright and is reconciled against RFC 7239 on its own.</p>
  *
- * <p><strong>Present-but-invalid = drop (no fall-through).</strong> A present, non-blank source is
- * validated; if it fails its field guard it is <em>dropped</em> — lower-precedence sources are
- * <em>not</em> consulted as a fallback. In particular a present-but-invalid
+ * <p><strong>Present-but-invalid = contests (no fall-through).</strong> A present, non-blank source
+ * is validated; if it fails its field guard its <em>value</em> is discarded, but the source still
+ * counts as present — lower-precedence sources are <em>not</em> consulted as a fallback. In particular a present-but-invalid
  * {@code X-Forwarded-Port} / {@code X-ProxyPort} (not digit-only, or outside {@code 1..65535})
  * yields no port; the host {@code :port} fallback is used only when no explicit port header is
  * present at all. Likewise an IPv6 host value must be supplied <em>bracketed</em>
  * ({@code [2001:db8::1]}) to be honored — an unbracketed multi-colon value yields no host.
- * A source that is present but resolves to nothing valid also <em>disagrees</em> with a sibling
- * source that resolved successfully, so the conflicting-source rule above drops the field.</p>
+ * A source that is present but resolves to nothing valid therefore <em>contests</em>: it
+ * disagrees with a sibling source that resolved successfully, so the conflicting-source rule above
+ * drops the field.</p>
  *
  * <p><strong>An unresolvable {@code Forwarded} header drops only the fields it spoke about.</strong>
  * When its raw value fails sanitization, <em>or</em> when it carries a malformed
  * {@code forwarded-pair} (a non-blank pair with no {@code =}, an empty directive name, or an empty
- * value — a grammatically legal blank pair is still accepted), the header contributes
- * <em>nothing</em>: it never supplies a value to the reconciliation, so any field it did carry a
- * directive for fails closed through the ordinary disagreement path. It is <em>not</em> treated as
+ * value — a grammatically legal blank pair is still accepted), the header contributes no
+ * <em>value</em>: it never supplies one to the reconciliation, yet any field it did carry a
+ * directive for is still contested and fails closed through the ordinary disagreement path. It is <em>not</em> treated as
  * present for every field it could theoretically have carried. Scope is per field, decided by the
  * directives the parser reached before it stopped: {@code Forwarded: proto=http;broken} drops the
  * scheme but leaves an {@code X-Forwarded-Host} value standing, because that header never spoke
@@ -852,8 +853,9 @@ public final class ForwardedHeaderResolver {
         Optional<String> fromXff = xffPresent
                 ? sanitize(X_FORWARDED_FOR, xff).map(value -> List.of(value.split(","))).flatMap(this::walkChain)
                 : Optional.empty();
-        // An unresolvable header contributes nothing, so a chain it DID carry meets an empty
-        // resolution and is dropped by the disagreement path rather than being walked and believed.
+        // An unresolvable header contributes no value but still contests: a chain it DID carry
+        // meets an empty resolution and is dropped by the disagreement path rather than being
+        // walked and believed.
         Optional<String> fromRfc = !rfcPresent || forwarded.unresolvable()
                 ? Optional.empty()
                 : walkChain(rfcChain);

@@ -133,9 +133,13 @@ import java.util.function.IntPredicate;
  *         <li>For URL paths and parameters: Allows characters 160-255 when enabled</li>
  *         <li>For header names and cookies: Always rejected per RFC (setting ignored)</li>
  *         <li>For header values and body: Enables both extended ASCII and <em>all</em> Unicode
- *             above 255 - so at the {@code false} default those two types are ASCII-only, and an
- *             integrator carrying non-ASCII header values or bodies must opt in explicitly</li>
- *         <li>Note: Unicode beyond 255 is always rejected for URLs per RFC 3986</li>
+ *             above 255. At the {@code false} default a header value is ASCII-only, whereas a
+ *             body still admits 160-255 because {@code HTTP_BODY_CHARS} includes that range; for
+ *             both types Unicode above 255 requires the explicit opt-in</li>
+ *         <li>Note: Unicode beyond 255 is always rejected for URLs per RFC 3986. Like every rule
+ *             of this stage it applies to the wire form: a percent-encoded code point above 255
+ *             is valid percent-encoding here, and its decoded form is judged by
+ *             {@link DecodingStage}, which admits it (ADR-0011)</li>
  *         <li>Note: the C1 range (128-159) is <em>not</em> reachable through this flag - see the
  *             unconditional rule below</li>
  *       </ul>
@@ -429,11 +433,13 @@ public final class CharacterValidationStage implements HttpSecurityValidator {
         }
 
         // Unicode characters above 255:
-        // For URLs (paths/parameters): Always rejected per RFC 3986 (ASCII-only)
+        // For URLs (paths/parameters): Always rejected per RFC 3986 (ASCII-only) in the raw wire
+        // form; a percent-encoded code point is checked after decoding by DecodingStage instead.
         // For headers/body: Allowed if allowExtendedAscii is true. NOTE the flag's second blast
         // radius: for HEADER_VALUE and BODY it governs ALL Unicode above 255, not just the
-        // 128-255 range, so with the fail-secure default (false) those two types are ASCII-only
-        // and an integrator carrying non-ASCII header values or bodies must opt in explicitly.
+        // 128-255 range, so with the fail-secure default (false) neither type admits Unicode
+        // above 255 and an integrator carrying it in header values or bodies must opt in
+        // explicitly. (BODY still admits 160-255 at the default via HTTP_BODY_CHARS.)
         // Always reject combining marks (any Unicode combining block) as they can cause
         // normalization issues and enable homograph attacks.
         if (CharacterValidationConstants.isCombiningMark(ch)) {

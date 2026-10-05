@@ -69,8 +69,9 @@ final class RfcForwardedParser {
      * <p>When {@code malformed} is {@code true} the header violated the grammar and the parse
      * stopped at the offending pair — the directives reported are the ones accumulated
      * <em>before</em> it. Read them as "which fields did this header speak about", never as values
-     * to honor: the header is unresolvable, so the caller contributes nothing from it and the
-     * fields it did speak about fail closed through the ordinary disagreement path.</p>
+     * to honor: the header is unresolvable, so the caller takes no value from it, yet it still
+     * contests the fields it did speak about, which fail closed through the ordinary disagreement
+     * path.</p>
      *
      * @param proto     the last {@code proto} directive parsed before the stop, if any
      * @param host      the last {@code host} directive parsed before the stop, if any

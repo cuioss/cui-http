@@ -31,6 +31,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.net.URLDecoder;
@@ -267,6 +268,19 @@ class URLParameterValidationPipelineTest {
             assertTrue(result.isPresent(), "Fullwidth content in a parameter value should be preserved, not rejected");
             assertEquals("path／／admin", result.get(),
                     "The fullwidth solidus must survive as U+FF0F, not fold to an ASCII '/'");
+        }
+
+        /**
+         * Regression guard for ADR-0011: the "Unicode above 255 is rejected" rule of
+         * {@code CharacterValidationStage} governs the wire form only, so a percent-encoded code
+         * point above 255 is accepted at the default configuration. {@code %e5%98%8a%e5%98%8d}
+         * decodes to U+560A U+560D, whose low bytes are LF and CR; the pipeline must return the
+         * full code points and never a truncated line break.
+         */
+        @ParameterizedTest
+        @CsvSource({"%e5%98%8a%e5%98%8d, \u560A\u560D", "%e4%b8%ad, \u4E2D"})
+        void shouldAcceptDecodedCodePointAbove255(String encodedValue, String expected) {
+            assertEquals(Optional.of(expected), pipeline.validate(encodedValue));
         }
     }
 
