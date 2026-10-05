@@ -2,9 +2,9 @@
   "id": "PLAN-12",
   "slug": "PLAN-12-javadoc-samples-and-api-prose",
   "workstream": "WS-06-documentation-set",
-  "status": "staged",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "plan-12-javadoc-samples-and-api-prose",
+  "pr": "#260",
+  "landing": "landings/PLAN-12.md",
   "seq": 13
 }

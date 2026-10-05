@@ -132,6 +132,10 @@ workstream order. Actual emission order is set here, and is re-derived after eve
   — but only 1 of 2 slots fills this round: PLAN-08 collides with PLAN-10 (client test
   directories), PLAN-12 (`package-info.java` + `StringContentConverter.java`), and PLAN-13 (the
   `doc/adr/` HYPOTHESIS-group rule below), so none of the three can join it. Shortfall on slot 2.
+- **PLAN-12** — PR #260, `46d3166`, `landings/PLAN-12.md` (2026-10-05 drain). 7/7 deliverables,
+  verified Javadoc-only. Thirteenth under-declaration (7 sweep-target files, expected by the spec's
+  re-derive-at-outline rule). Ran concurrently with PLAN-13 without collision. **PLAN-13 is now
+  `launched`** (live plan observed; the ledger is caught up) and is the epic's last open plan.
 - **PLAN-10** — PR #256, `f81a554`, `landings/PLAN-10.md` (2026-10-04 drain). 12/12
   deliverables, no production code. Twelfth under-declaration (4 undeclared files, incl. the
   `doc/…/testing.adoc` boundary crossing). 5 finalize rounds (2 over the ceiling), ~8.8M tokens.
@@ -345,6 +349,16 @@ it verbatim and never regenerates it.}
 plan. When a defect is folded into a plan spec, move it out of this list and note the
 owning PLAN-NN.}
 
+- **NEW 2026-10-05 (PLAN-12 sweep, inbox 001) — 23 test files still cite "HTTP verification
+  specification".** Main sources are clean (0 hits, verified). The 23 files are under
+  `cui-http-core/src/test/java/de/cuioss/http/security/` (`generators/{cookie,encoding,url}/` and
+  `tests/`), listed in the archived message. WS-05 is closed; unowned — same bucket as the PLAN-10
+  test-side residue below.
+- **NEW 2026-10-05 (PLAN-12 sweep, inbox 001, unverified lead) — adapter request-body prose may
+  overstate.** `client/adapter/package-info.java` says request-body validation "prevents SQL
+  injection, XSS scripts, path traversal…". The library does not detect SQL injection or XSS as
+  such; needs a prose review against `PatternMatchingStage`. Javadoc is PLAN-12's surface and it
+  has shipped; unowned.
 - **NEW 2026-10-04 (PLAN-10 landing, unverified lead) — low-byte CRLF homograph accepted.**
   PLAN-10 reports `URLParameterValidationPipeline` accepts `%e5%98%8a%e5%98%8d` (U+560A U+560D,
   whose low bytes are 0x0A / 0x0D) even with line breaks disallowed. Only exploitable where a
