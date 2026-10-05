@@ -34,21 +34,23 @@
  *
  * <h3>Usage Example</h3>
  * <pre><code>
- * // Create event counter
+ * // Create event counter and hand it to the pipeline
  * SecurityEventCounter eventCounter = new SecurityEventCounter();
+ * HttpSecurityValidator validator =
+ *     PipelineFactory.createUrlPathPipeline(SecurityConfiguration.defaults(), eventCounter);
  *
- * // Use in validation pipeline
  * try {
  *     String validated = validator.validate(input)
  *             .orElseThrow(() -&gt; new IllegalArgumentException("input must not be null"));
  *     // Process validated input
  * } catch (UrlSecurityException e) {
- *     // Increment counter for this failure type
- *     eventCounter.increment(e.getFailureType());
+ *     // Reject the request. The pipeline has already counted this violation in
+ *     // eventCounter - incrementing it here again would count it twice.
  * }
  *
  * // Query event statistics
  * long pathTraversalCount = eventCounter.getCount(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED);
+ * long totalCount = eventCounter.getTotalCount();
  * </code></pre>
  *
  * <h3>Package Nullability</h3>

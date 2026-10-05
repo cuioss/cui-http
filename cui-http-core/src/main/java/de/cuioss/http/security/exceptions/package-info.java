@@ -29,8 +29,8 @@
  * <ul>
  *   <li><strong>Failure Type Classification</strong> - Detailed categorization via {@link de.cuioss.http.security.core.UrlSecurityFailureType}</li>
  *   <li><strong>Validation Context</strong> - Information about what was being validated via {@link de.cuioss.http.security.core.ValidationType}</li>
- *   <li><strong>Original Input</strong> - The input that caused the failure (for logging and debugging)</li>
- *   <li><strong>Sanitized Input</strong> - Partially processed input when available</li>
+ *   <li><strong>Original Input</strong> - The rejected input, verbatim and attacker-controlled: never
+ *       log it raw. {@code getMessage()} and {@code toString()} never reproduce it</li>
  *   <li><strong>Builder Pattern</strong> - Fluent construction with required and optional fields</li>
  * </ul>
  *
@@ -45,18 +45,15 @@
  *     // Rich exception context
  *     UrlSecurityFailureType failureType = e.getFailureType();
  *     ValidationType validationType = e.getValidationType();
- *     String originalInput = e.getOriginalInput();
- *     Optional&lt;String&gt; sanitized = e.getSanitizedInput();
  *
- *     // Log security event
- *     log.warn("Security violation: %s in %s for input: %s",
- *         failureType, validationType, originalInput);
+ *     // e.getMessage() is safe to log: it redacts the input to its length.
+ *     // e.getOriginalInput() is attacker-controlled and must not be logged raw.
+ *     String safeMessage = e.getMessage();
  *
- *     // Take appropriate action based on failure type
+ *     // A violation is never repaired and retried - reject or block the request
  *     switch (failureType) {
  *         case PATH_TRAVERSAL_DETECTED -&gt; blockRequest();
- *         case INVALID_CHARACTER -&gt; sanitizeAndRetry();
- *         case PATH_TOO_LONG -&gt; rejectWithError();
+ *         default -&gt; rejectWithError();
  *     }
  * }
  * </code></pre>
