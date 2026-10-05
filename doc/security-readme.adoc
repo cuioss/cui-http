@@ -34,7 +34,9 @@ security analysis (as opposed to a security violation) raises `IllegalArgumentEx
 
 The pipelines live in `de.cuioss.http.security.pipeline`
 (link:../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/[source tree]). There are
-five concrete pipelines, one per HTTP component; each is described below. Request bodies have no
+five concrete pipelines, one per pipeline-backed component — URL path, parameter value, parameter
+name, header (one class for both header names and values) and content type; each is described
+below. Not every HTTP component is pipeline-backed: request bodies have no
 pipeline — `PipelineFactory.createPipeline(ValidationType.BODY, ...)` is rejected — and cookies are
 validated through `CookiePrefixValidationStage.validateCookie(Cookie)` rather than a pipeline.
 
