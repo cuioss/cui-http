@@ -61,7 +61,7 @@ Test artifact:
 xref:doc/security-readme.adoc[Security Validation Framework]:
 
 * Validation pipelines for paths, parameters, headers
-* Attack pattern detection for URL paths and parameters (path traversal, parameter injection, protocol violations); the header pipeline relies on character and length rules instead
+* Attack pattern detection for URL paths and parameters (path traversal, parameter injection, protocol violations); the header pipeline relies on character and length rules (plus allow/block lists for header names) instead
 * Configuration via `SecurityConfigurationBuilder`
 
 === HTTP Client Handlers

@@ -38,8 +38,8 @@ HTTP body content validation should be handled at application layer." Semantic b
 request-body parameters and structured formats - is therefore an application-layer
 responsibility, not a capability of this library. A caller can still construct two stages
 directly with `ValidationType.BODY`: `CharacterValidationStage` applies its configured BODY
-character rules (ASCII-only at the `allowExtendedAscii=false` default, extended ASCII and Unicode
-when it is enabled), and `LengthValidationStage` checks `maxBodySize` in UTF-8 bytes. See
+character rules (printable ASCII plus Latin-1 160-255 at the `allowExtendedAscii=false` default,
+Unicode above 255 only when it is enabled; C1 controls and combining marks always rejected), and `LengthValidationStage` checks `maxBodySize` in UTF-8 bytes. See
 xref:#HTTP-14[HTTP-14] for the per-validation-type status.
 
 [#HTTP-2]

@@ -4,7 +4,7 @@
 :sectnums:
 
 // adr-metadata
-// summary: Every NFKC-fold claim made in the module's sources is asserted from one structured claims table in a shared, executable invariant registry, whose completeness a source scan enforces, rather than left in prose or duplicated per test class
+// summary: Every normalization-fold claim (NFKC, and NFC where a comment makes one) made in the module's sources is asserted from one structured claims table in a shared, executable invariant registry, whose completeness a source scan enforces, rather than left in prose or duplicated per test class
 // tags: security-testing, unicode-normalization, test-quality, single-source-of-truth
 // affects: cui-http-core
 // supersedes:
@@ -30,7 +30,7 @@ Every assertion is derived from that one table: the positive rows assert `Normal
 
 Completeness of the table is **enforced, not trusted**. The same test scans every Java source in the module for fold-claim contexts — a comment paragraph or code line that mentions folding or a normalization form together with a code point written as `U+XXXX` or as a Java unicode escape — and fails when such a context names a code point that no row of the table covers (as part of a row's input or claimed result). A fold claim therefore cannot be written in a comment or Javadoc without a row asserting it: the build fails until the row is added or the comment is corrected. The detection is deliberately broad — a code point merely mentioned next to a fold claim must be registered too, which costs one row, whereas a missed claim is the defect this decision exists to prevent.
 
-No second, parallel fold-verification mechanism is kept alongside the shared registry. Where a local, per-class fold assertion already existed, its claims are absorbed into the shared registry as rows and the local assertion is removed — the registry is the single executable source of truth for what folds to what in this codebase's security test tree, in both directions.
+No second, parallel fold-verification mechanism is kept alongside the shared registry. Where a local, per-class fold assertion already existed, its claims are absorbed into the shared registry as rows and the local assertion is removed — the registry is the single executable source of truth for what folds to what in this module's sources, in both directions.
 
 == Consequences
 

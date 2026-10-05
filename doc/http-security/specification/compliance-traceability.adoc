@@ -787,7 +787,8 @@ This library focuses on *HTTP/URL protocol layer security*. The following are *o
 * ✅ URL encoding attack detection
 * ✅ Unicode security validation
 * ✅ Protocol-level attack pattern detection for URL paths and parameter names and values
-  (including the structural protocol-handler scheme check enforced by `strict()`); header,
+  (including the structural protocol-handler scheme check enforced by `strict()` on URL paths and
+  parameter values); header,
   content-type and cookie validation does not use pattern matching
 * ✅ Opt-in application-layer content block-lists for callers that can supply the missing sink
   knowledge (`paranoid()`, or `blockedPathPatterns` / `blockedParameterNames` on any base preset)
