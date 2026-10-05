@@ -11,6 +11,11 @@ All messages follow the format: HTTP-[identifier]: [message]
 
 Module: `de.cuioss.http`
 
+The tables below are written by hand. `LogMessagesDocumentationTest`
+(xref:../cui-http-core/src/test/java/de/cuioss/http/LogMessagesDocumentationTest.java[source])
+derives the declared records from the `LogRecord` constants of both classes and fails the build
+when a table row, its level, its message text or a range summary below no longer matches them.
+
 LogMessages Classes:
 
 - `de.cuioss.http.client.HttpLogMessages` - HTTP client operations (HTTP-106–108, HTTP-110–117, HTTP-200–201)
@@ -101,8 +106,8 @@ LogMessages Classes:
 
 The authoritative source for the records below is
 xref:../cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedLogMessages.java[ForwardedLogMessages.java].
-This table is maintained by hand, so it must be updated whenever a record in that class is added,
-removed, renumbered, or reworded.
+This table must be updated whenever a record in that class is added, removed, renumbered, or
+reworded; `LogMessagesDocumentationTest` fails the build until it is.
 
 === WARN Level (100-199)
 
@@ -150,28 +155,3 @@ removed, renumbered, or reworded.
 |Reconciling forwarded %s: de-facto families disagree: %s resolves to %s but %s resolves to %s; honoring %s per deFactoPrecedence
 |Logged when the two de-facto families (`X-Forwarded-*` and `X-Proxy*`) are both present and resolve a field to different values. The field is not dropped: the family named by `ForwardedResolverConfig.deFactoPrecedence()` is honored. Distinct from HTTP-124, which reports a field dropped because the de-facto value and the RFC 7239 Forwarded header disagree. Parameters: field name, X-Forwarded-* header name, its resolution, X-Proxy* header name, its resolution, honored family.
 |===
-
-== Notes
-
-=== Test Coverage
-
-Not every WARN-level LogRecord has a test that asserts it. The following is a recount of
-`LogAsserts` usage across `cui-http-core/src/test/java`, matching each record either by its
-identifier (`resolveIdentifierString()` or the literal `HTTP-NNN`) or by a distinctive part of its
-message template.
-
-*Asserted by a test:* HTTP-106, HTTP-115, HTTP-116 and HTTP-117 (`HttpHandlerTest`,
-`HttpHandlerRedirectTest`), and every `ForwardedLogMessages` record, HTTP-120 to HTTP-127
-(`ForwardedHeaderResolverTest`, `ForwardedTrustBoundaryTest`, `ForwardedResolverConfigTest`).
-
-*WARN records without an asserting test:*
-
-- HTTP-107 (`HTTP_PING_INTERRUPTED`) - documented exception: InterruptedException cannot be triggered reliably in a unit test; the LogRecord Javadoc records this
-- HTTP-108 (`REQUEST_SERIALIZATION_FAILED`)
-- HTTP-110 (`RETRY_SKIPPED_NON_IDEMPOTENT`)
-- HTTP-111 (`REQUEST_FAILED_MAX_ATTEMPTS`)
-- HTTP-112 (`REQUEST_RETRY_AFTER_FAILURE`)
-- HTTP-113 (`RESPONSE_CONVERSION_FAILED`)
-- HTTP-114 (`NETWORK_ERROR_DURING_REQUEST`)
-
-The ERROR-level records HTTP-200 and HTTP-201 have no asserting test either.
