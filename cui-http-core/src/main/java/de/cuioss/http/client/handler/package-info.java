@@ -21,6 +21,10 @@
  *   <li>{@link de.cuioss.http.client.handler.HttpHandler} - HTTP client wrapper with builder API and SSL support</li>
  *   <li>{@link de.cuioss.http.client.handler.HttpStatusFamily} - HTTP status code classification per RFC 7231</li>
  *   <li>{@link de.cuioss.http.client.handler.SecureSSLContextProvider} - TLS 1.2+ SSL context provider</li>
+ *   <li>{@link de.cuioss.http.client.handler.RedirectPolicy} - Egress host policy every redirect hop
+ *       is checked against before {@code HttpHandler} follows it</li>
+ *   <li>{@link de.cuioss.http.client.handler.RedirectNotAllowedException} - Raised when a redirect hop
+ *       is refused, naming the hop and the reason</li>
  * </ul>
  *
  * <h3>Usage Example</h3>
@@ -32,10 +36,11 @@
  *     .readTimeoutSeconds(30)
  *     .build();
  *
- * // Execute request with proper error handling
+ * // Send through the handler: send() follows only the redirect hops its RedirectPolicy permits.
+ * // The raw client from createHttpClient() follows no redirect at all and leaves validating a
+ * // Location target to the caller.
  * try {
- *     HttpClient client = handler.createHttpClient();
- *     HttpResponse&lt;String&gt; response = client.send(
+ *     HttpResponse&lt;String&gt; response = handler.send(
  *         handler.requestBuilder().GET().build(),
  *         HttpResponse.BodyHandlers.ofString());
  *     if (HttpStatusFamily.isSuccess(response.statusCode())) {
@@ -43,11 +48,12 @@
  *     } else if (HttpStatusFamily.isClientError(response.statusCode())) {
  *         handleClientError(response);
  *     }
+ * } catch (RedirectNotAllowedException e) {
+ *     // A redirect hop was refused by the policy; e.getReason() names why
  * } catch (IOException e) {
- *     log.error("Network error during HTTP request", e);
+ *     // Network error during the HTTP request
  * } catch (InterruptedException e) {
  *     Thread.currentThread().interrupt();
- *     log.warn("HTTP request interrupted");
  * }
  * </pre>
  *
