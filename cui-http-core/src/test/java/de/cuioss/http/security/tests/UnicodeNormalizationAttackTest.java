@@ -223,7 +223,7 @@ class UnicodeNormalizationAttackTest {
         String[] normalizationTests = {
                 // Decomposed to composed normalization changes
                 "file\u0300",              // file + combining grave (changes after NFC)
-                ".\u0301/",                // . + combining acute (changes after NFC)
+                ".\u0301/",                // . + combining acute (NFC/NFKC-invariant: no precomposed form)
                 "admin\u0302",             // admin + combining circumflex
 
                 // Compatibility normalization changes - each folds under NFKC (not under NFC)

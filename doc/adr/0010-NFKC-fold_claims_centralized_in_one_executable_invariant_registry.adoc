@@ -4,7 +4,7 @@
 :sectnums:
 
 // adr-metadata
-// summary: Every NFKC-fold claim made in the security test tree is asserted by one shared, executable invariant registry rather than left in prose or duplicated per test class
+// summary: Every NFKC-fold claim made in the module's sources is asserted from one structured claims table in a shared, executable invariant registry, whose completeness a source scan enforces, rather than left in prose or duplicated per test class
 // tags: security-testing, unicode-normalization, test-quality, single-source-of-truth
 // affects: cui-http-core
 // supersedes:
@@ -24,9 +24,11 @@ A prior attempt at executable verification existed but was local and partial: on
 
 == Decision
 
-Every NFKC-fold claim made anywhere in the security test tree — in a comment, in Javadoc, or in an existing test — is represented as a row in one shared, parameterized invariant test. A positive row names a code point and its claimed ASCII fold target and asserts `Normalizer.normalize(cp, Form.NFKC)` equals that target. A negative row names a code point a comment elsewhere claims does *not* fold, and asserts it normalizes to itself. Each row records the source of the claim (the file and construct it came from), so a failure traces directly back to the comment or Javadoc it is verifying.
+Every normalization-fold claim made anywhere in the module's sources — in a comment, in Javadoc, or in an existing test, in `src/main/java` as well as `src/test/java` — is represented as a row in one structured claims table, `CLAIMS`, inside one shared invariant test. A row names an input (usually one code point, or a base character plus combining marks for a composition claim), the normalization form the claim is about (NFKC, or NFC where a comment makes an NFC claim), and either its claimed result or the negative claim that it normalizes to itself. Each row records the source of the claim (the file and construct it came from), so a failure traces directly back to the comment or Javadoc it is verifying.
 
-This is an **authoring obligation, not a statically enforced one**. The registry's rows are an explicit list, so the invariant test verifies every claim entered into it and cannot detect a claim that was never entered. What the decision buys is that a claim, once registered, can no longer be wrong without failing a test — it does not buy automatic discovery of an unregistered claim. Registering a new fold claim alongside the comment that makes it is therefore part of authoring that comment.
+Every assertion is derived from that one table: the positive rows assert `Normalizer.normalize(input, form)` equals the claimed result and differs from the input, the negative rows assert the input normalizes to itself. There is no second, hand-maintained list of what to assert.
+
+Completeness of the table is **enforced, not trusted**. The same test scans every Java source in the module for fold-claim contexts — a comment paragraph or code line that mentions folding or a normalization form together with a code point written as `U+XXXX` or as a Java unicode escape — and fails when such a context names a code point that no row of the table covers (as part of a row's input or claimed result). A fold claim therefore cannot be written in a comment or Javadoc without a row asserting it: the build fails until the row is added or the comment is corrected. The detection is deliberately broad — a code point merely mentioned next to a fold claim must be registered too, which costs one row, whereas a missed claim is the defect this decision exists to prevent.
 
 No second, parallel fold-verification mechanism is kept alongside the shared registry. Where a local, per-class fold assertion already existed, its claims are absorbed into the shared registry as rows and the local assertion is removed — the registry is the single executable source of truth for what folds to what in this codebase's security test tree, in both directions.
 
@@ -40,11 +42,12 @@ No second, parallel fold-verification mechanism is kept alongside the shared reg
 
 === Negative
 
-* Centralizing the registry couples every fold-claiming file to one shared test class for verification purposes; a change to how a claim is phrased in its origin file does not itself update the registry row, so the two must be kept in sync by the author making the change.
+* Centralizing the registry couples every fold-claiming file to one shared test class for verification purposes; a change to how a claim is phrased in its origin file does not itself update the registry row's claimed result, so the two must be kept in sync by the author making the change.
+* The source scan is broad by design, so a comment that merely mentions a code point next to a normalization term forces a row even when it makes no fold claim about that code point.
 
 === Risks
 
-* A new fold claim introduced anywhere in the tree must be added to the shared registry to be covered; the registry protects only the claims entered into it, and does not statically prevent a future comment from being written without a corresponding row.
+* The source scan recognizes a claim by its shape — a normalization or fold term plus a code point spelled `U+XXXX` or as a unicode escape, within one comment paragraph or code line. A claim that names its code point only by character name, or splits the code point and the fold term across paragraphs, is not detected. The scan checks that a claimed code point is registered, not that the comment's stated target matches the row's.
 
 == Alternatives Considered
 
@@ -56,5 +59,5 @@ Add an inline fold assertion directly at each individual test method that relies
 
 == References
 
-* `cui-http-core/src/test/java/de/cuioss/http/security/tests/NfkcFoldClaimInvariantTest.java` — the shared invariant registry this decision establishes.
+* `cui-http-core/src/test/java/de/cuioss/http/security/tests/NfkcFoldClaimInvariantTest.java` — the shared invariant registry this decision establishes: the `CLAIMS` table, the assertions derived from it, and the source scan that enforces its completeness.
 * `de.cuioss.http.security.validation.DecodingStage` — the production component whose Unicode-normalization behavior (NFKC for URL paths, NFC for parameter values) the registry's claims describe.
