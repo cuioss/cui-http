@@ -2,9 +2,9 @@
   "id": "PLAN-17",
   "slug": "PLAN-17-post-landing-residue",
   "workstream": "WS-01-security-validation-core",
-  "status": "staged",
+  "status": "shipped",
   "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "pr": "#265",
+  "landing": "landings/PLAN-17.md",
   "seq": 17
 }
