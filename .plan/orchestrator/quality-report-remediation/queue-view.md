@@ -4,7 +4,7 @@
 
 ## START HERE
 
-**Resume anchor**: N=2, R=1. PLAN-12 SHIPPED (#260, 46d3166, drained 2026-10-05). PLAN-13 is the epic's LAST open plan: launched (live plan plan-13-asciidoc-specs-requirements-adrs observed), running concurrently since 2026-10-04. No staged plan remains - nothing to emit. NEXT ACTION: on PLAN-13's landing, analyze (inbox drain), then decide on the unowned Open Defects (CRLF homograph lead - verify, likely new WS-01 plan; URL-scheme rejection - by design?; test-side residue incl. 23 test files citing 'HTTP verification specification'; adapter request-body prose overstatement) - stage follow-up plans or close the epic. Plan-marshall findings route to plan-marshall epic truthful-signals inbox (operator directive 2026-10-05; 12 routed so far as sender cui-http-quality-report-remediation 002-013). Gate note: plugin 0.1.1842 corpus cross-check counts terminal rows - any further emit needs an operator override. ADR high-water 0023, index five rows behind (PLAN-13 4g). Standing: main has a REQUIRED merge queue; PR #224 still OPEN; lessons backlog 40+ (/plan-orchestrator lessons).
+**Resume anchor**: ALL PLANS TERMINAL as of 2026-10-05: 14 shipped (last: PLAN-13, #262, 4a9c30e), 2 superseded; all 7 workstreams closed; inbox empty. NEXT ACTION: operator decision - stage follow-up plans for the unowned Open Defects, or close the epic (/plan-orchestrator close). Unowned Open Defects in epic.md: (1) low-byte CRLF homograph accepted by URLParameterValidationPipeline - unverified security lead, likely a WS-01 plan; (2) no URL-scheme rejection on the path pipeline - by design?; (3) test-side residue incl. 23 test files citing 'HTTP verification specification'; (4) Javadoc drift - adapter request-body prose overstatement, CharacterValidationStage BODY ASCII-only claim, ForwardedHeaderResolver/RfcForwardedParser comments; (5) release notes must call out the removed generators (PathTraversalURLGenerator, DoubleEncodingAttackGenerator). Plan-marshall findings route to plan-marshall epic truthful-signals (020 messages sent as cui-http-quality-report-remediation). Gate note: plugin 0.1.1842 corpus cross-check counts terminal rows - any further emit needs an operator override. Standing: main has a REQUIRED merge queue; PR #224 still OPEN; lessons backlog 40+ (/plan-orchestrator lessons).
 **Phase**: orchestrating
 **Queue** (staged, in order):
 - (empty)
@@ -21,7 +21,7 @@
 - PLAN-10 (WS-05-test-framework-quality) — plan=plan-10-attack-test-mechanism-correctness — PR #256 — landing=landings/PLAN-10.md — status: shipped
 - PLAN-11 (WS-05-test-framework-quality) — status: superseded
 - PLAN-12 (WS-06-documentation-set) — plan=plan-12-javadoc-samples-and-api-prose — PR #260 — landing=landings/PLAN-12.md — status: shipped
-- PLAN-13 (WS-06-documentation-set) — plan=plan-13-asciidoc-specs-requirements-adrs — status: launched
+- PLAN-13 (WS-06-documentation-set) — plan=plan-13-asciidoc-specs-requirements-adrs — PR #262 — landing=landings/PLAN-13.md — status: shipped
 - PLAN-14 (WS-07-build-ci-benchmarking) — plan=build-artifacts-and-ci-safety — PR #208 — landing=landings/PLAN-14.md — status: shipped
 - PLAN-16 (WS-01-security-validation-core) — plan=parameter-value-linebreak-carve-out — PR #239 — landing=landings/PLAN-16.md — status: shipped
 
@@ -29,4 +29,4 @@
 
 | # | Plan | Workstream | Status | Surface (expected) |
 |---|------|------------|--------|--------------------|
-| 1 | PLAN-13 | WS-06-documentation-set | launched | .claude/skills/release/SKILL.md; .gitignore; CLAUDE.md; README.adoc; agents.md; cui-http-core/src/site/asciidoc/about.adoc; doc/; doc/adr/ |
+| — | (empty) | — | — | — |

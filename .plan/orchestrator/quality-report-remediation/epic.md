@@ -132,6 +132,11 @@ workstream order. Actual emission order is set here, and is re-derived after eve
   — but only 1 of 2 slots fills this round: PLAN-08 collides with PLAN-10 (client test
   directories), PLAN-12 (`package-info.java` + `StringContentConverter.java`), and PLAN-13 (the
   `doc/adr/` HYPOTHESIS-group rule below), so none of the three can join it. Shortfall on slot 2.
+- **PLAN-13** — PR #262, `4a9c30e`, `landings/PLAN-13.md` (2026-10-05 drain). 8/8 deliverables.
+  Test-scope Java added by operator override of the no-`.java` rule (3 test files); merged under a
+  `barrier-ask-override` (CodeRabbit quota). ADR index re-derived (23 records, high-water 23);
+  18 ADRs Accepted, 0005 and 0018 left Proposed. F-documentation-23 refuted. **With PLAN-13
+  shipped, every queue row is terminal: 14 shipped, 2 superseded.** All seven workstreams closed.
 - **PLAN-12** — PR #260, `46d3166`, `landings/PLAN-12.md` (2026-10-05 drain). 7/7 deliverables,
   verified Javadoc-only. Thirteenth under-declaration (7 sweep-target files, expected by the spec's
   re-derive-at-outline rule). Ran concurrently with PLAN-13 without collision. **PLAN-13 is now
@@ -369,12 +374,19 @@ owning PLAN-NN.}
   preset rejects `http:`/`https:`/`ftp:`/`gopher:`/`ldap:` or custom schemes on the URL path
   pipeline. Possibly by design (the pipeline validates a path component, not a URL); decide
   before staging.
-- **NEW 2026-10-04 — PLAN-10 crossed its write-boundary into `doc/`.** It edited
-  `doc/http-security/specification/testing.adoc`, which its spec reserved for PLAN-13. Owned by
-  PLAN-13: re-read `testing.adoc` at outline before rewriting it.
-- **NEW 2026-10-04 — breaking change to the published `generators` test artifact.** PLAN-10
-  removed `PathTraversalURLGenerator` and `DoubleEncodingAttackGenerator`. Owned by PLAN-13 for
-  `doc/test-generators-readme.adoc`; must also be called out in the next release notes.
+- ✅ **RESOLVED 2026-10-05 by PLAN-13 (#262) — PLAN-10's write-boundary crossing into `doc/`.**
+  PLAN-13 reconciled `doc/http-security/specification/testing.adoc` (in its diff).
+- **PARTLY RESOLVED 2026-10-05 — breaking change to the published `generators` test artifact.**
+  PLAN-10 removed `PathTraversalURLGenerator` and `DoubleEncodingAttackGenerator`. Doc half done:
+  PLAN-13 updated `doc/test-generators-readme.adoc`, which no longer references them. **Still owed:
+  call it out in the next release notes.**
+- **NEW 2026-10-05 (PLAN-13 landing, inbox 008 + residue) — production Javadoc drift PLAN-13
+  could not edit.** `CharacterValidationStage` Javadoc (~lines 135-137, 433-436) and the >255
+  branch comment still say `HEADER_VALUE`/`BODY` are ASCII-only at the default, while the code
+  admits 160-255 — now contradicting the reconciled `functional-requirements.adoc`. Also
+  `ForwardedHeaderResolver` Javadoc "Present-but-invalid = drop" and the "contributes nothing"
+  comments in `ForwardedHeaderResolver.java` / `RfcForwardedParser.java`. Unowned; natural to
+  bundle with the adapter request-body prose item above in one Javadoc follow-up plan.
 - **NEW 2026-10-04 — PLAN-10 test-side residue.** Set-membership assertion in
   `URLPathValidationPipelineTest`, a raw NUL in the `HttpHeaderInjectionAttackGenerator` Javadoc,
   raw characters in `IDNAttackDatabase` (same class as lesson 2026-10-04-06-001). WS-05 is now
