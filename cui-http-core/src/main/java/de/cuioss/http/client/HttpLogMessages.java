@@ -26,6 +26,17 @@ import lombok.experimental.UtilityClass;
  * This LogMessages class is specific to the HTTP client utilities (handler, adapter,
  * converter, and result packages).
  *
+ * <h2>Usage Example</h2>
+ * <p>
+ * Each constant is a {@link LogRecord} whose {@code %s} placeholders are filled from the arguments
+ * passed alongside it to a {@code CuiLogger}:
+ * <pre>{@code
+ * private static final CuiLogger LOGGER = new CuiLogger(MyClient.class);
+ *
+ * // Logs "HTTP-106: IO error while pinging URI https://api.example.com: Connection refused"
+ * LOGGER.warn(HttpLogMessages.WARN.HTTP_PING_IO_ERROR, uri, e.getMessage());
+ * }</pre>
+ *
  * @since 1.0
  */
 @UtilityClass

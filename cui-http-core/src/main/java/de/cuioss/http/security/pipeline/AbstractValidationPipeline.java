@@ -63,6 +63,22 @@ import java.util.Optional;
  * including it would make the rendered value change as events are counted, which is noise rather
  * than diagnostic content about the pipeline itself.</p>
  *
+ * <h3>Usage Example</h3>
+ * <p>Concrete pipelines are used only through {@link #validate(String)}; each rejection is
+ * counted into the shared {@link SecurityEventCounter} before it is rethrown:</p>
+ * <pre>{@code
+ * SecurityEventCounter counter = new SecurityEventCounter();
+ * AbstractValidationPipeline pipeline =
+ *     new URLPathValidationPipeline(SecurityConfiguration.defaults(), counter);
+ *
+ * pipeline.validate("/api/users/123"); // Optional.of("/api/users/123")
+ * try {
+ *     pipeline.validate("/api/../../etc/passwd");
+ * } catch (UrlSecurityException e) {
+ *     long seen = counter.getCount(e.getFailureType()); // already 1 - counted by the pipeline
+ * }
+ * }</pre>
+ *
  * @since 1.0
  */
 @RequiredArgsConstructor

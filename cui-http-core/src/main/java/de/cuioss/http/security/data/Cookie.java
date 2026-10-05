@@ -60,9 +60,9 @@ import java.util.Optional;
  * boolean isSecure = cookie.isSecure();       // Check for Secure attribute
  * boolean isHttpOnly = cookie.isHttpOnly();   // Check for HttpOnly attribute
  *
- * // Use in validation
- * validator.validate(cookie.name(), ValidationType.COOKIE_NAME);
- * validator.validate(cookie.value(), ValidationType.COOKIE_VALUE);
+ * // Use in validation: character-validates name and value and enforces the
+ * // RFC 6265bis prefix rules, throwing UrlSecurityException on a violation
+ * new CookiePrefixValidationStage(config).validateCookie(cookie);
  * </pre>
  *
  * <h3>Cookie Attributes</h3>
