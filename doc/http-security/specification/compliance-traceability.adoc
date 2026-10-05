@@ -158,8 +158,10 @@ shipped default is the balanced preset rather than the maximum-security one (SEC
 
 *Status*: ⚠️ PARTIAL — configuration is immutable and relaxing it requires an explicit choice, but
 the shipped default (`defaults()`) is the balanced preset: it ships `failOnSuspiciousPatterns=false`
-and empty content block-lists, so the protocol-handler scheme check and the application-layer
-content detection are off until `strict()` or `paranoid()` is selected (SEC-14).
+and empty content block-lists. The protocol-handler scheme check stays off until `strict()` or
+`paranoid()` is selected; the application-layer content detection stays off until `paranoid()` is
+selected or the caller supplies its own block-lists, because `strict()` also ships empty content
+block-lists (SEC-14).
 
 === A07:2021 - Identification and Authentication Failures
 

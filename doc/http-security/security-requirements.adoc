@@ -263,8 +263,9 @@ These requirements are derived from:
   ** Path-traversal detection active; the protocol-handler scheme check is *off*
      (`failOnSuspiciousPatterns=false`) and the content block-lists are empty
 
-* The default is not the maximum-security posture: `strict()` and `paranoid()` enable further
-  checks (see the NOTE below)
+* The default is not the maximum-security posture: `strict()` enables the protocol-handler scheme
+  check but keeps the content block-lists empty, and only `paranoid()` (or a caller-supplied
+  block-list) enables the application-layer content detection (see the NOTE below)
 * Configuration relaxation must require explicit action
 * Reference: xref:specification/specification.adoc#_configuration_architecture[Secure Configuration]
 

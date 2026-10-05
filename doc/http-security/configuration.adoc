@@ -141,8 +141,8 @@ likewise gated only on their own contents.
 | `blockedPathPatterns`
 | empty (block-none)
 | `SENSITIVE_PATH_PATTERNS`
-| Whole `/`-delimited path segment, compared against `URL_PATH` and `PARAMETER_VALUE`. The
-  pattern's leading and trailing `/` are stripped, so `/etc/` matches an `etc` segment. A pattern
+| Whole `/`-delimited path segment, compared against `URL_PATH` only — a parameter value is not a
+  path, so segment matching is not applied to `PARAMETER_VALUE`. The pattern's leading and trailing `/` are stripped, so `/etc/` matches an `etc` segment. A pattern
   containing a backslash is matched as a substring instead — its own delimiters already anchor it,
   and a decoded backslash cannot occur in a legitimate URL path.
 
@@ -171,7 +171,7 @@ only; the value that flows on to the caller is never the stripped view.
 === Why the two lists are separate
 
 They apply different matching semantics to different HTTP components: a path pattern matches a
-whole path segment of a `URL_PATH` or `PARAMETER_VALUE`, while a parameter name matches a
+whole path segment of a `URL_PATH`, while a parameter name matches a
 `PARAMETER_NAME` by exact equality. A single combined list would have to pick one semantics and
 would then misapply it to the other component — seeding it with the parameter name `file` would
 also reject every path carrying a `file` segment.
