@@ -1,7 +1,7 @@
 {
   "kind": "orchestrator",
   "title": "cui-http Quality Report Remediation",
-  "phase": "orchestrating",
+  "phase": "closed",
   "workstreams": [
     "WS-01-security-validation-core",
     "WS-02-contenttype-cookie-collection",
