@@ -268,8 +268,7 @@ class NfkcFoldClaimInvariantTest {
             paragraph.setLength(0);
             paragraphStart = -1;
             if (!commentLine) {
-                StringBuilder codeLine = new StringBuilder(trimmed);
-                addIfClaim(contexts, i + 1, codeLine);
+                addIfClaim(contexts, i + 1, trimmed);
             }
         }
         addIfClaim(contexts, paragraphStart, paragraph);
