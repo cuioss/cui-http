@@ -354,23 +354,23 @@ it verbatim and never regenerates it.}
 plan. When a defect is folded into a plan spec, move it out of this list and note the
 owning PLAN-NN.}
 
-- **NEW 2026-10-05 (PLAN-12 sweep, inbox 001) — 23 test files still cite "HTTP verification
+- ✅ **RESOLVED 2026-10-05 by PLAN-17 (#265, `d25f55a`) — was NEW 2026-10-05 (PLAN-12 sweep, inbox 001) — 23 test files still cite "HTTP verification
   specification".** Main sources are clean (0 hits, verified). The 23 files are under
   `cui-http-core/src/test/java/de/cuioss/http/security/` (`generators/{cookie,encoding,url}/` and
   `tests/`), listed in the archived message. WS-05 is closed; unowned — same bucket as the PLAN-10
   test-side residue below.
-- **NEW 2026-10-05 (PLAN-12 sweep, inbox 001, unverified lead) — adapter request-body prose may
+- ✅ **RESOLVED 2026-10-05 by PLAN-17 (#265, `d25f55a`) — was NEW 2026-10-05 (PLAN-12 sweep, inbox 001, unverified lead) — adapter request-body prose may
   overstate.** `client/adapter/package-info.java` says request-body validation "prevents SQL
   injection, XSS scripts, path traversal…". The library does not detect SQL injection or XSS as
   such; needs a prose review against `PatternMatchingStage`. Javadoc is PLAN-12's surface and it
   has shipped; unowned.
-- **NEW 2026-10-04 (PLAN-10 landing, unverified lead) — low-byte CRLF homograph accepted.**
+- ✅ **RESOLVED 2026-10-05 by PLAN-17 (#265, `d25f55a`) — REFUTED BY DESIGN (ADR-0011): the pipelines do accept decoded >255 code points, intentionally; the >255 rule is a wire-form rule and `DecodingStage` owns decoded safety. Tests now pin acceptance and no truncation to LF/CR. Do not re-open as a pipeline defect. — was NEW 2026-10-04 (PLAN-10 landing, unverified lead) — low-byte CRLF homograph accepted.**
   PLAN-10 reports `URLParameterValidationPipeline` accepts `%e5%98%8a%e5%98%8d` (U+560A U+560D,
   whose low bytes are 0x0A / 0x0D) even with line breaks disallowed. Only exploitable where a
   downstream component truncates code points to bytes. Not owned by any staged plan (WS-01 is
   closed) — candidate for a new WS-01 plan after verification at `URLParameterValidationPipeline`
   § `createStages`.
-- **NEW 2026-10-04 (PLAN-10 landing, unverified lead) — no scheme rejection on URL path.** No
+- ✅ **RESOLVED 2026-10-05 by PLAN-17 (#265, `d25f55a`) — was NEW 2026-10-04 (PLAN-10 landing, unverified lead) — no scheme rejection on URL path.** No
   preset rejects `http:`/`https:`/`ftp:`/`gopher:`/`ldap:` or custom schemes on the URL path
   pipeline. Possibly by design (the pipeline validates a path component, not a URL); decide
   before staging.
@@ -380,14 +380,14 @@ owning PLAN-NN.}
   PLAN-10 removed `PathTraversalURLGenerator` and `DoubleEncodingAttackGenerator`. Doc half done:
   PLAN-13 updated `doc/test-generators-readme.adoc`, which no longer references them. **Still owed:
   call it out in the next release notes.**
-- **NEW 2026-10-05 (PLAN-13 landing, inbox 008 + residue) — production Javadoc drift PLAN-13
+- ✅ **RESOLVED 2026-10-05 by PLAN-17 (#265, `d25f55a`) — was NEW 2026-10-05 (PLAN-13 landing, inbox 008 + residue) — production Javadoc drift PLAN-13
   could not edit.** `CharacterValidationStage` Javadoc (~lines 135-137, 433-436) and the >255
   branch comment still say `HEADER_VALUE`/`BODY` are ASCII-only at the default, while the code
   admits 160-255 — now contradicting the reconciled `functional-requirements.adoc`. Also
   `ForwardedHeaderResolver` Javadoc "Present-but-invalid = drop" and the "contributes nothing"
   comments in `ForwardedHeaderResolver.java` / `RfcForwardedParser.java`. Unowned; natural to
   bundle with the adapter request-body prose item above in one Javadoc follow-up plan.
-- **NEW 2026-10-04 — PLAN-10 test-side residue.** Set-membership assertion in
+- ✅ **RESOLVED 2026-10-05 by PLAN-17 (#265, `d25f55a`) — was NEW 2026-10-04 — PLAN-10 test-side residue.** Set-membership assertion in
   `URLPathValidationPipelineTest`, a raw NUL in the `HttpHeaderInjectionAttackGenerator` Javadoc,
   raw characters in `IDNAttackDatabase` (same class as lesson 2026-10-04-06-001). WS-05 is now
   closed; unowned.

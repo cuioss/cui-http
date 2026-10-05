@@ -4,10 +4,10 @@
 
 ## START HERE
 
-**Resume anchor**: N=2, R=0. PLAN-17-post-landing-residue STAGED and EMITTED 2026-10-05 (operator-requested; emit under the standing gate override), awaiting launch - either /plan-marshall or a plain Claude Code session (spec carries both commands). It absorbs every remaining unowned Open Defect except the release-notes item (removed generators PathTraversalURLGenerator/DoubleEncodingAttackGenerator must be named in the next release notes). A plain session files no inbox message: on its PR merge, analyze from the PR (paste or on-disk mode). After PLAN-17 ships: close the epic (/plan-orchestrator close). 14 shipped, 2 superseded, 1 staged. Plan-marshall findings route to plan-marshall truthful-signals (020 sent). Standing: main has a REQUIRED merge queue; PR #224 still OPEN; lessons backlog 40+.
+**Resume anchor**: ALL PLANS TERMINAL as of 2026-10-05: 15 shipped (last: PLAN-17, #265, d25f55a), 2 superseded; inbox empty. Only open item: the next release notes must name PathTraversalURLGenerator and DoubleEncodingAttackGenerator as removed from the generators test artifact (PLAN-10, #256). NEXT ACTION: close the epic (/plan-orchestrator close), carrying the release-notes item into history.md. Standing: main has a REQUIRED merge queue; PR #224 still OPEN; lessons backlog 40+ (/plan-orchestrator lessons); plan-marshall findings were routed to plan-marshall truthful-signals (020 messages).
 **Phase**: orchestrating
 **Queue** (staged, in order):
-1. PLAN-17 (WS-01-security-validation-core)
+- (empty)
 - PLAN-01 (WS-01-security-validation-core) — plan=decoding-normalisation-hardening — PR #210 — landing=landings/PLAN-01.md — status: shipped
 - PLAN-02 (WS-01-security-validation-core) — plan=character-set-and-control-characters — PR #217 — landing=landings/PLAN-02.md — status: shipped
 - PLAN-03 (WS-01-security-validation-core) — plan=exception-sanitisation-and-config-hygiene — PR #222 — landing=landings/PLAN-03.md — status: shipped
@@ -24,9 +24,10 @@
 - PLAN-13 (WS-06-documentation-set) — plan=plan-13-asciidoc-specs-requirements-adrs — PR #262 — landing=landings/PLAN-13.md — status: shipped
 - PLAN-14 (WS-07-build-ci-benchmarking) — plan=build-artifacts-and-ci-safety — PR #208 — landing=landings/PLAN-14.md — status: shipped
 - PLAN-16 (WS-01-security-validation-core) — plan=parameter-value-linebreak-carve-out — PR #239 — landing=landings/PLAN-16.md — status: shipped
+- PLAN-17 (WS-01-security-validation-core) — PR #265 — landing=landings/PLAN-17.md — status: shipped
 
 ## Ordered Queue
 
 | # | Plan | Workstream | Status | Surface (expected) |
 |---|------|------------|--------|--------------------|
-| 1 | PLAN-17 | WS-01-security-validation-core | staged | cui-http-core/src/main/java/de/cuioss/http/client/adapter/package-info.java; cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedHeaderResolver.java; cui-http-core/src/main/java/de/cuioss/http/forwarded/RfcForwardedParser.java; cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLParameterNameValidationPipeline.java; cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLParameterValidationPipeline.java; cui-http-core/src/main/java/de/cuioss/http/security/pipeline/URLPathValidationPipeline.java; cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java; cui-http-core/src/main/java/de/cuioss/http/security/validation/DecodingStage.java; cui-http-core/src/test/java/de/cuioss/http/security/database/IDNAttackDatabase.java; cui-http-core/src/test/java/de/cuioss/http/security/generators/; cui-http-core/src/test/java/de/cuioss/http/security/pipeline/; cui-http-core/src/test/java/de/cuioss/http/security/tests/; doc/adr/ |
+| — | (empty) | — | — | — |
