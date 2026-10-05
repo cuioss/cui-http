@@ -58,15 +58,20 @@ import java.util.Objects;
  * URLParameterValidationPipeline pipeline = new URLParameterValidationPipeline(config, counter);
  *
  * try {
- *     Optional&lt;String&gt; safeParam = pipeline.validate("user_id=123");
+ *     // Pass the parameter VALUE only - for ?user_id=123 that is "123", not "user_id=123"
+ *     Optional&lt;String&gt; safeParam = pipeline.validate("123");
  *     safeParam.ifPresent(param -&gt; {
  *         // Use the validated parameter for processing
  *     });
  * } catch (UrlSecurityException e) {
- *     // Handle security violation
- *     log.warn("Parameter validation failed: {}", e.getMessage());
+ *     // Reject the request: e.getFailureType() names the violation, and the pipeline
+ *     // has already counted it in the SecurityEventCounter
  * }
  * </pre>
+ *
+ * <p>This pipeline validates parameter <em>values</em> only. Validate the parameter
+ * <em>name</em> (the query key, {@code user_id} above) with
+ * {@link URLParameterNameValidationPipeline}, which applies the stricter name-only rules.</p>
  *
  * <h3>Value Equality</h3>
  * <p>Two {@code URLParameterValidationPipeline} instances are equal when their
@@ -81,8 +86,6 @@ import java.util.Objects;
  * The {@code stages} list is derived deterministically from the configuration and most stages have
  * no value equality of their own, so including it would be redundant with the configuration and
  * would reintroduce identity semantics.</p>
- *
- * Implements: Task P2 from HTTP verification specification
  *
  * @since 1.0
  */

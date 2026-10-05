@@ -64,7 +64,8 @@ import java.util.Objects;
  * SecurityConfiguration config = SecurityConfiguration.defaults();
  * SecurityEventCounter counter = new SecurityEventCounter();
  *
- * HTTPHeaderValidationPipeline pipeline = new HTTPHeaderValidationPipeline(config, counter);
+ * HTTPHeaderValidationPipeline pipeline =
+ *     new HTTPHeaderValidationPipeline(config, counter, ValidationType.HEADER_VALUE);
  *
  * try {
  *     Optional&lt;String&gt; safeHeader = pipeline.validate("Bearer eyJhbGciOiJIUzI1NiJ9...");
@@ -72,8 +73,8 @@ import java.util.Objects;
  *         // Use the validated header for processing
  *     });
  * } catch (UrlSecurityException e) {
- *     // Handle security violation
- *     log.warn("Header validation failed: {}", e.getMessage());
+ *     // Reject the request: e.getFailureType() names the violation, and the pipeline
+ *     // has already counted it in the SecurityEventCounter
  * }
  * </pre>
  *
@@ -92,8 +93,6 @@ import java.util.Objects;
  * are counted and break the {@code hashCode} contract for an instance already used as a hash key.
  * The {@code stages} list is derived deterministically from the configuration and the validation
  * type, so including it would be redundant with them and would reintroduce identity semantics.</p>
- *
- * Implements: Task P3 from HTTP verification specification
  *
  * @since 1.0
  */

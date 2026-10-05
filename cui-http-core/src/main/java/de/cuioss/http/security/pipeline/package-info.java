@@ -63,12 +63,15 @@
  *
  * // Create pipelines using factory
  * HttpSecurityValidator pathValidator = PipelineFactory.createUrlPathPipeline(config, eventCounter);
+ * HttpSecurityValidator paramNameValidator = PipelineFactory.createParameterNamePipeline(config, eventCounter);
  * HttpSecurityValidator paramValidator = PipelineFactory.createUrlParameterPipeline(config, eventCounter);
  *
- * // Validate different HTTP components
+ * // Validate different HTTP components; for the query ?search=test the key "search"
+ * // goes through the name pipeline and the value "test" through the value pipeline
  * try {
  *     Optional&lt;String&gt; safePath = pathValidator.validate("/api/users/123");
- *     Optional&lt;String&gt; safeParam = paramValidator.validate("search=test&amp;page=1");
+ *     Optional&lt;String&gt; safeName = paramNameValidator.validate("search");
+ *     Optional&lt;String&gt; safeParam = paramValidator.validate("test");
  *     safePath.ifPresent(path -&gt; {
  *         // Process the validated path
  *     });
@@ -76,7 +79,8 @@
  *         // Process the validated parameter
  *     });
  * } catch (UrlSecurityException e) {
- *     log.warn("Security violation: %s", e.getFailureType());
+ *     // Reject the request: e.getFailureType() names the violation, and the pipeline
+ *     // has already counted it in eventCounter
  * }
  * </code></pre>
  *
