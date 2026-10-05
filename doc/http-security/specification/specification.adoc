@@ -247,10 +247,9 @@ For implementation details, see the JavaDoc of each monitoring class.
 == Verification Tests
 
 The following test suites verify the implementation meets this specification. The lists are
-*representative, not exhaustive*: they name at least every test class the
-xref:pipeline-architecture-standards.adoc[Pipeline Architecture Standards] matrix cites, and the
-test tree is the authoritative inventory — browse the `pipeline`, `validation` and `tests`
-packages under `cui-http-core/src/test/java/de/cuioss/http/security/` for the current set.
+*representative, not exhaustive*, and make no claim to mirror any other inventory: the test tree
+is the authoritative inventory — browse the `pipeline`, `validation` and `tests` packages under
+`cui-http-core/src/test/java/de/cuioss/http/security/` for the current set.
 
 === Unit Tests
 
