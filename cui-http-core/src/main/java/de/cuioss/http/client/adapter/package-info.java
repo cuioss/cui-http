@@ -329,6 +329,11 @@
  * would reject it.
  * This prevents SQL injection, XSS scripts, path traversal, and malicious Unicode.
  *
+ * <p>Use the pipeline as a verdict only. It applies query-parameter (form) semantics, so the value
+ * it returns is the form-decoded form of the input: {@code +} becomes a space and {@code %XX}
+ * sequences are decoded. A plus-addressed email such as {@code a+b@example.org} would come back as
+ * {@code "a b@example.org"}, so build the body from the original, unmodified input values.
+ *
  * <pre>{@code
  * import de.cuioss.http.security.config.SecurityConfiguration;
  * import de.cuioss.http.security.exceptions.UrlSecurityException;
@@ -339,13 +344,14 @@
  *     SecurityConfiguration.defaults(), new SecurityEventCounter());
  *
  * try {
- *     // Each value is validated on its own; a violation throws, Optional.empty() only
- *     // means the input was null
- *     String name = valueValidator.validate(userProvidedName).orElseThrow();
- *     String email = valueValidator.validate(userProvidedEmail).orElseThrow();
+ *     // Each value is validated on its own; a violation throws, and orElseThrow() also
+ *     // rejects a null input (Optional.empty()). The returned value is form-decoded
+ *     // ('+' becomes a space, %XX is decoded), so it is discarded, not used as the body value
+ *     valueValidator.validate(userProvidedName).orElseThrow();
+ *     valueValidator.validate(userProvidedEmail).orElseThrow();
  *
- *     // Build the body from the validated values; the adapter's request converter serializes it
- *     User newUser = new User(name, email);
+ *     // Build the body from the ORIGINAL input values; the adapter's request converter serializes it
+ *     User newUser = new User(userProvidedName, userProvidedEmail);
  *     CompletableFuture<HttpResult<User>> result = adapter.post(newUser);
  * } catch (UrlSecurityException e) {
  *     // Reject the request: e.getFailureType() names the detected violation
