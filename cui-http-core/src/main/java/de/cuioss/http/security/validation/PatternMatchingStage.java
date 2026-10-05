@@ -174,8 +174,6 @@ import java.util.stream.Collectors;
  * this stage runs <em>twice</em>, once before decoding/normalization to catch raw literals and
  * once after, to catch what decoding and dot-segment resolution reveal. Neither pass subsumes
  * the other.</p>
- * <p>
- * Implements: Task V3 from HTTP verification specification
  *
  * @param config         Security configuration controlling validation behavior.
  * @param validationType Type of validation being performed (URL_PATH, PARAMETER_NAME, etc.).

@@ -82,8 +82,6 @@ import java.util.Optional;
  * <p>The {@link #hostPrefix(String, String)} and {@link #securePrefix(String, String)} factories are
  * the exception: they validate the constructed name and the value before returning.</p>
  *
- * Implements: Task B3 from HTTP verification specification
- *
  * @param name The cookie name (e.g., "JSESSIONID", "auth_token")
  * @param value The cookie value (e.g., session ID, authentication token)
  * @param attributes Cookie attributes string (e.g., "Domain=example.com; Secure; HttpOnly")

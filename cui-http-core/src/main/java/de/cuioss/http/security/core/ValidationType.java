@@ -47,8 +47,6 @@ package de.cuioss.http.security.core;
  * headerValidator.validate("Bearer token123");
  * </pre>
  *
- * Supports: Task B2 from HTTP verification specification
- *
  * @since 1.0
  */
 public enum ValidationType {

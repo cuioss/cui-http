@@ -38,8 +38,6 @@ package de.cuioss.http.security.core;
  * }
  * </pre>
  *
- * Implements: Task B1 from HTTP verification specification
- *
  * @since 1.0
  */
 public enum UrlSecurityFailureType {

@@ -90,8 +90,6 @@ import java.util.function.Predicate;
  *   <li>Log security violations appropriately without exposing sensitive data</li>
  * </ul>
  *
- * Implements: Task B3 from HTTP verification specification
- *
  * @since 1.0
  * @see UrlSecurityException
  * @see ValidationType

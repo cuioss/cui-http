@@ -59,8 +59,6 @@ import org.jspecify.annotations.Nullable;
  * to the name and value components separately using appropriate validators for
  * {@link ValidationType#PARAMETER_NAME} and {@link ValidationType#PARAMETER_VALUE}.</p>
  *
- * Implements: Task B3 from HTTP verification specification
- *
  * @param name The parameter name (e.g., "userId", "page", "filter")
  * @param value The parameter value (e.g., "12345", "admin", "active")
  *

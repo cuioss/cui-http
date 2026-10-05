@@ -118,8 +118,6 @@ import java.util.regex.Pattern;
  *   <li>Minimal memory allocation - reuses pattern instances</li>
  *   <li>Early termination on security violations</li>
  * </ul>
- * <p>
- * Implements: Task V1 from HTTP verification specification
  *
  * @param config         Security configuration controlling validation behavior.
  * @param validationType Type of validation being performed (URL_PATH, PARAMETER_NAME, etc.).
