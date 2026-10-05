@@ -12,7 +12,7 @@
 
 == Status
 
-Proposed
+Accepted
 
 Supersedes xref:0002-Fail_closed_when_X-Forwarded-For_and_RFC_7239_Forwarded_disagree.adoc[ADR-0002:
 Fail closed when X-Forwarded-For and RFC 7239 Forwarded disagree].
