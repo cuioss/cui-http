@@ -113,10 +113,10 @@ class LogMessagesDocumentationTest {
                 assertEquals(levelEntry.getValue().keySet(), documentedRows.keySet(),
                         "Identifiers in the %s %s table of %s differ from the declared %s.%s records"
                                 .formatted(className, level, LOG_MESSAGES_DOC, className, level));
-                for (var record : levelEntry.getValue().entrySet()) {
-                    assertEquals(record.getValue(), documentedRows.get(record.getKey()),
+                for (var entry : levelEntry.getValue().entrySet()) {
+                    assertEquals(entry.getValue(), documentedRows.get(entry.getKey()),
                             "Message cell of HTTP-%d in %s differs from the declared template"
-                                    .formatted(record.getKey(), LOG_MESSAGES_DOC));
+                                    .formatted(entry.getKey(), LOG_MESSAGES_DOC));
                 }
             }
         }

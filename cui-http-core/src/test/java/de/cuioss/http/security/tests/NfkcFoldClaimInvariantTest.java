@@ -285,7 +285,7 @@ class NfkcFoldClaimInvariantTest {
         SortedSet<Integer> codePoints = new TreeSet<>();
         Matcher matcher = CODE_POINT.matcher(text);
         while (matcher.find()) {
-            String hex = matcher.group(1) != null ? matcher.group(1) : matcher.group(2);
+            String hex = matcher.group(matcher.group(1) != null ? 1 : 2);
             codePoints.add(parseCodePoint(hex, text));
         }
         return codePoints;
@@ -321,7 +321,7 @@ class NfkcFoldClaimInvariantTest {
         if (text == null) {
             return "itself";
         }
-        return text.codePoints().mapToObj(cp -> "U+%04X".formatted(cp)).collect(Collectors.joining(" "));
+        return text.codePoints().mapToObj("U+%04X"::formatted).collect(Collectors.joining(" "));
     }
 
     private static Path locateModuleRoot() {
