@@ -116,7 +116,7 @@ The stages live in `de.cuioss.http.security.validation`
   pipeline exists, so it applies only to a `LengthValidationStage` constructed directly for
   `ValidationType.BODY`)
 * Null bytes and control characters: blocked
-* Extended ASCII: blocked (`allowExtendedAscii` defaults to `false`)
+* Extended ASCII: blocked in every pipeline (`allowExtendedAscii` defaults to `false`); a directly constructed BODY stage admits 160-255
 * Unicode normalization: enabled
 * Protocol-handler scheme check: off (`failOnSuspiciousPatterns` defaults to `false`; `strict()` enables it)
 

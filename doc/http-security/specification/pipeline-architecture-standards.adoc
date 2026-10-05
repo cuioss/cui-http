@@ -182,8 +182,9 @@ HTTP security validation should focus exclusively on HTTP protocol violations an
 
 === 4. Unicode Handling
 
-* **Unicode characters in paths** → `URLPathValidationPipeline` with `allowExtendedAscii(true)`
-* **Unicode in parameters** → `URLParameterValidationPipeline` with `allowExtendedAscii(true)`
+* **Latin-1 (160-255) in paths** → `URLPathValidationPipeline` with `allowExtendedAscii(true)`
+* **Latin-1 (160-255) in parameters** → `URLParameterValidationPipeline` with `allowExtendedAscii(true)`
+* Code points above 255 are always rejected on the wire form of paths and parameters, whatever the flag
 
 === 5. Configuration Requirements
 
@@ -194,7 +195,7 @@ HTTP security validation should focus exclusively on HTTP protocol violations an
 SecurityConfiguration config = SecurityConfiguration.defaults();
 // Standard configuration for most path-based attacks
 
-// For Unicode path content:
+// For Latin-1 (160-255) path content:
 SecurityConfiguration unicodeConfig = SecurityConfiguration.builder()
     .allowExtendedAscii(true)
     .build();

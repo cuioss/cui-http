@@ -9,8 +9,9 @@ This document is the central reference for every *enforced* setting in
 `de.cuioss.http.security.config.SecurityConfiguration`. For each knob it lists the default
 value across the four presets and the stage / validator that enforces it.
 
-Every setting listed here is enforced, with one exception: `maxBodySize` is enforced by no
-pipeline, because no body pipeline exists (`PipelineFactory.createPipeline` rejects
+Every setting listed here is enforced, with two exceptions. `allowDoubleEncoding` gates no
+validation since ADR-0017 made the double-encoding check unconditional; it only affects
+`isStrict()` / `isLenient()`. `maxBodySize` is enforced by no pipeline, because no body pipeline exists (`PipelineFactory.createPipeline` rejects
 `ValidationType.BODY`). It is read only by a `LengthValidationStage` that a caller constructs
 directly with `ValidationType.BODY`. Every other single-value setting is consumed by the validation
 stages inside the pipelines built by `PipelineFactory`; request-level settings that need collection
@@ -69,7 +70,7 @@ so it takes effect only through a directly constructed `LengthValidationStage` f
 [cols="3,1,1,1,1,3", options="header"]
 |===
 | Setting | default | strict | paranoid | lenient | Enforced by
-| `allowDoubleEncoding`     | false | false | false | true  | `DecodingStage`
+| `allowDoubleEncoding`     | false | false | false | true  | none (no longer read; see above)
 | `allowNullBytes`          | false | false | false | false | `CharacterValidationStage`, `DecodingStage`
 | `allowControlCharacters`  | false | false | false | true  | `CharacterValidationStage`, `DecodingStage`
 | `allowLineBreaksInParameterValues` | true | true | true | true | `DecodingStage`
@@ -77,11 +78,12 @@ so it takes effect only through a directly constructed `LengthValidationStage` f
 | `normalizeUnicode`        | true  | true  | true  | false | `DecodingStage`
 |===
 
-Two character rules hold regardless of these flags
-(xref:../adr/0020-Header_and_cookie_character_gates_ignore_preset_flags_when_no_later_stage_can_re-check_them.adoc[ADR-0020]):
-for header and cookie names and values every C0 control character except the HTAB a header value
-admits is rejected whatever `allowControlCharacters` says, and the C1 range (128-159) is rejected
-for every validation type whatever `allowExtendedAscii` says. For `HEADER_VALUE`,
+Two character rules hold regardless of these flags: for header and cookie names and values every
+C0 control character except the HTAB a header value admits is rejected whatever
+`allowControlCharacters` says
+(xref:../adr/0020-Header_and_cookie_character_gates_ignore_preset_flags_when_no_later_stage_can_re-check_them.adoc[ADR-0020]),
+and `CharacterValidationStage` rejects the C1 range (128-159) for every validation type whatever
+`allowExtendedAscii` says. For `HEADER_VALUE`,
 `allowExtendedAscii` also gates all Unicode above 255, so at the `false` default a header value is
 ASCII-only.
 

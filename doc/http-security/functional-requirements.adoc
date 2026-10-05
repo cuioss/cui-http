@@ -38,7 +38,7 @@ HTTP body content validation should be handled at application layer." Semantic b
 request-body parameters and structured formats - is therefore an application-layer
 responsibility, not a capability of this library. A caller can still construct two stages
 directly with `ValidationType.BODY`: `CharacterValidationStage` applies its configured BODY
-character rules (printable ASCII plus Latin-1 160-255 at the `allowExtendedAscii=false` default,
+character rules (printable ASCII, TAB, LF and CR, plus Latin-1 160-255 at the `allowExtendedAscii=false` default,
 Unicode above 255 only when it is enabled; C1 controls and combining marks always rejected), and `LengthValidationStage` checks `maxBodySize` in UTF-8 bytes. See
 xref:#HTTP-14[HTTP-14] for the per-validation-type status.
 
@@ -166,8 +166,9 @@ xref:#HTTP-14[HTTP-14] for the per-validation-type status.
   control character (except the HTAB a header value admits) is rejected unconditionally, regardless
   of `allowControlCharacters`; the C1 range (128-159) is rejected unconditionally for every
   validation type, regardless of `allowExtendedAscii`
-* Extended ASCII is rejected by default (`allowExtendedAscii` defaults to `false`)
-* The per-component sets and the flag handling are recorded in
+* Extended ASCII is rejected by default (`allowExtendedAscii` defaults to `false`) for every
+  pipeline-backed type; a directly constructed BODY stage admits 160-255 regardless (see the HTTP-1 NOTE)
+* The per-component sets and the C0 handling are recorded in
   xref:../adr/0019-Cookie_character_sets_are_split_by_RFC_role_with_no_DQUOTE_quote-pair_carve-out.adoc[ADR-0019]
   and
   xref:../adr/0020-Header_and_cookie_character_gates_ignore_preset_flags_when_no_later_stage_can_re-check_them.adoc[ADR-0020]

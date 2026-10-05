@@ -243,8 +243,8 @@ persistent audit trails are *not* provided by the validation core.
 
 *Status*: ⚠️ PARTIAL — in-memory counting only. The validation core performs *no* logging,
 no SIEM integration, no rate limiting/alerting (SEC-12), and no tamper-evident audit trail
-(SEC-15); those are caller responsibilities. Runtime attack-pattern configuration (SEC-18) is
-also not implemented.
+(SEC-15); those are caller responsibilities. Of SEC-18, only the block-lists are
+runtime-configurable; the built-in pattern sets are compile-time.
 
 [#cwe-top-25-traceability]
 == CWE Top 25 Traceability
@@ -803,8 +803,8 @@ This traceability matrix should be updated when:
 - Security vulnerabilities are discovered
 - Code coverage changes significantly
 
-*Last Updated*: 2026-08-26
-*Next Review*: 2026-09-26 (Monthly)
+*Last Updated*: 2026-10-05
+*Next Review*: 2026-11-05 (Monthly)
 
 == References
 

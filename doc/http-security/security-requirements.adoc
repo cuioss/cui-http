@@ -373,7 +373,7 @@ The following classes implement the security requirements:
 
 === Security Configuration Implementation
 
-* link:../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration] - Balanced default preset, the `strict()` / `paranoid()` / `lenient()` presets and policy toggles (SEC-14). SEC-18 runtime pattern configuration is not implemented.
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration] - Balanced default preset, the `strict()` / `paranoid()` / `lenient()` presets and policy toggles (SEC-14). SEC-18: block-lists are runtime-configurable; the built-in pattern sets are not.
 * link:../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityDefaults.java[SecurityDefaults] - Default length and count limits and the reference block-list values `paranoid()` seeds (SEC-9, SEC-14)
 
 === Security Pipeline Implementation
@@ -409,5 +409,5 @@ The following classes implement the security requirements:
 | SEC-15 | Audit context on exceptions (no tamper-evident trail) | xref:specification/specification.adoc#_securityeventcounter[Audit]
 | SEC-16 | Testing Support (penetration testing hooks and security coverage metrics NOT IMPLEMENTED) | xref:specification/testing.adoc[Testing]
 | SEC-17 | API Security | xref:specification/specification.adoc#_core_interfaces_and_data_types[API]
-| SEC-18 | Attack Pattern Config (NOT IMPLEMENTED — patterns are compile-time constants) | xref:analysis/cve-analysis.adoc[Attack Pattern Analysis]
+| SEC-18 | Attack Pattern Config (PARTIAL — block-lists configurable, built-in pattern sets compile-time) | xref:analysis/cve-analysis.adoc[Attack Pattern Analysis]
 |===
