@@ -22,8 +22,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.Normalizer;
@@ -81,7 +79,7 @@ class NfkcFoldClaimInvariantTest {
      * claim.
      */
     record FoldClaim(String input, Normalizer.Form form, @Nullable String claimedResult, String description,
-            String claimSource) {
+    String claimSource) {
 
         boolean folds() {
             return claimedResult != null;
@@ -203,7 +201,7 @@ class NfkcFoldClaimInvariantTest {
 
     @Test
     @DisplayName("Every fold claim made in the module's sources is a row of the claims table")
-    void shouldRegisterEveryFoldClaimMadeInSources() throws IOException {
+    void shouldRegisterEveryFoldClaimMadeInSources() throws Exception {
         Set<Integer> registered = CLAIMS.stream().flatMap(claim -> claim.coveredCodePoints().stream())
                 .collect(Collectors.toSet());
         Path moduleRoot = locateModuleRoot();
@@ -214,12 +212,12 @@ class NfkcFoldClaimInvariantTest {
             List<Path> sources;
             try (Stream<Path> walk = Files.walk(sourceRoot)) {
                 sources = walk.filter(path -> path.toString().endsWith(".java"))
-                        .filter(path -> !path.getFileName().toString().equals(THIS_FILE))
+                        .filter(path -> !THIS_FILE.equals(path.getFileName().toString()))
                         .sorted()
                         .toList();
             }
             for (Path source : sources) {
-                for (ClaimContext context : claimContexts(Files.readAllLines(source, StandardCharsets.UTF_8))) {
+                for (ClaimContext context : claimContexts(Files.readAllLines(source))) {
                     claimContexts++;
                     for (int codePoint : codePointsIn(context.text())) {
                         if (!registered.contains(codePoint)) {
