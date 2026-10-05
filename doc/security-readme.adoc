@@ -19,7 +19,7 @@ toc::[]
 
 == Overview
 
-Validation framework for HTTP components (paths, parameters, headers, bodies) with attack pattern detection.
+Validation framework for HTTP components (paths, parameter names and values, headers, content types and cookies) with attack pattern detection. Request bodies are not validated.
 
 === Core Interface
 
@@ -31,6 +31,12 @@ security analysis (as opposed to a security violation) raises `IllegalArgumentEx
 `de.cuioss.http.security.core.HttpSecurityValidator`.
 
 == Validation Pipelines
+
+The pipelines live in `de.cuioss.http.security.pipeline`
+(link:../cui-http-core/src/main/java/de/cuioss/http/security/pipeline/[source tree]). There are
+five concrete pipelines, one per HTTP component; each is described below. Request bodies have no
+pipeline — `PipelineFactory.createPipeline(ValidationType.BODY, ...)` is rejected — and cookies are
+validated through `CookiePrefixValidationStage.validateCookie(Cookie)` rather than a pipeline.
 
 === URLPathValidationPipeline
 
@@ -46,11 +52,29 @@ See `de.cuioss.http.security.pipeline.HTTPHeaderValidationPipeline`.
 
 === URLParameterValidationPipeline
 
-Validates query parameters and form data, ensuring parameter values don't contain malicious patterns or injection attempts.
+Validates query-parameter *values*, ensuring they don't contain malicious patterns or injection attempts.
 
 See `de.cuioss.http.security.pipeline.URLParameterValidationPipeline`.
 
+=== URLParameterNameValidationPipeline
+
+Validates query-parameter *names* with name-only rules: a structural delimiter (`=`, `&`, `;`,
+space) or a CR/LF that appears only after decoding is rejected, and the stricter
+`maxParameterNameLength` applies.
+
+See `de.cuioss.http.security.pipeline.URLParameterNameValidationPipeline`.
+
+=== ContentTypeValidationPipeline
+
+Validates the `Content-Type` header value — length, characters, then the configured allow/block
+lists of media types — with no decoding, normalization or pattern matching.
+
+See `de.cuioss.http.security.pipeline.ContentTypeValidationPipeline`.
+
 == Validation Stages
+
+The stages live in `de.cuioss.http.security.validation`
+(link:../cui-http-core/src/main/java/de/cuioss/http/security/validation/[source tree]):
 
 * `DecodingStage` - URL percent-decoding, UTF-8 overlong encoding detection, and Unicode
   canonicalization. Unicode normalization follows the OWASP _canonicalize-then-validate_ model:
@@ -66,6 +90,11 @@ See `de.cuioss.http.security.pipeline.URLParameterValidationPipeline`.
   Unicode combining marks (classified by general category, all combining blocks)
 * `LengthValidationStage` - Length limit enforcement to prevent buffer overflow attacks
 * `PatternMatchingStage` - Attack pattern detection using configured security rules
+* `AllowBlockListStage` - Case-insensitive allow and block lists for header names and content types
+* `CookiePrefixValidationStage` - RFC 6265bis `__Host-` / `__Secure-` prefix rules; standalone,
+  invoked via `validateCookie(Cookie)` rather than as part of a factory-built pipeline
+* `RequestCollectionValidator` - Request-level parameter, header and cookie count limits, which a
+  single-value pipeline cannot enforce
 
 == Configuration
 
@@ -76,6 +105,10 @@ See `de.cuioss.http.security.pipeline.URLParameterValidationPipeline`.
 * Header count: 50
 * Cookie count: 20
 * Body size: 5MB
+* Null bytes and control characters: blocked
+* Extended ASCII: blocked (`allowExtendedAscii` defaults to `false`)
+* Unicode normalization: enabled
+* Protocol-handler scheme check: off (`failOnSuspiciousPatterns` defaults to `false`; `strict()` enables it)
 
 See the link:http-security/configuration.adoc[Configuration Reference] for every enforced setting,
 its default across the four presets — `lenient()`, `defaults()`, `strict()` and `paranoid()` — and

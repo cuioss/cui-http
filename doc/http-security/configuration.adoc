@@ -1,6 +1,9 @@
 = HTTP Security Configuration Reference
-:toc: macro
+:toc: left
 :toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
 
 This document is the central reference for every *enforced* setting in
 `de.cuioss.http.security.config.SecurityConfiguration`. For each knob it lists the default
@@ -10,8 +13,6 @@ Every setting listed here is enforced. Single-value settings are consumed by the
 stages inside the pipelines built by `PipelineFactory`; request-level settings that need
 collection or attribute context are enforced by dedicated validators
 (`RequestCollectionValidator`, `CookiePrefixValidationStage`).
-
-toc::[]
 
 == Presets
 
@@ -32,7 +33,7 @@ filenames and generic parameter names, so the preset rejects a request whose pat
 matching `/`-delimited segment (for example `/config/etc/settings`) and a request whose parameter
 name is exactly `file`, `path` or `url` — all legitimate vocabulary in many REST APIs. Choose it
 where URL paths and parameters really do reach a filesystem; otherwise seed a narrower list of your
-own on another base preset (see <<Seeding the lists>>). Both block-lists are orthogonal to the
+own on another base preset (see xref:#seeding-the-lists[Seeding the lists]). Both block-lists are orthogonal to the
 strictness predicate, so `paranoid().isStrict()` is `true`.
 
 Build a custom configuration with `SecurityConfiguration.builder()`.
@@ -64,9 +65,18 @@ value, so `maxHeaderValueLength` is the limit it applies.
 | `allowDoubleEncoding`     | false | false | false | true  | `DecodingStage`
 | `allowNullBytes`          | false | false | false | false | `CharacterValidationStage`, `DecodingStage`
 | `allowControlCharacters`  | false | false | false | true  | `CharacterValidationStage`, `DecodingStage`
-| `allowExtendedAscii`      | true  | false | false | true  | `CharacterValidationStage`
+| `allowLineBreaksInParameterValues` | true | true | true | true | `DecodingStage`
+| `allowExtendedAscii`      | false | false | false | true  | `CharacterValidationStage`
 | `normalizeUnicode`        | true  | true  | true  | false | `DecodingStage`
 |===
+
+Two character rules hold regardless of these flags
+(xref:../adr/0020-Header_and_cookie_character_gates_ignore_preset_flags_when_no_later_stage_can_re-check_them.adoc[ADR-0020]):
+for header and cookie names and values every C0 control character except the HTAB a header value
+admits is rejected whatever `allowControlCharacters` says, and the C1 range (128-159) is rejected
+for every validation type whatever `allowExtendedAscii` says. For `HEADER_VALUE`,
+`allowExtendedAscii` also gates all Unicode above 255, so at the `false` default a header value is
+ASCII-only.
 
 `normalizeUnicode` follows the OWASP _canonicalize-then-validate_ model: input is normalized and
 the canonical form flows to downstream stages (normalize-and-continue). It is rejected only when a
@@ -166,6 +176,7 @@ whole path segment of a `URL_PATH` or `PARAMETER_VALUE`, while a parameter name 
 would then misapply it to the other component — seeding it with the parameter name `file` would
 also reject every path carrying a `file` segment.
 
+[#seeding-the-lists]
 === Seeding the lists
 
 There are two routes, and they differ in which base settings you get.
@@ -200,15 +211,15 @@ SecurityConfiguration paranoid = SecurityConfiguration.strict()
 
 Reaching for the builder when you meant a hardened base is a silent downgrade rather than an
 error: `builder().blockedPathPatterns(...).build()` yields the default preset's
-`maxPathLength` of 4096, `allowExtendedAscii=true` and `failOnSuspiciousPatterns=false`, so the
-protocol-handler scheme check is off. Both arguments to `withContentBlockLists` are defensively
+`maxPathLength` of 4096, its other length and count limits and `failOnSuspiciousPatterns=false`, so
+the protocol-handler scheme check is off. Both arguments to `withContentBlockLists` are defensively
 copied and may be `null`, which reads as an empty (block-none) list.
 
 The seeding constants in `SecurityDefaults` — `SENSITIVE_PATH_PATTERNS` (the six Unix filesystem
 paths, five sensitive filenames and four backslash-delimited Windows filesystem paths) and
 `SUSPICIOUS_PARAMETER_NAMES` (eight generic names) — are
-reference values, exactly like the header and content-type classification constants below.
-`PROTOCOL_HANDLER_SCHEMES` is *not* a seeding constant: it backs the structural scheme check
+reference values: no preset below `paranoid()` reads them, and a caller may seed any list of its
+own instead. `PROTOCOL_HANDLER_SCHEMES` is *not* a seeding constant: it backs the structural scheme check
 directly and is not caller-configurable.
 
 == Collection count limits
@@ -271,7 +282,3 @@ SecurityConfiguration config = SecurityConfiguration.builder()
     .allowedContentTypes(Set.of("application/json"))
     .build();
 ----
-
-The classification constants in `SecurityDefaults` (`DANGEROUS_HEADER_NAMES`,
-`DANGEROUS_CONTENT_TYPES`, `SAFE_CONTENT_TYPES`, …) are reference values you may feed into these
-lists.
