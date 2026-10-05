@@ -139,6 +139,13 @@ the same build:
 ./mvnw verify -Pcoverage                        # Coverage
 ./mvnw test -pl cui-http-core -am               # Tests (cui-http-core only)
 ./mvnw verify -Pbenchmark,smoke -pl cui-http-benchmarking -am   # Smoke benchmark run, not measurement-grade
+----
+
+One further command is wrapper-only — it has no executor counterpart in `CLAUDE.md` and is not
+part of the one-to-one mapping above:
+
+[source,bash]
+----
 ./mvnw clean install                            # Build and install into the local repository
 ----
 
