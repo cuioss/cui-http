@@ -103,8 +103,8 @@ a move is in the history instead: a renumbered record's earlier commits sit unde
   produced every wave above.
 - **Re-check the number again at the merge gate, against `origin/main`.** A number that was free when
   the record was written can be taken by a plan that merges first. ADR-0022's plan repeated the check
-  against `origin/main` at the merge gate rather than trusting the authoring-time read, and its number
-  landed without a collision; no collision has yet been caught by this control.
+  against `origin/main` at the merge gate rather than trusting the authoring-time read; the control has
+  not yet caught a collision.
 - **Prefer not to propose an ADR while another plan's finalize is expected to propose one.** Two
   finalizes in flight at once is exactly the condition that makes two reads return the same highest
   number.
