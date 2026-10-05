@@ -2,9 +2,9 @@
   "id": "PLAN-13",
   "slug": "PLAN-13-asciidoc-specs-requirements-adrs",
   "workstream": "WS-06-documentation-set",
-  "status": "launched",
+  "status": "shipped",
   "plan_marshall_plan_id": "plan-13-asciidoc-specs-requirements-adrs",
-  "pr": "",
-  "landing": "",
+  "pr": "#262",
+  "landing": "landings/PLAN-13.md",
   "seq": 14
 }
