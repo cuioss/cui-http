@@ -20,7 +20,8 @@ These requirements are derived from:
 [#SEC-1]
 === SEC-1: A03:2021 Injection Prevention
 
-* The system must prevent injection attacks through the HTTP inputs it validates
+* The system must reject the HTTP-component input it validates when that input carries characters
+  outside the component's RFC character set, an unsafe encoding, or a path traversal
 * Must validate and canonicalize all input before it is handed downstream; invalid input is
   rejected, never repaired
 * Must combine two complementary layers:
@@ -33,8 +34,16 @@ These requirements are derived from:
      block-lists (when they are non-empty)
 * Must prevent:
   ** Path injection/traversal
-  ** Command injection via file paths
 
+* NOTE: Generic injection protection for downstream sinks is *not implemented*. No stage checks a
+  value against the grammar of the interpreter it will eventually reach, so a value that passes
+  validation can still be dangerous in a shell command, an SQL statement, an LDAP filter, an HTML
+  page or a filesystem call. Sink-specific encoding, escaping or parameterization remains the
+  caller's responsibility:
+  ** Command injection (including via file paths) — NOT IMPLEMENTED (caller responsibility)
+  ** SQL, LDAP, XPath and other interpreter injection — NOT IMPLEMENTED (caller responsibility)
+  ** Cross-site scripting / output-context injection — NOT IMPLEMENTED (caller responsibility, see
+     xref:#SEC-2[SEC-2])
 * NOTE: Pattern matching is *not* allow-list based. There is no positive grammar of permitted
   paths or parameter values beyond the per-component character sets above; anything that passes
   the character allow-list and matches no block-listed pattern is accepted.
@@ -113,7 +122,8 @@ These requirements are derived from:
 * Must reject any input that doesn't match expected patterns
 * Must validate:
   ** Length constraints (prevent buffer overflows)
-  ** Character sets (prevent injection)
+  ** Character sets (reject characters outside the component's RFC character set; this is not
+     sink-specific injection protection, see xref:#SEC-1[SEC-1])
   ** Format patterns (ensure structure)
 
 * NOTE: Semantic validity (business-logic rules) is *not implemented*. The library has no
@@ -379,7 +389,7 @@ The following classes implement the security requirements:
 |===
 | Requirement ID | Description | Reference
 
-| SEC-1 | Injection Prevention (RFC character-set allow-lists plus block-list pattern matching) | xref:analysis/owasp-best-practices.adoc#_a032021_injection[OWASP A03]
+| SEC-1 | Injection Prevention (RFC character-set allow-lists plus block-list pattern matching; sink-specific injection protection NOT IMPLEMENTED) | xref:analysis/owasp-best-practices.adoc#_a032021_injection[OWASP A03]
 | SEC-2 | Secure Design (output encoding and access control NOT IMPLEMENTED) | xref:specification/specification.adoc#_defense_in_depth[Architecture]
 | SEC-3 | Traversal Detection | link:../../cui-http-core/src/test/java/de/cuioss/http/security/database/[Attack Databases]
 | SEC-4 | Encoding Prevention | xref:specification/specification.adoc#_decodingstage[Encoding]

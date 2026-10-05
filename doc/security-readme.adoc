@@ -52,7 +52,11 @@ See `de.cuioss.http.security.pipeline.HTTPHeaderValidationPipeline`.
 
 === URLParameterValidationPipeline
 
-Validates query-parameter *values*, ensuring they don't contain malicious patterns or injection attempts.
+Validates query-parameter *values*: it rejects characters outside the RFC 3986 query character
+set, unsafe encodings and path traversal, plus a leading protocol-handler scheme when
+`failOnSuspiciousPatterns` is set. It provides no generic injection protection — a value that
+passes can still be dangerous in an SQL statement, a shell command or an HTML page, so
+sink-specific escaping or parameterization remains the caller's responsibility.
 
 See `de.cuioss.http.security.pipeline.URLParameterValidationPipeline`.
 
