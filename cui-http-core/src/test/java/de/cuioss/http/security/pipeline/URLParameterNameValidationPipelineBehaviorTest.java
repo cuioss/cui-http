@@ -22,6 +22,8 @@ import de.cuioss.http.security.monitoring.SecurityEventCounter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.util.Optional;
 
@@ -131,5 +133,19 @@ class URLParameterNameValidationPipelineBehaviorTest {
         assertThrows(NoSuchMethodException.class,
                 () -> URLParameterNameValidationPipeline.class.getMethod("getConfig"),
                 "The retained config must not become part of the exported public API");
+    }
+
+    /**
+     * Regression guard for ADR-0011: the "Unicode above 255 is rejected" rule of
+     * {@code CharacterValidationStage} governs the wire form only, so a percent-encoded code point
+     * above 255 is accepted at the default configuration. {@code %e5%98%8a%e5%98%8d} decodes to
+     * U+560A U+560D, whose low bytes are LF and CR; the pipeline must return the full code points
+     * and never a truncated line break.
+     */
+    @ParameterizedTest
+    @CsvSource({"%e5%98%8a%e5%98%8d, \u560A\u560D", "%e4%b8%ad, \u4E2D"})
+    @DisplayName("accepts a percent-encoded code point above 255 and returns it undecayed")
+    void acceptsDecodedCodePointAbove255(String encodedName, String expected) {
+        assertEquals(Optional.of(expected), pipeline.validate(encodedName));
     }
 }

@@ -32,8 +32,6 @@ import java.util.List;
  * complete payloads and may therefore be emitted bare; the invisible and control code points are
  * not, so they are always embedded in a traversal-shaped carrier ending in a sensitive path
  * target. A lone formatting character is not an attack and this generator never emits one.</p>
- *
- * Implements: Task G3 from HTTP verification specification
  */
 public class UnicodeAttackGenerator implements TypedGenerator<String> {
 

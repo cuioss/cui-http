@@ -28,8 +28,6 @@ import de.cuioss.test.generator.TypedGenerator;
  * <p>
  * FRAMEWORK COMPLIANT: Uses seed-based generation without call-counter anti-pattern.
  * Reproducibility = f(seed), not f(internal_state).
- * <p>
- * Implements: Task G8 (Attack Cases) from HTTP verification specification
  */
 public class AttackCookieGenerator implements TypedGenerator<Cookie> {
 

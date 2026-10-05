@@ -68,8 +68,6 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>RFC 3986 URI Encoding Standards</li>
  * </ul>
  *
- * Implements: Task T6 from HTTP verification specification
- *
  * @author Claude Code Generator
  * @since 1.0
  */

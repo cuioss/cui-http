@@ -35,8 +35,6 @@ import java.util.Base64;
  * <p>
  * FRAMEWORK COMPLIANT: Uses seed-based generation without call-counter anti-pattern.
  * Reproducibility = f(seed), not f(internal_state).
- * <p>
- * Implements: Task G8 (Valid Cases) from HTTP verification specification
  */
 public class ValidCookieGenerator implements TypedGenerator<Cookie> {
 

@@ -78,8 +78,6 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>CWE-22: Path Traversal</li>
  * </ul>
  *
- * Implements: Task T5 from HTTP verification specification
- *
  * @author Claude Code Generator
  * @since 1.0
  */

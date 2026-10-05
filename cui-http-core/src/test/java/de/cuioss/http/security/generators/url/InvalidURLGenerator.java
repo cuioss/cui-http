@@ -22,8 +22,6 @@ import de.cuioss.test.generator.TypedGenerator;
  * Generates malformed URLs that should fail validation.
  *
  * <p>QI-6: Converted from fixedValues() to dynamic algorithmic generation.</p>
- *
- * Implements: Task G6 from HTTP verification specification
  */
 public class InvalidURLGenerator implements TypedGenerator<String> {
 

@@ -62,8 +62,6 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>File extension bypass protection</li>
  * </ul>
  *
- * Implements: Task T4 from HTTP verification specification
- *
  * @author Claude Code Generator
  * @since 1.0
  */

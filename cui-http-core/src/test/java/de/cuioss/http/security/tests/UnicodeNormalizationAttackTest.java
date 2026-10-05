@@ -71,8 +71,6 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>Unicode Normalization Forms (UAX #15)</li>
  * </ul>
  *
- * Implements: Task T8 from HTTP verification specification
- *
  * @author Claude Code Generator
  * @since 1.0
  */

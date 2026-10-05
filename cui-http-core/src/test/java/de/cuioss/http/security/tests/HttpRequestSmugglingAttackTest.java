@@ -70,8 +70,6 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>PortSwigger Web Security Academy - HTTP Request Smuggling</li>
  * </ul>
  *
- * Implements: Task T16 from HTTP verification specification
- *
  * @author Claude Code Generator
  * @since 1.0
  */

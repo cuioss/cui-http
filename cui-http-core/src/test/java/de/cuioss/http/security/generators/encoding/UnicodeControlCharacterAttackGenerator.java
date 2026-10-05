@@ -60,8 +60,6 @@ import de.cuioss.test.generator.TypedGenerator;
  *   <li>ISO/IEC 10646 Unicode Standard</li>
  * </ul>
  *
- * Implements: Generator for Task T10 from HTTP verification specification
- *
  * @author Claude Code Generator
  * @since 1.0
  */

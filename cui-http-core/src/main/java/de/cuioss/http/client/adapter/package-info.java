@@ -327,7 +327,11 @@
  * sending, each one individually with {@code URLParameterValidationPipeline}. Validate the values,
  * not the serialized document: JSON or XML syntax is not an attack, but the parameter-value rules
  * would reject it.
- * This prevents SQL injection, XSS scripts, path traversal, and malicious Unicode.
+ * This rejects path traversal, encoding attacks (double encoding, malformed UTF-8), null bytes,
+ * disallowed control and invisible Unicode characters, and - when {@code failOnSuspiciousPatterns}
+ * is enabled - values that start with a protocol handler such as {@code javascript:}. It does not
+ * detect SQL injection or XSS as such: escaping for the SQL, HTML or JavaScript sink stays the
+ * application's responsibility.
  *
  * <p>Use the pipeline as a verdict only. It applies query-parameter (form) semantics, so the value
  * it returns is the form-decoded form of the input: {@code +} becomes a space and {@code %XX}

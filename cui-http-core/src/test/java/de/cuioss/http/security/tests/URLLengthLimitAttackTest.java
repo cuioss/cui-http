@@ -72,8 +72,6 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>CWE-120 - Buffer Copy without Checking Size of Input</li>
  * </ul>
  *
- * Implements: Task T19 from HTTP verification specification
- *
  * @author Claude Code Generator
  * @since 1.0
  */
