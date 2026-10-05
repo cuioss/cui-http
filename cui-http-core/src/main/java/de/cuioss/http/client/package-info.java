@@ -33,12 +33,12 @@
  * <pre>{@code
  * // Text types include UTF-8 charset automatically
  * ContentType json = ContentType.APPLICATION_JSON;
- * String header = json.toHeaderValue();
+ * String jsonHeader = json.toHeaderValue();
  * // Returns: "application/json; charset=UTF-8"
  *
  * // Binary types have no charset
  * ContentType pdf = ContentType.APPLICATION_PDF;
- * String header = pdf.toHeaderValue();
+ * String pdfHeader = pdf.toHeaderValue();
  * // Returns: "application/pdf"
  * }</pre>
  *
@@ -57,12 +57,12 @@
  *
  * <pre>{@code
  * HttpMethod get = HttpMethod.GET;
- * boolean safe = get.isSafe();          // true (read-only)
- * boolean idempotent = get.isIdempotent();  // true (can retry)
+ * boolean getSafe = get.isSafe();              // true (read-only)
+ * boolean getIdempotent = get.isIdempotent();  // true (can retry)
  *
  * HttpMethod post = HttpMethod.POST;
- * boolean safe = post.isSafe();         // false (modifies state)
- * boolean idempotent = post.isIdempotent(); // false (unsafe to retry)
+ * boolean postSafe = post.isSafe();             // false (modifies state)
+ * boolean postIdempotent = post.isIdempotent(); // false (unsafe to retry)
  * }</pre>
  *
  * <p>Method classification:
@@ -99,16 +99,31 @@
  * import de.cuioss.http.client.adapter.HttpAdapter;
  * import de.cuioss.http.client.adapter.ETagAwareHttpAdapter;
  * import de.cuioss.http.client.converter.HttpResponseConverter;
+ * import de.cuioss.http.client.converter.StringContentConverter;
  * import de.cuioss.http.client.handler.HttpHandler;
  * import de.cuioss.http.client.result.HttpResult;
+ * import org.jspecify.annotations.Nullable;
+ *
+ * import java.util.Optional;
  *
  * // Configure handler
  * HttpHandler handler = HttpHandler.builder()
  *     .uri("https://api.example.com/users/123")
  *     .build();
  *
- * // Create JSON converter
- * HttpResponseConverter<User> converter = new JsonResponseConverter<>(User.class);
+ * // The library ships no JSON mapper: define the converter yourself on top of
+ * // StringContentConverter, with parseJson standing for your JSON library
+ * HttpResponseConverter<User> converter = new StringContentConverter<User>() {
+ *     @Override
+ *     protected Optional<User> convertString(@Nullable String rawContent) {
+ *         return Optional.ofNullable(rawContent).map(json -> parseJson(json));
+ *     }
+ *
+ *     @Override
+ *     public ContentType contentType() {
+ *         return ContentType.APPLICATION_JSON;
+ *     }
+ * };
  *
  * // Build adapter
  * HttpAdapter<User> adapter = ETagAwareHttpAdapter.<User>builder()
@@ -124,7 +139,7 @@
  *     User user = result.getContent().orElseThrow();
  *     System.out.println("User: " + user.getName());
  * } else {
- *     System.err.println("Error: " + result.getErrorMessage());
+ *     System.err.println("Error: " + result.getErrorMessage().orElse("unknown"));
  * }
  * }</pre>
  *
@@ -298,22 +313,35 @@
  * <p>All HTTP operations integrate with security validation pipelines:
  *
  * <pre>{@code
+ * import de.cuioss.http.security.config.SecurityConfiguration;
+ * import de.cuioss.http.security.core.ValidationType;
+ * import de.cuioss.http.security.exceptions.UrlSecurityException;
+ * import de.cuioss.http.security.monitoring.SecurityEventCounter;
  * import de.cuioss.http.security.pipeline.HTTPHeaderValidationPipeline;
  * import de.cuioss.http.security.pipeline.URLParameterValidationPipeline;
  *
- * // Validate headers before request
- * HTTPHeaderValidationPipeline headerValidator = new HTTPHeaderValidationPipeline();
- * headerValidator.validate(headerName)
- *     .orElseThrow(() -> new UrlSecurityException("Header injection detected"));
+ * SecurityConfiguration config = SecurityConfiguration.defaults();
+ * SecurityEventCounter counter = new SecurityEventCounter();
  *
- * // Validate URL parameters
- * URLParameterValidationPipeline paramValidator = new URLParameterValidationPipeline();
- * paramValidator.validate(paramValue)
- *     .orElseThrow(() -> new UrlSecurityException("XSS attack detected"));
+ * // Header values and query parameter values each have their own pipeline
+ * // (PipelineFactory.createHeaderValuePipeline and createUrlParameterPipeline are an alternative)
+ * HTTPHeaderValidationPipeline headerValidator =
+ *     new HTTPHeaderValidationPipeline(config, counter, ValidationType.HEADER_VALUE);
+ * URLParameterValidationPipeline paramValidator = new URLParameterValidationPipeline(config, counter);
  *
- * // Then use validated values in adapter
- * Map<String, String> headers = Map.of("X-Custom", validatedHeaderValue);
- * HttpResult<User> result = adapter.get(headers).join();
+ * try {
+ *     // validate() throws UrlSecurityException on a violation. It returns Optional.empty()
+ *     // only for a null input, so for these non-null inputs the value is always present
+ *     String safeHeaderValue = headerValidator.validate(headerValue).orElseThrow();
+ *     String safeParamValue = paramValidator.validate(paramValue).orElseThrow();
+ *
+ *     // Then use the validated values: safeParamValue goes into the query of the URI the
+ *     // handler is built for, safeHeaderValue into the request headers
+ *     Map<String, String> headers = Map.of("X-Custom", safeHeaderValue);
+ *     HttpResult<User> result = adapter.get(headers).join();
+ * } catch (UrlSecurityException e) {
+ *     // Reject the request: e.getFailureType() names the detected violation
+ * }
  * }</pre>
  *
  * @see de.cuioss.http.client.ContentType

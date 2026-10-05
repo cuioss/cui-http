@@ -82,7 +82,7 @@
  * // Blocking convenience method for simple cases
  * HttpResult<User> result = adapter.postBlocking(newUser);
  * if (result.isSuccess()) {
- *     System.out.println("Created: " + result.getContent());
+ *     System.out.println("Created: " + result.getContent().orElseThrow().getName());
  * }
  * }</pre>
  *
@@ -184,7 +184,7 @@
  *
  * <p>Adapters compose using the decorator pattern:
  * <pre>{@code
- * HttpAdapter<User> final = ResilientHttpAdapter.wrap(
+ * HttpAdapter<User> client = ResilientHttpAdapter.wrap(
  *     ETagAwareHttpAdapter.<User>builder()
  *         .httpHandler(handler)
  *         .responseConverter(userConverter)
@@ -286,25 +286,36 @@
  * This prevents header injection attacks, CRLF injection, and HTTP request smuggling.
  *
  * <pre>{@code
+ * import de.cuioss.http.security.config.SecurityConfiguration;
+ * import de.cuioss.http.security.core.ValidationType;
+ * import de.cuioss.http.security.exceptions.UrlSecurityException;
+ * import de.cuioss.http.security.monitoring.SecurityEventCounter;
  * import de.cuioss.http.security.pipeline.HTTPHeaderValidationPipeline;
- * import de.cuioss.http.security.UrlSecurityException;
  *
- * HTTPHeaderValidationPipeline headerValidator = new HTTPHeaderValidationPipeline();
+ * SecurityConfiguration config = SecurityConfiguration.defaults();
+ * SecurityEventCounter counter = new SecurityEventCounter();
+ * HTTPHeaderValidationPipeline headerNameValidator =
+ *     new HTTPHeaderValidationPipeline(config, counter, ValidationType.HEADER_NAME);
+ * HTTPHeaderValidationPipeline headerValueValidator =
+ *     new HTTPHeaderValidationPipeline(config, counter, ValidationType.HEADER_VALUE);
  *
- * // Validate each user-provided header value
  * Map<String, String> headers = new HashMap<>();
  * headers.put("Authorization", "Bearer " + token);
  * headers.put("X-Custom-Header", userProvidedValue);
  *
- * for (Map.Entry<String, String> entry : headers.entrySet()) {
- *     Optional<String> validated = headerValidator.validate(entry.getValue());
- *     if (validated.isEmpty()) {
- *         throw new UrlSecurityException("Invalid header: " + entry.getKey());
+ * try {
+ *     // validate() throws UrlSecurityException on a violation; it returns
+ *     // Optional.empty() only for a null input, never to signal a rejection
+ *     for (Map.Entry<String, String> entry : headers.entrySet()) {
+ *         headerNameValidator.validate(entry.getKey());
+ *         headerValueValidator.validate(entry.getValue());
  *     }
- * }
  *
- * // Safe to use with adapter
- * HttpResult<User> result = adapter.get(headers).join();
+ *     // Safe to use with adapter
+ *     HttpResult<User> result = adapter.get(headers).join();
+ * } catch (UrlSecurityException e) {
+ *     // Reject the request: e.getFailureType() names the detected violation
+ * }
  * }</pre>
  *
  * <p><b>Headers to validate:</b> Authorization, X-Request-ID, X-Correlation-ID, any custom headers from user input.
@@ -312,25 +323,33 @@
  *
  * <h3>Request Body Validation (Manual, Before Request)</h3>
  *
- * <p>POST/PUT/PATCH request bodies must be validated BEFORE sending using {@code URLParameterValidationPipeline}.
+ * <p>The user-supplied values that go into a POST/PUT/PATCH request body must be validated BEFORE
+ * sending, each one individually with {@code URLParameterValidationPipeline}. Validate the values,
+ * not the serialized document: JSON or XML syntax is not an attack, but the parameter-value rules
+ * would reject it.
  * This prevents SQL injection, XSS scripts, path traversal, and malicious Unicode.
  *
  * <pre>{@code
+ * import de.cuioss.http.security.config.SecurityConfiguration;
+ * import de.cuioss.http.security.exceptions.UrlSecurityException;
+ * import de.cuioss.http.security.monitoring.SecurityEventCounter;
  * import de.cuioss.http.security.pipeline.URLParameterValidationPipeline;
  *
- * URLParameterValidationPipeline bodyValidator = new URLParameterValidationPipeline();
+ * URLParameterValidationPipeline valueValidator = new URLParameterValidationPipeline(
+ *     SecurityConfiguration.defaults(), new SecurityEventCounter());
  *
- * // Build JSON body
- * String jsonBody = buildUserJson(user);
+ * try {
+ *     // Each value is validated on its own; a violation throws, Optional.empty() only
+ *     // means the input was null
+ *     String name = valueValidator.validate(userProvidedName).orElseThrow();
+ *     String email = valueValidator.validate(userProvidedEmail).orElseThrow();
  *
- * // Validate before sending
- * Optional<String> validatedJson = bodyValidator.validate(jsonBody);
- * if (validatedJson.isEmpty()) {
- *     throw new UrlSecurityException("Request body contains invalid content");
+ *     // Build the body from the validated values; the adapter's request converter serializes it
+ *     User newUser = new User(name, email);
+ *     CompletableFuture<HttpResult<User>> result = adapter.post(newUser);
+ * } catch (UrlSecurityException e) {
+ *     // Reject the request: e.getFailureType() names the detected violation
  * }
- *
- * // Send validated content
- * HttpResult<User> result = adapter.post(userConverter, validatedJson.get());
  * }</pre>
  *
  * <h3>Response Body Handling (in Converter)</h3>
@@ -347,7 +366,7 @@
  *     protected Optional<User> convertString(String rawContent) {
  *         try {
  *             return Optional.ofNullable(parseJson(rawContent));
- *         } catch (JsonParseException e) {
+ *         } catch (IllegalArgumentException e) {  // whatever your JSON library throws
  *             // Parsing failure → returns Optional.empty()
  *             // Adapter converts to INVALID_CONTENT error
  *             return Optional.empty();
@@ -367,18 +386,21 @@
  *
  * <pre>{@code
  * import de.cuioss.http.client.adapter.HttpAdapter;
+ * import de.cuioss.http.security.config.SecurityConfiguration;
+ * import de.cuioss.http.security.core.ValidationType;
+ * import de.cuioss.http.security.monitoring.SecurityEventCounter;
  * import de.cuioss.http.security.pipeline.HTTPHeaderValidationPipeline;
- * import de.cuioss.http.security.pipeline.URLParameterValidationPipeline;
  *
  * public class ValidatingHttpAdapter<T> implements HttpAdapter<T> {
  *     private final HttpAdapter<T> delegate;
- *     private final URLParameterValidationPipeline bodyValidator;
- *     private final HTTPHeaderValidationPipeline headerValidator;
+ *     private final HTTPHeaderValidationPipeline headerNameValidator;
+ *     private final HTTPHeaderValidationPipeline headerValueValidator;
  *
- *     public ValidatingHttpAdapter(HttpAdapter<T> delegate) {
+ *     public ValidatingHttpAdapter(HttpAdapter<T> delegate, SecurityConfiguration config,
+ *             SecurityEventCounter counter) {
  *         this.delegate = delegate;
- *         this.bodyValidator = new URLParameterValidationPipeline();
- *         this.headerValidator = new HTTPHeaderValidationPipeline();
+ *         this.headerNameValidator = new HTTPHeaderValidationPipeline(config, counter, ValidationType.HEADER_NAME);
+ *         this.headerValueValidator = new HTTPHeaderValidationPipeline(config, counter, ValidationType.HEADER_VALUE);
  *     }
  *
  *     @Override
@@ -390,18 +412,18 @@
  *
  *     @Override
  *     public CompletableFuture<HttpResult<T>> post(@Nullable T body, Map<String, String> headers) {
- *         // Validate headers and body before delegating
+ *         // Validate headers before delegating; the user-supplied values inside the body
+ *         // are validated individually before the body is built, see above
  *         validateHeaders(headers);
- *         // Body validation would require serialization - depends on use case
  *         return delegate.post(body, headers);
  *     }
  *
+ *     // validate() throws UrlSecurityException on a violation, so an invalid header stops
+ *     // the request before it reaches the delegate; Optional.empty() only means a null input
  *     private void validateHeaders(Map<String, String> headers) {
  *         for (Map.Entry<String, String> entry : headers.entrySet()) {
- *             Optional<String> validated = headerValidator.validate(entry.getValue());
- *             if (validated.isEmpty()) {
- *                 throw new UrlSecurityException("Invalid header: " + entry.getKey());
- *             }
+ *             headerNameValidator.validate(entry.getKey());
+ *             headerValueValidator.validate(entry.getValue());
  *         }
  *     }
  *     // ... other methods
@@ -413,7 +435,8 @@
  *     .responseConverter(userConverter)
  *     .build();
  *
- * HttpAdapter<User> validating = new ValidatingHttpAdapter<>(base);
+ * HttpAdapter<User> validating = new ValidatingHttpAdapter<>(base,
+ *     SecurityConfiguration.defaults(), new SecurityEventCounter());
  * HttpAdapter<User> resilient = ResilientHttpAdapter.wrap(validating);
  *
  * // Now all requests automatically validated
