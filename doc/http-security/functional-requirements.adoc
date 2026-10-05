@@ -229,8 +229,8 @@ xref:#HTTP-14[HTTP-14] for the per-validation-type status.
   ** `BODY`: *no factory-built pipeline and no semantic body validation* — semantic body
      validation is an application-layer responsibility (see xref:#HTTP-1[HTTP-1] and the NOTE
      below). A caller that constructs the stages directly with `ValidationType.BODY` gets their
-     configured checks: `CharacterValidationStage` applies the BODY character rules (governed by
-     `allowExtendedAscii`), and `LengthValidationStage` checks `maxBodySize` in UTF-8 bytes
+     configured checks: `CharacterValidationStage` applies the BODY character rules (see the HTTP-1 NOTE),
+     and `LengthValidationStage` checks `maxBodySize` in UTF-8 bytes
 
 * Configurations must be independently configurable
 * Must support configuration inheritance for common settings
