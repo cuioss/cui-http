@@ -274,10 +274,25 @@ X-Forwarded-Host: h + X-Forwarded-Port: 8443 + Forwarded: host="h:9000"
                                                                  -> host = h, port = empty   (only the port disagrees)
 ----
 
-*Present-but-invalid = drop (no fall-through).* Each present, non-blank source is validated. If it
-fails its field guard it is *dropped* — another source is *not* consulted as a fallback; a source
-that is present but resolves to nothing valid instead *disagrees* with a sibling source that
-resolved successfully, so the field is dropped. In particular a present-but-invalid
+*Present-but-invalid = empty resolution, not a fallback.* Each present, non-blank source is
+validated. A source that fails its field guard still counts as present: it resolves to *nothing
+valid*, and another source is *not* consulted in its place. What happens to that empty resolution
+depends on the stage that compares it:
+
+* *Stage 1 (de-facto families).* An empty resolution is compared like any other value, so when the
+  sibling family resolved successfully the two disagree and `deFactoPrecedence()` breaks the tie
+  (`HTTP-127`), exactly as for two valid but different values. If the selected family is the one
+  that resolved to nothing valid, its empty resolution is selected: with the default `X_FORWARDED`
+  precedence, `X-Forwarded-Proto: https` plus an invalid `X-ProxyScheme` resolves to `https`,
+  whereas under `X_PROXY` precedence the same pair resolves to no scheme. The field is not dropped
+  at this stage, and the unselected family's valid value is not used as a fallback.
+* *Stage 2 (de-facto versus RFC 7239).* An empty resolution on one side and a valid value on the
+  other is a disagreement, so the field is dropped (`HTTP-124`) under the fail-closed rule above.
+* *Context path.* The ordered first-present lookup stops at the first present header, so a
+  present-but-invalid `X-ProxyContextPath` yields an empty context path; `X-Forwarded-Prefix` is
+  not consulted.
+
+In particular a present-but-invalid
 `X-Forwarded-Port` / `X-ProxyPort` (not digit-only, or outside `1..65535`) yields no port; the host
 `:port` fallback is used only when *no* explicit port header is present at all. An IPv6 host must
 likewise be supplied *bracketed* (`X-Forwarded-Host: [2001:db8::1]`) to be honored — an unbracketed
