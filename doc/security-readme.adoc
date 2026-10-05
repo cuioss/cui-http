@@ -19,7 +19,9 @@ toc::[]
 
 == Overview
 
-Validation framework for HTTP components (paths, parameter names and values, headers, content types and cookies) with attack pattern detection. Request bodies are not validated.
+Validation framework for HTTP components (paths, parameter names and values, headers, content types and cookies).
+Attack pattern detection (`PatternMatchingStage`) applies to URL paths and to parameter names and values; the header, content-type and cookie checks are length, character, allow/block-list and prefix rules.
+No factory-built pipeline exists for request bodies; `CharacterValidationStage` and `LengthValidationStage` can be constructed directly with `ValidationType.BODY` for their character and body-size checks, and semantic body content validation remains an application-layer responsibility.
 
 === Core Interface
 
@@ -110,8 +112,9 @@ The stages live in `de.cuioss.http.security.validation`
 * Parameter count: 100
 * Header count: 50
 * Cookie count: 20
-* Body size: 5MB (`maxBodySize`; enforced by no pipeline — request bodies are not validated, so it
-  applies only to a `LengthValidationStage` constructed directly for `ValidationType.BODY`)
+* Body size: 5MB (`maxBodySize`, in UTF-8 bytes; enforced by no pipeline — no factory-built body
+  pipeline exists, so it applies only to a `LengthValidationStage` constructed directly for
+  `ValidationType.BODY`)
 * Null bytes and control characters: blocked
 * Extended ASCII: blocked (`allowExtendedAscii` defaults to `false`)
 * Unicode normalization: enabled

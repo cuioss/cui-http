@@ -31,7 +31,9 @@ These requirements are derived from:
   ** Negative validation: `PatternMatchingStage` is block-list based — it rejects input that
      matches a known attack pattern: path traversal (unconditional), a leading protocol-handler
      scheme (when `failOnSuspiciousPatterns` is set) and the sensitive-path and parameter-name
-     block-lists (when they are non-empty)
+     block-lists (when they are non-empty). This layer covers URL paths and parameter names and
+     values only; header, content-type and cookie input relies on the positive layer (plus the
+     length, allow/block-list and cookie-prefix rules)
 * Must prevent:
   ** Path injection/traversal
 
