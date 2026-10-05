@@ -25,17 +25,9 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.SortedMap;
-import java.util.SortedSet;
-import java.util.TreeMap;
-import java.util.TreeSet;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -90,8 +82,8 @@ class LogMessagesDocumentationTest {
         assertFalse(allDeclaredIds.isEmpty(), "Reflection found no LogRecord constants - the derivation is broken");
 
         Path docDir = locateDocDirectory();
-        logMessagesDoc = Files.readAllLines(docDir.resolve(LOG_MESSAGES_DOC), StandardCharsets.UTF_8);
-        forwardedDoc = Files.readAllLines(docDir.resolve(FORWARDED_DOC), StandardCharsets.UTF_8);
+        logMessagesDoc = Files.readAllLines(docDir.resolve(LOG_MESSAGES_DOC));
+        forwardedDoc = Files.readAllLines(docDir.resolve(FORWARDED_DOC));
     }
 
     @Test
@@ -156,10 +148,10 @@ class LogMessagesDocumentationTest {
         assertEquals(declaredWarn, identifiersIn(catalogue),
                 "The ForwardedLogMessages catalogue in %s must name exactly the declared WARN identifiers"
                         .formatted(FORWARDED_DOC));
-        assertEquals(declaredWarn.last() - declaredWarn.first() + 1, declaredWarn.size(),
+        assertEquals(declaredWarn.getLast() - declaredWarn.getFirst() + 1, declaredWarn.size(),
                 "The catalogue states a contiguous range, but the declared WARN identifiers are not contiguous: "
                         + declaredWarn);
-        String expectedRange = "`HTTP-%d`..`HTTP-%d`".formatted(declaredWarn.first(), declaredWarn.last());
+        String expectedRange = "`HTTP-%d`..`HTTP-%d`".formatted(declaredWarn.getFirst(), declaredWarn.getLast());
         assertTrue(catalogue.stream().anyMatch(line -> line.contains(expectedRange)),
                 "The catalogue in %s must state the declared range %s".formatted(FORWARDED_DOC, expectedRange));
         assertEquals(new TreeSet<>(), undeclared(identifiersIn(forwardedDoc)),
