@@ -110,7 +110,8 @@ The stages live in `de.cuioss.http.security.validation`
 * Parameter count: 100
 * Header count: 50
 * Cookie count: 20
-* Body size: 5MB
+* Body size: 5MB (`maxBodySize`; enforced by no pipeline — request bodies are not validated, so it
+  applies only to a `LengthValidationStage` constructed directly for `ValidationType.BODY`)
 * Null bytes and control characters: blocked
 * Extended ASCII: blocked (`allowExtendedAscii` defaults to `false`)
 * Unicode normalization: enabled

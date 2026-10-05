@@ -220,7 +220,10 @@ xref:#HTTP-14[HTTP-14] for the per-validation-type status.
   ** `HEADER_VALUE`: Header value validation rules (broader character set)
   ** `COOKIE_NAME`: Cookie name validation rules
   ** `COOKIE_VALUE`: Cookie value validation rules
-  ** `BODY`: Request/response body content rules
+  ** `BODY`: *no body content rules and no pipeline* — the enum value remains, but body
+     validation is an application-layer responsibility (see xref:#HTTP-1[HTTP-1] and the NOTE
+     below). The only stage that reads a `BODY` setting is `LengthValidationStage`, which checks
+     `maxBodySize` in UTF-8 bytes when a caller constructs it directly with `ValidationType.BODY`
 
 * Configurations must be independently configurable
 * Must support configuration inheritance for common settings

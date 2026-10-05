@@ -9,7 +9,7 @@
 == About
 
 CUI-HTTP is a security-focused HTTP utilities library that provides secure validation pipelines, SSL/TLS context management, and HTTP client handlers.
-The library emphasizes security validation of HTTP components including paths, parameters, headers, and request bodies with comprehensive attack pattern detection.
+The library emphasizes security validation of HTTP components including paths, parameter names and values, headers, content types and cookies, with attack pattern detection. Request bodies are not validated; body content validation is an application-layer responsibility.
 
 === Key Features
 

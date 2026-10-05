@@ -10,7 +10,7 @@ xref:../README.adoc[← Back to Documentation Overview]
 [#_executive_summary]
 == Purpose
 
-This specification defines the security validation requirements for HTTP components in the CUI HTTP library. It establishes standards for validating URLs, parameters, headers, and bodies to prevent security vulnerabilities including path traversal attacks, encoding bypasses, and injection attempts.
+This specification defines the security validation requirements for HTTP components in the CUI HTTP library. It establishes standards for validating URL paths, query parameter names and values, headers, content types and cookies to prevent security vulnerabilities including path traversal attacks and encoding bypasses. Request bodies are not validated: no body pipeline exists (`PipelineFactory.createPipeline` rejects `ValidationType.BODY`), and body content validation is an application-layer responsibility.
 
 == Requirements
 
@@ -18,7 +18,7 @@ This specification defines the security validation requirements for HTTP compone
 
 The HTTP security validation system must:
 
-1. *Protect Against Common Attacks*: Detect and prevent path traversal, encoding bypasses, and injection attempts
+1. *Protect Against Common Attacks*: Detect and prevent path traversal, encoding bypasses, and the injection forms visible in the HTTP component itself (CR/LF, null bytes, a leading protocol-handler scheme); sink-specific injection protection is out of scope (see xref:../security-requirements.adoc#SEC-1[SEC-1])
 
 [#_defense_in_depth]
 2. *Defense in Depth*: Apply multiple validation stages sequentially

@@ -9,10 +9,13 @@ This document is the central reference for every *enforced* setting in
 `de.cuioss.http.security.config.SecurityConfiguration`. For each knob it lists the default
 value across the four presets and the stage / validator that enforces it.
 
-Every setting listed here is enforced. Single-value settings are consumed by the validation
-stages inside the pipelines built by `PipelineFactory`; request-level settings that need
-collection or attribute context are enforced by dedicated validators
-(`RequestCollectionValidator`, `CookiePrefixValidationStage`).
+Every setting listed here is enforced, with one exception: `maxBodySize` is enforced by no
+pipeline, because no body pipeline exists (`PipelineFactory.createPipeline` rejects
+`ValidationType.BODY`). It is read only by a `LengthValidationStage` that a caller constructs
+directly with `ValidationType.BODY`. Every other single-value setting is consumed by the validation
+stages inside the pipelines built by `PipelineFactory`; request-level settings that need collection
+or attribute context are enforced by dedicated validators (`RequestCollectionValidator`,
+`CookiePrefixValidationStage`).
 
 == Presets
 
@@ -56,6 +59,10 @@ value, so `maxHeaderValueLength` is the limit it applies.
 | `maxCookieValueLength`   | 2048 | 1024 | 1024 | 8192
 | `maxBodySize` (bytes)    | 5 MB | 1 MB | 1 MB | 10 MB
 |===
+
+`maxBodySize` is the exception in this table: none of the five value pipelines validates a body,
+so it takes effect only through a directly constructed `LengthValidationStage` for
+`ValidationType.BODY`, which measures the body in UTF-8 bytes.
 
 == Encoding and character policy
 
