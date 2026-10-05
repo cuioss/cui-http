@@ -332,23 +332,31 @@ public class GenericHttpLoader<T> {
 ----
 public class CachedHttpResolver<T> {
 
-    private HttpResult<T> cachedResult;
+    // AtomicReference, not a plain field: getData() may be called from several threads
+    private final AtomicReference<HttpResult<T>> cachedResult = new AtomicReference<>();
 
     public Optional<T> getData() {
         return ensureLoaded();
     }
 
     private Optional<T> ensureLoaded() {
-        if (cachedResult == null) {
-            cachedResult = httpAdapter.getBlocking();
+        HttpResult<T> result = cachedResult.get();
+        if (result == null) {
+            HttpResult<T> loaded = httpAdapter.getBlocking();
+            // The first writer wins; a thread that lost the race uses the published result
+            result = cachedResult.compareAndSet(null, loaded) ? loaded : cachedResult.get();
         }
 
         // Return content if successful, empty otherwise
-        return cachedResult.isSuccess() ?
-            cachedResult.getContent() : Optional.empty();
+        return result.isSuccess() ?
+            result.getContent() : Optional.empty();
     }
 }
 ----
+
+Two threads that call `getData()` before the first load completes may both fetch; only one result
+is published and every caller then reads that one. Guard the load with a lock instead if a duplicate
+request is not acceptable.
 
 == Best Practices
 
@@ -383,7 +391,7 @@ public class CachedHttpResolver<T> {
 * Records with final fields are thread-safe
 * Results can be accessed from multiple threads
 * No synchronization needed for reading state and content
-* Use AtomicReference for cached result storage
+* Use `AtomicReference` for cached result storage, as the Cached Data Resolver Pattern example does
 
 == Troubleshooting
 

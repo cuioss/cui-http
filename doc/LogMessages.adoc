@@ -11,10 +11,15 @@ All messages follow the format: HTTP-[identifier]: [message]
 
 Module: `de.cuioss.http`
 
+The tables below are written by hand. `LogMessagesDocumentationTest`
+(xref:../cui-http-core/src/test/java/de/cuioss/http/LogMessagesDocumentationTest.java[source])
+derives the declared records from the `LogRecord` constants of both classes and fails the build
+when a table row, its level, its message text or a range summary below no longer matches them.
+
 LogMessages Classes:
 
 - `de.cuioss.http.client.HttpLogMessages` - HTTP client operations (HTTP-106–108, HTTP-110–117, HTTP-200–201)
-- `de.cuioss.http.forwarded.ForwardedLogMessages` - Forwarded / reverse-proxy header resolution (HTTP-120–126) - source: xref:../cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedLogMessages.java[ForwardedLogMessages.java]
+- `de.cuioss.http.forwarded.ForwardedLogMessages` - Forwarded / reverse-proxy header resolution (HTTP-120–127) - source: xref:../cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedLogMessages.java[ForwardedLogMessages.java]
 
 == HttpLogMessages
 
@@ -101,8 +106,8 @@ LogMessages Classes:
 
 The authoritative source for the records below is
 xref:../cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedLogMessages.java[ForwardedLogMessages.java].
-This table is maintained by hand, so it must be updated whenever a record in that class is added,
-removed, renumbered, or reworded.
+This table must be updated whenever a record in that class is added, removed, renumbered, or
+reworded; `LogMessagesDocumentationTest` fails the build until it is.
 
 === WARN Level (100-199)
 
@@ -138,20 +143,15 @@ removed, renumbered, or reworded.
 |HTTP-125
 |Forwarded
 |Rejecting Forwarded header: malformed forwarded-pair: %s
-|Logged when the RFC 7239 Forwarded header carries a malformed forwarded-pair — a non-blank pair with no `=`, an empty directive name, or an empty value — so the whole header is treated as present-but-unresolvable for every field it could have carried. A grammatically legal blank pair (a trailing `;`) is not malformed. Parameters: sanitized header value.
+|Logged when the RFC 7239 Forwarded header carries a malformed forwarded-pair — a non-blank pair with no `=`, an empty directive name, or an empty value. The parse stops at that pair and the header supplies no accepted value for any field. The directives the parser reached before the malformed pair still suppress their own fields — each meets an empty RFC 7239 resolution and is dropped — while fields the header carried no directive for are untouched (ADR-0021). A grammatically legal blank pair (a trailing `;`) is not malformed. Parameters: sanitized header value.
 
 |HTTP-126
 |Forwarded
 |Ignoring blank trusted-proxy entry in configuration
 |Logged when a configured `trustedProxies` entry is blank and is therefore skipped rather than parsed as a CIDR range or IP literal, so a configuration that produced an empty slot (a trailing comma, an unsubstituted placeholder) is visible instead of quietly shrinking the trusted set. No parameters — the entry is not interpolated.
+
+|HTTP-127
+|Forwarded
+|Reconciling forwarded %s: de-facto families disagree: %s resolves to %s but %s resolves to %s; honoring %s per deFactoPrecedence
+|Logged when the two de-facto families (`X-Forwarded-*` and `X-Proxy*`) are both present and resolve a field to different values. The field is not dropped: the family named by `ForwardedResolverConfig.deFactoPrecedence()` is honored. Distinct from HTTP-124, which reports a field dropped because the de-facto value and the RFC 7239 Forwarded header disagree. Parameters: field name, X-Forwarded-* header name, its resolution, X-Proxy* header name, its resolution, honored family.
 |===
-
-== Notes
-
-=== Test Coverage
-
-All WARN-level LogRecords have test coverage except for:
-
-- HTTP-107 (HTTP_PING_INTERRUPTED) - InterruptedException scenarios
-
-This is documented in the LogRecord Javadoc but not tested due to the complexity of reliably triggering InterruptedException in unit tests.

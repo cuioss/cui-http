@@ -25,16 +25,22 @@ These requirements are derived from:
   ** Query parameters (e.g., `?search=term&page=1`)
   ** HTTP headers (e.g., `Authorization: Bearer token`)
 
-* Request body content (form-data, JSON, XML) is *out of scope*: the system does not
-  validate request bodies, and no body pipeline is provided (see the NOTE below)
+* Semantic request-body validation (form-data, JSON, XML structure and content) is *out of
+  scope*, and no factory-built body pipeline is provided; only the checks of stages a caller
+  constructs directly apply to a body (see the NOTE below)
 * Each component type must have appropriate validation rules
 * The system must provide separate validators for each component type
 * Reference: xref:specification/specification.adoc#_core_components[Core Components]
 
-NOTE: *Body validation is not provided.* `PipelineFactory.createPipeline(ValidationType.BODY, ...)`
+NOTE: *No body pipeline is provided.* `PipelineFactory.createPipeline(ValidationType.BODY, ...)`
 throws `IllegalArgumentException` with the message "BODY validation pipeline has been removed.
-HTTP body content validation should be handled at application layer." Request-body parameters are
-therefore an application-layer responsibility, not a capability of this library. See
+HTTP body content validation should be handled at application layer." Semantic body validation -
+request-body parameters and structured formats - is therefore an application-layer
+responsibility, not a capability of this library. A caller can still construct three stages
+directly with `ValidationType.BODY`: `DecodingStage` applies form (`+`-as-space) decoding and its
+BODY control-character rules, `CharacterValidationStage` applies its configured BODY
+character rules (printable ASCII, TAB, LF and CR, plus Latin-1 160-255 at the `allowExtendedAscii=false` default,
+Unicode above 255 only when it is enabled; C1 controls and combining marks always rejected), and `LengthValidationStage` checks `maxBodySize` in UTF-8 bytes. See
 xref:#HTTP-14[HTTP-14] for the per-validation-type status.
 
 [#HTTP-2]
@@ -42,7 +48,7 @@ xref:#HTTP-14[HTTP-14] for the per-validation-type status.
 
 * The system keeps runtime dependencies to a minimum
 * The `de.cuioss.http` module declares three non-static `requires` (see `module-info.java`):
-  ** `org.jspecify` — nullness annotations
+  ** `org.jspecify` — nullness annotations; `requires transitive` because JSpecify annotations appear in exported public API signatures
   ** `de.cuioss.java.tools` (cui-java-tools) — core utilities and logging; `requires transitive` because `LogRecord` types appear in exported public API signatures
   ** `java.net.http` — the JDK HTTP client; `requires transitive` because `java.net.http` types appear in exported public API signatures
 * Lombok is a compile-time-only dependency (`requires static lombok`) and is not needed at runtime
@@ -144,12 +150,29 @@ xref:#HTTP-14[HTTP-14] for the per-validation-type status.
 
 * The system must validate characters against configurable allowed sets
 * Must support different character sets for different validation types:
-  ** Path segments: alphanumeric, hyphen, underscore, period
-  ** Query parameters: extended ASCII subset
+  ** URL paths: RFC 3986 path characters (`RFC3986_PATH_CHARS`) - the unreserved set (ALPHA,
+     DIGIT, `-`, `.`, `_`, `~`) plus `/`, `@`, `:` and the sub-delimiters
+     `! $ & ' ( ) * + , ; =`
+  ** Query parameter names and values: RFC 3986 query characters (`RFC3986_QUERY_CHARS`) - the
+     unreserved set plus `/`, `:`, `@`, `?`, `&`, `=` and the sub-delimiters
+     `! $ ' ( ) * + , ;`
   ** Header names: RFC 7230 token characters (tchar) - ALPHA, DIGIT and the tchar punctuation set; delimiters such as space and colon are rejected
   ** Header values: visible ASCII (32-126) plus horizontal tab
+  ** Cookie names: the RFC 7230 token set (RFC 6265 defines `cookie-name` as a token), so `=`
+     and every other delimiter is rejected
+  ** Cookie values: RFC 6265 `cookie-octet` (`%x21 / %x23-2B / %x2D-3A / %x3C-5B / %x5D-7E`);
+     DQUOTE is rejected wherever it appears, with no carve-out for a surrounding quote pair
 
-* Must detect and block control characters
+* Must detect and block control characters. For header and cookie names and values every C0
+  control character (except the HTAB a header value admits) is rejected unconditionally, regardless
+  of `allowControlCharacters`; the C1 range (128-159) is rejected unconditionally for every
+  validation type, regardless of `allowExtendedAscii`
+* Extended ASCII is rejected by default (`allowExtendedAscii` defaults to `false`) for every
+  pipeline-backed type; a directly constructed BODY stage admits 160-255 regardless (see the HTTP-1 NOTE)
+* The per-component sets and the C0 handling are recorded in
+  xref:../adr/0019-Cookie_character_sets_are_split_by_RFC_role_with_no_DQUOTE_quote-pair_carve-out.adoc[ADR-0019]
+  and
+  xref:../adr/0020-Header_and_cookie_character_gates_ignore_preset_flags_when_no_later_stage_can_re-check_them.adoc[ADR-0020]
 * Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
 [#HTTP-11]
@@ -204,7 +227,11 @@ xref:#HTTP-14[HTTP-14] for the per-validation-type status.
   ** `HEADER_VALUE`: Header value validation rules (broader character set)
   ** `COOKIE_NAME`: Cookie name validation rules
   ** `COOKIE_VALUE`: Cookie value validation rules
-  ** `BODY`: Request/response body content rules
+  ** `BODY`: *no factory-built pipeline and no semantic body validation* — semantic body
+     validation is an application-layer responsibility (see xref:#HTTP-1[HTTP-1] and the NOTE
+     below). A caller that constructs the stages directly with `ValidationType.BODY` gets their
+     configured checks: `CharacterValidationStage` applies the BODY character rules (see the HTTP-1 NOTE),
+     and `LengthValidationStage` checks `maxBodySize` in UTF-8 bytes
 
 * Configurations must be independently configurable
 * Must support configuration inheritance for common settings
@@ -212,8 +239,8 @@ xref:#HTTP-14[HTTP-14] for the per-validation-type status.
 
 NOTE: *Not every validation type above has a factory-built pipeline.*
 `PipelineFactory.createPipeline` throws `IllegalArgumentException` for `COOKIE_NAME` and
-`COOKIE_VALUE` ("Cookie validation pipelines are not yet implemented."), and for `BODY`, which was
-removed (see xref:#HTTP-1[HTTP-1]). Cookie prefix rules are nonetheless enforceable standalone via
+`COOKIE_VALUE` (cookie validation is deliberately not offered as a pipeline), and for `BODY`, whose
+pipeline was removed (see xref:#HTTP-1[HTTP-1]; the BODY stages remain constructible directly). Cookie prefix rules are nonetheless enforceable standalone via
 `CookiePrefixValidationStage.validateCookie(Cookie)`, which is invoked directly rather than as part
 of a pipeline. The factory-backed types are `URL_PATH`, `PARAMETER_NAME`, `PARAMETER_VALUE`,
 `HEADER_NAME`, and `HEADER_VALUE`.
@@ -279,10 +306,14 @@ of a pipeline. The factory-backed types are `URL_PATH`, `PARAMETER_NAME`, `PARAM
 
 * The system must enforce resource limits:
   ** Maximum input length (configurable)
-  ** Maximum decoding iterations (prevent DoS)
-  ** Maximum normalization passes
 
-* Must fail fast when limits are exceeded
+* NOTE: The following limits are *not implemented*. `DecodingStage.decodeForValidationType`
+  performs a single `percentDecodeToBytes` pass followed by one strict UTF-8 decode, and an
+  encoding layer that survives that pass is rejected rather than decoded again, so there is no
+  iteration or pass count to bound:
+  ** Maximum decoding iterations — NOT IMPLEMENTED
+  ** Maximum normalization passes — NOT IMPLEMENTED
+* Must fail fast when the input-length limit is exceeded
 * Must prevent algorithmic complexity attacks
 * Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
@@ -342,5 +373,5 @@ The following classes implement the functional requirements:
 | HTTP-16 | Event Tracking | xref:specification/specification.adoc#_event_counter_pattern[§Event Counter]
 | HTTP-17 | Logging and Monitoring Integration | xref:specification/specification.adoc#_securityeventcounter[§Security Event Tracking]
 | HTTP-18 | Efficient Processing | xref:specification/testing.adoc#_performance_benchmarking[§Performance]
-| HTTP-19 | Resource Constraints | xref:specification/specification.adoc#_lengthvalidationstage[§Constraints]
+| HTTP-19 | Resource Constraints (input length only; iteration and pass limits NOT IMPLEMENTED) | xref:specification/specification.adoc#_lengthvalidationstage[§Constraints]
 |===

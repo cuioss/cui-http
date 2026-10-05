@@ -4,7 +4,7 @@
 :sectnums:
 
 // adr-metadata
-// summary: An unresolvable RFC 7239 Forwarded header contributes nothing, so it drops only the fields whose directives the parser actually reached; the two de-facto families are reconciled against each other first, under a configurable tie-breaker that presumes the ingress strips the family it does not write.
+// summary: An unresolvable RFC 7239 Forwarded header supplies no accepted value, while the directives the parser actually reached still suppress their own fields and only those; the two de-facto families are reconciled against each other first, under a configurable tie-breaker that presumes the ingress strips the family it does not write.
 // tags: security, trust-boundary, forwarded-headers, fail-closed
 // affects: cui-http
 // supersedes: 2
@@ -12,7 +12,7 @@
 
 == Status
 
-Proposed
+Accepted
 
 Supersedes xref:0002-Fail_closed_when_X-Forwarded-For_and_RFC_7239_Forwarded_disagree.adoc[ADR-0002:
 Fail closed when X-Forwarded-For and RFC 7239 Forwarded disagree].
@@ -61,8 +61,9 @@ name that heads the list is the name an attacker writes.
 
 == Decision
 
-**An unresolvable `Forwarded` header contributes nothing, and therefore suppresses
-exactly the fields whose directives the parser reached.**
+**An unresolvable `Forwarded` header supplies no accepted value, and the directives
+the parser reached still suppress their own fields — exactly those fields and no
+others.**
 
 Presence and belief are separate axes, and only their combination is per field. The
 parsed directives answer "did this header speak about this field"; the header's

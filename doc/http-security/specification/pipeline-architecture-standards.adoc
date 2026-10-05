@@ -11,22 +11,28 @@ This document establishes the authoritative standards for selecting appropriate 
 
 === URLPathValidationPipeline - Path-Focused Attacks
 
-**Purpose**: Validates URL path components, directory traversal, and host-based attacks.
+**Purpose**: Validates the URL *path component* — directory traversal, encoding attacks and
+characters outside the RFC 3986 path set. It validates a path, not an absolute URL: extract the
+path from a full URL and pass that.
+
+NOTE: No pipeline validates the host, the authority or an IPv6 address literal. A path containing
+`[` or `]` is rejected as `INVALID_CHARACTER` by character validation, because neither bracket is in
+the RFC 3986 path character set, before any host or address logic could run — and no such logic
+exists. Host, authority and IPv6 validation are not provided by this library.
 
 **Use When**:
 
 * Attack patterns target **path components only** (no protocol prefix)
 * Directory traversal attacks (`../../../etc/passwd`)
-* Host/domain-based exploits
 * CVE exploits targeting specific server path handling
-* IPv6 address parsing in path context
 
 **Current Implementations**:
 
 * ✅ `ApacheCVEAttackDatabaseTest` - Apache-specific path exploits
-* ✅ `HomographAttackDatabaseTest` - Domain spoofing attacks
+* ✅ `HomographAttackDatabaseTest` - Lookalike (homograph) characters in path input
 * ✅ `IISCVEAttackDatabaseTest` - IIS path handling exploits
-* ✅ `IPv6AttackDatabaseTest` - IPv6 path parsing attacks
+* ✅ `IPv6AttackDatabaseTest` - IPv6-shaped payloads fed to the path pipeline; each is rejected as
+  `INVALID_CHARACTER` on its brackets, not by IPv6 address parsing
 * ✅ `NginxCVEAttackDatabaseTest` - Nginx path handling exploits
 * ✅ `OWASPTop10AttackDatabaseTest` - Path traversal focused
 
@@ -35,7 +41,7 @@ This document establishes the authoritative standards for selecting appropriate 
 [source]
 ----
 "/../../../etc/passwd"
-"[::ffff:127.0.0.1]/../../../etc/passwd"
+"/api/%2e%2e/%2e%2e/etc/passwd"
 "/admin/..\\..\\windows\\system32"
 ----
 
@@ -176,8 +182,9 @@ HTTP security validation should focus exclusively on HTTP protocol violations an
 
 === 4. Unicode Handling
 
-* **Unicode characters in paths** → `URLPathValidationPipeline` with `allowExtendedAscii(true)`
-* **Unicode in parameters** → `URLParameterValidationPipeline` with `allowExtendedAscii(true)`
+* **Latin-1 (160-255) in paths** → `URLPathValidationPipeline` with `allowExtendedAscii(true)`
+* **Latin-1 (160-255) in parameters** → `URLParameterValidationPipeline` with `allowExtendedAscii(true)`
+* Code points above 255 are always rejected on the wire form of paths and parameters, whatever the flag
 
 === 5. Configuration Requirements
 
@@ -188,7 +195,7 @@ HTTP security validation should focus exclusively on HTTP protocol violations an
 SecurityConfiguration config = SecurityConfiguration.defaults();
 // Standard configuration for most path-based attacks
 
-// For Unicode path content:
+// For Latin-1 (160-255) path content:
 SecurityConfiguration unicodeConfig = SecurityConfiguration.builder()
     .allowExtendedAscii(true)
     .build();

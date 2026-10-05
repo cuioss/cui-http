@@ -30,39 +30,24 @@ consuming project.
 
 Test artifact containing attack databases with curated real-world attack patterns and test data generators for security validation testing.
 
-== Attack Databases
+== Pattern Databases
 
-All databases implement `AttackDatabase` interface and provide `AttackTestCase` records with:
+The databases live in the
+link:../cui-http-core/src/test/java/de/cuioss/http/security/database/[`de.cuioss.http.security.database`]
+package; that source tree is the authoritative inventory of which databases exist (see
+xref:adr/0004-Documentation_inventories_point_at_package-level_source_trees_not_per-class_enumerations.adoc[ADR-0004]).
+Every database implements exactly one of two interfaces, and the interface tells you what a test
+built on it asserts:
 
-- Attack string
-- Expected `UrlSecurityFailureType`
-- Attack description
-- Detection rationale
+* **`AttackDatabase`** — curated attack patterns (CVE-based, standards-based and specialized sets)
+  that must be *rejected*. Each entry is an `AttackTestCase` record carrying the attack string, the
+  expected `UrlSecurityFailureType`, an attack description and the detection rationale.
+* **`LegitimatePatternDatabase`** — legitimate inputs that must be *accepted*, guarding against
+  false positives. Each entry is a `LegitimateTestCase` record carrying the legitimate pattern, a
+  description of the use case and the acceptance rationale.
 
-=== CVE-Based Databases
-
-* **ApacheCVEAttackDatabase** - Apache HTTP Server and Tomcat CVE exploits
-* **IISCVEAttackDatabase** - Microsoft IIS and Windows vulnerabilities
-* **NginxCVEAttackDatabase** - Nginx server CVE patterns
-
-=== Standards-Based Databases
-
-* **OWASPTop10AttackDatabase** - OWASP Top 10 2021 attack vectors
-* **ModSecurityCRSAttackDatabase** - ModSecurity Core Rule Set patterns
-* **OWASPZAPAttackDatabase** - OWASP ZAP scanner patterns
-
-=== Specialized Databases
-
-* **HomographAttackDatabase** - Unicode homograph attacks
-* **IPv6AttackDatabase** - IPv6-specific patterns
-* **ProtocolHandlerAttackDatabase** - Protocol manipulation attacks
-* **IDNAttackDatabase** - Internationalized Domain Name attacks
-
-=== Legitimate Pattern Databases
-
-* **LegitimatePathPatternsDatabase** - Valid patterns that should pass
-* **EdgeCaseValidURLsDatabase** - Edge case legitimate URLs
-* **LegitimateSpecialCharactersDatabase** - Valid special characters
+Each database exposes its entries through a nested JUnit 5 `ArgumentsProvider`, as the usage
+examples below show.
 
 == Test Generators
 

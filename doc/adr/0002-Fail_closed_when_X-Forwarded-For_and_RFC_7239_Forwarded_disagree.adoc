@@ -57,11 +57,17 @@ deployment's own configuration gives nobody a reason to test.
 
 **When the two families disagree, honour neither.**
 
-For each field independently — scheme, host, and client IP — the resolver derives
-a value from each family that is present. If both are present and the derived
-values differ, the field resolves as absent and the disagreement is logged. A
-request carrying only one family is unaffected, and so is a request whose two
+For each field independently — scheme, host, port, and client IP — the resolver
+derives a value from each family that is present. If both are present and the
+derived values differ, the field resolves as absent and the disagreement is logged.
+A request carrying only one family is unaffected, and so is a request whose two
 families agree.
+
+*Correction (2026-10-05):* an earlier revision of this paragraph listed only
+"scheme, host, and client IP". The port is reconciled by the same rule —
+`ForwardedHeaderResolver` compares it against the port the RFC 7239 `host`
+directive carried and drops it on disagreement — so it is listed here too. The
+record's Superseded status is unchanged.
 
 A header that is present but rejected by sanitization counts as *present and
 unresolvable*, not as absent. Collapsing "present but rejected" into "absent"

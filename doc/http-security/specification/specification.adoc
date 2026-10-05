@@ -10,7 +10,7 @@ xref:../README.adoc[← Back to Documentation Overview]
 [#_executive_summary]
 == Purpose
 
-This specification defines the security validation requirements for HTTP components in the CUI HTTP library. It establishes standards for validating URLs, parameters, headers, and bodies to prevent security vulnerabilities including path traversal attacks, encoding bypasses, and injection attempts.
+This specification defines the security validation requirements for HTTP components in the CUI HTTP library. It establishes standards for validating URL paths, query parameter names and values, headers, content types and cookies to prevent security vulnerabilities including path traversal attacks and encoding bypasses. No factory-built pipeline exists for request bodies (`PipelineFactory.createPipeline` rejects `ValidationType.BODY`); `DecodingStage`, `CharacterValidationStage` and `LengthValidationStage` can be constructed directly with `ValidationType.BODY` to apply their decoding, character and body-size checks, and semantic body content validation remains an application-layer responsibility.
 
 == Requirements
 
@@ -18,7 +18,7 @@ This specification defines the security validation requirements for HTTP compone
 
 The HTTP security validation system must:
 
-1. *Protect Against Common Attacks*: Detect and prevent path traversal, encoding bypasses, and injection attempts
+1. *Protect Against Common Attacks*: Detect and prevent path traversal, encoding bypasses, and the injection forms visible in the HTTP component itself (CR/LF, null bytes, a leading protocol-handler scheme); sink-specific injection protection is out of scope (see xref:../security-requirements.adoc#SEC-1[SEC-1])
 
 [#_defense_in_depth]
 2. *Defense in Depth*: Apply multiple validation stages sequentially
@@ -121,7 +121,7 @@ The following classes implement the security configuration system:
 The configuration system provides:
 
 1. **Immutable Configuration**: Thread-safe configuration objects
-2. **Security Levels**: STRICT, DEFAULT, and LENIENT security profiles
+2. **Security Levels**: four presets — `SecurityConfiguration.lenient()`, `.defaults()`, `.strict()` and `.paranoid()` (backed by `SecurityDefaults.PARANOID_CONFIGURATION`); see xref:#_default_security_posture[Default Security Posture]
 3. **Builder Pattern**: Flexible configuration creation
 4. **Secure Defaults**: OWASP and RFC-based default values
 For implementation details and configuration constants, see the JavaDoc of the configuration classes.
@@ -139,7 +139,13 @@ _See Requirement xref:../functional-requirements.adoc#HTTP-4[HTTP-4: Sequential 
 
 _See Requirement xref:../functional-requirements.adoc#HTTP-5[HTTP-5: Stage-Based Validation Architecture]_
 
-=== Status: IMPLEMENTED
+=== Status: IMPLEMENTED — resource limits partial
+
+NOTE: The only resource limits enforced are input length (`LengthValidationStage`) and the request
+collection counts (`RequestCollectionValidator`). Decoding-iteration and normalization-pass limits
+are *not implemented*: `DecodingStage` performs a single percent-decoding pass and rejects any
+encoding layer that survives it rather than decoding again — see
+xref:../functional-requirements.adoc#HTTP-19[HTTP-19].
 
 All validation stages follow these principles:
 
@@ -240,7 +246,10 @@ For implementation details, see the JavaDoc of each monitoring class.
 
 == Verification Tests
 
-The following test suites verify the implementation meets this specification:
+The following test suites verify the implementation meets this specification. The lists are
+*representative, not exhaustive*, and make no claim to mirror any other inventory: the test tree
+is the authoritative inventory — browse the `pipeline`, `validation` and `tests` packages under
+`cui-http-core/src/test/java/de/cuioss/http/security/` for the current set.
 
 === Unit Tests
 
@@ -259,8 +268,11 @@ The following test suites verify the implementation meets this specification:
 === Pipeline Tests
 
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/URLPathValidationPipelineTest.java[URLPathValidationPipelineTest] - Path pipeline tests
-* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/URLParameterValidationPipelineTest.java[URLParameterValidationPipelineTest] - Parameter pipeline tests
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/URLParameterValidationPipelineTest.java[URLParameterValidationPipelineTest] - Parameter value pipeline tests
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/URLParameterNameValidationPipelineBehaviorTest.java[URLParameterNameValidationPipelineBehaviorTest] - Parameter name pipeline tests
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/HTTPHeaderValidationPipelineTest.java[HTTPHeaderValidationPipelineTest] - Header pipeline tests
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/ContentTypeValidationPipelineTest.java[ContentTypeValidationPipelineTest] - Content-Type pipeline tests
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/HeaderAndContentTypeEnforcementRegressionTest.java[HeaderAndContentTypeEnforcementRegressionTest] - Header-name and content-type allow/block-list enforcement
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/PipelineFactoryTest.java[PipelineFactoryTest] - Factory tests
 
 === Attack Database Tests
@@ -268,6 +280,10 @@ The following test suites verify the implementation meets this specification:
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/OWASPZAPAttackDatabaseTest.java[OWASPZAPAttackDatabaseTest] - OWASP ZAP attack patterns
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/ApacheCVEAttackDatabaseTest.java[ApacheCVEAttackDatabaseTest] - Apache CVE tests
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/IISCVEAttackDatabaseTest.java[IISCVEAttackDatabaseTest] - IIS CVE tests
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/NginxCVEAttackDatabaseTest.java[NginxCVEAttackDatabaseTest] - Nginx CVE tests
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest] - OWASP Top 10 attack patterns
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HomographAttackDatabaseTest.java[HomographAttackDatabaseTest] - Homograph attack tests
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/IPv6AttackDatabaseTest.java[IPv6AttackDatabaseTest] - IPv6-shaped payloads against the path pipeline
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/UnicodePathTraversalAttackTest.java[UnicodePathTraversalAttackTest] - Unicode attack tests
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpHeaderInjectionAttackTest.java[HttpHeaderInjectionAttackTest] - Header injection tests
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HttpRequestSmugglingAttackTest.java[HttpRequestSmugglingAttackTest] - Request smuggling tests
@@ -295,7 +311,7 @@ The following test suites verify the implementation meets this specification:
 
 The security validation system provides type-safe pipeline creation through the PipelineFactory:
 
-1. **Specialized Pipelines**: Create validators optimized for specific HTTP components (paths, parameters, headers, bodies)
+1. **Specialized Pipelines**: Create validators optimized for specific HTTP components (paths, parameter names and values, headers, content types). There is no body pipeline: `PipelineFactory.createPipeline` rejects `ValidationType.BODY` with an `IllegalArgumentException`; `DecodingStage`, `CharacterValidationStage` and `LengthValidationStage` can still be constructed directly with `ValidationType.BODY` for their decoding, character and body-size checks
 2. **Generic Factory Method**: Create validators based on ValidationType enumeration
 3. **Pipeline Sets**: Create common sets of pipelines for comprehensive validation
 
@@ -335,6 +351,7 @@ For usage examples, see the JavaDoc of link:../../../cui-http-core/src/main/java
   value), which is decidable from the HTTP component alone. The admission rule is recorded in
   xref:../../adr/0015-A_pattern_literal_enforced_by_a_named_preset_must_be_decidable_from_the_HTTP_component_alone.adoc[ADR-0015].
 
+[#_default_security_posture]
 === Default Security Posture
 
 - Four presets ship as the single source of truth (`SecurityDefaults`), from most permissive to
@@ -343,6 +360,10 @@ For usage examples, see the JavaDoc of link:../../../cui-http-core/src/main/java
   posture), and `.paranoid()` (`strict()` plus the application-layer content detection)
 - The out-of-the-box default (`SecurityConfiguration.defaults()`, identical to
   `builder().build()`) is the *balanced* preset — not the strict or paranoid preset
+- The two optional checks switch on at different presets: the structural protocol-handler scheme
+  check is off until `strict()` or `paranoid()` is selected, while the application-layer content
+  detection stays off until `paranoid()` is selected or the caller supplies its own block-lists —
+  `strict()` ships empty `blockedPathPatterns` and `blockedParameterNames`
 - `paranoid()` is appropriate only where URL paths and parameter values really do reach a
   filesystem. It seeds `blockedPathPatterns` and `blockedParameterNames` from `SecurityDefaults`,
   so it rejects any path carrying a matching `/`-delimited segment — including ordinary API

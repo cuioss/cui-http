@@ -78,9 +78,11 @@ git checkout main && git pull --ff-only origin main
 
 ### Step 4 — Create the release branch
 
-Branch name uses the `chore/` prefix (required — the Maven CI workflow only triggers on
-`main`, `feature/*`, `fix/*`, `chore/*`, `release/*`, `dependabot/**`; other prefixes skip
-the `build` check and block auto-merge):
+Branch name uses the `chore/` prefix. This is a naming convention matching the
+`chore(release): …` commit type, not a CI requirement: the branch-prefix list in
+`maven.yml` (`main`, `feature/*`, `fix/*`, `chore/*`, `release/*`, `dependabot/**`) filters
+only the `push:` trigger, while `pull_request:` (base `main`) and `merge_group:` run the
+`build` check for a pull request from any head-branch prefix:
 
 ```bash
 git checkout -b chore/release_<version>
@@ -248,7 +250,7 @@ dependency PRs were collapsed/removed during note reformatting.
 
 - The release is triggered by **merging a `.github/project.yml` change** — never hand-run
   Maven release goals.
-- Branch prefix **must** be `chore/` (or another CI-accepted prefix) or the build check skips
-  and auto-merge is blocked.
+- Use the `chore/` branch prefix by convention; the PR's `build` check runs whatever the
+  prefix (see Step 4).
 - Never merge a red PR; fix and re-wait.
 - Temporary files go under `.plan/temp/`.

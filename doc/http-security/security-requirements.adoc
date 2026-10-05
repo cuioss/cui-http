@@ -20,13 +20,35 @@ These requirements are derived from:
 [#SEC-1]
 === SEC-1: A03:2021 Injection Prevention
 
-* The system must prevent all forms of injection attacks through HTTP inputs
-* Must validate and sanitize all input before processing
-* Must use positive validation (allowlisting) rather than negative validation
+* The system must reject the HTTP-component input it validates when that input carries characters
+  outside the component's RFC character set, an unsafe encoding, or a path traversal
+* Must validate and canonicalize all input before it is handed downstream; invalid input is
+  rejected, never repaired
+* Must combine two complementary layers:
+  ** Positive validation: `CharacterValidationStage` admits only the RFC character set of the
+     validated component (RFC 3986 path and query characters, RFC 7230 token and field-value
+     characters, RFC 6265 `cookie-octet`) and rejects every other character
+  ** Negative validation: `PatternMatchingStage` is block-list based — it rejects input that
+     matches a known attack pattern: path traversal (unconditional), a leading protocol-handler
+     scheme (when `failOnSuspiciousPatterns` is set) and the sensitive-path and parameter-name
+     block-lists (when they are non-empty). This layer covers URL paths and parameter names and
+     values only; header, content-type and cookie input relies on the positive layer (plus the
+     length, allow/block-list and cookie-prefix rules)
 * Must prevent:
   ** Path injection/traversal
-  ** Command injection via file paths
 
+* NOTE: Generic injection protection for downstream sinks is *not implemented*. No stage checks a
+  value against the grammar of the interpreter it will eventually reach, so a value that passes
+  validation can still be dangerous in a shell command, an SQL statement, an LDAP filter, an HTML
+  page or a filesystem call. Sink-specific encoding, escaping or parameterization remains the
+  caller's responsibility:
+  ** Command injection (including via file paths) — NOT IMPLEMENTED (caller responsibility)
+  ** SQL, LDAP, XPath and other interpreter injection — NOT IMPLEMENTED (caller responsibility)
+  ** Cross-site scripting / output-context injection — NOT IMPLEMENTED (caller responsibility, see
+     xref:#SEC-2[SEC-2])
+* NOTE: Pattern matching is *not* allow-list based. There is no positive grammar of permitted
+  paths or parameter values beyond the per-component character sets above; anything that passes
+  the character allow-list and matches no block-listed pattern is accepted.
 * Reference: xref:analysis/owasp-best-practices.adoc#_a032021_injection[OWASP A03:2021]
 
 [#SEC-2]
@@ -34,11 +56,15 @@ These requirements are derived from:
 
 * The system must implement defense in depth
 * Must use multiple validation layers:
-  ** Input validation
-  ** Canonicalization
-  ** Output encoding
-  ** Access control verification
+  ** Input validation (length, character set and attack-pattern stages)
+  ** Canonicalization (percent-decoding and Unicode normalization in `DecodingStage`, RFC 3986
+     dot-segment resolution in `NormalizationStage`)
 
+* NOTE: Output encoding and access-control verification are *not implemented*. The library
+  validates inbound HTTP components only; it never renders output and has no notion of a
+  principal or a protected resource. Both remain the caller's responsibility:
+  ** Output encoding — NOT IMPLEMENTED (caller responsibility)
+  ** Access-control verification — NOT IMPLEMENTED (caller responsibility)
 * Must fail securely (deny by default)
 * Must implement secure defaults for all configurations
 * Reference: xref:specification/specification.adoc#_architecture[Architecture]
@@ -98,10 +124,13 @@ These requirements are derived from:
 * Must reject any input that doesn't match expected patterns
 * Must validate:
   ** Length constraints (prevent buffer overflows)
-  ** Character sets (prevent injection)
+  ** Character sets (reject characters outside the component's RFC character set; this is not
+     sink-specific injection protection, see xref:#SEC-1[SEC-1])
   ** Format patterns (ensure structure)
-  ** Semantic validity (business logic)
 
+* NOTE: Semantic validity (business-logic rules) is *not implemented*. The library has no
+  knowledge of what a valid value means to the application, so semantic validation remains the
+  caller's responsibility.
 * Must not attempt to "fix" invalid input
 * Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
@@ -141,13 +170,16 @@ These requirements are derived from:
 === SEC-9: Resource Exhaustion Prevention
 
 * The system must prevent resource exhaustion attacks
-* Must enforce limits on:
-  ** Input length (prevent memory exhaustion)
-  ** Processing time (prevent CPU exhaustion)
-  ** Decoding iterations (prevent infinite loops)
-  ** Regex complexity (prevent ReDoS)
-
-* Must fail fast when limits are exceeded
+* Must enforce limits on input length (prevent memory exhaustion): `LengthValidationStage`
+  enforces the per-component limits configured on `SecurityConfiguration`, and
+  `RequestCollectionValidator` enforces the parameter, header and cookie count limits
+* NOTE: The following limits are *not implemented*. No stage measures elapsed time, counts
+  decoding iterations or budgets regular-expression evaluation; `DecodingStage` performs a single
+  percent-decoding pass followed by a strict UTF-8 decode, so there is no iteration to bound:
+  ** Processing-time limits — NOT IMPLEMENTED
+  ** Decoding-iteration limits — NOT IMPLEMENTED
+  ** ReDoS / regex-complexity budgets — NOT IMPLEMENTED
+* Must fail fast when the input-length limits are exceeded
 * Reference: xref:specification/specification.adoc#_validation_stages[Validation Stages]
 
 [#SEC-10]
@@ -160,7 +192,9 @@ These requirements are derived from:
   ** Catastrophic backtracking in regex
 
 * Must use linear or logarithmic algorithms where possible
-* Must implement circuit breakers for long-running operations
+* NOTE: Circuit breakers for long-running operations are *not implemented*. No stage tracks or
+  interrupts its own running time; bounding the work per request relies on the input-length
+  limits of xref:#SEC-9[SEC-9].
 * Reference: xref:specification/testing.adoc#_performance_validation[Performance Security]
 
 == Security Monitoring Requirements
@@ -222,12 +256,18 @@ These requirements are derived from:
 === SEC-14: Secure Defaults
 
 * The system must use secure defaults for all security settings
-* Defaults must include:
-  ** Strict validation enabled
-  ** Maximum security checks active
-  ** Conservative length limits
-  ** Minimal allowed character sets
+* The shipped default (`SecurityConfiguration.defaults()`, the *balanced* preset) includes:
+  ** Null bytes and control characters blocked
+  ** Extended ASCII blocked (`allowExtendedAscii=false`)
+  ** Double encoding rejected and Unicode normalization enabled
+  ** Conservative length and count limits taken from `SecurityDefaults`
+  ** The RFC character set of each validated component as its allow-list
+  ** Path-traversal detection active; the protocol-handler scheme check is *off*
+     (`failOnSuspiciousPatterns=false`) and the content block-lists are empty
 
+* The default is not the maximum-security posture: `strict()` enables the protocol-handler scheme
+  check but keeps the content block-lists empty, and only `paranoid()` (or a caller-supplied
+  block-list) enables the application-layer content detection (see the NOTE below)
 * Configuration relaxation must require explicit action
 * Reference: xref:specification/specification.adoc#_configuration_architecture[Secure Configuration]
 
@@ -268,12 +308,16 @@ xref:configuration.adoc[Configuration Reference] for the exact per-preset values
 
 * The system must support security testing
 * Must provide:
-  ** Test data generators for security patterns
-  ** Support for automated security testing tools
-  ** Security regression test support
-  ** Penetration testing hooks
+  ** Test data generators for security patterns, published as the `generators` classifier
+     artifact so that automated (JUnit-based) security tests in consuming projects can reuse them
+  ** Security regression test support (the attack databases and the tests that replay them)
 
-* Must maintain security test coverage metrics
+* NOTE: The following are *not implemented*. The library ships no instrumentation or extension
+  point aimed at penetration-testing tooling, and no coverage figure is tracked separately for
+  the security tests — code coverage is measured for the module as a whole by the build's
+  `coverage` profile:
+  ** Penetration testing hooks — NOT IMPLEMENTED
+  ** Security-specific test coverage metrics — NOT IMPLEMENTED
 * Reference: xref:specification/testing.adoc[Security Testing Framework]
 
 == Third-Party Integration Security
@@ -317,11 +361,11 @@ The following classes implement the security requirements:
 
 === Security Validation Implementation
 
-* link:../../cui-http-core/src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage] - Encoding attack prevention (SEC-4, SEC-13)
-* link:../../cui-http-core/src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage] - Canonicalization security (SEC-5)
-* link:../../cui-http-core/src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Attack pattern detection (SEC-3, SEC-12)
-* link:../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - Input validation (SEC-6, SEC-7)
-* link:../../cui-http-core/src/main/java/de/cuioss/http/security/validation/LengthValidationStage.java[LengthValidationStage] - DoS prevention (SEC-9, SEC-10)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/validation/DecodingStage.java[DecodingStage] - Encoding attack prevention and Unicode canonicalization (SEC-2 canonicalization layer, SEC-4, SEC-13)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/validation/NormalizationStage.java[NormalizationStage] - Canonicalization security (SEC-2 canonicalization layer, SEC-5)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/validation/PatternMatchingStage.java[PatternMatchingStage] - Block-list attack pattern detection (SEC-1 negative layer, SEC-3, SEC-12)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage] - RFC character-set allow-lists (SEC-1 positive layer, SEC-6, SEC-7)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/validation/LengthValidationStage.java[LengthValidationStage] - Input-length limits (SEC-9 input length only; no processing-time, decoding-iteration or ReDoS limits; SEC-10 circuit breakers not implemented)
 
 === Security Monitoring Implementation
 
@@ -329,8 +373,8 @@ The following classes implement the security requirements:
 
 === Security Configuration Implementation
 
-* link:../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration] - Secure defaults and policy toggles (SEC-14). SEC-18 runtime pattern configuration is not implemented.
-* link:../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityDefaults.java[SecurityDefaults] - OWASP-compliant defaults (SEC-1, SEC-2, SEC-14)
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration] - Balanced default preset, the `strict()` / `paranoid()` / `lenient()` presets and policy toggles (SEC-14). SEC-18: block-lists are runtime-configurable; the built-in pattern sets are not.
+* link:../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityDefaults.java[SecurityDefaults] - Default length and count limits and the reference block-list values `paranoid()` seeds (SEC-9, SEC-14)
 
 === Security Pipeline Implementation
 
@@ -348,22 +392,22 @@ The following classes implement the security requirements:
 |===
 | Requirement ID | Description | Reference
 
-| SEC-1 | Injection Prevention | xref:analysis/owasp-best-practices.adoc#_a032021_injection[OWASP A03]
-| SEC-2 | Secure Design | xref:specification/specification.adoc#_defense_in_depth[Architecture]
+| SEC-1 | Injection Prevention (RFC character-set allow-lists plus block-list pattern matching; sink-specific injection protection NOT IMPLEMENTED) | xref:analysis/owasp-best-practices.adoc#_a032021_injection[OWASP A03]
+| SEC-2 | Secure Design (output encoding and access control NOT IMPLEMENTED) | xref:specification/specification.adoc#_defense_in_depth[Architecture]
 | SEC-3 | Traversal Detection | link:../../cui-http-core/src/test/java/de/cuioss/http/security/database/[Attack Databases]
 | SEC-4 | Encoding Prevention | xref:specification/specification.adoc#_decodingstage[Encoding]
 | SEC-5 | Canonicalization | xref:specification/specification.adoc#_normalizationstage[Normalization]
-| SEC-6 | Strict Validation | xref:specification/specification.adoc#_charactervalidationstage[Validation]
+| SEC-6 | Strict Validation (semantic validity NOT IMPLEMENTED) | xref:specification/specification.adoc#_charactervalidationstage[Validation]
 | SEC-7 | Null Byte Prevention | xref:specification/specification.adoc#_charactervalidationstage[Characters]
 | SEC-8 | Unicode Security | xref:specification/specification.adoc#_encodingvalidationstage[Unicode]
-| SEC-9 | Resource Limits | xref:specification/specification.adoc#_lengthvalidationstage[Limits]
-| SEC-10 | Complexity Protection | xref:specification/testing.adoc#_performance_validation[Performance]
+| SEC-9 | Resource Limits (input length only; processing-time, decoding-iteration and ReDoS limits NOT IMPLEMENTED) | xref:specification/specification.adoc#_lengthvalidationstage[Limits]
+| SEC-10 | Complexity Protection (circuit breakers NOT IMPLEMENTED) | xref:specification/testing.adoc#_performance_validation[Performance]
 | SEC-11 | Event Counting (no logging) | xref:specification/specification.adoc#_securityeventcounter[Monitoring]
 | SEC-12 | Per-request Pattern Recognition (no rate-limit/alerting) | xref:specification/specification.adoc#_event_counter_pattern[Detection]
 | SEC-13 | Encoding Security (constant-time comparison NOT IMPLEMENTED) | xref:specification/specification.adoc#_decodingstage[Encoding]
-| SEC-14 | Secure Defaults | xref:specification/specification.adoc#_configuration_architecture[Defaults]
+| SEC-14 | Secure Defaults (balanced preset; not maximum security) | xref:specification/specification.adoc#_configuration_architecture[Defaults]
 | SEC-15 | Audit context on exceptions (no tamper-evident trail) | xref:specification/specification.adoc#_securityeventcounter[Audit]
-| SEC-16 | Testing Support | xref:specification/testing.adoc[Testing]
+| SEC-16 | Testing Support (penetration testing hooks and security coverage metrics NOT IMPLEMENTED) | xref:specification/testing.adoc[Testing]
 | SEC-17 | API Security | xref:specification/specification.adoc#_core_interfaces_and_data_types[API]
-| SEC-18 | Attack Pattern Config (NOT IMPLEMENTED — patterns are compile-time constants) | xref:analysis/cve-analysis.adoc[Attack Pattern Analysis]
+| SEC-18 | Attack Pattern Config (PARTIAL — block-lists configurable, built-in pattern sets compile-time) | xref:analysis/cve-analysis.adoc[Attack Pattern Analysis]
 |===

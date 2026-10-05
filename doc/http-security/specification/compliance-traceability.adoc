@@ -11,11 +11,11 @@ This document provides complete traceability from compliance requirements to spe
 
 == Table of Contents
 
-. <<owasp-top-10-2021-traceability,OWASP Top 10 2021 Traceability>>
-. <<cwe-top-25-traceability,CWE Top 25 Traceability>>
-. <<nist-800-53-traceability,NIST 800-53 Traceability>>
-. <<iso-27001-traceability,ISO 27001 Traceability>>
-. <<pci-dss-traceability,PCI DSS Traceability>>
+. xref:#owasp-top-10-2021-traceability[OWASP Top 10 2021 Traceability]
+. xref:#cwe-top-25-traceability[CWE Top 25 Traceability]
+. xref:#nist-800-53-traceability[NIST 800-53 Traceability]
+. xref:#iso-27001-traceability[ISO 27001 Traceability]
+. xref:#pci-dss-traceability[PCI DSS Traceability]
 
 [#owasp-top-10-2021-traceability]
 == OWASP Top 10 2021 Traceability
@@ -55,17 +55,22 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 * `AUTH_BYPASS_TRAVERSAL`: `/admin/../user/profile`
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]: Comprehensive path traversal testing
 
-* `shouldRejectAllPathTraversalPatterns()`: 64 generated patterns
+* `shouldRejectWireCleanTraversalAsPathTraversal()`, `shouldRejectTraversalWithNonPathCharacterAsInvalidCharacter()`
+  and `shouldRejectTraversalWithNullByteAsNullByteInjection()`: `PathTraversalGenerator` samples,
+  each family asserted against its exact failure type
 * `shouldBlockCVEStylePatterns()`: CVE-based patterns
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/EncodedPathTraversalAttackTest.java[EncodedPathTraversalAttackTest]: Encoded variants
 
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/UnicodePathTraversalAttackTest.java[UnicodePathTraversalAttackTest]: Unicode-based traversal
 
-*Status*: ✅ VERIFIED - Complete coverage with 200+ test cases
+*Status*: ✅ VERIFIED - Path traversal and containment covered by the tests above
 
 === A03:2021 - Injection
 
-*Description*: Prevents injection attacks through strict input validation and encoding handling.
+*Description*: Rejects HTTP-component input that carries characters outside the component's RFC
+character set, unsafe encodings, null bytes or path traversal. Generic injection protection for
+downstream sinks (SQL, OS command, LDAP, HTML) is not provided and remains the caller's
+responsibility (SEC-1).
 
 ==== Requirements
 
@@ -93,7 +98,10 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/DecodingStageTest.java[DecodingStageTest]: Decoding stage validation
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/CharacterValidationStageTest.java[CharacterValidationStageTest]: Character validation
 
-*Status*: ✅ VERIFIED - Complete coverage at HTTP/URL protocol layer
+*Status*: ⚠️ PARTIAL — the RFC character-set allow-lists, encoding checks and null-byte detection
+are implemented at the HTTP/URL protocol layer, but pattern matching is block-list based rather
+than an allow-list grammar (SEC-1), there is no generic injection protection for downstream sinks
+(SEC-1), and semantic validity is not checked (SEC-6); all three remain caller responsibilities.
 
 === A04:2021 - Insecure Design
 
@@ -113,7 +121,7 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 * xref:specification.adoc[Pipeline Architecture]: Sequential validation stages
 * link:../../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityConfiguration.java[SecurityConfiguration]: Immutable configuration
-* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityDefaults.java[SecurityDefaults]: OWASP-compliant defaults
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/config/SecurityDefaults.java[SecurityDefaults]: Default length and count limits
 
 ==== Unit Tests
 
@@ -121,7 +129,9 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/config/SecurityConfigurationTest.java[SecurityConfigurationTest]: Configuration validation
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/config/SecurityDefaultsTest.java[SecurityDefaultsTest]: Secure defaults
 
-*Status*: ✅ VERIFIED - Defense-in-depth architecture implemented
+*Status*: ⚠️ PARTIAL — the input-validation and canonicalization layers are implemented and fail
+closed, but output encoding and access-control verification are not implemented (SEC-2), and the
+shipped default is the balanced preset rather than the maximum-security one (SEC-14).
 
 === A05:2021 - Security Misconfiguration
 
@@ -146,7 +156,12 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/config/SecurityConfigurationBuilderTest.java[SecurityConfigurationBuilderTest]: Builder pattern validation
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/config/SecurityDefaultsTest.java[SecurityDefaultsTest]: Default configuration testing
 
-*Status*: ✅ VERIFIED - Secure defaults enforced
+*Status*: ⚠️ PARTIAL — configuration is immutable and relaxing it requires an explicit choice, but
+the shipped default (`defaults()`) is the balanced preset: it ships `failOnSuspiciousPatterns=false`
+and empty content block-lists. The protocol-handler scheme check stays off until `strict()` or
+`paranoid()` is selected; the application-layer content detection stays off until `paranoid()` is
+selected or the caller supplies its own block-lists, because `strict()` also ships empty content
+block-lists (SEC-14).
 
 === A07:2021 - Identification and Authentication Failures
 
@@ -196,7 +211,7 @@ The CUI-HTTP Security Validation library addresses OWASP Top 10 2021 categories 
 
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/UnicodeNormalizationAttackTest.java[UnicodeNormalizationAttackTest]: Unicode normalization attacks (CWE-20, CWE-176, CWE-838)
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/UnicodeControlCharacterAttackTest.java[UnicodeControlCharacterAttackTest]: Control character attacks (CWE-74, CWE-20, CWE-176)
-* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HomographAttackDatabaseTest.java[HomographAttackDatabaseTest]: Homograph attacks (CWE-20, CWE-178)
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HomographAttackDatabaseTest.java[HomographAttackDatabaseTest]: Homograph attacks drawn from link:../../../cui-http-core/src/test/java/de/cuioss/http/security/database/HomographAttackDatabase.java[HomographAttackDatabase] (CWE-20, CWE-178, as cited in the database's Javadoc)
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/NormalizationStageTest.java[NormalizationStageTest]: Normalization validation
 
 *Status*: ✅ VERIFIED - Input integrity validated
@@ -228,8 +243,7 @@ persistent audit trails are *not* provided by the validation core.
 
 *Status*: ⚠️ PARTIAL — in-memory counting only. The validation core performs *no* logging,
 no SIEM integration, no rate limiting/alerting (SEC-12), and no tamper-evident audit trail
-(SEC-15); those are caller responsibilities. Runtime attack-pattern configuration (SEC-18) is
-also not implemented.
+(SEC-15); those are caller responsibilities.
 
 [#cwe-top-25-traceability]
 == CWE Top 25 Traceability
@@ -251,16 +265,16 @@ also not implemented.
 
 ==== Unit Tests
 
-* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]: 64+ patterns
-* References CVE-2019-5418, CVE-2018-1000671, CVE-2020-5398 (lines 64)
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]: Generator-driven traversal families
+* References CVE-2019-5418, CVE-2018-1000671, CVE-2020-5398 (class Javadoc, "Security Standards" section)
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/EncodedPathTraversalAttackTest.java[EncodedPathTraversalAttackTest]: Encoded variants
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest]: Multiple traversal patterns
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/ApacheCVEAttackDatabaseTest.java[ApacheCVEAttackDatabaseTest]: Apache-specific CVEs
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/IISCVEAttackDatabaseTest.java[IISCVEAttackDatabaseTest]: IIS-specific CVEs
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/NginxCVEAttackDatabaseTest.java[NginxCVEAttackDatabaseTest]: Nginx-specific CVEs
-* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/DoubleEncodingAttackTest.java[DoubleEncodingAttackTest]: References CWE-22 (line 63)
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/DoubleEncodingAttackTest.java[DoubleEncodingAttackTest]: References CWE-22 (class Javadoc, "Security Standards" section)
 
-*Status*: ✅ VERIFIED - Extensive coverage with 500+ test cases
+*Status*: ✅ VERIFIED - Covered by the path traversal, encoding and CVE attack-database tests above
 
 === CWE-23: Relative Path Traversal
 
@@ -279,8 +293,8 @@ also not implemented.
 ==== Unit Tests
 
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]:
-* Test case: `../../../etc/passwd` (line 209)
-* Relative path patterns in 64+ generated test cases
+* Test case: `../../../etc/passwd` (`shouldCategorizeSecurityEventsCorrectly()`)
+* Relative path patterns in the `PathTraversalGenerator`-driven test methods
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest]:
 * `CLASSIC_PATH_TRAVERSAL_UNIX`: `../../../etc/passwd`
 * `AUTH_BYPASS_TRAVERSAL`: `/admin/../user/profile`
@@ -303,7 +317,7 @@ also not implemented.
 ==== Unit Tests
 
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]:
-* Test case: `....//....//etc/passwd` (line 217)
+* Test case: `....//....//etc/passwd` (`shouldCategorizeSecurityEventsCorrectly()`)
 * Generator includes advanced patterns
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/generators/encoding/PathTraversalGenerator.java[PathTraversalGenerator]: Generates advanced patterns
 
@@ -327,13 +341,16 @@ also not implemented.
 
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/generators/url/PathTraversalParameterGeneratorTest.java[PathTraversalParameterGeneratorTest]: Parameter-based path traversal
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/URLParameterValidationPipelineTest.java[URLParameterValidationPipelineTest]: Parameter validation
-* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/ProtocolHandlerAttackTest.java[ProtocolHandlerAttackTest]: References CWE-73 for protocol injection
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/ProtocolHandlerAttackTest.java[ProtocolHandlerAttackTest]: Generator-driven protocol-handler injection patterns
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/ProtocolHandlerAttackDatabaseTest.java[ProtocolHandlerAttackDatabaseTest]: Drives link:../../../cui-http-core/src/test/java/de/cuioss/http/security/database/ProtocolHandlerAttackDatabase.java[ProtocolHandlerAttackDatabase], whose Javadoc cites CWE-73
 
 *Status*: ✅ VERIFIED - External input validated
 
 === CWE-78: Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')
 
-*Description*: HTTP layer validates input to prevent command injection in downstream processing.
+*Description*: The HTTP layer rejects characters outside the RFC set of each component. It does
+not neutralise OS-command syntax; preventing command injection in downstream processing remains
+the caller's responsibility (SEC-1).
 
 ==== Requirements
 
@@ -342,17 +359,23 @@ also not implemented.
 
 ==== Specifications
 
-* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage]: Blocks command injection characters
-* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationConstants.java[CharacterValidationConstants]: Defines safe character sets
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationStage.java[CharacterValidationStage]: Rejects characters outside the RFC set of each component
+* link:../../../cui-http-core/src/main/java/de/cuioss/http/security/validation/CharacterValidationConstants.java[CharacterValidationConstants]: Defines the RFC character sets
 
 ==== Unit Tests
 
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/CharacterValidationStageTest.java[CharacterValidationStageTest]: Character validation including special characters
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/pipeline/URLParameterValidationPipelineTest.java[URLParameterValidationPipelineTest]: Parameter validation
 
-*Note*: Full command injection prevention requires application-layer validation. HTTP layer prevents injection characters in URLs/parameters.
+*Note*: Full command injection prevention requires application-layer validation. The HTTP layer
+rejects characters outside the RFC 3986 path and query sets (for example `|`, `<`, `>` and the
+backtick), but those sets themselves admit shell-significant sub-delimiters such as `;`, `&`, `$`,
+`(`, `)` and `'`.
 
-*Status*: ✅ VERIFIED - HTTP/URL layer protection implemented
+*Status*: ⚠️ PARTIAL — character-set enforcement and null-byte/control-character rejection are
+implemented, but the RFC allow-lists are not a command-injection grammar and pattern matching is
+block-list based (SEC-1); neutralising shell metacharacters that the RFC admits is the caller's
+responsibility.
 
 [#nist-800-53-traceability]
 == NIST 800-53 Traceability
@@ -493,14 +516,18 @@ generation is not provided.
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/NormalizationStageTest.java[NormalizationStageTest]
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/PatternMatchingStageTest.java[PatternMatchingStageTest]
 
-*Status*: ✅ VERIFIED
+*Status*: ⚠️ PARTIAL — syntactic validity (length, character set, encoding, canonical form, attack
+patterns) is checked; semantic validity is not implemented (SEC-6) and remains the caller's
+responsibility.
 
 [#iso-27001-traceability]
 == ISO 27001 Traceability
 
 === A.12.2: Protection from Malware
 
-*Description*: Prevents injection attacks that could lead to malicious code execution.
+*Description*: Rejects malformed HTTP-component input (characters outside the RFC set, null bytes,
+block-listed attack patterns) before it reaches code that could be made to execute it.
+Sink-specific injection protection is not provided (SEC-1).
 
 ==== Requirements
 
@@ -517,7 +544,9 @@ generation is not provided.
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/PatternMatchingStageTest.java[PatternMatchingStageTest]
 * All attack database tests
 
-*Status*: ✅ VERIFIED
+*Status*: ⚠️ PARTIAL — the RFC character-set allow-lists and the block-list attack patterns are
+implemented, but there is no allow-list grammar for permitted values and no sink-specific
+injection protection (SEC-1), and no semantic validation (SEC-6).
 
 === A.12.6: Technical Vulnerability Management
 
@@ -581,14 +610,17 @@ generation is not provided.
 * All attack database tests demonstrate systematic security testing
 * Test coverage &gt; 80% (enforced by build)
 
-*Status*: ✅ VERIFIED
+*Status*: ⚠️ PARTIAL — test-data generators and attack-database regression tests are provided, but
+penetration-testing hooks and security-specific coverage metrics are not implemented (SEC-16), and
+the shipped default is the balanced preset rather than the maximum-security one (SEC-14).
 
 [#pci-dss-traceability]
 == PCI DSS Traceability
 
 === 6.5.1: Injection Flaws (SQL Injection, etc.)
 
-*Description*: Validates input to prevent injection attacks at HTTP/URL layer.
+*Description*: Validates character set and encoding of input at the HTTP/URL layer. It does not
+prevent SQL or other interpreter injection, which remains the caller's responsibility (SEC-1).
 
 ==== Requirements
 
@@ -604,9 +636,13 @@ generation is not provided.
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/validation/CharacterValidationStageTest.java[CharacterValidationStageTest]
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/MixedEncodingAttackTest.java[MixedEncodingAttackTest]
 
-*Note*: Full SQL injection prevention requires application-layer validation. HTTP layer provides input sanitization.
+*Note*: Full SQL injection prevention requires application-layer validation. The HTTP layer
+validates and rejects input; it does not sanitize it, and the RFC 3986 query set admits
+SQL-significant characters such as `'`, `;` and `=`.
 
-*Status*: ✅ VERIFIED - HTTP/URL layer protection
+*Status*: ⚠️ PARTIAL — character-set and encoding validation are implemented at the HTTP/URL
+layer, but pattern matching is block-list based (SEC-1) and semantic validity is not checked
+(SEC-6).
 
 === 6.5.8: Improper Access Control
 
@@ -624,7 +660,7 @@ generation is not provided.
 
 ==== Unit Tests
 
-* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]: 64+ test cases
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]: Generator-driven traversal families
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest]: Access control bypass patterns
 * All CVE attack database tests
 
@@ -659,11 +695,11 @@ audit *logging* is a caller responsibility, not provided by the validation core.
 |===
 |Standard |Claimed Categories |Verified |Status 
 
-|*OWASP Top 10 2021* |A01, A03, A04, A05, A07, A08, A09 |6 full + A09 partial |⚠️ A09 counting only (no logging/alerting/audit)
-|*CWE Top 25* |CWE-22, CWE-23, CWE-35, CWE-73, CWE-78 |5/5 |✅ COMPLETE
-|*NIST 800-53* |AC-3, AC-4, AU-2, AU-3, AU-12, SI-10 |4 full + AU-2/AU-12 partial |⚠️ AU-2/AU-12 counting only
-|*ISO 27001* |A.12.2, A.12.6, A.13.1, A.14.2 |4/4 |✅ COMPLETE
-|*PCI DSS* |6.5.1, 6.5.8, 10.2 |2 full + 10.2 partial |⚠️ 10.2 counting only
+|*OWASP Top 10 2021* |A01, A03, A04, A05, A07, A08, A09 |3 full + A03/A04/A05/A09 partial |⚠️ A03 block-list patterns, no sink-specific injection protection, no semantic validation; A04 no output encoding/access control; A05 balanced default; A09 counting only (no logging/alerting/audit)
+|*CWE Top 25* |CWE-22, CWE-23, CWE-35, CWE-73, CWE-78 |4 full + CWE-78 partial |⚠️ CWE-78 RFC sets admit shell metacharacters
+|*NIST 800-53* |AC-3, AC-4, AU-2, AU-3, AU-12, SI-10 |3 full + AU-2/AU-12/SI-10 partial |⚠️ AU-2/AU-12 counting only; SI-10 no semantic validation
+|*ISO 27001* |A.12.2, A.12.6, A.13.1, A.14.2 |2 full + A.12.2/A.14.2 partial |⚠️ A.12.2 block-list patterns, no semantic validation; A.14.2 no penetration-testing hooks or security coverage metrics
+|*PCI DSS* |6.5.1, 6.5.8, 10.2 |1 full + 6.5.1/10.2 partial |⚠️ 6.5.1 block-list patterns, no semantic validation; 10.2 counting only
 |===
 
 === Test Coverage Summary
@@ -719,7 +755,7 @@ Each compliance claim is supported by:
 - ✅ Implementation specification(s)
 - ✅ Source code reference(s)
 - ✅ Unit test(s) with specific test case examples
-- ✅ Line number references for verification
+- ✅ Method, constant or Javadoc-section references for verification (line numbers drift as tests are rewritten)
 
 [#_limitations_and_scope]
 == Limitations and Scope
@@ -749,8 +785,10 @@ This library focuses on *HTTP/URL protocol layer security*. The following are *o
 * ✅ HTTP header injection prevention
 * ✅ URL encoding attack detection
 * ✅ Unicode security validation
-* ✅ Protocol-level attack pattern detection (including the structural protocol-handler scheme
-  check enforced by `strict()`)
+* ✅ Protocol-level attack pattern detection for URL paths and parameter names and values
+  (including the structural protocol-handler scheme check enforced by `strict()` on URL paths and
+  parameter values); header,
+  content-type and cookie validation does not use pattern matching
 * ✅ Opt-in application-layer content block-lists for callers that can supply the missing sink
   knowledge (`paranoid()`, or `blockedPathPatterns` / `blockedParameterNames` on any base preset)
 
@@ -764,8 +802,8 @@ This traceability matrix should be updated when:
 - Security vulnerabilities are discovered
 - Code coverage changes significantly
 
-*Last Updated*: 2026-08-26
-*Next Review*: 2026-09-26 (Monthly)
+*Last Updated*: 2026-10-05
+*Next Review*: 2026-11-05 (Monthly)
 
 == References
 

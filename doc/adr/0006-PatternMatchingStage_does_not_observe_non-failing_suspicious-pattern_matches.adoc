@@ -12,7 +12,7 @@
 
 == Status
 
-Proposed
+Accepted
 
 == Context
 
@@ -152,5 +152,10 @@ capability, amortizing the infrastructure cost across more than one call site).
   the decision that narrowed this flag's scope to the scheme check by moving the content judgement
   onto the two non-emptiness-gated block-lists. `SUSPICIOUS_PATH_PATTERNS` was split into
   `PROTOCOL_HANDLER_SCHEMES` and `SENSITIVE_PATH_PATTERNS`; its four Windows filesystem literals
-  moved into `SENSITIVE_PATH_PATTERNS` as bare segments, since the encoded backslash `%5C` reaches
-  the block-list decoded.
+  moved into `SENSITIVE_PATH_PATTERNS` keeping their backslash-delimited spelling (for example
+  `\windows\`), since the encoded backslash `%5C` reaches the block-list decoded.
++
+*Correction (2026-10-05):* an earlier revision of this reference said the four Windows literals
+moved into `SENSITIVE_PATH_PATTERNS` "as bare segments". That was wrong: `SecurityDefaults` keeps
+them backslash-delimited and matches them as substrings, exactly as ADR-0015 § References records.
+Bare segments such as `users` would reject every `/users/...` route.

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-CUI-HTTP is a security-focused HTTP utilities library providing secure validation pipelines, SSL/TLS context management, and HTTP client handlers. The library emphasizes security validation of HTTP components (paths, parameters, headers, bodies) with comprehensive attack pattern detection.
+CUI-HTTP is a security-focused HTTP utilities library providing secure validation pipelines, SSL/TLS context management, and HTTP client handlers. The library emphasizes security validation of HTTP components (paths, parameter names and values, headers, content types and cookies). Attack pattern detection (`PatternMatchingStage`) applies to URL paths and parameter names and values only; header, content-type and cookie validation rely on length, character, allow/block-list and prefix rules. No factory-built body pipeline exists (`PipelineFactory.createPipeline` rejects `ValidationType.BODY`); `DecodingStage`, `CharacterValidationStage` and `LengthValidationStage` can be constructed directly with `ValidationType.BODY` for their decoding, character and body-size checks, and semantic body content validation remains an application-layer responsibility.
 
 ### Multi-Module Structure
 
@@ -20,7 +20,7 @@ cui-http/                         (root, packaging=pom, artifactId=cui-http-pare
 
 ### Build Commands
 
-Never hard-code build tool commands (`./mvnw`, `mvn`) — invoke builds via the canonical executor commands below:
+When the plan-marshall executor is available, never hard-code build tool commands (`./mvnw`, `mvn`) — invoke builds via the canonical executor commands below (the `./mvnw` fallback for environments without plan-marshall follows the list):
 
 - Compile: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "compile"`
 - Quality gate (auto-fixes: license headers plus every configured OpenRewrite recipe, i.e. modernization and not only formatting - review what it changed and commit it): `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -Ppre-commit"`
@@ -30,6 +30,15 @@ Never hard-code build tool commands (`./mvnw`, `mvn`) — invoke builds via the 
 - Benchmark (cui-http-benchmarking): `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -Pbenchmark,smoke -pl cui-http-benchmarking -am"` — only on cui-http-benchmarking (the `benchmark` profile flips `skip.benchmark=false`; `smoke` only retunes JMH timings — it cuts the iteration and warmup counts while lengthening each measurement window, so total wall time drops but the run is not measurement-grade — and must be combined with `benchmark` to actually run)
 
 Use a 10-minute Bash timeout (600000ms) for build invocations. Analyze each build's TOON result: `status`, `errors[N]{file,line,message,category}`, `log_file`.
+
+The executor commands above are the mandated path whenever `.plan/execute-script.py` exists. It is generated per machine by plan-marshall and is gitignored, so a contributor without plan-marshall does not have it. In that case run the Maven wrapper with the same `--command-args` string — each executor command maps one-to-one to:
+
+- Compile: `./mvnw compile`
+- Quality gate: `./mvnw verify -Ppre-commit`
+- Full verify: `./mvnw verify`
+- Coverage: `./mvnw verify -Pcoverage`
+- Tests (cui-http): `./mvnw test -pl cui-http-core -am`
+- Benchmark (cui-http-benchmarking): `./mvnw verify -Pbenchmark,smoke -pl cui-http-benchmarking -am`
 
 The authoritative Git workflow is defined in the "Git Workflow" section below.
 

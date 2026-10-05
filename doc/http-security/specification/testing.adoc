@@ -273,6 +273,14 @@ python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
     --command-args "verify -Pbenchmark,smoke -pl cui-http-benchmarking -am"
 ----
 
+Contributors without plan-marshall have no `.plan/execute-script.py` (it is generated per machine
+and gitignored). They run the same build through the Maven wrapper:
+
+[source,bash]
+----
+./mvnw verify -Pbenchmark,smoke -pl cui-http-benchmarking -am
+----
+
 Results are archived and published by the `.github/workflows/benchmark.yml` workflow.
 
 ===== Performance Criteria
