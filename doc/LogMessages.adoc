@@ -14,7 +14,7 @@ Module: `de.cuioss.http`
 LogMessages Classes:
 
 - `de.cuioss.http.client.HttpLogMessages` - HTTP client operations (HTTP-106–108, HTTP-110–117, HTTP-200–201)
-- `de.cuioss.http.forwarded.ForwardedLogMessages` - Forwarded / reverse-proxy header resolution (HTTP-120–126) - source: xref:../cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedLogMessages.java[ForwardedLogMessages.java]
+- `de.cuioss.http.forwarded.ForwardedLogMessages` - Forwarded / reverse-proxy header resolution (HTTP-120–127) - source: xref:../cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedLogMessages.java[ForwardedLogMessages.java]
 
 == HttpLogMessages
 
@@ -138,20 +138,40 @@ removed, renumbered, or reworded.
 |HTTP-125
 |Forwarded
 |Rejecting Forwarded header: malformed forwarded-pair: %s
-|Logged when the RFC 7239 Forwarded header carries a malformed forwarded-pair — a non-blank pair with no `=`, an empty directive name, or an empty value — so the whole header is treated as present-but-unresolvable for every field it could have carried. A grammatically legal blank pair (a trailing `;`) is not malformed. Parameters: sanitized header value.
+|Logged when the RFC 7239 Forwarded header carries a malformed forwarded-pair — a non-blank pair with no `=`, an empty directive name, or an empty value. The parse stops at that pair and the header contributes nothing, so only the fields whose directives the parser reached before the malformed pair are suppressed; fields the header carried no directive for are untouched (ADR-0021). A grammatically legal blank pair (a trailing `;`) is not malformed. Parameters: sanitized header value.
 
 |HTTP-126
 |Forwarded
 |Ignoring blank trusted-proxy entry in configuration
 |Logged when a configured `trustedProxies` entry is blank and is therefore skipped rather than parsed as a CIDR range or IP literal, so a configuration that produced an empty slot (a trailing comma, an unsubstituted placeholder) is visible instead of quietly shrinking the trusted set. No parameters — the entry is not interpolated.
+
+|HTTP-127
+|Forwarded
+|Reconciling forwarded %s: de-facto families disagree: %s resolves to %s but %s resolves to %s; honoring %s per deFactoPrecedence
+|Logged when the two de-facto families (`X-Forwarded-*` and `X-Proxy*`) are both present and resolve a field to different values. The field is not dropped: the family named by `ForwardedResolverConfig.deFactoPrecedence()` is honored. Distinct from HTTP-124, which reports a field dropped because the de-facto value and the RFC 7239 Forwarded header disagree. Parameters: field name, X-Forwarded-* header name, its resolution, X-Proxy* header name, its resolution, honored family.
 |===
 
 == Notes
 
 === Test Coverage
 
-All WARN-level LogRecords have test coverage except for:
+Not every WARN-level LogRecord has a test that asserts it. The following is a recount of
+`LogAsserts` usage across `cui-http-core/src/test/java`, matching each record either by its
+identifier (`resolveIdentifierString()` or the literal `HTTP-NNN`) or by a distinctive part of its
+message template.
 
-- HTTP-107 (HTTP_PING_INTERRUPTED) - InterruptedException scenarios
+*Asserted by a test:* HTTP-106, HTTP-115, HTTP-116 and HTTP-117 (`HttpHandlerTest`,
+`HttpHandlerRedirectTest`), and every `ForwardedLogMessages` record, HTTP-120 to HTTP-127
+(`ForwardedHeaderResolverTest`, `ForwardedTrustBoundaryTest`, `ForwardedResolverConfigTest`).
 
-This is documented in the LogRecord Javadoc but not tested due to the complexity of reliably triggering InterruptedException in unit tests.
+*WARN records without an asserting test:*
+
+- HTTP-107 (`HTTP_PING_INTERRUPTED`) - documented exception: InterruptedException cannot be triggered reliably in a unit test; the LogRecord Javadoc records this
+- HTTP-108 (`REQUEST_SERIALIZATION_FAILED`)
+- HTTP-110 (`RETRY_SKIPPED_NON_IDEMPOTENT`)
+- HTTP-111 (`REQUEST_FAILED_MAX_ATTEMPTS`)
+- HTTP-112 (`REQUEST_RETRY_AFTER_FAILURE`)
+- HTTP-113 (`RESPONSE_CONVERSION_FAILED`)
+- HTTP-114 (`NETWORK_ERROR_DURING_REQUEST`)
+
+The ERROR-level records HTTP-200 and HTTP-201 have no asserting test either.

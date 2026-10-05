@@ -23,7 +23,8 @@ The `de.cuioss.http.forwarded` package resolves the family of reverse-proxy / fo
 headers into a single, normalized, *sanitized*, immutable structure. It folds the three otherwise
 duplicated concerns of forwarded-header handling into one component:
 
-. *Precedence* across an overlapping set of headers (proprietary + de-facto + standard).
+. *Reconciliation* of an overlapping set of headers (proprietary + de-facto + standard), each
+  resolved independently and compared rather than ranked.
 . *Normalization* (context-path slashes, host/port splitting, canonical client IP).
 . *Injection hardening + sanitization* (CR/LF and control characters, protocol-relative `//host`,
   backslashes) — reusing the existing xref:security-readme.adoc[security validation pipelines]
@@ -34,21 +35,26 @@ servlet/Jetty type leaks in) and *secure-by-default* (nothing is honored unless 
 in explicitly).
 
 [WARNING]
-.Security precondition — trusted network placement (MANDATORY)
+.Security precondition — the request must have arrived through a trusted proxy (MANDATORY)
 ====
-`resolve(...)` *trusts HTTP headers, not the socket.* The resolver receives only a header accessor;
-the actual TCP peer (the socket remote address) is never passed in and cannot be inspected. The
-`X-Forwarded-For` / `Forwarded` walk therefore cannot verify that a request actually arrived
-*through* a trusted proxy — it can only match the addresses *inside the headers* against the
-configured `trustedProxies`.
+*Prefer `resolve(Function<String, List<String>>, InetAddress peer)`.* Given the socket remote
+address, this overload checks the peer in code: forwarded headers are honored only when the peer is
+itself a configured trusted proxy, and a request from any other peer resolves to
+`ResolvedForwarding.empty()` whatever its headers claim. A trusted peer is permission to *read* the
+headers, not to believe them uncritically — the chain walk and every guard below still apply.
 
-The deployment *MUST* guarantee that only trusted proxies can connect to this server directly. If an
-attacker can reach the server without traversing a trusted proxy, they can forge the chain (e.g. a
-single untrusted entry `X-Forwarded-For: 6.6.6.6`) and have it returned verbatim as the client IP.
-Enforce this with network controls — bind the listener to a private interface, restrict it with
-firewall / security-group rules, or place it behind a service mesh — so that the socket peer is
-always a trusted proxy. The resolver cannot make this guarantee for you, and by design does not
-accept the peer address as a parameter.
+The header-only overload `resolve(Function<String, List<String>>)` *trusts HTTP headers, not the
+socket.* It receives only a header accessor, so the `X-Forwarded-For` / `Forwarded` walk cannot
+verify that a request actually arrived *through* a trusted proxy — it can only match the addresses
+*inside the headers* against the configured `trustedProxies`. A deployment that uses it *MUST*
+guarantee that only trusted proxies can connect to this server directly; otherwise an attacker can
+forge the chain (e.g. a single untrusted entry `X-Forwarded-For: 6.6.6.6`) and have it returned
+verbatim as the client IP.
+
+Either way, network controls — bind the listener to a private interface, restrict it with
+firewall / security-group rules, or place it behind a service mesh — remain worth having as defence
+in depth. With the peer-checking overload they are no longer the only thing standing between a
+direct connection and a forged chain.
 
 *The header accessor MUST expose every instance of a repeated header, in wire order.* A proxy
 appends by adding a repeated header line just as legitimately as by extending a comma-separated
@@ -99,10 +105,13 @@ and a `SecurityEventCounter`; it internally builds a header-value sanitization p
 
 [source,java]
 ----
+ResolvedForwarding resolve(Function<String, List<String>> headerLookup, InetAddress peer) // preferred
 ResolvedForwarding resolve(Function<String, List<String>> headerLookup)
 ----
 
-The `Function<String, List<String>>` header accessor is the only input, so the resolver works with
+The two-argument overload returns `ResolvedForwarding.empty()` unless `peer` falls within
+`trustedProxies`, and otherwise delegates to the one-argument form — see the security precondition
+above. The `Function<String, List<String>>` header accessor is the only header input, so the resolver works with
 Jetty `Request`, `jakarta.servlet.HttpServletRequest`, or a plain `Map<String, List<String>>` in
 tests — without leaking any transport type. The accessor maps a header name to *every* instance of
 that header present on the request, in wire order; `null` or an empty list means the header is
@@ -125,9 +134,13 @@ resolver.resolve(headers::get);
 
 For each field the resolver:
 
-. selects the raw value by header *precedence*,
-. *sanitizes* it through the header-value pipeline (rejecting over-length input, NUL, other
-  control characters, and — when so configured — extended ASCII),
+. resolves each source family *independently* — the two de-facto families are reconciled against
+  each other first, then the result is reconciled against RFC 7239 `Forwarded` (see
+  xref:#header-precedence[Header precedence]; only the context path uses an ordered first-present
+  lookup),
+. *sanitizes* each value through the header-value pipeline (rejecting over-length input, NUL, every
+  other C0 control character except HTAB unconditionally, the C1 range unconditionally, and
+  extended ASCII / non-ASCII unless `allowExtendedAscii` is enabled — it defaults to `false`),
 . applies field-specific *normalization* and injection guards, and
 . *honors* it only when the configured trust model permits.
 
@@ -163,27 +176,51 @@ Immutable trust-model configuration built through a validating builder. See xref
 
 === xref:../cui-http-core/src/main/java/de/cuioss/http/forwarded/ForwardedLogMessages.java[ForwardedLogMessages]
 
-`HTTP-120`..`HTTP-125` WARN records for rejected/malformed values (context-path control
-characters, protocol-relative/backslash prefixes, values that failed sanitization, unparseable
-client-IP chain entries, — `HTTP-124` — a field dropped because the de-facto `X-Forwarded-*`
-family and the RFC 7239 `Forwarded` header disagree — and `HTTP-125`
-(`FORWARDED_DIRECTIVE_MALFORMED`) — a `Forwarded` header rejected because it carries a malformed
-`forwarded-pair`).
+`HTTP-120`..`HTTP-127` WARN records (the package reserves `120`-`129`):
 
+* `HTTP-120` / `HTTP-121` — a context path rejected for control characters, or for a
+  protocol-relative / backslash prefix;
+* `HTTP-122` — a forwarded value that failed sanitization;
+* `HTTP-123` — a client-IP chain carrying an unparseable entry;
+* `HTTP-124` (`FORWARDED_SOURCES_DISAGREE`) — a field dropped because the reconciled de-facto value
+  and the RFC 7239 `Forwarded` header disagree;
+* `HTTP-125` (`FORWARDED_DIRECTIVE_MALFORMED`) — a `Forwarded` header that carries a malformed
+  `forwarded-pair` and so contributes nothing; only the fields whose directives the parser reached
+  are suppressed (xref:adr/0021-Unresolvable_Forwarded_header_suppresses_only_the_fields_it_carried.adoc[ADR-0021]);
+* `HTTP-126` (`TRUSTED_PROXY_ENTRY_BLANK`) — a blank `trustedProxies` entry ignored at
+  configuration time;
+* `HTTP-127` (`DE_FACTO_FAMILIES_DISAGREE`) — the `X-Forwarded-*` and `X-Proxy*` families disagreed
+  and `deFactoPrecedence()` decided which one is honored; the field is kept, not dropped.
+
+[#header-precedence]
 == Header precedence
 
-Per field, the first present, non-blank value wins:
+Scheme, host, port and client IP are *not* resolved by a first-present-wins order. Each source
+family is resolved independently and the results are reconciled in two stages; only the context
+path keeps an ordered first-present lookup:
 
 [cols="1,4", options="header"]
 |===
-| Field | Precedence
+| Field | Sources and reconciliation
 
-| scheme      | `X-Forwarded-Proto` → `X-ProxyScheme` → RFC 7239 `proto`
-| host        | `X-Forwarded-Host` → `X-ProxyHost` → RFC 7239 `host`
-| port        | `X-Forwarded-Port` → `X-ProxyPort` → port carried by the resolved host (`host:port`)
-| contextPath | `X-ProxyContextPath` → `X-Forwarded-Prefix` (RFC 7239 has no prefix directive → empty)
-| clientIp    | `X-Forwarded-For` chain → RFC 7239 `for` chain
+| scheme      | `X-Forwarded-Proto` reconciled with `X-ProxyScheme`, then against RFC 7239 `proto`
+| host        | `X-Forwarded-Host` reconciled with `X-ProxyHost`, then against RFC 7239 `host` — host compared against host only
+| port        | `X-Forwarded-Port` reconciled with `X-ProxyPort`, then against the port the RFC 7239 `host` directive carried; when no explicit port header is present, the port each source's `host[:port]` token carried, reconciled independently of the host
+| contextPath | `X-ProxyContextPath` → `X-Forwarded-Prefix`, first present wins (RFC 7239 has no prefix directive → empty)
+| clientIp    | `X-Forwarded-For` chain, reconciled against the RFC 7239 `for` chain
 |===
+
+*Stage 1 — the two de-facto families are reconciled against each other.* `X-Forwarded-*` and
+`X-Proxy*` are two naming conventions for the same job, and a given deployment legitimately writes
+one of them. When both are present and resolve to the same value, that value stands. When they
+disagree the field is *not* dropped: the family named by `ForwardedResolverConfig.deFactoPrecedence()`
+(default `X_FORWARDED`) wins and an `HTTP-127` warning is logged. That knob is a tie-breaker of last
+resort, and it carries a deployment obligation: *the ingress must strip the family it does not
+itself write.* An ingress that writes `X-Proxy*` and forwards a client-supplied `X-Forwarded-*`
+unchanged has not removed the attack, only moved it behind a configuration setting.
+
+*Stage 2 — the reconciled de-facto value is reconciled against RFC 7239 `Forwarded`*, as described
+under *Conflicting sources* below.
 
 *Repeated header instances are joined in wire order before token selection.* A proxy appends by
 adding a repeated header line just as legitimately as by extending a comma-separated value, and
@@ -211,24 +248,37 @@ applied to the whole raw string inspects only its leading characters, so `X-Forw
 `//attacker.com` would then be honored unguarded. Selecting the last token first means every guard
 runs against the exact value that will be returned.
 
-*Conflicting sources = drop (fail closed).* For scheme, host, and client IP the de-facto
-`X-Forwarded-*` / `X-Proxy*` family and the RFC 7239 `Forwarded` header are resolved
-*independently*. When only one source is present its result is honored. When *both* are present they
-must agree: a proxy that populates both families does not contradict itself, so a disagreement means
-at least one side is forged. The field is then dropped and an `HTTP-124` warning logged, rather than
-letting the higher-precedence family silently win — preferring one source is precisely what an
-attacker exploits by supplying the family the resolver ranks higher.
+*Conflicting sources = drop (fail closed).* For scheme, host, port, and client IP the reconciled
+de-facto value and the RFC 7239 `Forwarded` header are resolved *independently*. When only one
+source is present its result is honored. When *both* are present they must agree: a proxy that
+populates both families does not contradict itself, so a disagreement means at least one side is
+forged. The field is then dropped and an `HTTP-124` warning logged, rather than letting either
+source win by precedence — preferring one source is precisely what an attacker exploits by
+supplying the family the resolver ranks higher.
+
+*Host and port are independent fields.* A source states both in one `host[:port]` token, but the
+token is compared field by field at both stages: a host disagreement drops only the host, and a port
+disagreement drops only the port. A source that names a bare host says nothing about the port and
+contests no port the other source carried. One exception keeps a forged value from being half
+believed: when a host disagreement drops the host, a port that only the losing `host[:port]` token
+carried is withheld too. An explicit `X-Forwarded-Port` / `X-ProxyPort` header supersedes the
+host-token port and is reconciled against RFC 7239 on its own.
 
 [source,text]
 ----
-X-Forwarded-Proto: https + Forwarded: proto=https -> scheme = https  (sources agree)
-X-Forwarded-Proto: https + Forwarded: proto=http  -> scheme = empty  (sources disagree -> dropped)
-X-Forwarded-Proto: https                          -> scheme = https  (single source, unaffected)
+X-Forwarded-Proto: https + Forwarded: proto=https                -> scheme = https           (sources agree)
+X-Forwarded-Proto: https + Forwarded: proto=http                 -> scheme = empty           (sources disagree -> dropped)
+X-Forwarded-Proto: https                                         -> scheme = https           (single source, unaffected)
+X-Forwarded-Host: h + X-Forwarded-Port: 8443 + Forwarded: host="h:8443"
+                                                                 -> host = h, port = 8443    (agree field by field)
+X-Forwarded-Host: h + X-Forwarded-Port: 8443 + Forwarded: host="h:9000"
+                                                                 -> host = h, port = empty   (only the port disagrees)
 ----
 
-*Present-but-invalid = drop (no fall-through).* Precedence selects the first present, non-blank
-source for a field; that value is then validated. If it fails its field guard it is *dropped* —
-lower-precedence sources are *not* consulted as a fallback. In particular a present-but-invalid
+*Present-but-invalid = drop (no fall-through).* Each present, non-blank source is validated. If it
+fails its field guard it is *dropped* — another source is *not* consulted as a fallback; a source
+that is present but resolves to nothing valid instead *disagrees* with a sibling source that
+resolved successfully, so the field is dropped. In particular a present-but-invalid
 `X-Forwarded-Port` / `X-ProxyPort` (not digit-only, or outside `1..65535`) yields no port; the host
 `:port` fallback is used only when *no* explicit port header is present at all. An IPv6 host must
 likewise be supplied *bracketed* (`X-Forwarded-Host: [2001:db8::1]`) to be honored — an unbracketed
@@ -236,24 +286,35 @@ multi-colon value yields no host, because the host is composed back into a URL a
 unbracketed IPv6 literal is malformed and attacker-steerable. Content after the closing `]` is
 rejected unless it is `:` plus the port, so `[::1]garbage` yields no host.
 
-*A malformed `Forwarded` value rejects the whole header.* The rule above applies to the RFC 7239
-`Forwarded` header *as a whole*. When its raw value fails sanitization, *or* when it carries a
-malformed `forwarded-pair`, the header is present-but-unresolvable for *every* field it could have
-carried — scheme, host, port, and client IP alike — and therefore *disagrees* with an otherwise clean
-`X-Forwarded-*` sibling, which drops that field rather than letting the de-facto family win by
-default. A pair is malformed when it is non-blank and carries no `=`, an empty directive name, or an
-empty value. Rejection is logged once as an `HTTP-125` warning with a log-sanitized value.
+[#unresolvable-forwarded]
+*An unresolvable `Forwarded` header suppresses only the fields it carried.* When the RFC 7239
+`Forwarded` header's raw value fails sanitization, *or* when it carries a malformed
+`forwarded-pair`, the header contributes *nothing*: it never supplies a value to the
+reconciliation. Each field it *did* carry a directive for — as far as the parser got before it
+stopped — therefore meets an empty RFC 7239 resolution and is dropped through the ordinary
+disagreement path. Each field it carried *no* directive for is untouched, and the de-facto family
+stands alone for it. A raw value that never sanitized yields no directives at all, so it suppresses
+no field. A pair is malformed when it is non-blank and carries no `=`, an empty directive name, or an
+empty value. Rejection is logged once as an `HTTP-125` warning with a log-sanitized value. The rule
+and its trade-offs are recorded in
+xref:adr/0021-Unresolvable_Forwarded_header_suppresses_only_the_fields_it_carried.adoc[ADR-0021].
 
 RFC 7239 §4 defines `forwarded-element = [ forwarded-pair ] *( ";" [ forwarded-pair ] )`, so a pair
 that is *blank* is grammatically legal: a trailing `;` is still accepted and parses normally.
 
 [source,text]
 ----
-Forwarded: proto=;host=app.internal               -> every field = empty           (malformed pair -> whole header rejected)
-Forwarded: host                                   -> every field = empty           (no "=" -> malformed)
+X-Forwarded-Proto: https + X-Forwarded-Host: app.internal + Forwarded: proto=http;broken
+                                                  -> scheme = empty, host = app.internal
+                                                     (the parser reached proto, so only the scheme is suppressed)
+X-Forwarded-Proto: https + Forwarded: broken;proto=http
+                                                  -> scheme = https                (the parse stopped before proto)
+X-Forwarded-Proto: https + Forwarded: proto=;host=app.internal
+                                                  -> scheme = https                (the malformed first pair stops the parse; nothing was reached)
 Forwarded: for=203.0.113.7;                       -> parses normally               (trailing ";" is a legal blank pair)
-X-Forwarded-Proto: https + Forwarded: proto=;host -> scheme = empty                (clean sibling dropped by disagreement)
-X-Forwarded-Port: 8080 + Forwarded: host=t.ex;bad -> port = empty                  (port is reachable via host=...:port, so it drops too)
+X-Forwarded-Port: 8080 + Forwarded: host="t.ex:9000";bad
+                                                  -> port = empty                  (the host directive reached carried a port, so the port fails closed)
+X-Forwarded-Port: 8080 + Forwarded: host=t.ex;bad -> port = 8080                   (that host directive stated no port)
 ----
 
 [#trust-model]
@@ -305,9 +366,11 @@ well-formed address is the client. This prevents a spoofed prepended entry from 
   closing bracket of a bracketed IPv6 hop unless it is `:` plus digits (`[::1]garbage`,
   `[::1]:notaport`), and an IPv4 octet with a leading zero (`010.0.0.5`), which some resolvers read
   as octal and which is a classic allow-list bypass. A bare `0` octet remains valid.
-* A malformed RFC 7239 `forwarded-pair` anywhere in the `Forwarded` header makes the whole header
-  unresolvable, so its `for` chain contributes nothing and the field is dropped — see
-  *A malformed `Forwarded` value rejects the whole header* under Header precedence.
+* A malformed RFC 7239 `forwarded-pair` makes the `Forwarded` header unresolvable, so its `for`
+  chain contributes nothing. The client IP is dropped only when the parser reached a `for`
+  directive before it stopped; otherwise the `X-Forwarded-For` chain stands alone — see
+  xref:#unresolvable-forwarded[An unresolvable `Forwarded` header suppresses only the fields it carried]
+  (xref:adr/0021-Unresolvable_Forwarded_header_suppresses_only_the_fields_it_carried.adoc[ADR-0021]).
 * An empty `trustedProxies` set or an all-trusted chain likewise yields an empty `clientIp`
   (fail-safe).
 
@@ -361,17 +424,27 @@ X-Forwarded-For: 6.6.6.6, 10.0.3.99, 10.0.7.10      -> clientIp = 10.0.3.99 (the
 == Sanitization and injection guards
 
 * Every honored value first passes through the header-value pipeline
-  (xref:security-readme.adoc[Security Validation Framework]), which rejects over-length input, NUL,
-  other control characters (CR/LF among them), and — when so configured — extended ASCII.
-* The *context-path* additionally rejects protocol-relative (`//host`) and backslash values — and
-  this guard runs on the *raw* value *before* the pipeline, because the pipeline would otherwise
-  collapse `//host` to `/host` and mask the attack. Honoring `//attacker.com` would compose into a
+  (xref:security-readme.adoc[Security Validation Framework]), which rejects over-length input, NUL
+  (unless `allowNullBytes` is set), every other C0 control character except HTAB — CR/LF among
+  them — unconditionally, the C1 range unconditionally, and extended ASCII / non-ASCII unless
+  `allowExtendedAscii` is enabled (it defaults to `false`). The control-character rules do not
+  depend on `allowControlCharacters` for header values — see
+  xref:adr/0020-Header_and_cookie_character_gates_ignore_preset_flags_when_no_later_stage_can_re-check_them.adoc[ADR-0020].
+* The *context-path* additionally rejects protocol-relative (`//host`) and backslash values, and
+  this guard runs on the selected nearest-hop token. The header-value pipeline performs no path
+  normalization (it has no `NormalizationStage`), so it neither collapses nor otherwise detects
+  `//host`; this field guard is what rejects it. Honoring `//attacker.com` would compose into a
   protocol-relative URL (`//attacker.com/...`) in the browser and exfiltrate the request.
 * The context-path is normalized to exactly one leading slash and no trailing slash; a slash-only
   value collapses to empty.
-* The *host* rejects embedded path separators, backslashes, and whitespace; a trailing `:port` is
-  split into the port field. The *port* is honored only within `1..65535`. The *scheme* is
-  lowercased and honored only when it is `http` or `https`.
+* The *host* is checked against an allow-list grammar: an unbracketed host must be dot-separated
+  labels built only from ASCII letters, digits, `-` and `_` (neither at a label's start or end, at
+  most 63 characters per label and 253 in total), and a bracketed host must contain an IP literal.
+  Every other character is therefore rejected — the path separator, backslash, whitespace, and the
+  URL-authority delimiters `@`, `#` and `?` among them; an embedded `@` would otherwise let a
+  forged host smuggle a userinfo component into a composed URL. A trailing `:port` is split into
+  the port field. The *port* is honored only within `1..65535`. The *scheme* is lowercased and
+  honored only when it is `http` or `https`.
 
 === Configuring the sanitization
 
@@ -380,8 +453,9 @@ The header-value pipeline is *configurable* through the `securityConfig` of
 xref:security-readme.adoc[`SecurityConfiguration`] knobs the pipeline actually consumes:
 
 * `maxHeaderValueLength` — enforced by `LengthValidationStage`.
-* `allowNullBytes`, `allowControlCharacters`, `allowExtendedAscii` — enforced by
-  `CharacterValidationStage`.
+* `allowNullBytes`, `allowControlCharacters`, `allowExtendedAscii` — read by
+  `CharacterValidationStage`; for a header value `allowControlCharacters` no longer widens
+  anything, because every C0 control except HTAB is rejected regardless of it (ADR-0020).
 
 Every other knob has *no effect* on forwarded sanitization. `PipelineFactory.createHeaderValuePipeline`
 builds a `HEADER_VALUE` pipeline of `LengthValidationStage` + `CharacterValidationStage` only — no
@@ -442,13 +516,18 @@ ForwardedResolverConfig config = ForwardedResolverConfig.builder()
 ForwardedHeaderResolver resolver =
     new ForwardedHeaderResolver(config, new SecurityEventCounter());
 
-// The accessor MUST expose every instance of a repeated header, not just the first:
-ResolvedForwarding fwd =
-    resolver.resolve(name -> Collections.list(request.getHeaders(name)));
+// The accessor MUST expose every instance of a repeated header, not just the first.
+// Passing the socket peer makes the resolver honor nothing unless it is a trusted proxy:
+ResolvedForwarding fwd = resolver.resolve(
+    name -> Collections.list(request.getHeaders(name)),
+    InetAddress.getByName(request.getRemoteAddr()));
 
-String scheme = fwd.scheme().orElse("http");
+// An absent scheme means no proxy attested one - possibly because a disagreement dropped it.
+// Decide that case explicitly (here: the scheme of the connection that actually reached this
+// server); never default to a hard-coded cleartext scheme.
+String scheme = fwd.scheme().orElseGet(request::getScheme);
 String host   = fwd.host().orElse(request.getServerName());
-int    port   = fwd.port().orElse(scheme.equals("https") ? 443 : 80);
+int    port   = fwd.port().orElseGet(request::getServerPort);
 String prefix = fwd.contextPath();          // "" when none
 fwd.clientIp().ifPresent(ip -> log.info("client %s", ip));
 ----
