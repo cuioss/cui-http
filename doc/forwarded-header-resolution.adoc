@@ -138,9 +138,8 @@ For each field the resolver:
   each other first, then the result is reconciled against RFC 7239 `Forwarded` (see
   xref:#header-precedence[Header precedence]; only the context path uses an ordered first-present
   lookup),
-. *sanitizes* each value through the header-value pipeline (rejecting over-length input, NUL, every
-  other C0 control character except HTAB unconditionally, the C1 range unconditionally, and
-  extended ASCII / non-ASCII unless `allowExtendedAscii` is enabled — it defaults to `false`),
+. *sanitizes* each value through the header-value pipeline (see
+  xref:#_sanitization_and_injection_guards[Sanitization and injection guards] for what it rejects),
 . applies field-specific *normalization* and injection guards, and
 . *honors* it only when the configured trust model permits.
 

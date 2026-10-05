@@ -147,8 +147,7 @@ can be checked mechanically rather than left to the author's memory.
 
 The check must run against the **merged** view, not the branch alone, because a collision only exists
 once both records are present. It therefore belongs at the merge gate: the branch is evaluated as
-merged onto the current `origin/main`, which is the same re-check that let ADR-0022 be allocated
-cleanly. Two places fit:
+merged onto the current `origin/main`. Two places fit:
 
 - **A CI step** in the pull-request workflow (`.github/workflows/maven.yml`), running on
   `pull_request` and `merge_group` events. With a merge queue enabled, the `merge_group` run sees the
