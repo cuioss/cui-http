@@ -53,6 +53,23 @@ import java.util.Objects;
  *       {@link SecurityConfiguration#paranoid()} is the preset that seeds it.</li>
  * </ol>
  *
+ * <h3>Usage Example</h3>
+ * <p>Validate the query key with this pipeline and the value with
+ * {@link URLParameterValidationPipeline}:</p>
+ * <pre>{@code
+ * SecurityConfiguration config = SecurityConfiguration.defaults();
+ * SecurityEventCounter counter = new SecurityEventCounter();
+ * URLParameterNameValidationPipeline namePipeline = new URLParameterNameValidationPipeline(config, counter);
+ * URLParameterValidationPipeline valuePipeline = new URLParameterValidationPipeline(config, counter);
+ *
+ * // For ?user_id=123 the key and the value are validated separately
+ * namePipeline.validate("user_id");  // Optional.of("user_id")
+ * valuePipeline.validate("123");     // Optional.of("123")
+ *
+ * // A delimiter that only appears after decoding is rejected in a key
+ * namePipeline.validate("user%3Did"); // throws UrlSecurityException
+ * }</pre>
+ *
  * <h3>Value Equality</h3>
  * <p>Two {@code URLParameterNameValidationPipeline} instances are equal when their
  * {@link SecurityConfiguration} is equal. The configuration is retained solely to give

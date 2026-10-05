@@ -33,12 +33,11 @@ package de.cuioss.http.security.core;
  * if (containsPathTraversal(path)) {
  *     throw UrlSecurityException.builder()
  *         .failureType(UrlSecurityFailureType.PATH_TRAVERSAL_DETECTED)
- *         .input(path)
+ *         .validationType(ValidationType.URL_PATH)
+ *         .originalInput(path)
  *         .build();
  * }
  * </pre>
- *
- * Implements: Task B1 from HTTP verification specification
  *
  * @since 1.0
  */

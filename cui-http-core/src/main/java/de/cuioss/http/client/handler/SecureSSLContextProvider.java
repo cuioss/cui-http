@@ -46,6 +46,21 @@ import java.util.Set;
  * caller-supplied {@link SSLContext} unchanged (so the caller's trust material survives), and an
  * {@link SSLContext}'s protocol string does not by itself constrain what gets negotiated. A
  * provider used <em>without</em> the downstream pinning therefore constrains nothing.
+ *
+ * <h2>Usage Example</h2>
+ * <pre>{@code
+ * // Declare a TLS 1.3 floor and obtain a context backed by the JVM default trust store
+ * SecureSSLContextProvider provider = new SecureSSLContextProvider(SecureSSLContextProvider.TLS_V1_3);
+ * SSLContext sslContext = provider.getOrCreateSecureSSLContext(null);
+ *
+ * // Hand both to the handler: the context supplies the trust material,
+ * // tlsVersions(...) makes the handler pin the floor on the wire
+ * HttpHandler handler = HttpHandler.builder()
+ *     .uri("https://api.example.com/data")
+ *     .sslContext(sslContext)
+ *     .tlsVersions(provider)
+ *     .build();
+ * }</pre>
  * <p>
  * For more details on the security aspects, see the
  * <a href="https://github.com/cuioss/cui-jwt-validation/tree/main/doc/specification/security.adoc">Security Specification</a>

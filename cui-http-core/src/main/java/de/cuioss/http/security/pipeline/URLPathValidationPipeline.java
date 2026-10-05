@@ -90,8 +90,6 @@ import java.util.Objects;
  * no value equality of their own, so including it would be redundant with the configuration and
  * would reintroduce identity semantics.</p>
  *
- * Implements: Task P1 from HTTP verification specification
- *
  * @since 1.0
  */
 @EqualsAndHashCode(callSuper = false, of = {"config"})

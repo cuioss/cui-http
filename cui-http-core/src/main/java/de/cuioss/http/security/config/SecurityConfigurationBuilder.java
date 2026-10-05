@@ -77,8 +77,6 @@ import java.util.Set;
  *   <li>Unicode normalization: {@code true} - the canonical form is the value handed downstream</li>
  * </ul>
  *
- * Implements: Task C2 from HTTP verification specification
- *
  * @since 1.0
  * @see SecurityConfiguration
  */

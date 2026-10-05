@@ -63,6 +63,17 @@ import java.util.regex.Pattern;
  * header-name pipeline) and {@link #forContentTypes(SecurityConfiguration)} for the content-type
  * lists.</p>
  *
+ * <h3>Usage Example</h3>
+ * <pre>{@code
+ * SecurityConfiguration config = SecurityConfiguration.builder()
+ *     .blockedHeaderNames(Set.of("X-Debug-Token"))
+ *     .build();
+ * AllowBlockListStage stage = AllowBlockListStage.forHeaderNames(config);
+ *
+ * stage.validate("Accept");        // Optional.of("Accept") - empty allow-list allows all
+ * stage.validate("x-debug-token"); // throws UrlSecurityException - block-list is case-insensitive
+ * }</pre>
+ *
  * @since 1.0
  */
 @EqualsAndHashCode

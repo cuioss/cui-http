@@ -91,8 +91,6 @@ import java.util.function.IntPredicate;
  * <p><strong>Security Note:</strong> These character sets define <em>allowed</em> characters only.
  * Additional security validation (pattern matching, length limits, etc.) should be applied
  * by higher-level validation stages.</p>
- * <p>
- * Implements: Task V5 from HTTP verification specification
  *
  * @see ValidationType
  * @see de.cuioss.http.security.validation.CharacterValidationStage

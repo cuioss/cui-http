@@ -60,9 +60,9 @@ import java.util.Optional;
  * boolean isSecure = cookie.isSecure();       // Check for Secure attribute
  * boolean isHttpOnly = cookie.isHttpOnly();   // Check for HttpOnly attribute
  *
- * // Use in validation
- * validator.validate(cookie.name(), ValidationType.COOKIE_NAME);
- * validator.validate(cookie.value(), ValidationType.COOKIE_VALUE);
+ * // Use in validation: character-validates name and value and enforces the
+ * // RFC 6265bis prefix rules, throwing UrlSecurityException on a violation
+ * new CookiePrefixValidationStage(config).validateCookie(cookie);
  * </pre>
  *
  * <h3>Cookie Attributes</h3>
@@ -81,8 +81,6 @@ import java.util.Optional;
  *
  * <p>The {@link #hostPrefix(String, String)} and {@link #securePrefix(String, String)} factories are
  * the exception: they validate the constructed name and the value before returning.</p>
- *
- * Implements: Task B3 from HTTP verification specification
  *
  * @param name The cookie name (e.g., "JSESSIONID", "auth_token")
  * @param value The cookie value (e.g., session ID, authentication token)

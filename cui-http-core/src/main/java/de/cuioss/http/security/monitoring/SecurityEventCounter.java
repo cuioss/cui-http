@@ -71,8 +71,6 @@ import java.util.stream.Collectors;
  * consume memory, even when dealing with the full range of possible
  * {@link UrlSecurityFailureType} values.</p>
  *
- * Implements: Task S1 from HTTP verification specification
- *
  * @since 1.0
  * @see UrlSecurityFailureType
  */

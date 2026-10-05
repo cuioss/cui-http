@@ -109,8 +109,6 @@ import java.util.Optional;
  *       application.</li>
  * </ul>
  *
- * Implements: Task B3 from HTTP verification specification
- *
  * @param content The body content as a string
  * @param contentType The MIME content type (e.g., "application/json", "text/html")
  * @param encoding The content encoding (e.g., "gzip", "deflate", "" for none)

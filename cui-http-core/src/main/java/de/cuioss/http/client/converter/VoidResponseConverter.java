@@ -47,7 +47,7 @@ import java.util.Optional;
  *     .build();
  *
  * // DELETE - only care about success/failure
- * HttpResult<Void> result = adapter.delete();
+ * HttpResult<Void> result = adapter.deleteBlocking();
  * if (result.isSuccess()) {
  *     LOGGER.info("Resource deleted (status: {})", result.getHttpStatus().orElse(0));
  * }
@@ -61,7 +61,7 @@ import java.util.Optional;
  *     .build();
  *
  * // HEAD - only care about status
- * HttpResult<Void> healthCheck = adapter.head();
+ * HttpResult<Void> healthCheck = adapter.headBlocking();
  * boolean isHealthy = healthCheck.isSuccess();
  * }</pre>
  *
@@ -71,7 +71,7 @@ import java.util.Optional;
  * HttpAdapter<Void> adapter = ETagAwareHttpAdapter.statusCodeOnly(handler);
  *
  * // Fire-and-forget POST
- * HttpResult<Void> result = adapter.post(null);
+ * HttpResult<Void> result = adapter.postBlocking(null);
  * }</pre>
  *
  * @since 1.0

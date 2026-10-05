@@ -53,8 +53,6 @@ import java.util.Set;
  * SecurityConfiguration lenient = SecurityConfiguration.lenient();
  * </pre>
  *
- * Implements: Task C1 from HTTP verification specification
- *
  * @param maxPathLength Maximum allowed URL path length in characters (positive)
  * @param allowDoubleEncoding Retained property that <strong>no longer gates any validation
  *        path</strong>. PLAN-01 made both of {@code DecodingStage}'s double-encoding gates

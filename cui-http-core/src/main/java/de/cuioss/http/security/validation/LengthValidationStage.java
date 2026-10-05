@@ -101,8 +101,6 @@ import java.util.Optional;
  *   <li><strong>maxCookieNameLength/maxCookieValueLength</strong> - Cookie size limits</li>
  *   <li><strong>maxBodySize</strong> - Maximum body size in bytes</li>
  * </ul>
- * <p>
- * Implements: Task V4 from HTTP verification specification
  *
  * @see HttpSecurityValidator
  * @see SecurityConfiguration

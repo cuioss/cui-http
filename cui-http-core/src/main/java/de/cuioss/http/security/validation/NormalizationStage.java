@@ -183,8 +183,6 @@ import java.util.regex.Pattern;
  * </ul>
  * <p>with one deliberate divergence: a double dot segment with no previous segment to remove is
  * rejected rather than discarded (ADR-0016).</p>
- * <p>
- * Implements: Task V2 from HTTP verification specification
  *
  * @param config         Security configuration controlling validation behavior.
  * @param validationType Type of validation being performed (URL_PATH, PARAMETER_NAME, etc.).

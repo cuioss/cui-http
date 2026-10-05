@@ -41,9 +41,11 @@ import org.jspecify.annotations.Nullable;
  * String name = param.name();     // "userId"
  * String value = param.value();   // "12345"
  *
- * // Use in validation
- * validator.validate(param.name(), ValidationType.PARAMETER_NAME);
- * validator.validate(param.value(), ValidationType.PARAMETER_VALUE);
+ * // Use in validation: name and value each have their own pipeline
+ * HttpSecurityValidator nameValidator = PipelineFactory.createParameterNamePipeline(config, counter);
+ * HttpSecurityValidator valueValidator = PipelineFactory.createUrlParameterPipeline(config, counter);
+ * nameValidator.validate(param.name());
+ * valueValidator.validate(param.value());
  *
  * // Parameters are value objects
  * URLParameter param2 = new URLParameter("userId", "12345");
@@ -58,8 +60,6 @@ import org.jspecify.annotations.Nullable;
  * <p>This record is a simple data container. Security validation should be applied
  * to the name and value components separately using appropriate validators for
  * {@link ValidationType#PARAMETER_NAME} and {@link ValidationType#PARAMETER_VALUE}.</p>
- *
- * Implements: Task B3 from HTTP verification specification
  *
  * @param name The parameter name (e.g., "userId", "page", "filter")
  * @param value The parameter value (e.g., "12345", "admin", "active")

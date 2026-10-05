@@ -26,24 +26,32 @@
  *
  * <h3>1. Basic HTTP Operations</h3>
  * <pre>
- * // HTTP operation with result pattern
- * HttpResult&lt;String&gt; result = httpClient.get("https://api.example.com/data");
+ * // Results are produced by an HttpAdapter - here one that returns the body as a String
+ * HttpAdapter&lt;String&gt; adapter = ETagAwareHttpAdapter.&lt;String&gt;builder()
+ *     .httpHandler(HttpHandler.builder().uri("https://api.example.com/data").build())
+ *     .responseConverter(StringContentConverter.identity())
+ *     .build();
+ * HttpResult&lt;String&gt; result = adapter.getBlocking();
  *
  * if (result.isSuccess()) {
  *     result.getContent().ifPresent(this::processContent);
  * } else {
- *     result.getErrorMessage().ifPresent(logger::error);
+ *     result.getErrorMessage().ifPresent(this::handleError);
  * }
  * </pre>
  *
  * <h3>2. ETag-Aware Caching</h3>
  * <pre>
- * // ETag-aware HTTP loading
- * HttpResult&lt;JwksKeys&gt; result = jwksLoader.loadWithETag(previousETag);
+ * // The ETag-aware adapter keeps the last response and revalidates it with If-None-Match
+ * HttpAdapter&lt;JwksKeys&gt; jwksAdapter = ETagAwareHttpAdapter.&lt;JwksKeys&gt;builder()
+ *     .httpHandler(jwksHandler)
+ *     .responseConverter(jwksConverter)
+ *     .build();
+ * HttpResult&lt;JwksKeys&gt; result = jwksAdapter.getBlocking();
  *
  * if (result.isSuccess()) {
  *     // Process successful result
- *     result.getContent().ifPresent(keys ->
+ *     result.getContent().ifPresent(keys -&gt;
  *         updateCache(keys, result.getETag().orElse("")));
  *
  *     // Check HTTP status for caching behavior
@@ -53,27 +61,25 @@
  *         logger.debug("JWKS content updated");
  *     }
  * } else {
- *     // Handle error case with fallback
- *     result.getErrorMessage().ifPresent(msg ->
- *         logger.warn("JWKS loading failed: %s", msg));
+ *     // Handle error case, e.g. keep serving the previously loaded keys
+ *     result.getErrorMessage().ifPresent(this::handleError);
  * }
  * </pre>
  *
  * <h3>3. Error Handling with Retry Logic</h3>
  * <pre>
  * // HTTP operation with error handling
- * HttpResult&lt;Config&gt; result = httpHandler.loadConfig();
+ * HttpResult&lt;Config&gt; result = configAdapter.getBlocking();
  *
  * if (!result.isSuccess()) {
  *     // Check if error is retryable
  *     if (result.isRetryable()) {
- *         logger.info("Retryable error, scheduling retry");
  *         scheduleRetry();
  *     } else {
  *         // Handle non-retryable error
- *         result.getErrorCategory().ifPresent(category -> {
+ *         result.getErrorCategory().ifPresent(category -&gt; {
  *             if (category == HttpErrorCategory.INVALID_CONTENT) {
- *                 logger.error("Invalid content received");
+ *                 reportInvalidContent();
  *             }
  *         });
  *     }

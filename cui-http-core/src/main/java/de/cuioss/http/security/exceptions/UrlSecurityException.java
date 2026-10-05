@@ -45,13 +45,12 @@ import java.util.regex.Pattern;
  *     .originalInput("../../../etc/passwd")
  *     .build();
  *
- * // Detailed violation with sanitized input
+ * // Violation with a detail describing what was found - the input is rejected, never repaired
  * throw UrlSecurityException.builder()
  *     .failureType(UrlSecurityFailureType.INVALID_CHARACTER)
  *     .validationType(ValidationType.PARAMETER_VALUE)
  *     .originalInput("user&lt;script&gt;test(1)&lt;/script&gt;")
- *     .sanitizedInput("userscripttest1script")
- *     .detail("Removed script tags and special characters")
+ *     .detail("Character '&lt;' is not allowed in a parameter value")
  *     .build();
  *
  * // Chained exception
@@ -62,8 +61,6 @@ import java.util.regex.Pattern;
  *     .cause(originalException)
  *     .build();
  * </pre>
- *
- * Implements: Task B2 from HTTP verification specification
  *
  * @since 1.0
  */

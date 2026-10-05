@@ -26,6 +26,16 @@ import lombok.experimental.UtilityClass;
  * <p>Identifier range 120-129 is reserved for this package (WARN), distinct from the
  * {@code de.cuioss.http.client} ranges in {@code HttpLogMessages}.</p>
  *
+ * <h2>Usage Example</h2>
+ * <p>Each constant is a {@link LogRecord} whose {@code %s} placeholders are filled from the
+ * arguments passed alongside it to a {@code CuiLogger}:</p>
+ * <pre>{@code
+ * private static final CuiLogger LOGGER = new CuiLogger(MyForwardingFilter.class);
+ *
+ * // Logs "HTTP-125: Rejecting Forwarded header: malformed forwarded-pair: proto"
+ * LOGGER.warn(ForwardedLogMessages.WARN.FORWARDED_DIRECTIVE_MALFORMED, "proto");
+ * }</pre>
+ *
  * @since 1.0
  */
 @UtilityClass

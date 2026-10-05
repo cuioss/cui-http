@@ -86,6 +86,24 @@ import java.util.Optional;
  * exactly the header-value ones. This pipeline still differs from the header-value pipeline in its
  * third stage: it enforces the content-type lists, which the header-value pipeline does not.</p>
  *
+ * <h3>Usage Example</h3>
+ * <pre>{@code
+ * SecurityConfiguration config = SecurityConfiguration.builder()
+ *     .allowedContentTypes(Set.of("application/json"))
+ *     .build();
+ * ContentTypeValidationPipeline pipeline =
+ *     new ContentTypeValidationPipeline(config, new SecurityEventCounter());
+ *
+ * // Parameters do not take part in list matching
+ * pipeline.validate("application/json; charset=UTF-8"); // Optional.of(...) - accepted
+ *
+ * pipeline.validate("text/html"); // throws UrlSecurityException - not on the allow-list
+ *
+ * // With a non-empty allow-list a missing Content-Type is rejected (INVALID_INPUT);
+ * // it does NOT return Optional.empty() the way the other pipelines do for null
+ * pipeline.validate(null);        // throws UrlSecurityException
+ * }</pre>
+ *
  * <h3>Value Equality</h3>
  * <p>Two {@code ContentTypeValidationPipeline} instances are equal when their
  * {@link SecurityConfiguration} is equal. The configuration is retained solely to give

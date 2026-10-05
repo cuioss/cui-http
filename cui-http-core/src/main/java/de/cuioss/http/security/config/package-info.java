@@ -29,11 +29,18 @@
  *
  * <h3>Configuration Categories</h3>
  * <ul>
- *   <li><strong>Length Limits</strong> - Maximum input lengths for different component types</li>
- *   <li><strong>Character Sets</strong> - Allowed characters for validation types</li>
- *   <li><strong>Feature Toggles</strong> - Enable/disable specific validation features</li>
- *   <li><strong>Pattern Configuration</strong> - Custom attack pattern definitions</li>
+ *   <li><strong>Length and Count Limits</strong> - Maximum input lengths per component type, the
+ *       maximum body size, and the parameter, header and cookie counts</li>
+ *   <li><strong>Feature Toggles</strong> - Boolean switches such as {@code allowNullBytes},
+ *       {@code allowExtendedAscii}, {@code normalizeUnicode}, {@code failOnSuspiciousPatterns} and
+ *       the cookie requirements</li>
+ *   <li><strong>Literal Block Lists</strong> - {@code blockedPathPatterns} and
+ *       {@code blockedParameterNames}, matched as literal strings rather than as patterns</li>
+ *   <li><strong>Allow/Block Lists</strong> - {@code allowedHeaderNames} / {@code blockedHeaderNames}
+ *       and {@code allowedContentTypes} / {@code blockedContentTypes}</li>
  * </ul>
+ * <p>The character sets each validation type accepts and the attack patterns the pattern stage
+ * detects are fixed by the library; they are not configuration.</p>
  *
  * <h3>Usage Example</h3>
  * <pre><code>
@@ -49,8 +56,8 @@
  *     .failOnSuspiciousPatterns(true)
  *     .build();
  *
- * // Configuration is immutable after creation
- * assert customConfig.maxPathLength() == 2048;
+ * // Configuration is immutable after creation; read values through the record accessors
+ * int maxPathLength = customConfig.maxPathLength(); // 2048
  * </code></pre>
  *
  * <h3>Secure Defaults</h3>

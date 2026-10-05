@@ -43,6 +43,32 @@ import java.util.Optional;
  * Subclasses need only implement the conversion logic and content type declaration.
  * The String raw type handling is managed internally.
  *
+ * <h2>Usage Example</h2>
+ * <pre>{@code
+ * // A converter that splits a text/csv body into its lines
+ * public class CsvLinesConverter extends StringContentConverter<List<String>> {
+ *
+ *     @Override
+ *     protected Optional<List<String>> convertString(String rawContent) {
+ *         if (rawContent == null) {
+ *             return Optional.empty(); // the adapter reports INVALID_CONTENT
+ *         }
+ *         return Optional.of(rawContent.lines().toList());
+ *     }
+ *
+ *     @Override
+ *     public ContentType contentType() {
+ *         return ContentType.TEXT_CSV;
+ *     }
+ * }
+ *
+ * // Plug it into an adapter as the response converter
+ * HttpAdapter<List<String>> adapter = ETagAwareHttpAdapter.<List<String>>builder()
+ *     .httpHandler(handler)
+ *     .responseConverter(new CsvLinesConverter())
+ *     .build();
+ * }</pre>
+ *
  * @param <T> the target type for content conversion
  * @author Oliver Wolff
  * @since 1.0
