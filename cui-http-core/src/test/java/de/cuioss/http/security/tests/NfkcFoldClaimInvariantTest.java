@@ -286,9 +286,27 @@ class NfkcFoldClaimInvariantTest {
         Matcher matcher = CODE_POINT.matcher(text);
         while (matcher.find()) {
             String hex = matcher.group(1) != null ? matcher.group(1) : matcher.group(2);
-            codePoints.add(Integer.parseInt(hex, 16));
+            codePoints.add(parseCodePoint(hex, text));
         }
         return codePoints;
+    }
+
+    /**
+     * Parses one hex code point captured from a claim. A hex run too long for an {@code int}, or a
+     * value outside the Unicode code-point range, fails the test naming the offending claim text
+     * instead of escaping as a raw {@link NumberFormatException} or yielding a non-code-point.
+     */
+    private static int parseCodePoint(String hex, String claimText) {
+        int codePoint;
+        try {
+            codePoint = Integer.parseInt(hex, 16);
+        } catch (NumberFormatException e) {
+            return fail("Code point U+%s in claim \"%s\" is not a parsable hex int: %s"
+                    .formatted(hex, claimText, e.getMessage()), e);
+        }
+        assertTrue(Character.isValidCodePoint(codePoint),
+                "Code point U+%s in claim \"%s\" is not a valid Unicode code point".formatted(hex, claimText));
+        return codePoint;
     }
 
     private static String chars(int codePoint) {
