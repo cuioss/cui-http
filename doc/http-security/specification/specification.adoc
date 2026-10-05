@@ -121,7 +121,7 @@ The following classes implement the security configuration system:
 The configuration system provides:
 
 1. **Immutable Configuration**: Thread-safe configuration objects
-2. **Security Levels**: STRICT, DEFAULT, and LENIENT security profiles
+2. **Security Levels**: four presets — `SecurityConfiguration.lenient()`, `.defaults()`, `.strict()` and `.paranoid()` (backed by `SecurityDefaults.PARANOID_CONFIGURATION`); see xref:#_default_security_posture[Default Security Posture]
 3. **Builder Pattern**: Flexible configuration creation
 4. **Secure Defaults**: OWASP and RFC-based default values
 For implementation details and configuration constants, see the JavaDoc of the configuration classes.
@@ -139,7 +139,13 @@ _See Requirement xref:../functional-requirements.adoc#HTTP-4[HTTP-4: Sequential 
 
 _See Requirement xref:../functional-requirements.adoc#HTTP-5[HTTP-5: Stage-Based Validation Architecture]_
 
-=== Status: IMPLEMENTED
+=== Status: IMPLEMENTED — resource limits partial
+
+NOTE: The only resource limits enforced are input length (`LengthValidationStage`) and the request
+collection counts (`RequestCollectionValidator`). Decoding-iteration and normalization-pass limits
+are *not implemented*: `DecodingStage` performs a single percent-decoding pass and rejects any
+encoding layer that survives it rather than decoding again — see
+xref:../functional-requirements.adoc#HTTP-19[HTTP-19].
 
 All validation stages follow these principles:
 
@@ -295,7 +301,7 @@ The following test suites verify the implementation meets this specification:
 
 The security validation system provides type-safe pipeline creation through the PipelineFactory:
 
-1. **Specialized Pipelines**: Create validators optimized for specific HTTP components (paths, parameters, headers, bodies)
+1. **Specialized Pipelines**: Create validators optimized for specific HTTP components (paths, parameter names and values, headers, content types). There is no body validator: `PipelineFactory.createPipeline` rejects `ValidationType.BODY` with an `IllegalArgumentException`
 2. **Generic Factory Method**: Create validators based on ValidationType enumeration
 3. **Pipeline Sets**: Create common sets of pipelines for comprehensive validation
 
@@ -335,6 +341,7 @@ For usage examples, see the JavaDoc of link:../../../cui-http-core/src/main/java
   value), which is decidable from the HTTP component alone. The admission rule is recorded in
   xref:../../adr/0015-A_pattern_literal_enforced_by_a_named_preset_must_be_decidable_from_the_HTTP_component_alone.adoc[ADR-0015].
 
+[#_default_security_posture]
 === Default Security Posture
 
 - Four presets ship as the single source of truth (`SecurityDefaults`), from most permissive to
