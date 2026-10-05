@@ -11,7 +11,7 @@
 CUI-HTTP is a security-focused HTTP utilities library that provides secure validation pipelines, SSL/TLS context management, and HTTP client handlers.
 The library emphasizes security validation of HTTP components including paths, parameter names and values, headers, content types and cookies.
 Attack pattern detection applies to URL paths and to parameter names and values; the header, content-type and cookie checks are length, character, allow/block-list and prefix rules, not pattern matching.
-No factory-built pipeline exists for request bodies (`PipelineFactory.createPipeline` rejects `ValidationType.BODY`); `CharacterValidationStage` and `LengthValidationStage` can be constructed directly with `ValidationType.BODY` to apply their character and body-size checks, and semantic body content validation remains an application-layer responsibility.
+No factory-built pipeline exists for request bodies (`PipelineFactory.createPipeline` rejects `ValidationType.BODY`); `DecodingStage`, `CharacterValidationStage` and `LengthValidationStage` can be constructed directly with `ValidationType.BODY` to apply their decoding, character and body-size checks, and semantic body content validation remains an application-layer responsibility.
 
 === Key Features
 

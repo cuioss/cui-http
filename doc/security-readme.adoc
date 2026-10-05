@@ -21,7 +21,7 @@ toc::[]
 
 Validation framework for HTTP components (paths, parameter names and values, headers, content types and cookies).
 Attack pattern detection (`PatternMatchingStage`) applies to URL paths and to parameter names and values; the header, content-type and cookie checks are length, character, allow/block-list and prefix rules.
-No factory-built pipeline exists for request bodies; `CharacterValidationStage` and `LengthValidationStage` can be constructed directly with `ValidationType.BODY` for their character and body-size checks, and semantic body content validation remains an application-layer responsibility.
+No factory-built pipeline exists for request bodies; `DecodingStage`, `CharacterValidationStage` and `LengthValidationStage` can be constructed directly with `ValidationType.BODY` for their decoding, character and body-size checks, and semantic body content validation remains an application-layer responsibility.
 
 === Core Interface
 

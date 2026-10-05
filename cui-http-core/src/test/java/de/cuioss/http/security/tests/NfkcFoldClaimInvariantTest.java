@@ -151,7 +151,7 @@ class NfkcFoldClaimInvariantTest {
     static final Pattern CLAIM_CONTEXT = Pattern.compile("(?i)fold|\\bNFKC\\b|\\bNFC\\b|NFKC-|NFC-");
 
     /** A code point written as {@code U+XXXX} or as a Java unicode escape in source text. */
-    static final Pattern CODE_POINT = Pattern.compile("U\\+([0-9A-Fa-f]{4,6})|\\\\u([0-9A-Fa-f]{4})");
+    static final Pattern CODE_POINT = Pattern.compile("U\\+([0-9A-Fa-f]+)|\\\\u([0-9A-Fa-f]{4})");
 
     private static final String THIS_FILE = NfkcFoldClaimInvariantTest.class.getSimpleName() + ".java";
 
@@ -292,11 +292,15 @@ class NfkcFoldClaimInvariantTest {
     }
 
     /**
-     * Parses one hex code point captured from a claim. A hex run too long for an {@code int}, or a
-     * value outside the Unicode code-point range, fails the test naming the offending claim text
+     * Parses one hex code point captured from a claim. {@link #CODE_POINT} captures the whole hex
+     * run, so an overlong {@code U+} token is rejected here rather than silently read as its
+     * prefix. A run outside 4-6 digits, too long for an {@code int}, or a value outside the
+     * Unicode code-point range, fails the test naming the offending claim text
      * instead of escaping as a raw {@link NumberFormatException} or yielding a non-code-point.
      */
     private static int parseCodePoint(String hex, String claimText) {
+        assertTrue(hex.length() >= 4 && hex.length() <= 6,
+                "Code point U+%s in claim \"%s\" must have 4 to 6 hex digits".formatted(hex, claimText));
         int codePoint;
         try {
             codePoint = Integer.parseInt(hex, 16);
