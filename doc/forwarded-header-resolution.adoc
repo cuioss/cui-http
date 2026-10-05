@@ -184,8 +184,9 @@ Immutable trust-model configuration built through a validating builder. See xref
 * `HTTP-124` (`FORWARDED_SOURCES_DISAGREE`) — a field dropped because the reconciled de-facto value
   and the RFC 7239 `Forwarded` header disagree;
 * `HTTP-125` (`FORWARDED_DIRECTIVE_MALFORMED`) — a `Forwarded` header that carries a malformed
-  `forwarded-pair` and so contributes nothing; only the fields whose directives the parser reached
-  are suppressed (xref:adr/0021-Unresolvable_Forwarded_header_suppresses_only_the_fields_it_carried.adoc[ADR-0021]);
+  `forwarded-pair` and so supplies no accepted value; the directives the parser reached before the
+  malformed pair still suppress their own fields, and only those
+  (xref:adr/0021-Unresolvable_Forwarded_header_suppresses_only_the_fields_it_carried.adoc[ADR-0021]);
 * `HTTP-126` (`TRUSTED_PROXY_ENTRY_BLANK`) — a blank `trustedProxies` entry ignored at
   configuration time;
 * `HTTP-127` (`DE_FACTO_FAMILIES_DISAGREE`) — the `X-Forwarded-*` and `X-Proxy*` families disagreed
@@ -303,8 +304,8 @@ rejected unless it is `:` plus the port, so `[::1]garbage` yields no host.
 [#unresolvable-forwarded]
 *An unresolvable `Forwarded` header suppresses only the fields it carried.* When the RFC 7239
 `Forwarded` header's raw value fails sanitization, *or* when it carries a malformed
-`forwarded-pair`, the header contributes *nothing*: it never supplies a value to the
-reconciliation. Each field it *did* carry a directive for — as far as the parser got before it
+`forwarded-pair`, the header supplies *no accepted value*: nothing it carries reaches the
+reconciliation as a value. Each field it *did* carry a directive for — as far as the parser got before it
 stopped — therefore meets an empty RFC 7239 resolution and is dropped through the ordinary
 disagreement path. Each field it carried *no* directive for is untouched, and the de-facto family
 stands alone for it. A raw value that never sanitized yields no directives at all, so it suppresses
@@ -381,8 +382,9 @@ well-formed address is the client. This prevents a spoofed prepended entry from 
   `[::1]:notaport`), and an IPv4 octet with a leading zero (`010.0.0.5`), which some resolvers read
   as octal and which is a classic allow-list bypass. A bare `0` octet remains valid.
 * A malformed RFC 7239 `forwarded-pair` makes the `Forwarded` header unresolvable, so its `for`
-  chain contributes nothing. The client IP is dropped only when the parser reached a `for`
-  directive before it stopped; otherwise the `X-Forwarded-For` chain stands alone — see
+  chain supplies no accepted client IP. A `for` directive the parser reached before it stopped
+  still suppresses the field: the client IP is dropped only in that case; otherwise the
+  `X-Forwarded-For` chain stands alone — see
   xref:#unresolvable-forwarded[An unresolvable `Forwarded` header suppresses only the fields it carried]
   (xref:adr/0021-Unresolvable_Forwarded_header_suppresses_only_the_fields_it_carried.adoc[ADR-0021]).
 * An empty `trustedProxies` set or an all-trusted chain likewise yields an empty `clientIp`

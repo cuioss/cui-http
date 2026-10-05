@@ -138,7 +138,7 @@ removed, renumbered, or reworded.
 |HTTP-125
 |Forwarded
 |Rejecting Forwarded header: malformed forwarded-pair: %s
-|Logged when the RFC 7239 Forwarded header carries a malformed forwarded-pair — a non-blank pair with no `=`, an empty directive name, or an empty value. The parse stops at that pair and the header contributes nothing, so only the fields whose directives the parser reached before the malformed pair are suppressed; fields the header carried no directive for are untouched (ADR-0021). A grammatically legal blank pair (a trailing `;`) is not malformed. Parameters: sanitized header value.
+|Logged when the RFC 7239 Forwarded header carries a malformed forwarded-pair — a non-blank pair with no `=`, an empty directive name, or an empty value. The parse stops at that pair and the header supplies no accepted value for any field. The directives the parser reached before the malformed pair still suppress their own fields — each meets an empty RFC 7239 resolution and is dropped — while fields the header carried no directive for are untouched (ADR-0021). A grammatically legal blank pair (a trailing `;`) is not malformed. Parameters: sanitized header value.
 
 |HTTP-126
 |Forwarded
