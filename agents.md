@@ -4,7 +4,7 @@ This file provides guidance to AI coding agents when working with the CUI-HTTP p
 
 ## Project Overview
 
-CUI-HTTP is a security-focused HTTP utilities library providing secure validation pipelines, SSL/TLS context management, and HTTP client handlers. The library emphasizes security validation of HTTP components (paths, parameters, headers, bodies) with comprehensive attack pattern detection.
+CUI-HTTP is a security-focused HTTP utilities library providing secure validation pipelines, SSL/TLS context management, and HTTP client handlers. The library emphasizes security validation of HTTP components (paths, parameter names and values, headers, content types and cookies) with comprehensive attack pattern detection. Request bodies are not validated: no body pipeline exists (`PipelineFactory.createPipeline` rejects `ValidationType.BODY`).
 
 - **Language**: Java 21 with JPMS module system (`module de.cuioss.http`)
 - **Build System**: Maven — invoked via the canonical build-executor commands documented in `CLAUDE.md` (Build Commands), for example `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify"`. Do not hard-code `./mvnw` or `mvn` while that executor is available; without plan-marshall, use the `./mvnw` equivalents listed in the same section.
