@@ -170,9 +170,11 @@ import static de.cuioss.http.forwarded.ForwardedHeaderNames.*;
  * yields no port; the host {@code :port} fallback is used only when no explicit port header is
  * present at all. Likewise an IPv6 host value must be supplied <em>bracketed</em>
  * ({@code [2001:db8::1]}) to be honored — an unbracketed multi-colon value yields no host.
- * A source that is present but resolves to nothing valid therefore <em>contests</em>: it
- * disagrees with a sibling source that resolved successfully, so the conflicting-source rule above
- * drops the field.</p>
+ * A source that is present but resolves to nothing valid therefore still <em>contests</em>: against
+ * its sibling de-facto family the disagreement goes to the
+ * {@link ForwardedResolverConfig#deFactoPrecedence()} tie-break, and a disagreement between the
+ * reconciled de-facto value and a stated RFC 7239 field drops the field under the
+ * conflicting-source rule above.</p>
  *
  * <p><strong>An unresolvable {@code Forwarded} header drops only the fields it spoke about.</strong>
  * When its raw value fails sanitization, <em>or</em> when it carries a malformed
