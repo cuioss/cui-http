@@ -22,11 +22,25 @@
  *
  * <h3>Validation Stages</h3>
  * <ul>
- *   <li>{@link de.cuioss.http.security.validation.LengthValidationStage} - Input length and depth validation (first stage)</li>
+ *   <li>{@link de.cuioss.http.security.validation.LengthValidationStage} - Input length limits per
+ *       component type (first stage)</li>
  *   <li>{@link de.cuioss.http.security.validation.CharacterValidationStage} - Character set and encoding validation</li>
- *   <li>{@link de.cuioss.http.security.validation.DecodingStage} - URL decoding and encoding attack detection</li>
- *   <li>{@link de.cuioss.http.security.validation.NormalizationStage} - Path normalization and canonicalization</li>
+ *   <li>{@link de.cuioss.http.security.validation.DecodingStage} - URL percent-decoding with encoding
+ *       attack detection (double encoding, UTF-8 overlong forms), followed by Unicode normalization
+ *       (NFKC for URL paths, NFC for parameter values)</li>
+ *   <li>{@link de.cuioss.http.security.validation.NormalizationStage} - RFC 3986 dot-segment
+ *       resolution for URL paths, with traversal, root-escape and path-depth checks; a
+ *       pass-through for every non-path type</li>
  *   <li>{@link de.cuioss.http.security.validation.PatternMatchingStage} - Attack pattern detection</li>
+ *   <li>{@link de.cuioss.http.security.validation.AllowBlockListStage} - Case-insensitive allow and
+ *       block lists for header names and content types</li>
+ *   <li>{@link de.cuioss.http.security.validation.CookiePrefixValidationStage} - RFC 6265bis cookie
+ *       prefix rules; standalone, invoked via
+ *       {@link de.cuioss.http.security.validation.CookiePrefixValidationStage#validateCookie(de.cuioss.http.security.data.Cookie)}
+ *       rather than as part of a pipeline</li>
+ *   <li>{@link de.cuioss.http.security.validation.RequestCollectionValidator} - Request-level
+ *       parameter, header and cookie count limits, which need the whole collection rather than a
+ *       single value</li>
  *   <li>{@link de.cuioss.http.security.validation.CharacterValidationConstants} - RFC-compliant character sets</li>
  * </ul>
  *
@@ -41,9 +55,12 @@
  * <h3>Usage Example</h3>
  * <pre><code>
  * // Individual stage usage
+ * SecurityConfiguration config = SecurityConfiguration.defaults();
  * LengthValidationStage lengthStage = new LengthValidationStage(config, ValidationType.URL_PATH);
  * CharacterValidationStage charStage = new CharacterValidationStage(config, ValidationType.URL_PATH);
  *
+ * // Length and character checks alone accept this traversal attempt: rejecting it is
+ * // NormalizationStage's job, which is why the pipelines chain all stages in order
  * String input = "/api/../../../etc/passwd";
  * try {
  *     Optional&lt;String&gt; checked = lengthStage.validate(input);
