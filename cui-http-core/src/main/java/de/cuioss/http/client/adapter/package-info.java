@@ -333,6 +333,9 @@
  * it returns is the form-decoded form of the input: {@code +} becomes a space and {@code %XX}
  * sequences are decoded. A plus-addressed email such as {@code a+b@example.org} would come back as
  * {@code "a b@example.org"}, so build the body from the original, unmodified input values.
+ * The character check runs on the raw input against the RFC 3986 query-character set, so a value
+ * containing characters outside it - for example a space, as in {@code "John Doe"} - is rejected;
+ * this pipeline fits values that are valid as query-string text, not arbitrary free text.
  *
  * <pre>{@code
  * import de.cuioss.http.security.config.SecurityConfiguration;
@@ -466,7 +469,7 @@
  *
  * <p>Before deploying to production, verify:
  * <ul>
- *   <li>All request bodies validated with {@code URLParameterValidationPipeline}</li>
+ *   <li>All user-supplied values that go into a request body validated individually with {@code URLParameterValidationPipeline}</li>
  *   <li>All custom headers validated with {@code HTTPHeaderValidationPipeline}</li>
  *   <li>HTTPS enabled with certificate verification (avoid {@code allowInsecureHttp(true)} in production)</li>
  *   <li>Connection and read timeouts configured</li>
