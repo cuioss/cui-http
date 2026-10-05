@@ -102,9 +102,9 @@ a move is in the history instead: a renumbered record's earlier commits sit unde
   point is a number chosen from a stale view of the directory, and that staleness is precisely what
   produced every wave above.
 - **Re-check the number again at the merge gate, against `origin/main`.** A number that was free when
-  the record was written can be taken by a plan that merges first. ADR-0022 was allocated cleanly
-  because its plan repeated the check against `origin/main` at the merge gate rather than trusting the
-  authoring-time read; it is the only control that has caught this class so far.
+  the record was written can be taken by a plan that merges first. ADR-0022's plan repeated the check
+  against `origin/main` at the merge gate rather than trusting the authoring-time read, and its number
+  landed without a collision; no collision has yet been caught by this control.
 - **Prefer not to propose an ADR while another plan's finalize is expected to propose one.** Two
   finalizes in flight at once is exactly the condition that makes two reads return the same highest
   number.
