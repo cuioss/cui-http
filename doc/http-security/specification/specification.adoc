@@ -10,7 +10,7 @@ xref:../README.adoc[← Back to Documentation Overview]
 [#_executive_summary]
 == Purpose
 
-This specification defines the security validation requirements for HTTP components in the CUI HTTP library. It establishes standards for validating URL paths, query parameter names and values, headers, content types and cookies to prevent security vulnerabilities including path traversal attacks and encoding bypasses. Request bodies are not validated: no body pipeline exists (`PipelineFactory.createPipeline` rejects `ValidationType.BODY`), and body content validation is an application-layer responsibility.
+This specification defines the security validation requirements for HTTP components in the CUI HTTP library. It establishes standards for validating URL paths, query parameter names and values, headers, content types and cookies to prevent security vulnerabilities including path traversal attacks and encoding bypasses. No factory-built pipeline exists for request bodies (`PipelineFactory.createPipeline` rejects `ValidationType.BODY`); `CharacterValidationStage` and `LengthValidationStage` can be constructed directly with `ValidationType.BODY` to apply their character and body-size checks, and semantic body content validation remains an application-layer responsibility.
 
 == Requirements
 
@@ -312,7 +312,7 @@ packages under `cui-http-core/src/test/java/de/cuioss/http/security/` for the cu
 
 The security validation system provides type-safe pipeline creation through the PipelineFactory:
 
-1. **Specialized Pipelines**: Create validators optimized for specific HTTP components (paths, parameter names and values, headers, content types). There is no body validator: `PipelineFactory.createPipeline` rejects `ValidationType.BODY` with an `IllegalArgumentException`
+1. **Specialized Pipelines**: Create validators optimized for specific HTTP components (paths, parameter names and values, headers, content types). There is no body pipeline: `PipelineFactory.createPipeline` rejects `ValidationType.BODY` with an `IllegalArgumentException`; `CharacterValidationStage` and `LengthValidationStage` can still be constructed directly with `ValidationType.BODY` for their character and body-size checks
 2. **Generic Factory Method**: Create validators based on ValidationType enumeration
 3. **Pipeline Sets**: Create common sets of pipelines for comprehensive validation
 

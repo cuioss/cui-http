@@ -25,16 +25,21 @@ These requirements are derived from:
   ** Query parameters (e.g., `?search=term&page=1`)
   ** HTTP headers (e.g., `Authorization: Bearer token`)
 
-* Request body content (form-data, JSON, XML) is *out of scope*: the system does not
-  validate request bodies, and no body pipeline is provided (see the NOTE below)
+* Semantic request-body validation (form-data, JSON, XML structure and content) is *out of
+  scope*, and no factory-built body pipeline is provided; only the character and size checks of
+  directly constructed stages apply to a body (see the NOTE below)
 * Each component type must have appropriate validation rules
 * The system must provide separate validators for each component type
 * Reference: xref:specification/specification.adoc#_core_components[Core Components]
 
-NOTE: *Body validation is not provided.* `PipelineFactory.createPipeline(ValidationType.BODY, ...)`
+NOTE: *No body pipeline is provided.* `PipelineFactory.createPipeline(ValidationType.BODY, ...)`
 throws `IllegalArgumentException` with the message "BODY validation pipeline has been removed.
-HTTP body content validation should be handled at application layer." Request-body parameters are
-therefore an application-layer responsibility, not a capability of this library. See
+HTTP body content validation should be handled at application layer." Semantic body validation -
+request-body parameters and structured formats - is therefore an application-layer
+responsibility, not a capability of this library. A caller can still construct two stages
+directly with `ValidationType.BODY`: `CharacterValidationStage` applies its configured BODY
+character rules (ASCII-only at the `allowExtendedAscii=false` default, extended ASCII and Unicode
+when it is enabled), and `LengthValidationStage` checks `maxBodySize` in UTF-8 bytes. See
 xref:#HTTP-14[HTTP-14] for the per-validation-type status.
 
 [#HTTP-2]
@@ -220,10 +225,11 @@ xref:#HTTP-14[HTTP-14] for the per-validation-type status.
   ** `HEADER_VALUE`: Header value validation rules (broader character set)
   ** `COOKIE_NAME`: Cookie name validation rules
   ** `COOKIE_VALUE`: Cookie value validation rules
-  ** `BODY`: *no body content rules and no pipeline* — the enum value remains, but body
+  ** `BODY`: *no factory-built pipeline and no semantic body validation* — semantic body
      validation is an application-layer responsibility (see xref:#HTTP-1[HTTP-1] and the NOTE
-     below). The only stage that reads a `BODY` setting is `LengthValidationStage`, which checks
-     `maxBodySize` in UTF-8 bytes when a caller constructs it directly with `ValidationType.BODY`
+     below). A caller that constructs the stages directly with `ValidationType.BODY` gets their
+     configured checks: `CharacterValidationStage` applies the BODY character rules (governed by
+     `allowExtendedAscii`), and `LengthValidationStage` checks `maxBodySize` in UTF-8 bytes
 
 * Configurations must be independently configurable
 * Must support configuration inheritance for common settings
@@ -231,8 +237,8 @@ xref:#HTTP-14[HTTP-14] for the per-validation-type status.
 
 NOTE: *Not every validation type above has a factory-built pipeline.*
 `PipelineFactory.createPipeline` throws `IllegalArgumentException` for `COOKIE_NAME` and
-`COOKIE_VALUE` ("Cookie validation pipelines are not yet implemented."), and for `BODY`, which was
-removed (see xref:#HTTP-1[HTTP-1]). Cookie prefix rules are nonetheless enforceable standalone via
+`COOKIE_VALUE` (cookie validation is deliberately not offered as a pipeline), and for `BODY`, whose
+pipeline was removed (see xref:#HTTP-1[HTTP-1]; the BODY stages remain constructible directly). Cookie prefix rules are nonetheless enforceable standalone via
 `CookiePrefixValidationStage.validateCookie(Cookie)`, which is invoked directly rather than as part
 of a pipeline. The factory-backed types are `URL_PATH`, `PARAMETER_NAME`, `PARAMETER_VALUE`,
 `HEADER_NAME`, and `HEADER_VALUE`.
