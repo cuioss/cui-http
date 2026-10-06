@@ -61,7 +61,7 @@ For developers implementing path traversal security:
 
 1. Review xref:analysis/owasp-best-practices.adoc#_core_prevention_principles[Core Prevention Principles]
 2. Understand xref:analysis/cve-analysis.adoc#_attack_pattern_evolution[Attack Pattern Evolution]
-3. Implement using xref:specification/specification.adoc#_system_architecture[System Architecture]
+3. Implement using xref:specification/specification.adoc#_architecture[System Architecture]
 4. Validate with xref:specification/testing.adoc#_test_data_categories[Test Data Categories]
 
 == HTTP/URL Standards Reference

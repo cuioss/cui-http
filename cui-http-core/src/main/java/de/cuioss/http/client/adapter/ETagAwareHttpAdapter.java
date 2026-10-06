@@ -1039,7 +1039,8 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      *       content, evict otherwise. Runs ahead of the conversion-failure return so a {@code 200}
      *       the converter rejects still drops the entry it superseded</li>
      *   <li>Conversion failure handling for 2xx responses, excluding the no-body statuses
-     *       {@code 204} and {@code 205} (see {@link #isNoBodyStatus})</li>
+     *       {@code 204} and {@code 205} (see {@link #isNoBodyStatus}) and every HEAD response,
+     *       which carries no body by protocol</li>
      *   <li>Success/failure result creation based on status code</li>
      *   <li><strong>Failure with fallback</strong> — an error response surfaces the cached content
      *       and cached ETag only when the failure is one of <em>availability</em>: a GET holding a
@@ -1105,11 +1106,13 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
             }
         }
 
-        // Handle conversion failure. Two exemptions: converters that intentionally produce no
-        // content (e.g. VoidResponseConverter for status-code-only operations), and statuses RFC
-        // 7231 defines as carrying no body at all, where emptiness is the protocol-mandated
-        // outcome rather than a failed conversion.
+        // Handle conversion failure. Three exemptions: converters that intentionally produce no
+        // content (e.g. VoidResponseConverter for status-code-only operations), statuses RFC
+        // 7231 defines as carrying no body at all, and HEAD, whose response never carries a body
+        // whatever its status. In the latter two emptiness is the protocol-mandated outcome rather
+        // than a failed conversion.
         if (content.isEmpty() && HttpStatusFamily.isSuccess(statusCode)
+                && method != HttpMethod.HEAD
                 && !isNoBodyStatus(statusCode)
                 && !responseConverter.emptyContentIsValid()) {
             LOGGER.warn(WARN.RESPONSE_CONVERSION_FAILED, statusCode);
@@ -1196,7 +1199,8 @@ public class ETagAwareHttpAdapter<T> implements HttpAdapter<T> {
      *
      * <p>Deliberately limited to {@code 204} and {@code 205}. An empty {@code 200} is <em>not</em> a
      * protocol-defined no-body response; whether it is acceptable stays governed by
-     * {@link HttpResponseConverter#emptyContentIsValid()}.</p>
+     * {@link HttpResponseConverter#emptyContentIsValid()}. The one method-level exception - a HEAD
+     * response, body-less under every status - is decided by the caller, not here.</p>
      *
      * @param statusCode the response status code
      * @return true for {@code 204 No Content} and {@code 205 Reset Content}, false otherwise

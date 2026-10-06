@@ -66,9 +66,7 @@ class PathTraversalGeneratorTest {
      */
     private static final List<String> RELOCATED_DOUBLE_ENCODING_FORMS = List.of("%%32%65", "%2e%252e");
     /** Homoglyph dots with a homoglyph separator, emitted only by {@code generateUnicodeTraversal}. */
-    private static final List<String> UNICODE_SIGNATURES = List.of(
-            fromCodePoints(0x2024, 0x2024, 0xFF0F),
-            fromCodePoints(0x2024, 0x2024, 0xFF3C));
+    private static final List<String> UNICODE_SIGNATURES = PathTraversalGenerator.UNICODE_TRAVERSAL_SEGMENTS;
     /** Homoglyph dots with a raw separator, emitted only by the mixed arm. */
     private static final List<String> MIXED_SIGNATURES = List.of(
             fromCodePoints(0x2024, 0x2024, 0x002F),

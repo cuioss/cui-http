@@ -301,6 +301,28 @@ class ETagAwareHttpAdapterIntegrationTest {
                 () -> assertTrue(result.getContent().isEmpty(), "No content should be fabricated"));
     }
 
+    /**
+     * The method-level counterpart to the no-body statuses: a HEAD response carries no body under
+     * any status, so the same empty {@code 200} that fails for GET above must succeed for HEAD even
+     * though the converter does not accept empty content.
+     */
+    @Test
+    @DisplayName("An empty 200 to HEAD should succeed even when the converter yields no content")
+    @ModuleDispatcher
+    void empty200ToHeadWithTypedConverterShouldSucceed(URIBuilder uriBuilder) {
+        dispatcher.withSuccessAndETag("", "\"etag-head-200\"");
+        HttpAdapter<String> adapter = typedAdapter(uriBuilder);
+
+        HttpResult<String> result = adapter.head().join();
+
+        assertAll("HEAD answered with 200",
+                () -> assertTrue(result.isSuccess(), "A HEAD response has no body by protocol, so emptiness is not a conversion failure"),
+                () -> assertEquals(Optional.of(200), result.getHttpStatus()),
+                () -> assertEquals("\"etag-head-200\"", result.getETag().orElse(null), "The validator should be reported"),
+                () -> assertTrue(result.getErrorCategory().isEmpty(), "Success must not carry an error category"),
+                () -> assertTrue(result.getContent().isEmpty(), "No content should be fabricated"));
+    }
+
     @Test
     @DisplayName("A conversion failure should preserve the HTTP status and the response ETag")
     @ModuleDispatcher

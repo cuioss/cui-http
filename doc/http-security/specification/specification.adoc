@@ -36,7 +36,6 @@ The HTTP security validation system must:
 * Must achieve minimum 80% test coverage
 
 [#_architecture]
-[#_system_architecture]
 == Architecture
 
 === High-Level Architecture
