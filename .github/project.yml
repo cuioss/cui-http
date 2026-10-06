@@ -35,3 +35,8 @@ dependency-propagation:
   group-id: de.cuioss
   artifact-id: cui-http
   scope: dependency
+
+cuioss-review-bot:
+  enabled: true
+  packs: [java]
+  additional_rules: []
