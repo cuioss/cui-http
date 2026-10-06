@@ -112,6 +112,24 @@ class PathTraversalGeneratorTest {
                 "Every documented attack type must be reachable within " + AGGREGATE_DRAWS + " draws");
     }
 
+    /**
+     * The independent pin for {@link PathTraversalGenerator#UNICODE_TRAVERSAL_SEGMENTS}. The generator
+     * emits from that list and {@link #UNICODE_SIGNATURES} reads it, so a corrupted segment would be
+     * both the generated and the expected value in {@link #shouldReachAllAttackTypes()}. The code
+     * points are spelled out here on purpose: this is the one place they are deliberately repeated.
+     */
+    @Test
+    @DisplayName("The Unicode traversal segments are two ONE DOT LEADERs and a fullwidth separator")
+    void shouldPinUnicodeTraversalSegments() {
+        List<String> expected = List.of(
+                fromCodePoints(0x2024, 0x2024, 0xFF0F),
+                fromCodePoints(0x2024, 0x2024, 0xFF3C));
+        List<String> emitted = PathTraversalGenerator.UNICODE_TRAVERSAL_SEGMENTS;
+
+        assertEquals(expected, emitted,
+                "The Unicode arm must emit U+2024 U+2024 followed by U+FF0F or U+FF3C");
+    }
+
     @Test
     @DisplayName("Should reach the nested-percent and the mixed single/double encoding form")
     void shouldReachRelocatedDoubleEncodingForms() {
