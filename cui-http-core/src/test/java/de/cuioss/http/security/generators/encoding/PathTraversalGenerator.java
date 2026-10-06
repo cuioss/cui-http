@@ -18,6 +18,8 @@ package de.cuioss.http.security.generators.encoding;
 import de.cuioss.test.generator.Generators;
 import de.cuioss.test.generator.TypedGenerator;
 
+import java.util.List;
+
 /**
  * Generator for path traversal attack patterns.
  *
@@ -50,6 +52,15 @@ public class PathTraversalGenerator implements TypedGenerator<String> {
 
     /** FULLWIDTH REVERSE SOLIDUS (U+FF3C), a homoglyph of the backslash that NFKC-normalizes to it. */
     private static final String LOOKALIKE_BACKWARD_SEPARATOR = Character.toString(0xFF3C);
+
+    /**
+     * The traversal segments {@link #generateUnicodeTraversal()} repeats: two homoglyph dots followed
+     * by a homoglyph separator, forward form first. The single definition of what the Unicode arm
+     * emits; package-visible so the generator's test derives its signatures from it.
+     */
+    static final List<String> UNICODE_TRAVERSAL_SEGMENTS = List.of(
+            LOOKALIKE_DOT + LOOKALIKE_DOT + LOOKALIKE_FORWARD_SEPARATOR,
+            LOOKALIKE_DOT + LOOKALIKE_DOT + LOOKALIKE_BACKWARD_SEPARATOR);
 
     /** VARIATION SELECTOR-15 (U+FE0E), an invisible selector that decorates the dot preceding it. */
     private static final String VARIATION_SELECTOR_15 = Character.toString(0xFE0E);
@@ -228,11 +239,10 @@ public class PathTraversalGenerator implements TypedGenerator<String> {
         boolean useBackslash = "\\".equals(generateSeparator());
         StringBuilder pattern = new StringBuilder();
 
-        String dotUnicode = LOOKALIKE_DOT;
-        String separatorUnicode = useBackslash ? LOOKALIKE_BACKWARD_SEPARATOR : LOOKALIKE_FORWARD_SEPARATOR;
+        String segment = UNICODE_TRAVERSAL_SEGMENTS.get(useBackslash ? 1 : 0);
 
         for (int i = 0; i < depth; i++) {
-            pattern.append(dotUnicode).append(dotUnicode).append(separatorUnicode);
+            pattern.append(segment);
         }
 
         return pattern.toString();

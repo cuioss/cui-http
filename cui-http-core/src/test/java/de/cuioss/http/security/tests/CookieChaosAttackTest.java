@@ -518,9 +518,9 @@ class CookieChaosAttackTest {
      */
     private void assertCarriesCookiePrefix(String generatedName) {
         String undecorated = stripDecoration(generatedName);
-        assertTrue(undecorated.startsWith("__Host-") || undecorated.startsWith("__Secure-"),
-                () -> "A prefix-bypass generator must decorate a __Host- or __Secure- prefixed name, but was: "
-                        + getDisplayableString(generatedName));
+        assertTrue(CookieSecurityPrefixes.isPrefixed(undecorated),
+                () -> "A prefix-bypass generator must decorate a name prefixed with one of "
+                        + CookieSecurityPrefixes.ALL + ", but was: " + getDisplayableString(generatedName));
     }
 
     /**

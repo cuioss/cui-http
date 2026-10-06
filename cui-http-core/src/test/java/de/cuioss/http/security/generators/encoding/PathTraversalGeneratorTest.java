@@ -66,9 +66,7 @@ class PathTraversalGeneratorTest {
      */
     private static final List<String> RELOCATED_DOUBLE_ENCODING_FORMS = List.of("%%32%65", "%2e%252e");
     /** Homoglyph dots with a homoglyph separator, emitted only by {@code generateUnicodeTraversal}. */
-    private static final List<String> UNICODE_SIGNATURES = List.of(
-            fromCodePoints(0x2024, 0x2024, 0xFF0F),
-            fromCodePoints(0x2024, 0x2024, 0xFF3C));
+    private static final List<String> UNICODE_SIGNATURES = PathTraversalGenerator.UNICODE_TRAVERSAL_SEGMENTS;
     /** Homoglyph dots with a raw separator, emitted only by the mixed arm. */
     private static final List<String> MIXED_SIGNATURES = List.of(
             fromCodePoints(0x2024, 0x2024, 0x002F),
@@ -112,6 +110,24 @@ class PathTraversalGeneratorTest {
         assertEquals(Set.of("basic", "encoded", "double-encoded", "unicode",
                         "mixed", "null-byte", "advanced"), attackTypes,
                 "Every documented attack type must be reachable within " + AGGREGATE_DRAWS + " draws");
+    }
+
+    /**
+     * The independent pin for {@link PathTraversalGenerator#UNICODE_TRAVERSAL_SEGMENTS}. The generator
+     * emits from that list and {@link #UNICODE_SIGNATURES} reads it, so a corrupted segment would be
+     * both the generated and the expected value in {@link #shouldReachAllAttackTypes()}. The code
+     * points are spelled out here on purpose: this is the one place they are deliberately repeated.
+     */
+    @Test
+    @DisplayName("The Unicode traversal segments are two ONE DOT LEADERs and a fullwidth separator")
+    void shouldPinUnicodeTraversalSegments() {
+        List<String> expected = List.of(
+                fromCodePoints(0x2024, 0x2024, 0xFF0F),
+                fromCodePoints(0x2024, 0x2024, 0xFF3C));
+        List<String> emitted = PathTraversalGenerator.UNICODE_TRAVERSAL_SEGMENTS;
+
+        assertEquals(expected, emitted,
+                "The Unicode arm must emit U+2024 U+2024 followed by U+FF0F or U+FF3C");
     }
 
     @Test
