@@ -39,12 +39,18 @@ filter this repository cannot guarantee.
 | 21 | [Unresolvable Forwarded header suppresses only the fields it carried](0021-Unresolvable_Forwarded_header_suppresses_only_the_fields_it_carried.adoc) | Accepted |
 | 22 | [A missing Content-Type is rejected when a non-empty allow-list is configured](0022-A_missing_Content-Type_is_rejected_when_a_non-empty_allow-list_is_configured.adoc) | Accepted |
 | 23 | [A cache entry is bound to the credential material that produced it](0023-A_cache_entry_is_bound_to_the_credential_material_that_produced_it.adoc) | Accepted |
+| 24 | [Redirects are followed by HttpHandler behind a per-hop policy that is same-origin by default](0024-Redirects_are_followed_by_HttpHandler_behind_a_per-hop_policy_that_is_same-origin_by_default.adoc) | Proposed |
+| 25 | [Redirect credentials are stripped across origins by default and never sent to a cleartext target](0025-Redirect_credentials_are_stripped_across_origins_by_default_and_never_sent_to_a_cleartext_target.adoc) | Proposed |
 
-The highest allocated number is **23**. This table is maintained by hand and is not derived from
-`doc/adr/` at build time, so a rename, addition, or status change elsewhere can leave it stale;
-treat the `.adoc` files as authoritative and update this table in the same change. The
-[proposal below](#proposal-check-the-index-against-the-records-at-the-merge-gate) describes how that
-obligation could be enforced instead of remembered.
+The highest allocated number is **25**. This table is written by hand and is not generated from
+`doc/adr/`, so a rename, addition, or status change needs the matching edit here; treat the `.adoc`
+files as authoritative and update this table in the same change. The unit test
+`AdrIndexConsistencyTest` in `cui-http-core` checks the table against the records and fails the
+build when a record has no row or more than one, when a row links to a file that is not a record,
+when a row's Status cell differs from the record's Status section, or when the number in the first
+sentence of this paragraph is not the highest record number. It does not compare titles. The
+[section below](#checking-the-index-against-the-records-at-the-merge-gate) records what the test
+covers and what is still only proposed.
 
 ## Allocating a number
 
@@ -111,12 +117,16 @@ a move is in the history instead: a renumbered record's earlier commits sit unde
 
 None of these steps is a guarantee. They narrow the window; none closes it, because closing it would
 require an allocator this directory does not have. This document records the constraint so the next
-author meets it deliberately rather than discovering it after a merge. The proposal below describes a
-check that would turn the merge-gate re-check from a habit into an enforced gate.
+author meets it deliberately rather than discovering it after a merge. The section below describes
+the check that covers part of this, and what would be needed to turn the merge-gate re-check from a
+habit into an enforced gate.
 
-## Proposal: check the index against the records at the merge gate
+## Checking the index against the records at the merge gate
 
-*Status: proposal only. Nothing described in this section is implemented.*
+*Status: partly implemented. The "check the index" option exists as the unit test
+`AdrIndexConsistencyTest` (`cui-http-core/src/test/java/de/cuioss/http/AdrIndexConsistencyTest.java`).
+Each part below says whether the test does it; everything not marked as implemented is still a
+proposal.*
 
 Two of the failure modes recorded above — a duplicate number, and an index row that is missing or
 disagrees with its file — are decidable from the repository alone. Neither needs judgement, so both
@@ -128,22 +138,32 @@ can be checked mechanically rather than left to the author's memory.
   status, and the successor named in a superseded record's Status section) and writes it into this
   file. The table can then never disagree with the records, but every record change needs the
   generator to run, and a forgotten run still leaves the committed table stale.
-- **Check the index (preferred).** A script reads the same three fields from every
-  `doc/adr/*.adoc` file and from the Index table, and fails when they disagree. The table stays
-  hand-written and reviewable in a diff; the check only refuses a change that leaves it inconsistent.
-  This is the smaller change, and it catches the stale-generator case too.
+- **Check the index (chosen).** A check reads the fields from every `doc/adr/*.adoc` file and from
+  the Index table, and fails when they disagree. The table stays hand-written and reviewable in a
+  diff; the check only refuses a change that leaves it inconsistent. This is the smaller change, and
+  it catches the stale-generator case too. `AdrIndexConsistencyTest` implements it for the number,
+  the linked file name and the status; it lists every disagreement it finds, not only the first.
 
 ### What the check verifies
 
 1. Every `doc/adr/NNNN-*.adoc` number is unique, and the number in the filename equals the number in
-   the level-0 heading.
-2. The Index table has exactly one row per record file, and no row without a file.
+   the level-0 heading. *Implemented in part:* two record files sharing a number fail the test,
+   because each record needs its own row with that number linking to its own file name. The
+   comparison of the filename's number with the level-0 heading is **not** implemented.
+2. The Index table has exactly one row per record file, and no row without a file. *Implemented.*
 3. Each row's title equals the record's title, and each row's Status cell equals the record's Status
    section — including the successor number for a superseded record and the "in part" qualifier
-   where the record states one.
-4. The high-water sentence names the highest record number.
+   where the record states one. *The status comparison is implemented:* the test reads the first
+   line of the record's `== Status` section (`Accepted`, `Proposed`, `Superseded`) and, for
+   `Superseded`, the successor from the section's `Superseded by xref:NNNN-…` or
+   `Superseded in part by xref:NNNN-…` line, and expects the cell to read `Superseded by N` or
+   `Superseded in part by N`. The title comparison is **not** implemented.
+4. The high-water sentence names the highest record number. *Implemented.*
 
 ### Where it runs
+
+The test runs wherever the `cui-http-core` unit tests run, on the tree it is given. That is not yet
+the gate this section asks for, and the rest of this subsection is still a proposal.
 
 The check must run against the **merged** view, not the branch alone, because a collision only exists
 once both records are present. It therefore belongs at the merge gate: the branch is evaluated as
@@ -157,5 +177,5 @@ merged onto the current `origin/main`. Two places fit:
   synced with `origin/main`. This gives earlier feedback, but on its own it still evaluates a snapshot
   that another merge can overtake, so it complements the CI step rather than replacing it.
 
-A failing check names the duplicate number, the missing row, or the disagreeing field, so the fix is a
-one-line edit to this table or a renumbering of the later record.
+A failing check names the record with a missing or duplicated row, the row without a record, or the
+disagreeing field, so the fix is a one-line edit to this table or a renumbering of the later record.

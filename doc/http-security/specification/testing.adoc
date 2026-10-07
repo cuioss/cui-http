@@ -182,6 +182,7 @@ Attack databases implement the `AttackDatabase` interface providing curated coll
 * `ApacheCVEAttackDatabase` - Apache HTTP Server and Tomcat CVE exploits
 * `IISCVEAttackDatabase` - Microsoft IIS and Windows vulnerabilities
 * `NginxCVEAttackDatabase` - Nginx server CVE patterns
+* `SpringCVEAttackDatabase` - Spring Cloud Config Server CVE-2020-5410 traversal
 * `OWASPTop10AttackDatabase` - OWASP Top 10 2021 attack vectors
 * `ModSecurityCRSAttackDatabase` - ModSecurity Core Rule Set patterns
 * `OWASPZAPAttackDatabase` - OWASP ZAP scanner patterns

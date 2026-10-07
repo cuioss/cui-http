@@ -35,6 +35,7 @@ exists. Host, authority and IPv6 validation are not provided by this library.
   `INVALID_CHARACTER` on its brackets, not by IPv6 address parsing
 * ✅ `NginxCVEAttackDatabaseTest` - Nginx path handling exploits
 * ✅ `OWASPTop10AttackDatabaseTest` - Path traversal focused
+* ✅ `SpringCVEAttackDatabaseTest` - Spring Cloud Config Server CVE-2020-5410 double-encoded traversal
 
 **Attack Pattern Examples**:
 

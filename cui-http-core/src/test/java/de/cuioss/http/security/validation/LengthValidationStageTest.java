@@ -25,7 +25,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
-import java.lang.reflect.Method;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -333,7 +332,7 @@ class LengthValidationStageTest {
     }
 
     @Test
-    void shouldHonourBodySizeLimitAboveIntegerMaxValue() throws Exception {
+    void shouldHonourBodySizeLimitAboveIntegerMaxValue() {
         long configuredLimit = Integer.MAX_VALUE + 1L;
         SecurityConfiguration config = SecurityConfiguration.builder()
                 .maxBodySize(configuredLimit)
@@ -344,12 +343,11 @@ class LengthValidationStageTest {
         // exceeding Integer.MAX_VALUE UTF-8 bytes would require a ~700M-character String, which is
         // far too costly to allocate in a unit test. Asserting the resolved limit distinguishes the
         // configured value from the previously-truncated Integer.MAX_VALUE just as precisely.
-        Method getMaxLength = LengthValidationStage.class.getDeclaredMethod("getMaxLength");
-        getMaxLength.setAccessible(true);
+        // The limit is a long: were getMaxLength() narrowed back to int, the value below could
+        // not exceed Integer.MAX_VALUE and the assertion would fail.
+        long resolvedLimit = stage.getMaxLength();
 
-        assertEquals(long.class, getMaxLength.getReturnType(),
-                "The BODY limit must not be narrowed back to int");
-        assertEquals(configuredLimit, getMaxLength.invoke(stage),
+        assertEquals(configuredLimit, resolvedLimit,
                 "A configured maxBodySize above Integer.MAX_VALUE must be honoured, not capped");
     }
 

@@ -1,0 +1,195 @@
+= ADR-0024: Redirects are followed by HttpHandler behind a per-hop policy that is same-origin by default
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: The JDK HttpClient never follows a redirect; HttpHandler runs the follow loop itself and asks a RedirectPolicy about every hop before requesting it, and a handler built without a policy follows same-origin hops only.
+// tags: security, http-client, redirects, egress, fail-secure
+// affects: cui-http-core
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+This record is written after the fact. The redirect feature shipped in PR #186 (commit `9446171`,
+2026-09-01) without an ADR; what follows is reconstructed from the code on the branch and from the
+commit messages of PR #182 (`e02f445`) and PR #186. Where those sources state a reason it is
+quoted or paraphrased; where they state none, this record says so and describes only what the code
+does.
+
+An earlier revision of PR #182 configured `HttpClient.Redirect.NORMAL` on the client `HttpHandler`
+builds. That revision was reverted before merge. The commit message records why: a review assessed
+it as high merge risk, and the finding was confirmed against the code —
+
+____
+The PR changes every request to automatically follow redirects, but redirected destinations are
+not revalidated against the library's URI restrictions. A server could redirect requests to
+unintended same-scheme hosts or ports reachable by the consuming process.
+____
+
+The same message notes that the JDK's `Redirect.NORMAL` enforces exactly one property, refusing an
+`https` to `http` downgrade, so "a same-scheme redirect to an attacker-chosen host would have been
+followed silently", and that this "is not an acceptable default" in a library whose purpose is
+security validation of HTTP components. PR #182 therefore left the JDK default `Redirect.NEVER` in
+place, so every 3xx reached the caller verbatim, and announced "validated redirect following —
+same-origin by default, with an opt-in host allowlist" as follow-up work.
+
+PR #186 is that follow-up. Its message names the gap the revert left — "the client no longer
+follows redirects at all, even safe same-origin ones" — and two send sites that both needed the
+behaviour: `HttpHandler.pingWithMethod` and `ETagAwareHttpAdapter.executeAsyncRequest`.
+
+Two decisions are recorded here: where the follow loop lives, and what a handler does when no
+policy was configured. What is carried across a followed hop is a separate decision, recorded in
+xref:0025-Redirect_credentials_are_stripped_across_origins_by_default_and_never_sent_to_a_cleartext_target.adoc[ADR-0025].
+
+== Decision
+
+=== The follow loop lives in HttpHandler; the JDK client never follows
+
+Neither `HttpHandler` constructor configures a redirect policy on the `HttpClient` it builds, so
+the client stays on the JDK default, `HttpClient.Redirect.NEVER`. Following is done by
+`HttpHandler` itself:
+
+* `HttpHandler.send(HttpRequest, BodyHandler)` runs an iterative loop;
+  `HttpHandler.sendAsync(HttpRequest, BodyHandler)` runs the same steps as a `thenCompose`
+  recursion in `sendAsyncHop`. Both call the one private method `nextHop`, so there is a single
+  hop policy for the blocking and the asynchronous path.
+* `nextHop` treats a response as a hop only when its status is in the set published by
+  `HttpHandler.followableStatusCodes()` — `301`, `302`, `303`, `307`, `308` — and it carries a
+  non-blank `Location`. Every other response is terminal and is returned verbatim.
+* For a hop, `nextHop` resolves the `Location` against the current request URI
+  (`resolveTarget`), then calls `RedirectPolicy.refuse(from, to)`, then checks the hop count
+  against `RedirectPolicy.getMaxHops()`, and only then builds the next request
+  (`rebuildForHop`). The policy is consulted before the request for the hop exists. A refusal, an
+  unparseable `Location` and an exhausted budget all raise `RedirectNotAllowedException`, which
+  carries the hop and a `RedirectPolicy.RedirectRefusal` reason and is classified by
+  `HttpErrorCategory.fromException` as the non-retryable `CONFIGURATION_ERROR`.
+* Both send sites go through that loop: `pingWithMethod` calls `send`, and
+  `ETagAwareHttpAdapter.executeAsyncRequest` calls `sendAsync`. `ResilientHttpAdapter` inherits
+  the behaviour from the adapter it wraps.
+* `HttpHandler.createHttpClient()` still hands out the raw client. A caller that sends through it
+  directly gets no following and no policy check: it receives the 3xx itself.
+
+`RedirectPolicy` is a value type in `de.cuioss.http.client.handler`, not a
+`de.cuioss.http.security` validation pipeline. PR #186 lists wiring those pipelines into
+redirect-target checking as an explicit non-goal, on the ground that they validate inbound
+requests, not an outbound egress-host policy; the class Javadoc of `RedirectPolicy` states the same
+distinction.
+
+=== A handler without a configured policy follows same-origin hops only
+
+`HttpHandlerBuilder.build()` substitutes `RedirectPolicy.sameOrigin()` whenever no policy was set,
+and `HttpHandlerBuilder.redirectPolicy(null)` restores that default rather than disabling the
+check. `sameOrigin()` is a policy with an empty host allowlist and the default hop budget
+`RedirectPolicy.DEFAULT_MAX_HOPS` (`10`).
+
+`RedirectPolicy.refuse(from, to)` evaluates five rules in order and returns on the first match:
+
+. the target scheme is neither `http` nor `https`, or is absent: refused, `UNSUPPORTED_SCHEME`;
+. `from` is `https` and the target is `http`: refused, `PROTOCOL_DOWNGRADE`;
+. `from` and the target are same-origin: permitted;
+. the target host is in `getAllowedHosts()`: permitted;
+. otherwise: refused, `CROSS_ORIGIN`.
+
+Same-origin (`RedirectPolicy.isSameOrigin`) means equal scheme, equal host and equal effective
+port; scheme and host are compared after ASCII lowercasing, and an absent port resolves to `443`
+for `https` and `80` for `http`. With the empty default allowlist, rule 4 never matches, so every
+hop that changes scheme, host or port is refused.
+
+The allowlist is the only way to widen the default, and it is opt-in through
+`RedirectPolicy.builder().allowedHosts(...)`. It widens by host name only: rule 4 compares the
+target host against the configured set by exact match after ASCII lowercasing, and does not look at
+the target's port or at whether the scheme changed. Rules 1 and 2 run before it, so an allowlist
+entry never admits another scheme and never admits a downgrade off TLS. No policy value expresses
+"follow any host", and the handler builder has no setting that turns the check off.
+
+The commit messages give a reason for restricting the host at all — the one quoted in the Context
+above. They do not say why the default unit is the full origin rather than the host alone, why the
+allowlist matches on host alone while the default compares the full origin, or why the default hop
+budget is `10`. For those three choices the rationale is not on record; this ADR records the
+behaviour, not a reason.
+
+== Consequences
+
+=== Positive
+
+* No request is issued to a redirect target that the handler's policy has not evaluated first.
+  The JDK follower offers no point at which a hop could be refused before it is requested.
+* One implementation serves the ping path, the adapter path and any caller of `send` /
+  `sendAsync`. PR #186 names this as the reason for the placement: one implementation "instead of
+  two independently maintained checks".
+* A handler built with no redirect configuration cannot be steered to another host, another port
+  or another scheme by a response it receives.
+* A refusal is typed and names the hop and the reason, instead of surfacing as an unexplained 3xx
+  or as the URI parser's `IllegalArgumentException`.
+
+=== Negative
+
+* cui-http now owns redirect semantics the JDK would otherwise supply: target resolution, the
+  method-and-body rewrite rules, discarding of intermediate response bodies, and the hop bound all
+  live in `HttpHandler` and have to be kept correct there. PR #240 (`2e9e8e0`) already had to
+  correct the `301`/`302` method rewrite.
+* Redirects that are routine on the public web are refused by default and need an explicit
+  allowlist entry: a hop to another host, and an `http` to `https` upgrade on the same host, which
+  is a scheme change and therefore `CROSS_ORIGIN` (`RedirectPolicyTest.shouldRefuseUpgradeAsCrossOrigin`).
+  The refusal is an exception in the non-retryable `CONFIGURATION_ERROR` category, not a response.
+* A caller that sends through `createHttpClient()` gets neither following nor validation, so the
+  guarantee holds for `send` / `sendAsync` / the ping methods and the adapters, not for every
+  request made with the handler's client.
+
+=== Risks
+
+* The policy decides on the URI text of the target — scheme, host name and port. Nothing in
+  `RedirectPolicy` or in the follow loop resolves the host or inspects the address it resolves to,
+  so the policy says nothing about where an allowlisted name points.
+* An allowlist entry admits its host on every port. A consumer who means one service on one port
+  has no way to say so in the policy.
+* The request the caller passes to `send` / `sendAsync` is sent as given. The policy is consulted
+  for hops only, never for that first request.
+* A send site added later that uses `createHttpClient()` instead of `send` / `sendAsync` would
+  bypass the loop without any compile-time signal. The executable guards are
+  `HttpHandlerRedirectTest`, `RedirectPolicyTest`, `HttpHandlerHttpsIntegrationTest` and the two
+  redirect cases in `ETagAwareHttpAdapterIntegrationTest`; they pin the existing send sites, not
+  future ones.
+
+== Alternatives Considered
+
+The first four are alternatives the record names or the history shows. The last two are
+alternatives the code visibly did not take and for which no reason is recorded.
+
+* **Let the JDK follow (`HttpClient.Redirect.NORMAL`).** Tried in an earlier revision of PR #182
+  and reverted: the JDK follower checks only the `https` to `http` downgrade, so a same-scheme
+  redirect to any host or port would have been followed without a check.
+* **Do not follow at all.** This was the shipped state between PR #182 and PR #186. PR #186
+  rejects it as a capability gap — not even same-origin redirects were followed — and PR #182 had
+  already described it as an interim state, not "a considered permanent end state".
+* **Implement the check separately at each send site.** Rejected in PR #186 in favour of one loop
+  in `HttpHandler`, so the ping path and the adapter path cannot drift apart.
+* **Validate redirect targets with the `de.cuioss.http.security` pipelines.** Declared a non-goal
+  in PR #186: those pipelines validate inbound request components, while a redirect target poses
+  an outbound egress-host question.
+* **A host-only default** — follow any hop that stays on the same host, whatever the scheme or
+  port. Not taken; the rationale is not on record.
+* **A policy that permits every host, or a builder switch that disables the check.** Neither
+  exists in the code. The rationale is not on record beyond the general statement in PR #182 that
+  following to an unchecked host is not an acceptable default.
+
+== References
+
+* `de.cuioss.http.client.handler.HttpHandler` — `send`, `sendAsync`, `nextHop`, `resolveTarget`,
+  `rebuildForHop`, `followableStatusCodes` and `HttpHandlerBuilder.redirectPolicy`.
+* `de.cuioss.http.client.handler.RedirectPolicy` — `refuse`, `sameOrigin`, `getAllowedHosts`,
+  `getMaxHops` and the `RedirectRefusal` reasons.
+* `de.cuioss.http.client.handler.RedirectNotAllowedException` — the typed refusal.
+* `de.cuioss.http.client.adapter.ETagAwareHttpAdapter` — the adapter send site routed through
+  `HttpHandler.sendAsync`.
+* xref:../client-handlers-readme.adoc#redirect-policy[HTTP Client Handlers: Redirect policy] — the
+  user documentation of the behaviour recorded here.
+* xref:0025-Redirect_credentials_are_stripped_across_origins_by_default_and_never_sent_to_a_cleartext_target.adoc[ADR-0025]
+  — what is carried across a hop this policy permits.
+* Commits `e02f445` (PR #182), `9446171` (PR #186) and `2e9e8e0` (PR #240).

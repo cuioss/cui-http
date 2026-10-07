@@ -280,6 +280,7 @@ is the authoritative inventory — browse the `pipeline`, `validation` and `test
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/ApacheCVEAttackDatabaseTest.java[ApacheCVEAttackDatabaseTest] - Apache CVE tests
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/IISCVEAttackDatabaseTest.java[IISCVEAttackDatabaseTest] - IIS CVE tests
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/NginxCVEAttackDatabaseTest.java[NginxCVEAttackDatabaseTest] - Nginx CVE tests
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/SpringCVEAttackDatabaseTest.java[SpringCVEAttackDatabaseTest] - Spring CVE tests
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/OWASPTop10AttackDatabaseTest.java[OWASPTop10AttackDatabaseTest] - OWASP Top 10 attack patterns
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/HomographAttackDatabaseTest.java[HomographAttackDatabaseTest] - Homograph attack tests
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/IPv6AttackDatabaseTest.java[IPv6AttackDatabaseTest] - IPv6-shaped payloads against the path pipeline

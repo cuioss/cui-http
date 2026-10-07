@@ -34,11 +34,22 @@ edit made somewhere else entirely, by someone who never saw it.
 
 Anchors invert this. A named reference either resolves or it does not, so the same class of breakage
 becomes *mechanically detectable* — a checker can decide it from the document alone, where no tool
-can decide whether "below" still points below. The project runs no such checker today: the
-repository `pom.xml` declares no AsciiDoc plugin of its own, the Maven Site configuration inherited
-from `cui-parent-pom` only renders AsciiDoc and performs no link validation, and the Maven workflow
-skips documentation-only changes. This
-decision makes the breakage checkable; it does not claim it is currently checked.
+can decide whether "below" still points below. When this decision was written the project ran no
+such checker: the repository `pom.xml` declares no AsciiDoc plugin of its own, and the Maven Site
+configuration inherited from `cui-parent-pom` only renders AsciiDoc and performs no link validation.
+The decision made the breakage checkable; it did not claim the breakage was checked.
+
+*Update (2026-10-07):* an earlier revision of this paragraph said that the project runs no such
+checker today and that the Maven workflow skips documentation-only changes. The first statement no
+longer holds: the `DocumentationLinkTest` unit test in `cui-http-core` is that checker - see
+xref:#risks[Risks] for what it covers. The second statement is not established by this repository:
+`.github/workflows/maven.yml` configures no path filter (`paths` or `paths-ignore`) on its `push`,
+`pull_request` and `merge_group` triggers, and it delegates the build to a reusable workflow of
+`cuioss/cuioss-organization`, whose handling of a documentation-only change is not recorded here.
+One caveat follows from that: the checker runs only where the `cui-http-core` unit tests run, so a
+change that touches nothing but documentation is checked in CI only if the build runs those tests
+for it; running the tests locally always checks it. The record's Proposed status and its decision
+are unchanged.
 
 == Decision
 
@@ -67,14 +78,17 @@ would follow the direction to find a particular thing.
 * Targets need anchors, so adding a reference sometimes means editing the target section too.
 * Anchor names are themselves a small naming surface to keep sensible and stable.
 
+[#risks]
 === Risks
 
 * A renamed anchor breaks every reference to it. This is the intended trade — the breakage is
   locatable, where the positional failure it replaces was neither.
 * Auto-generated anchors derived from section titles change when a title is reworded, so a
-  reference can break on an edit that looks purely cosmetic. **Until a link checker is added to the
-  build, that breakage is silent** — the anchor form makes it findable, not found. Adding such a
-  checker is the follow-on this decision enables and deliberately does not assume.
+  reference can break on an edit that looks purely cosmetic. That breakage is no longer silent: the
+  link checker this decision enabled exists as the `DocumentationLinkTest` unit test in
+  `cui-http-core` and fails the build on it. The test checks the relative file targets and the
+  anchors of the `xref:`, `link:` and `+<<...>>+` references in the repository's AsciiDoc
+  (`README.adoc` and `doc/`); it does *not* check external URLs or Javadoc `{@link}` references.
 
 == Alternatives Considered
 
@@ -93,7 +107,11 @@ of its reference style, which is the wrong thing to hold fixed.
 
 The alternatives all leave the reference expressed in a form no tool can check, and then spend human
 attention compensating. The decision moves the reference into a form a tool *could* check — which is
-the precondition for ever automating it, and is worth having before the checker exists.
+the precondition for ever automating it, and was worth having before the checker existed.
+
+*Update (2026-10-07):* an earlier revision of this paragraph ended "before the checker exists". The
+checker exists now - `DocumentationLinkTest`, described under xref:#risks[Risks] - so the sentence
+is put in the past tense. The comparison of the alternatives is unchanged.
 
 == References
 

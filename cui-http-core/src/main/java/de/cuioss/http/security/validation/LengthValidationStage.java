@@ -214,8 +214,9 @@ ValidationType validationType) implements HttpSecurityValidator {
      * The full configured {@code long} range is honoured: a {@code maxBodySize} above
      * {@code Integer.MAX_VALUE} is returned as configured rather than being silently capped.
      * The other validation types return {@code int} accessors, which widen implicitly.
+     * Package-private, not private, so the same-package test can assert the resolved limit directly.
      */
-    private long getMaxLength() {
+    long getMaxLength() {
         return switch (validationType) {
             case URL_PATH -> config.maxPathLength();
             case PARAMETER_NAME -> config.maxParameterNameLength();
