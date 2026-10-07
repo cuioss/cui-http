@@ -60,8 +60,14 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * <p>Not checked: absolute URLs (no network access in a unit test), fragments on targets that are
  * not AsciiDoc documents, and Javadoc {@code {@link}} references, which the Javadoc build
- * verifies. Content of listing, literal, passthrough and comment blocks and of inline code spans
- * is skipped, so example syntax is neither checked nor read as an anchor.</p>
+ * verifies. Content of listing, literal, passthrough and comment blocks and of inline literal and
+ * passthrough spans ({@code `+text+`}, {@code +text+}, {@code ++text++}, {@code +++text+++},
+ * {@code pass:[text]}) is skipped, so example syntax is neither checked nor read as an anchor.</p>
+ *
+ * <p>A plain backtick span ({@code `text`}) is <em>not</em> skipped: Asciidoctor renders it as
+ * monospace and still runs its macros, so {@code `xref:missing.adoc[x]`} is a link on the published
+ * page and is checked like any other. Example syntax that is meant literally is written as
+ * {@code `+xref:missing.adoc[x]+`}.</p>
  */
 @DisplayName("Documentation cross-references resolve")
 class DocumentationLinkTest {
@@ -74,8 +80,11 @@ class DocumentationLinkTest {
     private static final Pattern MACRO_REFERENCE = Pattern.compile("(?<![\\\\\\w])(xref|link):([^\\s\\[\\]]+)\\[");
     /** {@code <<target>>} / {@code <<target,text>>}. */
     private static final Pattern ANGLE_REFERENCE = Pattern.compile("<<([^,>\\s][^,>]*)(?:,[^>]*)?>>");
-    /** A URI scheme such as {@code https:} or {@code mailto:} - the target is not a repository path. */
-    private static final Pattern ABSOLUTE_URL = Pattern.compile("^[a-zA-Z][a-zA-Z0-9+.-]+:.*");
+    /**
+     * A URI scheme such as {@code https:} or {@code mailto:} - the target is not a repository path.
+     * RFC 3986: {@code scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )}, so one letter suffices.
+     */
+    private static final Pattern ABSOLUTE_URL = Pattern.compile("^[a-zA-Z][a-zA-Z0-9+.-]*:.*");
 
     /** Explicit anchor forms; group 1 is the id. */
     private static final List<Pattern> EXPLICIT_ANCHORS = List.of(
@@ -88,9 +97,17 @@ class DocumentationLinkTest {
     private static final Pattern BLOCK_ATTRIBUTE_LINE = Pattern.compile("^\\[.*]\\s*$");
     /** Delimiters of blocks whose content is not AsciiDoc markup: listing, literal, passthrough, comment. */
     private static final Pattern VERBATIM_DELIMITER = Pattern.compile("^(-{4,}|\\.{4,}|\\+{4,}|/{4,})\\s*$");
-    /** Inline code and passthrough spans: {@code `code`}, {@code +++text+++}, {@code ++text++}, {@code pass:[text]}. */
+    /**
+     * Inline spans in which Asciidoctor runs no macro: {@code +++text+++}, {@code ++text++}, the
+     * constrained {@code +text+} - which is also what makes {@code `+text+`} literal - and
+     * {@code pass:[text]}. A plain {@code `text`} span is monospace, not literal, and stays markup.
+     * The constrained form follows Asciidoctor's rule: no word character directly outside the
+     * plus signs, no whitespace directly inside them.
+     */
     private static final Pattern INLINE_VERBATIM = Pattern.compile(
-            "`[^`]*`|\\+\\+\\+.*?\\+\\+\\+|\\+\\+.*?\\+\\+|pass:[a-z,]*\\[[^\\]]*]");
+            "\\+\\+\\+.*?\\+\\+\\+|\\+\\+.*?\\+\\+"
+                    + "|(?<![\\w;:\\\\+])\\+(?:\\S|\\S.*?\\S)\\+(?![\\w+])"
+                    + "|pass:[a-z,-]*\\[(?:|.*?[^\\\\])]");
     private static final Pattern ID_ATTRIBUTE = Pattern.compile("^:(idprefix|idseparator):\\s*(.*?)\\s*$");
 
     /** A macro inside a section title contributes its link text to the generated id. */
@@ -145,7 +162,9 @@ class DocumentationLinkTest {
                 link:sub/target.adoc#inline[inline] link:sub/target.adoc#bracketed[bracketed] link:sub[directory]
                 <<_local_section>> <<_local_section,text>> xref:#_local_section[local] xref:_local_section[local]
                 link:https://example.org/missing[external] link:mailto:nobody@example.org[mail]
-                `xref:in-code.adoc[skipped]` \\xref:escaped.adoc[skipped]
+                `+xref:in-code.adoc[skipped]+` +xref:in-plus.adoc[skipped]+ \\xref:escaped.adoc[skipped]
+                ++xref:in-double-plus.adoc[skipped]++ +++xref:in-triple-plus.adoc[skipped]+++ pass:[xref:in-pass.adoc[skipped\\]]
+                `xref:sub/target.adoc[monospace, still a link]` `xref:in-backticks.adoc[monospace, still a link]`
 
                 ----
                 xref:in-listing.adoc[skipped]
@@ -160,12 +179,72 @@ class DocumentationLinkTest {
         Result result = check(root, List.of(source));
 
         assertEquals(List.of(
-                        "doc/source.adoc:18 -> sub/missing.adoc (file or directory does not exist: doc/sub/missing.adoc)",
-                        "doc/source.adoc:19 -> sub/target.adoc#_first_section (no anchor '_first_section' in doc/sub/target.adoc)",
-                        "doc/source.adoc:20 -> sub/target.adoc#not-an-anchor (no anchor 'not-an-anchor' in doc/sub/target.adoc)",
-                        "doc/source.adoc:20 -> #_missing (no anchor '_missing' in doc/source.adoc)"),
+                        "doc/source.adoc:13 -> in-backticks.adoc (file or directory does not exist: doc/in-backticks.adoc)",
+                        "doc/source.adoc:20 -> sub/missing.adoc (file or directory does not exist: doc/sub/missing.adoc)",
+                        "doc/source.adoc:21 -> sub/target.adoc#_first_section (no anchor '_first_section' in doc/sub/target.adoc)",
+                        "doc/source.adoc:22 -> sub/target.adoc#not-an-anchor (no anchor 'not-an-anchor' in doc/sub/target.adoc)",
+                        "doc/source.adoc:22 -> #_missing (no anchor '_missing' in doc/source.adoc)"),
                 result.broken());
-        assertEquals(15, result.checkedReferences(), "References checked: every one outside code and listing blocks");
+        assertEquals(17, result.checkedReferences(),
+                "References checked: every one outside literal spans, passthrough spans and listing blocks");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @DisplayName("A target with a URI scheme is not a repository path, whatever the scheme's length")
+    @CsvSource(delimiter = '|', textBlock = """
+            link:https://example.org/page[external]
+            link:mailto:nobody@example.org[mail]
+            link:x:opaque-part[one-character scheme]
+            xref:x:opaque-part[one-character scheme]
+            link:a+b-c.d:opaque-part[every scheme character]
+            """)
+    void targetWithUriSchemeShouldNotBeChecked(String markup) {
+        assertEquals(List.of(), referencesIn(markup));
+    }
+
+    @Test
+    @DisplayName("A target without a URI scheme is a repository path")
+    void targetWithoutUriSchemeShouldBeChecked() {
+        assertEquals(List.of("x/page.adoc", "1x:page.adoc"),
+                referencesIn("link:x/page.adoc[relative] link:1x:page.adoc[a scheme starts with a letter]"));
+    }
+
+    @Test
+    @DisplayName(":idprefix: and :idseparator: apply to the sections that follow them, and only when they are markup")
+    void idAttributesShouldApplyFromTheirPositionAndOnlyAsMarkup(@TempDir Path root) throws Exception {
+        Path document = root.resolve("attributes.adoc");
+        Files.writeString(document, """
+                = Attributes
+
+                == Before Any Attribute
+
+                ----
+                :idprefix: listing-
+                :idseparator: +
+                ----
+
+                ....
+                :idprefix: literal-
+                ....
+
+                // :idprefix: comment-
+
+                == After Verbatim Blocks
+
+                :idprefix:
+                :idseparator: -
+
+                == After The Attributes
+
+                == After The Attributes
+
+                :idprefix: again_
+
+                == Prefix Changed Again
+                """);
+
+        assertEquals(Set.of("_before_any_attribute", "_after_verbatim_blocks", "after-the-attributes",
+                "after-the-attributes-2", "again_prefix-changed-again"), anchorsOf(document));
     }
 
     @ParameterizedTest(name = "\"{0}\" -> {1}")
@@ -194,7 +273,11 @@ class DocumentationLinkTest {
     private record Result(int checkedReferences, List<String> broken) {
     }
 
-    /** A line of a document with verbatim content blanked out; {@code number} is one-based. */
+    /**
+     * A line of a document with verbatim content blanked out; {@code number} is one-based. A line
+     * inside a listing, literal, passthrough or comment block, a block delimiter and a comment
+     * line have an empty {@code markup}.
+     */
     private record MarkupLine(int number, String raw, String markup) {
     }
 
@@ -266,26 +349,27 @@ class DocumentationLinkTest {
     /**
      * Collects the anchors of a document: every explicit id, and for every section title without
      * an explicit id the id Asciidoctor generates, with its {@code _2}, {@code _3}, ... suffix
-     * when the same id was already taken.
+     * when the same id was already taken. A section id is generated with the {@code :idprefix:}
+     * and {@code :idseparator:} values in force at that section: the defaults until an attribute
+     * entry sets one, and an entry inside a listing, literal, passthrough or comment block sets
+     * nothing.
      */
     private static Set<String> anchorsOf(Path document) throws IOException {
-        List<MarkupLine> lines = markupLines(document);
         String prefix = "_";
         String separator = "_";
-        for (MarkupLine line : lines) {
-            Matcher attribute = ID_ATTRIBUTE.matcher(line.raw());
+        Set<String> anchors = new HashSet<>();
+        boolean idPending = false;
+        for (MarkupLine line : markupLines(document)) {
+            // An attribute entry counts only as markup and only for the sections after it
+            Matcher attribute = ID_ATTRIBUTE.matcher(line.markup());
             if (attribute.matches()) {
                 if ("idprefix".equals(attribute.group(1))) {
                     prefix = attribute.group(2);
                 } else {
                     separator = attribute.group(2);
                 }
+                continue;
             }
-        }
-
-        Set<String> anchors = new HashSet<>();
-        boolean idPending = false;
-        for (MarkupLine line : lines) {
             boolean declaresId = false;
             for (Pattern explicit : EXPLICIT_ANCHORS) {
                 Matcher matcher = explicit.matcher(line.markup());
@@ -342,8 +426,9 @@ class DocumentationLinkTest {
 
     /**
      * Reads a document and blanks out everything that is not AsciiDoc markup: the content of
-     * listing, literal, passthrough and comment blocks, comment lines and inline code spans. A
-     * blanked line keeps its position, so reported line numbers match the file.
+     * listing, literal, passthrough and comment blocks, comment lines and inline literal and
+     * passthrough spans. A plain backtick span is monospace markup and is kept. A blanked line
+     * keeps its position, so reported line numbers match the file.
      */
     private static List<MarkupLine> markupLines(Path document) throws IOException {
         List<String> rawLines = Files.readAllLines(document);
