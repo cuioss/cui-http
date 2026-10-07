@@ -62,8 +62,8 @@ class AdrIndexConsistencyTest {
     private static final Pattern RECORD_FILE = Pattern.compile("^(\\d{4})-.*\\.adoc$");
     /** {@code | N | [title](file) | status |}; groups: number, file, status. */
     private static final Pattern INDEX_ROW = Pattern.compile(
-            "^\\|\\s*(\\d+)\\s*\\|\\s*\\[.*]\\(([^)]*)\\)\\s*\\|\\s*(.*?)\\s*\\|\\s*$");
-    private static final Pattern HIGHEST_NUMBER = Pattern.compile("The highest allocated number is \\*\\*(\\d+)\\*\\*");
+            "^\\|\\s*(\\d{1,4})\\s*\\|\\s*\\[.*]\\(([^)]*)\\)\\s*\\|\\s*(.*?)\\s*\\|\\s*$");
+    private static final Pattern HIGHEST_NUMBER = Pattern.compile("The highest allocated number is \\*\\*(\\d{1,4})\\*\\*");
     private static final Pattern SECTION = Pattern.compile("^==\\s+(\\S.*?)\\s*$");
     private static final Pattern SUCCESSOR = Pattern.compile("^Superseded( in part)? by xref:(\\d{4})-.*");
     private static final String SUPERSEDED = "Superseded";
@@ -186,7 +186,7 @@ class AdrIndexConsistencyTest {
         Matcher sentence = HIGHEST_NUMBER.matcher(index);
         if (!sentence.find()) {
             mismatches.add("index has no 'The highest allocated number is **N**' sentence");
-        } else if (Integer.parseInt(sentence.group(1)) != highest) {
+        } else if (recordNumber(sentence.group(1)) != highest) {
             mismatches.add("index states the highest allocated number is %s, the highest record number is %d"
                     .formatted(sentence.group(1), highest));
         }
@@ -205,7 +205,7 @@ class AdrIndexConsistencyTest {
     }
 
     private static int numberOf(String recordFile) {
-        return Integer.parseInt(recordFile.substring(0, 4));
+        return recordNumber(recordFile.substring(0, 4));
     }
 
     private static List<IndexRow> rowsOf(String index) {
@@ -213,7 +213,7 @@ class AdrIndexConsistencyTest {
         for (String line : index.lines().toList()) {
             Matcher row = INDEX_ROW.matcher(line);
             if (row.matches()) {
-                rows.add(new IndexRow(Integer.parseInt(row.group(1)), row.group(2), row.group(3)));
+                rows.add(new IndexRow(recordNumber(row.group(1)), row.group(2), row.group(3)));
             }
         }
         return rows;
@@ -251,7 +251,7 @@ class AdrIndexConsistencyTest {
             Matcher successor = SUCCESSOR.matcher(line);
             if (successor.matches()) {
                 return "%s%s by %d".formatted(SUPERSEDED, successor.group(1) == null ? "" : successor.group(1),
-                        Integer.parseInt(successor.group(2)));
+                        recordNumber(successor.group(2)));
             }
         }
         return null;
@@ -272,5 +272,17 @@ class AdrIndexConsistencyTest {
         }
         return fail("Could not locate the directory holding %s/%s from %s"
                 .formatted(ADR_DIRECTORY, INDEX_FILE, Path.of("").toAbsolutePath()));
+    }
+
+    /**
+     * Parses an ADR number. Every caller passes one to four digits matched by a pattern, so the
+     * parse cannot fail; a number that still does not parse is a defect of this test.
+     */
+    private static int recordNumber(String digits) {
+        try {
+            return Integer.parseInt(digits);
+        } catch (NumberFormatException e) {
+            throw new IllegalStateException("Not an ADR number: " + digits, e);
+        }
     }
 }
