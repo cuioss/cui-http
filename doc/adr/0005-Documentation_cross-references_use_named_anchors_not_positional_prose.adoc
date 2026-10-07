@@ -72,9 +72,11 @@ would follow the direction to find a particular thing.
 * A renamed anchor breaks every reference to it. This is the intended trade — the breakage is
   locatable, where the positional failure it replaces was neither.
 * Auto-generated anchors derived from section titles change when a title is reworded, so a
-  reference can break on an edit that looks purely cosmetic. **Until a link checker is added to the
-  build, that breakage is silent** — the anchor form makes it findable, not found. Adding such a
-  checker is the follow-on this decision enables and deliberately does not assume.
+  reference can break on an edit that looks purely cosmetic. That breakage is no longer silent: the
+  link checker this decision enabled exists as the `DocumentationLinkTest` unit test in
+  `cui-http-core` and fails the build on it. The test checks the relative file targets and the
+  anchors of the `xref:`, `link:` and `<<...>>` references in the repository's AsciiDoc
+  (`README.adoc` and `doc/`); it does *not* check external URLs or Javadoc `{@link}` references.
 
 == Alternatives Considered
 
