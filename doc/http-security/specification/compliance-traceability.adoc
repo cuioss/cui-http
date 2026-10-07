@@ -564,6 +564,7 @@ injection protection (SEC-1), and no semantic validation (SEC-6).
 ==== Unit Tests
 
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/ApacheCVEAttackDatabaseTest.java[ApacheCVEAttackDatabaseTest]: Apache CVEs
+* link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/SpringCVEAttackDatabaseTest.java[SpringCVEAttackDatabaseTest]: Spring Cloud Config Server CVE-2020-5410
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/IISCVEAttackDatabaseTest.java[IISCVEAttackDatabaseTest]: IIS CVEs
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/NginxCVEAttackDatabaseTest.java[NginxCVEAttackDatabaseTest]: Nginx CVEs
 * link:../../../cui-http-core/src/test/java/de/cuioss/http/security/tests/PathTraversalAttackTest.java[PathTraversalAttackTest]: References CVE-2019-5418, CVE-2018-1000671, CVE-2020-5398

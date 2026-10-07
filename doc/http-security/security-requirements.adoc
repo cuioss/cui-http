@@ -78,12 +78,11 @@ These requirements are derived from:
 * Must detect patterns from CVE database including:
   ** link:https://nvd.nist.gov/vuln/detail/CVE-2021-41773[CVE-2021-41773]: Apache httpd path traversal — encoded in link:../../cui-http-core/src/test/java/de/cuioss/http/security/database/ApacheCVEAttackDatabase.java[ApacheCVEAttackDatabase]
   ** link:https://nvd.nist.gov/vuln/detail/CVE-2021-42013[CVE-2021-42013]: Apache httpd double encoding — encoded in link:../../cui-http-core/src/test/java/de/cuioss/http/security/database/ApacheCVEAttackDatabase.java[ApacheCVEAttackDatabase]
-  ** link:https://nvd.nist.gov/vuln/detail/CVE-2020-5410[CVE-2020-5410]: Spring Cloud Config traversal — cited as a representative traversal class; not individually encoded in the attack databases
-  ** link:https://nvd.nist.gov/vuln/detail/CVE-2019-0232[CVE-2019-0232]: Apache Tomcat RCE via traversal — cited as a representative traversal class; not individually encoded in the attack databases
+  ** link:https://nvd.nist.gov/vuln/detail/CVE-2020-5410[CVE-2020-5410]: Spring Cloud Config Server traversal via double-encoded path separators — encoded in link:../../cui-http-core/src/test/java/de/cuioss/http/security/database/SpringCVEAttackDatabase.java[SpringCVEAttackDatabase]
 
 * Must detect novel combinations of known techniques
 * Must maintain pattern database for emerging threats
-* Reference: link:../../cui-http-core/src/test/java/de/cuioss/http/security/database/[Attack Databases]. The four CVEs above are *not* covered by xref:analysis/cve-analysis.adoc[CVE Analysis], which analyses a different CVE set.
+* Reference: link:../../cui-http-core/src/test/java/de/cuioss/http/security/database/[Attack Databases]. The three CVEs above are *not* covered by xref:analysis/cve-analysis.adoc[CVE Analysis], which analyses a different CVE set.
 
 [#SEC-4]
 === SEC-4: HTTP Protocol Encoding Attack Prevention

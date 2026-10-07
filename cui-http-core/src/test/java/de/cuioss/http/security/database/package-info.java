@@ -48,6 +48,7 @@
  *   <li><strong>{@link de.cuioss.http.security.database.ApacheCVEAttackDatabase}</strong>: Apache HTTP Server and Tomcat CVE exploits</li>
  *   <li><strong>{@link de.cuioss.http.security.database.IISCVEAttackDatabase}</strong>: Microsoft IIS and Windows-specific vulnerabilities</li>
  *   <li><strong>NginxCVEAttackDatabase</strong>: Nginx server CVE attack patterns (planned)</li>
+ *   <li><strong>{@link de.cuioss.http.security.database.SpringCVEAttackDatabase}</strong>: Spring Cloud Config Server CVE-2020-5410 traversal</li>
  * </ul>
  *
  * <h4>Standards-Based Databases</h4>
