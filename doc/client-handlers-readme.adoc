@@ -138,7 +138,8 @@ Credential handling is a separate axis. `RedirectPolicy.CredentialForwarding` de
 through. An *`https`* same-origin hop forwards them under either strategy.
 
 One rule sits above the strategy and is not configurable: `forwardsCredentials` returns `false`
-whenever the *target* scheme is `http`, so neither header is ever written onto an unencrypted wire.
+whenever the *target* scheme is `http`, so a redirect hop never writes either header onto an
+unencrypted wire (the first request is sent as the caller built it and is not covered).
 That covers the two hops the rule list above still permits to a cleartext target - an `http` ->
 `http` same-origin hop, and an `http` -> `http` hop to an allowlisted host under
 `FORWARD_TO_ALLOWLISTED` - both reachable only from a handler built with `allowInsecureHttp(true)`.
@@ -180,6 +181,86 @@ try {
 // Refused even though cdn.example.net is allowlisted: the downgrade rule runs first.
 // https://api.example.com/users -> http://cdn.example.net/users  =>  PROTOCOL_DOWNGRADE
 ----
+
+[#handler-lifecycle]
+*Lifecycle (`AutoCloseable`):* a handler creates exactly one JDK `HttpClient` when it is built and
+uses it for every `send(...)`, `sendAsync(...)`, `pingGet()` and `pingHead()` call;
+`createHttpClient()` hands out that same instance on every call rather than a new one. The handler
+always builds this client itself - the builder has no method that accepts a caller-supplied
+`HttpClient` or executor - so the handler is its sole owner, and `asBuilder().build()` yields a new
+handler with a client of its own. Two equally configured handlers hold two distinct clients, and
+closing one leaves the other untouched.
+
+`close()` delegates to `HttpClient.close()`. What that covers, and what it does not:
+
+* *Released:* the client the handler owns, with its connection pool and its threads. After
+  `close()` the client reports `isTerminated()`.
+* *Not released:* a caller-supplied `SSLContext` (`.sslContext(...)`) is only referenced, never
+  closed or altered. The adapters hold no resource of their own to release either -
+  `ETagAwareHttpAdapter` and `ResilientHttpAdapter` are deliberately not `AutoCloseable`: they
+  borrow the handler's client by sending through the handler, so closing the handler closes the
+  client under every adapter built from it. Close the handler once all of those adapters are done.
+* *Idempotent:* a second `close()` returns without throwing and the client stays terminated.
+* *In-flight requests:* `close()` is an orderly shutdown, not a cancellation. It blocks until the
+  requests already submitted to the client have completed, and those requests still deliver their
+  responses.
+* *Calls after or during `close()`:* the handler keeps no closed flag of its own and performs no
+  state check; a new request is rejected by the JDK client, which accepts none once the shutdown
+  has begun. `send(...)` then throws the JDK client's `IOException`, and `sendAsync(...)` returns a
+  future completed exceptionally with it. `pingGet()` / `pingHead()` catch that `IOException`, log
+  a WARN (`HTTP-106`) and return `HttpStatusFamily.UNKNOWN`. Through an adapter the failure arrives
+  as an `HttpResult` failure instead of an exception; `HttpErrorCategory.fromException` classifies
+  an `IOException` as the retryable `NETWORK_ERROR`, so a `ResilientHttpAdapter` still wrapped
+  around a closed handler retries a retry-eligible request against it until its attempts are
+  exhausted. A reference obtained earlier from `createHttpClient()` is the same closed client.
+
+A handler held for the lifetime of the JVM need not be closed; a short-lived one should be, and
+try-with-resources is the direct way:
+
+[source,java]
+----
+try (HttpHandler handler = HttpHandler.builder()
+        .uri("https://api.example.com/data")
+        .build()) {
+    HttpResponse<String> response = handler.send(
+            handler.requestBuilder().GET().build(),
+            HttpResponse.BodyHandlers.ofString());
+    processData(response.body());
+} catch (IOException e) {
+    // transport failure on one of the hops
+} catch (InterruptedException e) {
+    Thread.currentThread().interrupt(); // the calling thread was interrupted while waiting
+}
+// The handler's HttpClient is closed here, on every path out of the block.
+
+// Adapters borrow the handler's client: close the handler, not the adapters, after the last call.
+try (HttpHandler handler = HttpHandler.builder().uri("https://api.example.com/data").build()) {
+    HttpAdapter<String> adapter = ResilientHttpAdapter.wrap(
+            ETagAwareHttpAdapter.<String>builder()
+                    .httpHandler(handler)
+                    .responseConverter(StringContentConverter.identity())
+                    .build());
+    HttpResult<String> result = adapter.getBlocking();
+}
+----
+
+*Cancellation and interruption:* `HttpHandler` has no cancel method and adds no cancellation logic
+of its own; what a caller observes depends on the entry point.
+
+* `send(...)` blocks the calling thread. Interrupting that thread surfaces as the
+  `InterruptedException` the method declares.
+* `pingGet()` / `pingHead()` never throw it: they restore the thread's interrupt flag, log a WARN
+  (`HTTP-107`) and return `HttpStatusFamily.UNKNOWN`.
+* `sendAsync(...)` returns a `CompletableFuture` composed onto the JDK client's own future. The
+  handler does nothing beyond that, so what cancelling it does to an exchange already on the wire
+  is the JDK client's behaviour, not a cui-http guarantee.
+* An adapter's `*Blocking()` method whose calling thread is interrupted restores the interrupt
+  flag, cancels the future it was waiting on, and throws a `CompletionException` whose cause is the
+  `InterruptedException`.
+* Cancelling the future a `ResilientHttpAdapter` operation returned stops the whole retry chain:
+  the future of the attempt in flight is cancelled, a pending backoff delay is abandoned, and no
+  further attempt is scheduled. The caller holds a cancelled `CompletableFuture`: `isCancelled()`
+  is `true`, and `join()` / `get()` throw `CancellationException`.
 
 ==== xref:../cui-http-core/src/main/java/de/cuioss/http/client/adapter/package-info.java[HTTP Adapters (New Architecture)]
 
@@ -270,28 +351,36 @@ conditions under which each is emitted — is documented in xref:LogMessages.ado
 
 === Basic HTTP Handler
 
+The handler is created for this one call, so it is closed when the call is done - see
+xref:#handler-lifecycle[Lifecycle].
+
 [source,java]
 ----
-HttpHandler handler = HttpHandler.builder()
-    .uri("https://api.example.com/data")
-    .connectionTimeoutSeconds(10)
-    .readTimeoutSeconds(30)
-    .build();
+try (HttpHandler handler = HttpHandler.builder()
+        .uri("https://api.example.com/data")
+        .connectionTimeoutSeconds(10)
+        .readTimeoutSeconds(30)
+        .build()) {
 
-HttpClient client = handler.createHttpClient();
-HttpRequest request = handler.requestBuilder()
-    .GET()
-    .build();
-HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+    HttpClient client = handler.createHttpClient();
+    HttpRequest request = handler.requestBuilder()
+        .GET()
+        .build();
+    HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
-if (HttpStatusFamily.isSuccess(response.statusCode())) {
-    processData(response.body());
+    if (HttpStatusFamily.isSuccess(response.statusCode())) {
+        processData(response.body());
+    }
 }
 ----
 
 === HTTP Adapter with Retry and Caching
 
 This example demonstrates the async-first pattern using `HttpAdapter` with ETag-based caching and retry logic.
+
+The handler here is long-lived: the adapter borrows its client and the ETag cache is only useful
+across calls, so the handler stays open for as long as the adapter is in use. Call
+`httpHandler.close()` when the adapter is retired - see xref:#handler-lifecycle[Lifecycle].
 
 [source,java]
 ----

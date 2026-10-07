@@ -39,8 +39,10 @@ filter this repository cannot guarantee.
 | 21 | [Unresolvable Forwarded header suppresses only the fields it carried](0021-Unresolvable_Forwarded_header_suppresses_only_the_fields_it_carried.adoc) | Accepted |
 | 22 | [A missing Content-Type is rejected when a non-empty allow-list is configured](0022-A_missing_Content-Type_is_rejected_when_a_non-empty_allow-list_is_configured.adoc) | Accepted |
 | 23 | [A cache entry is bound to the credential material that produced it](0023-A_cache_entry_is_bound_to_the_credential_material_that_produced_it.adoc) | Accepted |
+| 24 | [Redirects are followed by HttpHandler behind a per-hop policy that is same-origin by default](0024-Redirects_are_followed_by_HttpHandler_behind_a_per-hop_policy_that_is_same-origin_by_default.adoc) | Proposed |
+| 25 | [Redirect credentials are stripped across origins by default and never sent to a cleartext target](0025-Redirect_credentials_are_stripped_across_origins_by_default_and_never_sent_to_a_cleartext_target.adoc) | Proposed |
 
-The highest allocated number is **23**. This table is maintained by hand and is not derived from
+The highest allocated number is **25**. This table is maintained by hand and is not derived from
 `doc/adr/` at build time, so a rename, addition, or status change elsewhere can leave it stale;
 treat the `.adoc` files as authoritative and update this table in the same change. The
 [proposal below](#proposal-check-the-index-against-the-records-at-the-merge-gate) describes how that
