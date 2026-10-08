@@ -16,7 +16,7 @@ jobs:
     # Centralized in cuioss-organization, matching every other security/CI workflow in this repo.
     # build-mode: none avoids building the external-artifact benchmark module during CodeQL scanning.
     # The reusable workflow fixes the query suite to +security-and-quality org-wide.
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-codeql.yml@ae4ad6937ec755800c4a77d22e426aba679bf91c # v0.38.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-codeql.yml@47273b80f2d215fd277883956000407eb708db15 # v0.39.0
     permissions:
       security-events: write
       contents: read
