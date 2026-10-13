@@ -66,7 +66,8 @@
       "effort": {
         "default": "level-4",
         "verification-feedback": "level-3"
-      }
+      },
+      "worktree_setup_commands": []
     },
     "phase-6-finalize": {
       "max_iterations": 3,
@@ -84,7 +85,10 @@
         "default:finalize-step-security-audit": {
           "lane": "full"
         },
-        "default:pre-submission-self-review": {
+        "default:functional-review": {
+          "lane": "minimal"
+        },
+        "default:code-review": {
           "lane": "minimal"
         },
         "default:architecture-refresh": {
@@ -101,7 +105,7 @@
           "re_review_on_timeout": "ask",
           "review_rate_window_await": true,
           "review_rate_window_timeout_seconds": 3600,
-          "required_bots": "coderabbit,cuioss-review-bot",
+          "required_bots": "cuioss-review-bot,coderabbit",
           "optional_bots": "sourcery",
           "review_completion_poll_timeout_seconds": 600,
           "lane": "standard",
@@ -290,7 +294,7 @@
       "plugin_cache_keep_versions": 5,
       "plugin_cache_keep_days": 3
     },
-    "provisioned_version": "0.1.1841",
-    "config_seed_fingerprint": "28c7d1c8"
+    "provisioned_version": "0.1.1916",
+    "config_seed_fingerprint": "a2efc4ac"
   }
 }
